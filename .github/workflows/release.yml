@@ -1,0 +1,73 @@
+name: Release maf-autopilot
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version (e.g. 1.3.0-tool.2). Leave blank to use version in csproj.'
+        required: false
+        default: ''
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: release    # Optional approval gate — create env in Settings → Environments if desired
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            echo "Using input version: $VERSION"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            echo "Using tag version: $VERSION"
+          else
+            VERSION=$(grep -oP '(?<=<Version>)[^<]+' mcp/maf-autopilot/maf-autopilot.csproj)
+            echo "Using csproj version: $VERSION"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Releasing version: $VERSION"
+
+      - name: Override version in csproj
+        if: github.event.inputs.version != '' || startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          sed -i "s|<Version>.*</Version>|<Version>${VERSION}</Version>|" mcp/maf-autopilot/maf-autopilot.csproj
+          echo "Set csproj <Version> to $VERSION"
+
+      - name: Restore & Pack
+        run: |
+          dotnet restore mcp/maf-autopilot/maf-autopilot.csproj
+          dotnet pack mcp/maf-autopilot/maf-autopilot.csproj \
+            --configuration Release \
+            --no-restore \
+            --output mcp/dist/
+          echo "Packed: $(ls mcp/dist/*.nupkg)"
+
+      - name: Publish to NuGet
+        run: |
+          dotnet nuget push mcp/dist/*.nupkg \
+            --api-key ${{ secrets.NUGET_API_KEY }} \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: mcp/dist/*.nupkg
+          generate_release_notes: true
