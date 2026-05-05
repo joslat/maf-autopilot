@@ -18,6 +18,7 @@
     <PackageTags>maf;migration;mcp;dotnet;agents</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/joslat/maf-autopilot</RepositoryUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
 
     <!-- Ensure logs go to stderr so stdout stays clean for MCP protocol -->
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
@@ -36,7 +37,8 @@
       Bundle registry.yaml as an embedded resource so the tool works as a standalone NuGet global tool.
       At runtime, RegistryService first checks MAF_REGISTRY_PATH env var (for local dev override),
       then falls back to this embedded resource.
-    -->
+    -->    <!-- README for NuGet package page -->
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
     <EmbeddedResource Include="..\..\.github\skills\obsolete-api-registry\registry.yaml"
                       LogicalName="registry.yaml" />
 

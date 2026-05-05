@@ -4,6 +4,19 @@
 
 **maf-autopilot** gives GitHub Copilot everything it needs to migrate .NET codebases to MAF 1.3.0 — and stay current as new versions ship — reliably, build-verified, and with zero silent failures.
 
+## Quick Start
+
+```powershell
+# Install as a .NET global tool
+dotnet tool install --global maf-autopilot
+
+# Configure a target repo (writes .vscode/mcp.json + .github/copilot-instructions.md)
+cd your-maf-project
+maf-autopilot init
+```
+
+Or use directly from source via the `.vscode/mcp.json` in this repo — the MCP server starts automatically when you open the workspace in VS Code.
+
 ## Why This Exists
 
 `dotnet upgrade-assistant` handles package version bumps. maf-autopilot handles everything else:
@@ -41,6 +54,8 @@ maf-autopilot/
 │   │   └── migration-retrospective/     # Post-migration learning → improves the toolkit
 │   └── workflows/
 │       └── maf-release-watcher.yml      # GitHub Actions: weekly MAF version check + PR
+├── mcp/
+│   └── maf-autopilot/                   # MCP server — NuGet global tool (dotnet tool install --global maf-autopilot)
 ├── guides/
 │   └── maf-1.3.0-migration-guide.md    # Source-of-truth MAF 1.3.0 migration guide (21 sections)
 ├── docs/
@@ -109,8 +124,7 @@ Use `@maf-auditor` on any MAF codebase:
 - [x] `fan-in-static-analyzer` — static code analysis of fan-out topology
 - [x] `workflow-smoke-tester` — post-migration structural smoke test generation
 - [x] `migration-retrospective` — post-migration learning loop
-- [x] `maf-autopilot` MCP server — MVP with `maf_api_safety`, `maf_registry_lookup`, `maf_registry_list` tools (SDK 1.2.0, sampling-ready)
-- [ ] Full `maf-autopilot` — all 9 tools + Resources + Prompts, NuGet published as global tool
+- [x] `maf-autopilot` MCP server — tools + resources + prompts, published to NuGet as `maf-autopilot` global tool
 - [ ] Docker distribution via GHCR
 - [ ] Roslyn analyzer companion — flags fan-out void handlers at write-time
 - [ ] Version-keyed guide sections — load only sections relevant to specific migration path
