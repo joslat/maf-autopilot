@@ -49,7 +49,10 @@ public sealed class RegistryService
             .Where(e => Contains(e.Method, apiName)
                      || Contains(e.ObsoleteSignature, apiName)
                      || Contains(e.Type, apiName)
-                     || Contains(e.ReplacementSignature, apiName))
+                     || Contains(e.ReplacementSignature, apiName)
+                     || Contains(e.Notes, apiName)
+                     || Contains(e.FixDescription, apiName)
+                     || Contains(e.ExampleBefore, apiName))
             .ToList();
 
     // -------------------------------------------------------------------------
