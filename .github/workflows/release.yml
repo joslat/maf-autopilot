@@ -14,7 +14,6 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
-    environment: release    # Optional approval gate — create env in Settings → Environments if desired
     permissions:
       contents: write
 
