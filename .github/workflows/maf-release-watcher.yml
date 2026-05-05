@@ -1,0 +1,292 @@
+name: MAF Release Watcher
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'   # Every Monday 9 AM UTC (weekly check)
+  workflow_dispatch:        # Manual trigger anytime
+    inputs:
+      maf_version:
+        description: 'Specific MAF version to process (leave blank for latest from NuGet)'
+        required: false
+        default: ''
+      publish:
+        description: 'Publish maf-autopilot to NuGet after update? (true/false)'
+        required: false
+        default: 'false'
+
+jobs:
+  check-for-new-maf-release:
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.version-check.outputs.new_version }}
+      old_version: ${{ steps.version-check.outputs.old_version }}
+      has_update: ${{ steps.version-check.outputs.has_update }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check NuGet for new MAF version
+        id: version-check
+        run: |
+          # Use explicit version if provided, otherwise query NuGet
+          if [ -n "${{ github.event.inputs.maf_version }}" ]; then
+            LATEST="${{ github.event.inputs.maf_version }}"
+            echo "Using manually specified version: $LATEST"
+          else
+            LATEST=$(curl -s "https://api.nuget.org/v3-flatcontainer/microsoft.agents.ai/index.json" | \
+              python3 -c "import sys,json; d=json.load(sys.stdin); print(d['versions'][-1])")
+            echo "Latest version on NuGet: $LATEST"
+          fi
+
+          CURRENT=$(cat .maf-version | tr -d '[:space:]')
+          echo "Current tracked version: $CURRENT"
+
+          echo "old_version=$CURRENT" >> $GITHUB_OUTPUT
+          echo "new_version=$LATEST" >> $GITHUB_OUTPUT
+
+          if [ "$LATEST" != "$CURRENT" ]; then
+            echo "has_update=true" >> $GITHUB_OUTPUT
+            echo "✅ New version detected: $CURRENT → $LATEST"
+          else
+            echo "has_update=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No update. $CURRENT is current."
+          fi
+
+  analyze-and-update:
+    needs: check-for-new-maf-release
+    if: needs.check-for-new-maf-release.outputs.has_update == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Install dotnet tools
+        run: |
+          # dnx is the launcher — it downloads dotnet-inspect@0.7.6 on first use (no separate install needed)
+          dotnet tool install --global dnx
+
+      - name: Run diff — Microsoft.Agents.AI
+        id: diff-core
+        continue-on-error: true  # diff may fail if old version is too old
+        run: |
+          OLD="${{ needs.check-for-new-maf-release.outputs.old_version }}"
+          NEW="${{ needs.check-for-new-maf-release.outputs.new_version }}"
+          dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- diff \
+            --package "Microsoft.Agents.AI@${OLD}..${NEW}" \
+            --source https://api.nuget.org/v3/index.json \
+            > diff-core.txt 2>&1 || true
+          echo "Core diff output:"
+          cat diff-core.txt
+
+      - name: Run diff — Microsoft.Agents.AI.Workflows
+        id: diff-workflows
+        continue-on-error: true
+        run: |
+          OLD="${{ needs.check-for-new-maf-release.outputs.old_version }}"
+          NEW="${{ needs.check-for-new-maf-release.outputs.new_version }}"
+          dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- diff \
+            --package "Microsoft.Agents.AI.Workflows@${OLD}..${NEW}" \
+            --source https://api.nuget.org/v3/index.json \
+            > diff-workflows.txt 2>&1 || true
+          echo "Workflows diff output:"
+          cat diff-workflows.txt
+
+      - name: Fetch release notes
+        id: release-notes
+        continue-on-error: true
+        run: |
+          NEW="${{ needs.check-for-new-maf-release.outputs.new_version }}"
+          # Try GitHub releases first (adjust repo name if needed)
+          gh release view "v${NEW}" \
+            --repo microsoft/agents \
+            --json body --jq .body \
+            > release-notes.txt 2>/dev/null || echo "Release notes not available from GitHub" > release-notes.txt
+          cat release-notes.txt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update compatibility matrix
+        run: |
+          OLD="${{ needs.check-for-new-maf-release.outputs.old_version }}"
+          NEW="${{ needs.check-for-new-maf-release.outputs.new_version }}"
+
+          # Get dependency versions from NuGet
+          EXTENSIONS_AI=$(curl -s "https://api.nuget.org/v3/registration5/microsoft.agents.ai/${NEW}.json" | \
+            python3 -c "
+          import sys, json, re
+          d = json.load(sys.stdin)
+          deps = d.get('catalogEntry', {}).get('dependencyGroups', [{}])[0].get('dependencies', [])
+          for dep in deps:
+              if 'Extensions.AI' in dep.get('id', ''):
+                  print(dep.get('range', '≥ unknown'))
+                  break
+          else:
+              print('≥ unknown')
+          " 2>/dev/null || echo "≥ unknown")
+
+          echo "Adding new row to compatibility matrix for MAF ${NEW}"
+          # Append new row (simplified — LLM should refine in the PR)
+          python3 - <<EOF
+          import re
+
+          with open('docs/compatibility-matrix.md', 'r') as f:
+              content = f.read()
+
+          new_row = f"| **{NEW}** | \`≥ unknown\` | \`≥ 8.0\` | \`≥ unknown\` | \`{NEW}\` | Auto-detected — verify versions in PR review. |"
+
+          # Insert after the header row of the table
+          table_pattern = r'(\| \*\*1\.3\.0\*\* \|.*\n)'
+          replacement = new_row + '\n' + r'\1'
+          updated = re.sub(table_pattern, replacement, content)
+
+          with open('docs/compatibility-matrix.md', 'w') as f:
+              f.write(updated)
+
+          print("Updated compatibility-matrix.md")
+          EOF
+
+      - name: Generate draft guide section
+        run: |
+          OLD="${{ needs.check-for-new-maf-release.outputs.old_version }}"
+          NEW="${{ needs.check-for-new-maf-release.outputs.new_version }}"
+
+          DIFF_SUMMARY=$(head -50 diff-core.txt 2>/dev/null || echo "Diff not available")
+          NOTES=$(cat release-notes.txt 2>/dev/null || echo "No release notes")
+
+          printf '\n\n---\n\n' >> guides/maf-1.3.0-migration-guide.md
+          cat >> guides/maf-1.3.0-migration-guide.md << EOF
+
+## Section AUTO — Changes in ${OLD} → ${NEW}
+
+<!-- introduced: ${NEW} | applies-to: ${OLD}.x → ${NEW}.x | deprecated-in: none -->
+<!-- AUTO-GENERATED by maf-release-watcher — REQUIRES HUMAN REVIEW before merging -->
+
+> ⚠️ This section was auto-generated. Review all content before relying on it for migrations.
+
+### Diff Summary (from dotnet-inspect)
+
+\`\`\`
+${DIFF_SUMMARY}
+\`\`\`
+
+### Release Notes Extract
+
+${NOTES}
+
+### Breaking Changes (requires human verification)
+
+<!-- TODO: Review the diff above and list breaking changes here -->
+- [ ] Review diff output and populate this section
+
+### New Patterns
+
+<!-- TODO: Document any new recommended patterns from release notes -->
+- [ ] Review release notes and populate this section
+
+### Obsolete APIs Added
+
+<!-- TODO: Run dotnet build against new version and check CS0618 output -->
+- [ ] Run cs0618-hunter against new version and document findings here
+
+### Known Misalignments
+
+<!-- TODO: Document any discrepancies between official docs and assembly behavior -->
+- [ ] Update after migration testing
+
+EOF
+
+          echo "Draft guide section appended to guides/maf-1.3.0-migration-guide.md"
+
+      - name: Update .maf-version
+        run: |
+          echo "${{ needs.check-for-new-maf-release.outputs.new_version }}" > .maf-version
+          echo "Updated .maf-version to ${{ needs.check-for-new-maf-release.outputs.new_version }}"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          title: "chore: Update for MAF ${{ needs.check-for-new-maf-release.outputs.new_version }}"
+          body: |
+            ## 🤖 Automated MAF release update
+
+            MAF version: `${{ needs.check-for-new-maf-release.outputs.old_version }}` → `${{ needs.check-for-new-maf-release.outputs.new_version }}`
+
+            ### Changes in this PR
+            - [x] `.maf-version` updated
+            - [x] `docs/compatibility-matrix.md` — new row added (dependency versions need verification)
+            - [x] `guides/maf-1.3.0-migration-guide.md` — draft section appended
+            - [ ] `registry.yaml` — new CS0618 entries (manual step required, see below)
+
+            ### ⚠️ Human Review Checklist — Required Before Merging
+
+            #### Verify auto-generated content
+            - [ ] Read the new section appended to `guides/maf-1.3.0-migration-guide.md` — verify accuracy
+            - [ ] Update compatibility matrix row with exact dependency versions (check NuGet package metadata)
+            - [ ] Remove or update the `AUTO-GENERATED` warning comment in the guide section
+
+            #### Run CS0618 detection (manual — automation cannot do this)
+            - [ ] Create a test project referencing `Microsoft.Agents.AI@${{ needs.check-for-new-maf-release.outputs.new_version }}`
+            - [ ] Run: `dotnet build 2>&1 | Select-String "warning CS0618"`
+            - [ ] For each new CS0618 warning found: add an entry to `registry.yaml`
+
+            #### Verify registry completeness
+            - [ ] Review `diff-core.txt` and `diff-workflows.txt` artifacts for removed/renamed types
+            - [ ] Add registry entries for any new patterns not already covered
+
+            #### Final check
+            - [ ] Confirm `.maf-version` is correct: `${{ needs.check-for-new-maf-release.outputs.new_version }}`
+            - [ ] All content reviewed and accurate
+
+            ---
+            *Generated by `.github/workflows/maf-release-watcher.yml`*
+          branch: "chore/maf-${{ needs.check-for-new-maf-release.outputs.new_version }}-update"
+          commit-message: "chore: Update for MAF ${{ needs.check-for-new-maf-release.outputs.new_version }}"
+          add-paths: |
+            .maf-version
+            docs/compatibility-matrix.md
+            guides/maf-1.3.0-migration-guide.md
+
+  # Optional: publish maf-autopilot MCP server after guide update
+  # Only runs on manual dispatch with publish=true
+  publish-mcp-release:
+    needs: [check-for-new-maf-release, analyze-and-update]
+    if: |
+      github.event_name == 'workflow_dispatch' && 
+      github.event.inputs.publish == 'true' &&
+      needs.check-for-new-maf-release.outputs.has_update == 'true'
+    runs-on: ubuntu-latest
+    environment: release  # Requires manual approval in GitHub Environments settings
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'  # Must match TargetFramework net9.0 in maf-autopilot.csproj
+
+      - name: Pack maf-autopilot MCP server
+        run: |
+          if [ -d "mcp/maf-autopilot" ]; then
+            dotnet restore mcp/maf-autopilot/maf-autopilot.csproj
+            # dotnet pack (not publish) creates the .nupkg for NuGet global tool distribution
+            dotnet pack mcp/maf-autopilot/maf-autopilot.csproj \
+              --configuration Release \
+              --output mcp/dist/
+            echo "Pack successful — $(ls mcp/dist/*.nupkg 2>/dev/null | head -1)"
+          else
+            echo "mcp/maf-autopilot not found — skipping publish"
+          fi
+
+      - name: Publish to NuGet
+        if: ${{ hashFiles('mcp/dist/*.nupkg') != '' }}
+        run: |
+          dotnet nuget push mcp/dist/*.nupkg \
+            --api-key ${{ secrets.NUGET_API_KEY }} \
+            --source https://api.nuget.org/v3/index.json

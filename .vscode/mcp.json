@@ -1,0 +1,18 @@
+{
+  "servers": {
+    "maf-autopilot": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": ["run", "--project", "mcp/maf-autopilot/maf-autopilot.csproj", "--"],
+      "env": {}
+    },
+    "maf-autopilot-custom-registry": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": ["run", "--project", "mcp/maf-autopilot/maf-autopilot.csproj", "--"],
+      "env": {
+        "MAF_REGISTRY_PATH": "${workspaceFolder}/.github/skills/obsolete-api-registry/registry.yaml"
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+# ModelContextProtocol
+
+Library: ModelContextProtocol.dll | Types: 9 | Methods: 48 | Properties: 9 | Source: NuGet | Version: 1.2.0 | TFM: net10.0
+
+## Classes
+
+| Type | Members |
+| ---- | ------- |
+| ModelContextProtocol.Server.DistributedCacheEventStreamStore | 3 |
+| ModelContextProtocol.Server.DistributedCacheEventStreamStoreOptions | 7 |
+| Microsoft.Extensions.DependencyInjection.McpMessageFilterBuilderExtensions | 2 |
+| Microsoft.Extensions.DependencyInjection.McpRequestFilterBuilderExtensions | 11 |
+| Microsoft.Extensions.DependencyInjection.McpServerBuilderExtensions | 30 |
+| Microsoft.Extensions.DependencyInjection.McpServerServiceCollectionExtensions | 1 |
+
+## Interfaces
+
+| Type | Members |
+| ---- | ------- |
+| Microsoft.Extensions.DependencyInjection.IMcpMessageFilterBuilder | 1 |
+| Microsoft.Extensions.DependencyInjection.IMcpRequestFilterBuilder | 1 |
+| Microsoft.Extensions.DependencyInjection.IMcpServerBuilder | 1 |

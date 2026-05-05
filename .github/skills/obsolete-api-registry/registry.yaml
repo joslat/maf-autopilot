@@ -1,0 +1,254 @@
+# MAF 1.3.0 Obsolete API Registry
+# Machine-readable source of truth for all known CS0618 warnings.
+# Update this file whenever a new CS0618 warning is encountered in any MAF migration.
+#
+# Format: see .github/skills/obsolete-api-registry/SKILL.md
+
+schema_version: "1.0"
+target_maf_version: "1.3.0"
+last_updated: "2026-05-04"
+
+entries:
+  - id: MAF130-FAN-IN-001
+    package: Microsoft.Agents.AI.Workflows
+    version_introduced: "1.3.0"
+    type: Microsoft.Agents.AI.Workflows.WorkflowBuilder
+    method: AddFanInBarrierEdge
+    obsolete_signature: "AddFanInBarrierEdge(ExecutorBinding target, IEnumerable<ExecutorBinding> sources)"
+    replacement_signature: "AddFanInBarrierEdge(IEnumerable<ExecutorBinding> sources, ExecutorBinding target)"
+    argument_order_change: true
+    fix_description: "Swap argument order — sources (IEnumerable) must come first, target (single ExecutorBinding) last"
+    example_before: |
+      builder.AddFanInBarrierEdge(aggregatorExec, osintExec, userHistoryExec, transactionExec);
+    example_after: |
+      builder.AddFanInBarrierEdge(
+          new[] { osintExec, userHistoryExec, transactionExec },
+          aggregatorExec);
+    cs_warning: CS0618
+    guide_section: "21"
+    dotnet_inspect_detectable: false
+    notes: >
+      dotnet-inspect 'member WorkflowBuilder' lists both overloads but does NOT flag either as
+      [Obsolete]. Detection requires compiler: dotnet build 2>&1 | Select-String "warning CS0618".
+      Filed as dotnet-inspect issue #316 (https://github.com/richlander/dotnet-inspect/issues/316).
+      This argument order change also has a runtime consequence: using the wrong overload compiles
+      and runs, but the argument binding is reversed — sources become the target and vice versa,
+      leading to incorrect workflow topology.
+
+  - id: MAF130-SESSION-001
+    package: Microsoft.Agents.AI
+    version_introduced: "1.3.0"
+    type: Microsoft.Agents.AI.ChatClientAgent
+    method: SerializeSession
+    obsolete_signature: "SerializeSession(AgentSession session)"
+    replacement_signature: "SerializeSessionAsync(AgentSession session)"
+    argument_order_change: false
+    fix_description: "Replace synchronous SerializeSession with async SerializeSessionAsync. Add await."
+    example_before: |
+      var serialized = agent.SerializeSession(session);
+    example_after: |
+      var serialized = await agent.SerializeSessionAsync(session);
+    cs_warning: CS0618
+    guide_section: "6"
+    dotnet_inspect_detectable: false
+    notes: >
+      Official MAF 1.3.0 docs show 'agent.SerializeSession(session)' (synchronous). This is WRONG.
+      The synchronous overload is [Obsolete] in 1.3.0. Use 'await agent.SerializeSessionAsync(session)'.
+      This is a known misalignment between official docs and the assembly.
+      Only the compiler (dotnet build CS0618) or runtime exception reveals this.
+
+  - id: MAF130-THREAD-001
+    package: Microsoft.Agents.AI
+    version_introduced: "1.3.0"
+    type: Microsoft.Agents.AI.ChatClientAgent
+    method: GetNewThread
+    obsolete_signature: "GetNewThread()"
+    replacement_signature: "await agent.CreateSessionAsync(cancellationToken)"
+    argument_order_change: false
+    fix_description: "Replace GetNewThread() with await agent.CreateSessionAsync(ct). Return type changes from AgentThread to AgentSession."
+    example_before: |
+      var thread = agent.GetNewThread();
+    example_after: |
+      var session = await agent.CreateSessionAsync(cancellationToken);
+    cs_warning: CS0246
+    guide_section: "6"
+    dotnet_inspect_detectable: true
+    notes: >
+      AgentThread type is fully removed (CS0246, not CS0618). GetNewThread() is gone.
+      Variable type must also change from AgentThread to AgentSession throughout.
+
+  - id: MAF130-EXEC-001
+    package: Microsoft.Agents.AI.Workflows
+    version_introduced: "1.3.0"
+    type: Microsoft.Agents.AI.Workflows.WorkflowBuilder
+    method: AddFanOutEdge (void handler pattern)
+    obsolete_signature: "Fan-out executor handler returning void or non-generic ValueTask"
+    replacement_signature: "Fan-out executor handler returning ValueTask<T>"
+    argument_order_change: false
+    fix_description: >
+      Fan-out executor handlers MUST return ValueTask<T> where T is the output message type.
+      A void or non-generic ValueTask return silently produces no output — the fan-in barrier
+      never receives its messages and the workflow exits cleanly but incompletely.
+      This is NOT a build error. It is a silent runtime failure.
+    example_before: |
+      [MessageHandler]
+      public async ValueTask HandleAsync(InputMessage input, ExecutorContext context)
+      {
+          var result = await ProcessAsync(input);
+          await context.SendMessageAsync(result);  // old pattern — produces nothing in 1.3.0
+      }
+    example_after: |
+      [MessageHandler]
+      public async ValueTask<OutputMessage> HandleAsync(InputMessage input, ExecutorContext context)
+      {
+          return await ProcessAsync(input);  // return value IS the output message
+      }
+    cs_warning: RUNTIME_SILENT
+    guide_section: "9"
+    dotnet_inspect_detectable: false
+    notes: >
+      This is not a CS0618 warning — it is a design contract enforced at runtime, not compile time.
+      The only detection method is static analysis (fan-out-validator skill) or runtime testing.
+      This entry is included in the registry because it follows the same detection/fix pattern
+      and was discovered during the maf-claims-fraud-guardian migration.
+
+  - id: MAF130-A2A-001
+    package: Microsoft.Agents.AI
+    version_introduced: "1.3.0"
+    type: Microsoft.Agents.AI.A2A.AIAgentExtensions
+    method: RegisterA2AAgent / AddA2AAgent
+    obsolete_signature: "AIAgentExtensions.RegisterA2AAgent(services, agent)"
+    replacement_signature: "services.AddA2AServer(agent, new A2AServerRegistrationOptions { AgentCard = ... })"
+    argument_order_change: false
+    fix_description: "Replace AIAgentExtensions DI registration with services.AddA2AServer() with AgentCard options."
+    example_before: |
+      services.AddA2AAgent(agent);
+    example_after: |
+      services.AddA2AServer(agent, new A2AServerRegistrationOptions
+      {
+          AgentCard = new AgentCard
+          {
+              Name = "MyAgent",
+              Description = "Agent description",
+              Version = "1.0"
+          }
+      });
+    cs_warning: CS0246
+    guide_section: "5"
+    dotnet_inspect_detectable: true
+    notes: >
+      AIAgentExtensions is removed (CS0246, not just obsolete). The entire A2A DI registration
+      pattern changed. MapA2A endpoint registration also changed — see MAF130-A2A-002.
+
+  - id: MAF130-A2A-002
+    package: Microsoft.Agents.AI
+    version_introduced: "1.3.0"
+    type: Microsoft.AspNetCore.Builder.A2AEndpointRouteBuilderExtensions
+    method: MapA2A
+    obsolete_signature: "app.MapA2A(path)"
+    replacement_signature: "app.MapA2AHttpJson(path) or app.MapA2AJsonRpc(path)"
+    argument_order_change: false
+    fix_description: "Replace app.MapA2A() with app.MapA2AHttpJson() or app.MapA2AJsonRpc() depending on transport protocol needed."
+    example_before: |
+      app.MapA2A("/agent");
+    example_after: |
+      app.MapA2AHttpJson("/agent");
+      // OR for JSON-RPC transport:
+      app.MapA2AJsonRpc("/agent");
+    cs_warning: CS0246
+    guide_section: "5"
+    dotnet_inspect_detectable: true
+    notes: >
+      MapA2A is removed entirely. Choose MapA2AHttpJson for HTTP+JSON transport or
+      MapA2AJsonRpc for JSON-RPC. Most migrations use MapA2AHttpJson.
+
+  - id: MAF130-STREAM-001
+    package: Microsoft.Agents.AI
+    version_introduced: "1.3.0"
+    type: Microsoft.Agents.AI.InProcessExecution
+    method: StreamAsync
+    obsolete_signature: "InProcessExecution.StreamAsync(message)"
+    replacement_signature: "agent.RunStreamingAsync(session, message, cancellationToken)"
+    argument_order_change: false
+    fix_description: "Replace InProcessExecution.StreamAsync() with agent.RunStreamingAsync(). The session is now passed directly to the agent, not held by a thread/execution object."
+    example_before: |
+      var execution = agent.GetNewThread();
+      await foreach (var update in execution.StreamAsync(userMessage))
+      {
+          Console.Write(update.Text);
+      }
+    example_after: |
+      var session = await agent.CreateSessionAsync(cancellationToken);
+      await foreach (var update in agent.RunStreamingAsync(session, userMessage, cancellationToken))
+      {
+          Console.Write(update.Text);
+      }
+    cs_warning: CS0246
+    guide_section: "17"
+    dotnet_inspect_detectable: true
+    notes: >
+      InProcessExecution type is removed. StreamAsync is gone. The streaming API moved to
+      agent.RunStreamingAsync(). This also requires migrating the session from AgentThread
+      to AgentSession (see MAF130-THREAD-001).
+
+  - id: MAF130-EVENT-001
+    package: Microsoft.Agents.AI
+    version_introduced: "1.3.0"
+    type: Microsoft.Agents.AI.AgentRunUpdateEvent
+    method: "(type rename)"
+    obsolete_signature: "AgentRunUpdateEvent"
+    replacement_signature: "AgentResponseUpdateEvent"
+    argument_order_change: false
+    fix_description: "Rename AgentRunUpdateEvent to AgentResponseUpdateEvent everywhere."
+    example_before: |
+      void OnUpdate(AgentRunUpdateEvent e) { ... }
+    example_after: |
+      void OnUpdate(AgentResponseUpdateEvent e) { ... }
+    cs_warning: CS0246
+    guide_section: "18"
+    dotnet_inspect_detectable: true
+    notes: >
+      Pure rename. Find-and-replace: AgentRunUpdateEvent -> AgentResponseUpdateEvent.
+      No behavioral change.
+
+  - id: MAF130-ATTR-001
+    package: Microsoft.Agents.AI.Workflows
+    version_introduced: "1.3.0"
+    type: Microsoft.Agents.AI.Workflows.StreamsMessageAttribute
+    method: "(attribute removed)"
+    obsolete_signature: "[StreamsMessage]"
+    replacement_signature: "(delete the attribute)"
+    argument_order_change: false
+    fix_description: "Delete [StreamsMessage] attributes. The attribute is removed. The return type of [MessageHandler] methods defines message type — no attribute needed."
+    example_before: |
+      [StreamsMessage]
+      public sealed partial class MyExecutor : Executor { ... }
+    example_after: |
+      public sealed partial class MyExecutor : Executor { ... }
+    cs_warning: CS0246
+    guide_section: "16"
+    dotnet_inspect_detectable: true
+    notes: >
+      StreamsMessageAttribute is completely removed (CS0246). Simply delete the attribute.
+      Same applies to [YieldsMessage] — see MAF130-ATTR-002.
+
+  - id: MAF130-ATTR-002
+    package: Microsoft.Agents.AI.Workflows
+    version_introduced: "1.3.0"
+    type: Microsoft.Agents.AI.Workflows.YieldsMessageAttribute
+    method: "(attribute removed)"
+    obsolete_signature: "[YieldsMessage(typeof(T))]"
+    replacement_signature: "(delete the attribute)"
+    argument_order_change: false
+    fix_description: "Delete [YieldsMessage] attributes. The attribute is removed. The return type of [MessageHandler] defines output message type."
+    example_before: |
+      [YieldsMessage(typeof(ValidationResult))]
+      public sealed partial class MyExecutor : Executor { ... }
+    example_after: |
+      public sealed partial class MyExecutor : Executor { ... }
+    cs_warning: CS0246
+    guide_section: "16"
+    dotnet_inspect_detectable: true
+    notes: >
+      YieldsMessageAttribute is completely removed (CS0246). Simply delete the attribute.
+      Same applies to [StreamsMessage] — see MAF130-ATTR-001.
