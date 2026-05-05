@@ -4,18 +4,45 @@
 
 **maf-autopilot** gives GitHub Copilot everything it needs to migrate .NET codebases to MAF 1.3.0 — and stay current as new versions ship — reliably, build-verified, and with zero silent failures.
 
-## Quick Start
+## How It Works
+
+`maf-autopilot` is a **[Model Context Protocol (MCP)](https://modelcontextprotocol.io) server** packaged as a .NET global tool. When running, it exposes:
+
+- **Tools** — `maf_api_safety`, `maf_registry_lookup`, `maf_registry_list` — callable by Copilot during migration
+- **Resources** — `maf://guide`, `maf://constraints`, `maf://registry`, `maf://skills?name=...` — the full migration knowledge base, readable on demand
+- **Prompts** — `maf-audit`, `maf-migrate`, `maf-cs0618-hunt` — structured conversation starters
+
+GitHub Copilot Chat connects to the MCP server and gains agentic access to all of this during migration work.
+
+## Quick Start — Two Integration Modes
+
+### ⭐ Mode 1: MCP Server (recommended — full agentic power)
+
+Install the NuGet global tool, then run `init` in your target project:
 
 ```powershell
-# Install as a .NET global tool
+# 1. Install the MCP server as a .NET global tool
 dotnet tool install --global maf-autopilot
 
-# Configure a target repo (writes .vscode/mcp.json + .github/copilot-instructions.md)
+# 2. In your MAF project — writes .vscode/mcp.json + .github/copilot-instructions.md
 cd your-maf-project
 maf-autopilot init
 ```
 
-Or use directly from source via the `.vscode/mcp.json` in this repo — the MCP server starts automatically when you open the workspace in VS Code.
+VS Code picks up `.vscode/mcp.json` automatically and starts the MCP server. Copilot Chat gains live tool calls, resource reads, and structured prompts.
+
+### Mode 2: Skills + Agents only (no MCP server required)
+
+Copy `.github/` from this repo into your .NET repository root. You get the agents and skills via VS Code's instruction/agent system — no MCP server needed, but no live tool calls either.
+
+```powershell
+# In your MAF project root
+git clone https://github.com/joslat/maf-autopilot tmp-maf
+Copy-Item tmp-maf/.github -Destination .github -Recurse
+Remove-Item tmp-maf -Recurse
+```
+
+Then open Copilot Chat and use `@maf-migration` or `@maf-auditor`.
 
 ## Why This Exists
 
@@ -86,22 +113,13 @@ maf-autopilot/
 
 ---
 
-## How to Use
+## Typical Migration Workflow
 
-### Option A — Migrate an existing codebase
+1. **Audit** — open Copilot Chat → use the `maf-audit` prompt (or `@maf-auditor` agent) to scan your codebase and generate `src/docs/migration-plan.md`
+2. **Migrate** — use the `maf-migrate` prompt (or `@maf-migration` agent) to execute the plan task-by-task with `dotnet build` verification after each step
+3. **Hunt stragglers** — use the `maf-cs0618-hunt` prompt to catch any remaining CS0618 obsolete API warnings the build surfaces
 
-1. Copy `.github/` into your .NET repository root
-2. Add a `migration-plan.md` (use `@maf-auditor` to generate one, or copy from `skills/migration-plan-creator/template.md`)
-3. Open Copilot Chat in VS Code
-4. `@workspace /maf-migration` — the agent reads both reference documents, audits your code, and migrates task-by-task with build verification after every step
-
-### Option B — Audit first, plan, then migrate
-
-Use `@maf-auditor` on any MAF codebase:
-1. It scans your `.csproj` files and `.cs` source for current API patterns
-2. Runs `dotnet-inspect diff` for the version delta
-3. Cross-references the Obsolete API Registry
-4. Produces a complete `src/docs/migration-plan.md` ready for `@maf-migration` to execute
+The MCP server tools are called automatically by Copilot during steps 1–3 — you don't invoke them directly.
 
 ---
 
@@ -129,6 +147,14 @@ Use `@maf-auditor` on any MAF codebase:
 - [ ] Roslyn analyzer companion — flags fan-out void handlers at write-time
 - [ ] Version-keyed guide sections — load only sections relevant to specific migration path
 - [ ] Multi-version migration paths (e.g., 1.1.0 → 1.3.0 in one pass)
+
+---
+
+## Acknowledgements
+
+This toolkit relies heavily on **[dotnet-inspect](https://github.com/filipw/dotnet-inspect)** by [Filip W](https://github.com/filipw) — a powerful CLI for querying .NET API surfaces across NuGet packages, platform libraries, and local assemblies. The `nuget-diff-analyzer` skill and the `maf-release-watcher` workflow both use `dotnet-inspect` (via [dnx](https://github.com/filipw/dnx)) to diff MAF package versions and surface breaking API changes.
+
+> ⚠️ One important caveat: `dotnet-inspect` does **not** surface `[Obsolete]` attributes at the individual overload level. The `cs0618-hunter` skill works around this by using the compiler directly (`dotnet build | grep CS0618`). Never rely on `dotnet-inspect` alone for obsolete API detection.
 
 ---
 
