@@ -1,0 +1,19 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build maf-autopilot",
+      "type": "shell",
+      "command": "dotnet build mcp/maf-autopilot/maf-autopilot.csproj",
+      "group": "build",
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      },
+      "problemMatcher": "$msCompile",
+      "runOptions": {
+        "runOn": "folderOpen"
+      }
+    }
+  ]
+}
