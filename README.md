@@ -1,16 +1,18 @@
 # maf-autopilot
 
-> Your AI co-pilot for MAF 1.3.0 migrations — plug it into GitHub Copilot and let it audit, plan, migrate, and verify your .NET codebase while you watch.
+> Not just a migration tool — your permanent AI co-pilot for MAF. Migrate to 1.3.0, verify your code follows best practices, catch obsolete APIs before they bite you, and stay current automatically as MAF evolves.
 
-**maf-autopilot** is an MCP server that turns GitHub Copilot into a MAF migration expert. One install, one `init`, and Copilot gains live access to the full migration knowledge base — API signatures, breaking change rules, a machine-readable fix registry, and 11 specialized skills — all wired up as agentic tool calls it can invoke automatically while working through your code.
+**maf-autopilot** is an MCP server that turns GitHub Copilot into a MAF expert for the lifetime of your project. One install, one `init`, and Copilot gains live access to the full knowledge base — API signatures, breaking change rules, a machine-readable fix registry, and 11 specialized skills — wired up as agentic tool calls it invokes automatically while auditing, migrating, reviewing, and maintaining your agents and workflows.
 
 ### What makes it worth trying
 
-- 🔍 **Catches the bugs that compile clean** — detects fan-out/fan-in silent failures where a workflow exits successfully but produces no output. This is a runtime-only failure class with no build error.
+- 🔍 **Catches the bugs that compile clean** — detects fan-out/fan-in silent failures where a workflow exits successfully but produces no output. Runtime-only, zero build signal, invisible without this tool.
 - 🩺 **CS0618 detection that `dotnet-inspect` misses** — the overload-level `[Obsolete]` gap is a known blind spot. `maf-autopilot` routes around it using the compiler directly.
+- ✅ **Best-practice auditing, not just migration** — reviews your MAF agents and workflows against current patterns after migration too. Catches drift, anti-patterns, and deprecated usage before they become production bugs.
 - 🤖 **Fully agentic loop** — Copilot audits your codebase, generates a tracked migration plan, executes it task-by-task with `dotnet build` verification after every step, and updates the plan as it goes.
 - 📖 **Self-updating knowledge** — a GitHub Actions workflow watches NuGet weekly, diffs the MAF API surface, and opens a PR updating the migration guide and compatibility matrix automatically when a new version ships.
 - 🧰 **Deterministic fixes, not guesses** — a machine-readable Obsolete API Registry maps every known CS0618 warning to its exact replacement pattern. No hallucinated fix patterns.
+- 🔄 **Keeps your code current** — as MAF evolves, re-run the auditor on your codebase. It cross-references the latest guide, flags anything that's now obsolete or has a better pattern, and tells you exactly what to change.
 
 ## How It Works
 
