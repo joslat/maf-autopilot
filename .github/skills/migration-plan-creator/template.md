@@ -135,7 +135,7 @@ public sealed partial class <ExecutorClassName> : Executor
 }
 ```
 
-**Guide section:** 9.1
+**Guide section:** 13
 
 > ⚠️ If this executor is a **fan-out** executor, the return type MUST be `ValueTask<T>` where `T` is the message type broadcast to targets. A `void`/`ValueTask` return silently starves the fan-in barrier.
 
@@ -157,7 +157,7 @@ var session = await agent.CreateSessionAsync(cancellationToken);
 var response = await agent.RunAsync(input, session);
 ```
 
-**Guide section:** 6
+**Guide section:** 7
 
 ---
 
@@ -177,7 +177,7 @@ var response = await ((ChatClientAgent)agent).RunAsync<MyType>(input, session);
 var result = response.Result;
 ```
 
-**Guide section:** 11
+**Guide section:** 17.6
 
 ---
 
@@ -214,7 +214,7 @@ case AgentRunUpdateEvent updateEvent:
 case AgentResponseUpdateEvent updateEvent:
 ```
 
-**Guide section:** 18
+**Guide section:** 15
 
 ---
 
@@ -236,7 +236,7 @@ using Microsoft.Agents.AI.DevUI;
 #endif
 ```
 
-**Guide section:** 14
+**Guide section:** *n/a — DevUI removal is in `maf-constraints.instructions.md` only (no guide section)*
 
 ---
 

@@ -15,7 +15,9 @@ description: "Runs dotnet-inspect diff between two MAF package versions and post
 
 ## ⚠️ Critical Limitation
 
-`dotnet-inspect diff` shares the same `[Obsolete]` detection gap as `member`. **Newly obsolete overloads will NOT appear in the diff output.** Always run `cs0618-hunter` skill after any package update, regardless of what this skill reports.
+`dotnet-inspect diff` compares API *surface* — types added, removed, or signature-changed. It does **not** track attribute-only changes. A method that gains `[Obsolete]` between versions keeps the same signature, so **the diff will not report it**. This is fundamentally different from (and unrelated to) issue #316, which resolved `member --index` failing to show `[Obsolete]` on overloads.
+
+Always run `cs0618-hunter` skill after any package update, regardless of what this skill reports.
 
 ---
 
@@ -25,19 +27,19 @@ description: "Runs dotnet-inspect diff between two MAF package versions and post
 
 ```bash
 # Core framework diff
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- diff \
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff \
   --package Microsoft.Agents.AI@<old_version>..<new_version> \
   --source https://api.nuget.org/v3/index.json
 
 # Workflows package diff (if applicable)
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- diff \
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff \
   --package Microsoft.Agents.AI.Workflows@<old_version>..<new_version> \
   --source https://api.nuget.org/v3/index.json
 ```
 
 Example (1.2.0 → 1.3.0):
 ```bash
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- diff \
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff \
   --package Microsoft.Agents.AI@1.2.0..1.3.0 \
   --source https://api.nuget.org/v3/index.json
 ```

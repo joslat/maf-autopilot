@@ -129,6 +129,42 @@ maf-autopilot/
 
 ---
 
+## MCP Tool & Prompt Reference
+
+### Tools (16)
+
+| Tool | Category | What it does |
+|------|----------|--------------|
+| `maf_health_check` | Analysis | Comprehensive static pattern scan across a project — checks all known pre-1.3.0 patterns. Returns 🚨/⚠️/ℹ️ severity. No LLM required. |
+| `maf_detect_cs0618` | Analysis | Runs `dotnet build` and parses CS0618/CS0246 warnings. Cross-references each against the registry for the exact fix pattern with `file:line` output. |
+| `maf_api_diff` | Analysis | Invokes `dotnet-inspect diff` via `dnx` to compare a MAF package API surface between two versions. Surfaces removed types, renamed members, and signature changes. |
+| `maf_fan_out_validate` | Analysis | Searches executor files for `[MessageHandler]` handlers returning `void` or non-generic `ValueTask` — the silent fan-in starvation failure that builds clean. |
+| `maf_executor_pattern_check` | Analysis | Searches source files for pre-1.3.0 executor patterns: `ReflectingExecutor<T>`, `IMessageHandler<TIn,TOut>`. |
+| `maf_compatibility` | Analysis | Returns MAF version compatibility info — package matrix, known issues for a given version. |
+| `maf_migration_path` | Analysis | Returns the recommended step-by-step migration path between two MAF versions. |
+| `maf_api_safety` | Registry | Checks whether a MAF API (method name, type, or partial call) is safe in MAF 1.3.0. Returns SAFE or UNSAFE with the registry entry and fix. |
+| `maf_registry_lookup` | Registry | Retrieves full details for a specific registry entry by ID (e.g. `MAF130-FAN-IN-001`): signatures, before/after code, fix description. |
+| `maf_registry_list` | Registry | Lists all entry IDs in the obsolete-API registry. |
+| `maf_full_audit` | LLM (sampling) | Scans a repository for MAF patterns, then uses the host LLM to generate a complete `migration-plan.md` tracking table ready to execute. |
+| `maf_migration_suggest` | LLM (sampling) | Given a task description or code snippet, suggests the correct MAF 1.3.0 migration with before/after examples. |
+| `maf_review_code` | LLM (sampling) | LLM-powered best-practices code review for any file path or pasted snippet. |
+| `maf_explain_error` | LLM (sampling) | Paste any compiler error or runtime symptom → MAF 1.3.0 root cause + exact fix. |
+| `maf_scaffold` | Generation | Generates correct MAF 1.3.0 boilerplate: `executor`, `session-provider`, `workflow`, or `a2a-server`. Deterministic, no LLM. |
+| `maf_open_feedback_issue` | Feedback | Analyzes a completed migration via LLM and drafts a GitHub Issue capturing new patterns, doc errors, and silent failures for the registry and guide. |
+
+### Prompts (6)
+
+| Prompt | Invoke as | What it does |
+|--------|-----------|--------------|
+| `maf-audit` | `/maf-audit repoPath="..."` | Starts the MAF Auditor Agent — scans the codebase and generates `migration-plan.md` with a full tracking table. |
+| `maf-migrate` | `/maf-migrate taskIds="1,2,3"` | Starts the MAF Migration Agent — executes specific tasks from a migration plan with `dotnet build` verification after each step. |
+| `maf-cs0618-hunt` | `/maf-cs0618-hunt projectPath="..."` | Compiler scan for CS0618 obsolete API warnings — one pass, all files, every call site with `file:line` output. |
+| `maf-review` | `/maf-review [target="MyFile.cs"]` | Best-practices code review on any file or project — checks for anti-patterns, deprecated usage, and drift. |
+| `maf-debug` | `/maf-debug errorOrSymptom="..."` | Routes any compiler error or runtime symptom to the right diagnostic tool automatically. |
+| `maf-scaffold` | `/maf-scaffold template=executor ...` | Generates correct MAF 1.3.0 boilerplate code from a named template. |
+
+---
+
 ## Typical Migration Workflow
 
 **Migration:**
@@ -154,7 +190,7 @@ The `/maf-*` prompts are the entry points. MCP tools are called automatically by
 - [x] `fan-out-validator` — silent fan-in starvation detection
 - [x] `obsolete-api-registry` — machine-readable CS0618 registry (10 entries)
 - [x] `migration-plan-creator` — plan template + generation instructions
-- [x] `maf-migration-guide` — 21-section guide navigator
+- [x] `maf-migration-guide` — 29-section guide navigator
 - [x] `dotnet-inspect` skill — NuGet API surface inspection; `[Obsolete]` at overload level now surfaced (issue #316 resolved)
 - [x] `guides/maf-1.3.0-migration-guide.md` — full reference guide
 - [x] `docs/compatibility-matrix.md` — MAF version ↔ dependency versions
@@ -181,7 +217,7 @@ The `/maf-*` prompts are the entry points. MCP tools are called automatically by
 
 ## Acknowledgements
 
-This toolkit relies heavily on **[dotnet-inspect](https://github.com/filipw/dotnet-inspect)** by [Filip W](https://github.com/filipw) — a powerful CLI for querying .NET API surfaces across NuGet packages, platform libraries, and local assemblies. The `nuget-diff-analyzer` skill and the `maf-release-watcher` workflow both use `dotnet-inspect` (via [dnx](https://github.com/filipw/dnx)) to diff MAF package versions and surface breaking API changes.
+This toolkit relies heavily on **[dotnet-inspect](https://github.com/richlander/dotnet-inspect)** by [Rich Lander](https://github.com/richlander) — a powerful CLI for querying .NET API surfaces across NuGet packages, platform libraries, and local assemblies. The `nuget-diff-analyzer` skill and the `maf-release-watcher` workflow both use `dotnet-inspect` (via `dnx`) to diff MAF package versions and surface breaking API changes.
 
 > One important note: `dotnet-inspect` is best used for targeted per-member API lookups. For project-wide CS0618 detection across an entire solution, use `maf_detect_cs0618` or the `cs0618-hunter` skill — a single compiler pass covers all files at once.
 

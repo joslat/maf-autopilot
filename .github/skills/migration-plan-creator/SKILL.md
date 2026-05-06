@@ -90,7 +90,7 @@ The `Verified` column gets `✅` only after `dotnet build` passes with the chang
 | Before: `agent.GetNewThread()` / After: `await agent.CreateSessionAsync(ct)` | Before: "old session API" / After: "new session API" |
 | File: `src/ClaimsCore.Workflows/Workflows/ClaimsFraudDetectionWorkflow.cs` line ~42 | File: "the workflow file" |
 | Occurrence count: 3 (lines 42, 87, 134) | Occurrence count: "several" |
-| Guide section: 6 | Guide section: "sessions" |
+| Guide section: 7 | Guide section: "sessions" |
 | Risk: High — runtime silent failure if not done before fan-in migration | Risk: not assessed |
 
 Be specific. The migration agent will apply changes mechanically — it needs exact before/after text.

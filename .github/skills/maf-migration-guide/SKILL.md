@@ -15,27 +15,35 @@ This SKILL.md is the **index** — use it to find the right section for your que
 
 | Section | Title | Read when… |
 |---------|-------|-----------|
-| 1 | Introduction & scope | You need to understand what changed at a high level |
-| 2 | Package matrix | Looking up the correct version of any MAF/Extensions.AI package |
-| 3 | Agent creation — `.AsAIAgent()` | Migrating agent instantiation patterns |
-| 4 | `ChatClientAgentOptions` — Instructions placement | `Instructions` or `Tools` at wrong level |
-| 5 | A2A agent registration | Migrating `AIAgentExtensions` or `app.MapA2A` |
-| 6 | Sessions — `AgentSession` | Migrating `AgentThread`, `GetNewThread()`, session serialization |
-| 7 | Memory and context providers | `ChatHistoryProvider`, `AIContextProvider`, `ProviderSessionState<T>` |
-| 8 | Middleware | `.AsBuilder().Use().Build()` pattern |
-| 9 | Executors and workflows | `ReflectingExecutor` → `partial class : Executor` + `[MessageHandler]`, fan-out/fan-in |
-| 10 | Response processing | `AgentResponse.Text`, `.Messages`, streaming updates |
-| 11 | Structured output | `RunAsync<T>()` returning `AgentResponse<T>` |
-| 12 | Tool approval | `ApprovalRequiredAIFunction`, `FunctionApprovalRequestContent` |
-| 13 | Observability | `.UseOpenTelemetry(sourceName:)` |
-| 14 | DevUI and Hosting | `#if DEVUI_ENABLED` guard pattern |
-| 15 | Source generator setup | `Microsoft.Agents.AI.Workflows.Generators`, `EmitCompilerGeneratedFiles` |
-| 16 | `[StreamsMessage]` / `[YieldsMessage]` removal | These attributes are gone; what to do instead |
-| 17 | Streaming — `RunStreamingAsync()` | `InProcessExecution.StreamAsync()` → `RunStreamingAsync()` |
-| 18 | Event rename | `AgentRunUpdateEvent` → `AgentResponseUpdateEvent` |
-| 19 | Namespace changes | Old vs. new namespace mappings |
-| 20 | Migration checklist | End-to-end verification steps |
-| 21 | Obsolete API Registry (CS0618) | Known `[Obsolete]` APIs; dotnet-inspect issue #316 resolved — `member --index` now detects them |
+| 1 | Package References & Dependencies | Updating NuGet package names or versions |
+| 2 | Namespace Changes | Old vs. new namespace mappings |
+| 3 | Creating Agents — `.AsAIAgent()` | Migrating agent instantiation, `.AsAIAgent()` extensions |
+| 4 | Running Agents — `RunAsync` & `RunStreamingAsync` | `RunAsync`/`RunStreamingAsync` patterns, per-run `ChatClientAgentRunOptions` overrides |
+| 5 | Function Tools | `AIFunctionFactory.Create()`, tool registration |
+| 6 | Agent-as-a-Tool Composition | Using one agent as a tool for another agent |
+| 7 | Sessions & Multi-Turn Conversations | `AgentThread` → `AgentSession`, `GetNewThread()` → `CreateSessionAsync()` |
+| 8 | Context Providers & Agent Memory (`AIContextProvider`) | `AIContextProvider`, `ProviderSessionState<T>`, memory/RAG, state injection |
+| 9 | Chat History Management (`ChatHistoryProvider`) | `ChatHistoryProvider`, `InMemoryChatHistoryProvider`, history persistence |
+| 10 | The Agent Pipeline Architecture | Understanding the pipeline; `AsBuilder()` pattern overview |
+| 11 | Middleware | `.AsBuilder().Use(runFunc:, runStreamingFunc:).Build()` middleware chain |
+| 12 | Workflows — `WorkflowBuilder` & Executors | `WorkflowBuilder`, `AddFanOutEdge`, `AddFanInBarrierEdge` argument order |
+| 13 | Source-Generated Executors (`[MessageHandler]`) | `ReflectingExecutor<T>` → `sealed partial class : Executor` + `[MessageHandler]`; fan-out return type; `[StreamsMessage]`/`[YieldsMessage]` removal |
+| 14 | Agents in Workflows | `agent.BindAsExecutor(emitEvents: true)` |
+| 15 | Workflow Execution & Events | `InProcessExecution.RunStreamingAsync()`, event types, `StreamingRun` |
+| 16 | Response & Content Types | `AgentResponse.Text`, `.Messages`, `IAgentContent` types |
+| 17 | Streaming Patterns | `RunStreamingAsync()` patterns; `AgentResponseUpdate` streaming type; `.ToAgentResponse()` aggregation; `WatchStreamAsync()` workflow events |
+| 17.5 | Compaction Strategies (Experimental) | Long conversations, token limits, `CompactionProvider` |
+| 17.6 | Structured Output | `RunAsync<T>()` returning `AgentResponse<T>` |
+| 17.7 | Tool Approval — Human-in-the-Loop | `ApprovalRequiredAIFunction`, `FunctionApprovalRequestContent` |
+| 17.8 | Observability — OpenTelemetry | `.UseOpenTelemetry(sourceName:)`, activity tracing |
+| 17.9 | Multimodal — Images | Working with image inputs in agent requests |
+| 17.10 | A2A Agent — Remote Protocol Proxies | `AIAgentExtensions` → `AddA2AServer()`, `MapA2A` → `MapA2AHttpJson`/`MapA2AJsonRpc` |
+| 17.11 | Dynamic Tool Expansion (New in 1.3.0) | Registering tools at runtime after agent creation |
+| 17.12 | Server-Side Foundry Toolbox (New in 1.3.0) | Azure AI Foundry server-side tool execution |
+| 18 | Session Serialization & Replay | `agent.SerializeSession()` → `await agent.SerializeSessionAsync()`, session persistence and round-trip |
+| 19 | API Patterns Summary | Quick API reference table with section cross-links |
+| 20 | Migration Checklist | End-to-end migration verification, phase-by-phase checklist |
+| 21 | Obsolete API Registry (CS0618) | Known `[Obsolete]` APIs with exact fix patterns; dotnet-inspect issue #316 resolved — `member --index` now detects them |
 
 ---
 
@@ -43,20 +51,21 @@ This SKILL.md is the **index** — use it to find the right section for your que
 
 | Symptom / Error | Read sections |
 |-----------------|---------------|
-| `CS0246: Type 'ReflectingExecutor' not found` | 9 |
-| `CS0246: [StreamsMessage] not found` | 9, 16 |
-| `CS0618: AddFanInBarrierEdge is obsolete` | 9, 21 |
-| Fan-in never reached, workflow exits silently | 9 |
-| `AgentThread` not found | 6 |
-| `GetNewThread()` not found | 6 |
-| `Deserialize<T>()` not found on `AgentResponse` | 11 |
+| `CS0246: Type 'ReflectingExecutor' not found` | 12, 13 |
+| `CS0246: [StreamsMessage] not found` | 13 |
+| `CS0618: AddFanInBarrierEdge is obsolete` | 12, 21 |
+| Fan-in never reached, workflow exits silently | 12, 13 |
+| `AgentThread` not found | 7 |
+| `GetNewThread()` not found | 7 |
+| `SerializeSession` is obsolete | 18 |
+| `Deserialize<T>()` not found on `AgentResponse` | 17.6 |
 | `StreamAsync()` not found | 17 |
-| `AgentRunUpdateEvent` not found | 18 |
-| `AIAgentExtensions` not found | 5 |
-| `MapA2A` not found | 5 |
-| `Instructions =` compiles but has no effect | 4 |
-| Source generator not generating `ExecuteCoreAsync` | 15 |
-| IDE shows `CS0534` on executor class | 15 |
+| `AgentRunUpdateEvent` not found | 15, 17 |
+| `AIAgentExtensions` not found | 17.10 |
+| `MapA2A` not found | 17.10 |
+| `Instructions =` compiles but has no effect | 3 |
+| Source generator not generating `ExecuteCoreAsync` | 13 |
+| IDE shows `CS0534` on executor class | 13 |
 | `DefaultAzureCredential` in production | Any — constraint violation, use `ManagedIdentityCredential` |
 
 ---
@@ -75,20 +84,24 @@ If you don't know the line numbers, read the guide's table of contents first (ty
 
 ---
 
-## Section 9 Subsections (Executors — Most Complex)
+## Sections 12 & 13 — Executor Topology (Most Complex)
 
-Section 9 is the largest. Key subsections:
+Executor and workflow content spans two sections in the guide:
+- **§12** (line 1078): `WorkflowBuilder`, `AddFanOutEdge`, `AddFanInBarrierEdge` argument order
+- **§13** (line 1118): `sealed partial class : Executor` + `[MessageHandler]`, source generator setup, fan-out return types, `[StreamsMessage]`/`[YieldsMessage]` removal
 
-| Subsection | Topic |
-|------------|-------|
-| 9.1 | `partial class : Executor` + `[MessageHandler]` pattern |
-| 9.2 | Source generator setup and `sealed partial` requirement |
-| 9.3 | Agent `.BindAsExecutor(emitEvents: true)` |
-| 9.4 | Fan-out executor — **must return `ValueTask<T>`** |
-| 9.5 | Fan-in barrier — `AddFanInBarrierEdge(sources, target)` correct argument order |
-| 9.6 | Complete working example — full workflow with fan-out and fan-in |
+Key patterns in §12-§13:
 
-When diagnosing a fan-out/fan-in issue, read 9.4 and 9.5 first.
+| Topic | Section |
+|-------|---------|
+| `sealed partial class : Executor` + `[MessageHandler]` pattern | 13 |
+| Source generator setup (`Microsoft.Agents.AI.Workflows.Generators`, `EmitCompilerGeneratedFiles`) | 13 |
+| Agent `.BindAsExecutor(emitEvents: true)` | 14 |
+| Fan-out executor — **must return `ValueTask<T>`** | 13 |
+| Fan-in barrier — `AddFanInBarrierEdge(sources, target)` correct argument order | 12 |
+| Complete working example — full workflow with fan-out and fan-in | 12, 13 |
+
+When diagnosing a fan-out/fan-in issue, read §12 and §13 first.
 
 ---
 
@@ -147,7 +160,7 @@ Every section in `guides/maf-1.3.0-migration-guide.md` carries a machine-readabl
 
 ```html
 <!-- introduced: 1.3.0 | applies-to: 1.2.x → 1.3.x | deprecated-in: none -->
-## Section N — Title
+## N. Title
 ```
 
 **What the fields mean:**

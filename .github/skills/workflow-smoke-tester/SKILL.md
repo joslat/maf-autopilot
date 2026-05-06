@@ -67,7 +67,7 @@ public async Task FanOut_AllBranchesComplete_AggregatorReceivesAllMessages()
     var session = await agent.CreateSessionAsync(CancellationToken.None);
 
     // Act
-    var response = await agent.RunAsync(session, "trigger fan-out workflow");
+    var response = await agent.RunAsync("trigger fan-out workflow", session);
 
     // Assert — fan-in must have run (aggregated all branches)
     Assert.NotNull(response);
@@ -117,7 +117,7 @@ public async Task Session_SerializeDeserialize_MaintainsContinuity()
 
     // Act — first turn
     var session = await agent.CreateSessionAsync(CancellationToken.None);
-    var response1 = await agent.RunAsync(session, "Hello");
+    var response1 = await agent.RunAsync("Hello", session);
     Assert.NotNull(response1.Text);
 
     // Act — serialize and deserialize
@@ -128,14 +128,14 @@ public async Task Session_SerializeDeserialize_MaintainsContinuity()
     var restoredSession = await agent.DeserializeSessionAsync(serialized, CancellationToken.None);
 
     // Act — second turn on restored session
-    var response2 = await agent.RunAsync(restoredSession, "What did I say?");
+    var response2 = await agent.RunAsync("What did I say?", restoredSession);
     Assert.NotNull(response2.Text);
 }
 ```
 
 ### Template 3 — Streaming Output
 
-**Verifies:** `RunStreamingAsync()` produces at least one `AgentResponseUpdateEvent` with non-empty text.
+**Verifies:** `RunStreamingAsync()` produces at least one `AgentResponseUpdate` with non-empty text.
 
 ```csharp
 [Fact]
@@ -147,9 +147,9 @@ public async Task Streaming_ProducesAtLeastOneUpdate()
     });
 
     var session = await agent.CreateSessionAsync(CancellationToken.None);
-    var updates = new List<AgentResponseUpdateEvent>();
+    var updates = new List<AgentResponseUpdate>();
 
-    await foreach (var update in agent.RunStreamingAsync(session, "Hello", CancellationToken.None))
+    await foreach (var update in agent.RunStreamingAsync("Hello", session, CancellationToken.None))
     {
         updates.Add(update);
     }
@@ -173,7 +173,7 @@ public async Task StructuredOutput_ReturnsDeserializedResult()
     });
 
     var session = await agent.CreateSessionAsync(CancellationToken.None);
-    var response = await ((ChatClientAgent)agent).RunAsync<MyResult>(session, "Give me result");
+    var response = await ((ChatClientAgent)agent).RunAsync<MyResult>("Give me result", session);
 
     Assert.NotNull(response.Result);
     // Add type-specific assertions
@@ -190,7 +190,7 @@ Add a smoke test project if one doesn't exist:
 <!-- tests/<SolutionName>.SmokeTests/<SolutionName>.SmokeTests.csproj -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
   </PropertyGroup>

@@ -65,7 +65,7 @@ jobs:
 
       - name: Install dotnet tools
         run: |
-          # dnx is the launcher — it downloads dotnet-inspect@0.7.6 on first use (no separate install needed)
+          # dnx is the launcher — it downloads dotnet-inspect@0.7.8 on first use (no separate install needed)
           dotnet tool install --global dnx
 
       - name: Run diff — Microsoft.Agents.AI
@@ -74,7 +74,7 @@ jobs:
         run: |
           OLD="${{ needs.check-for-new-maf-release.outputs.old_version }}"
           NEW="${{ needs.check-for-new-maf-release.outputs.new_version }}"
-          dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- diff \
+          dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff \
             --package "Microsoft.Agents.AI@${OLD}..${NEW}" \
             --source https://api.nuget.org/v3/index.json \
             > diff-core.txt 2>&1 || true
@@ -87,7 +87,7 @@ jobs:
         run: |
           OLD="${{ needs.check-for-new-maf-release.outputs.old_version }}"
           NEW="${{ needs.check-for-new-maf-release.outputs.new_version }}"
-          dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- diff \
+          dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff \
             --package "Microsoft.Agents.AI.Workflows@${OLD}..${NEW}" \
             --source https://api.nuget.org/v3/index.json \
             > diff-workflows.txt 2>&1 || true

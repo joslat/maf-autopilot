@@ -54,6 +54,15 @@ This is how the registry grows over time — each migration run that finds a new
 
 See `registry.yaml` for the full machine-readable data. Current entries:
 
-| ID | Method | Obsolete signature | Replacement |
-|----|--------|--------------------|-------------|
-| `MAF130-FAN-IN-001` | `WorkflowBuilder.AddFanInBarrierEdge` | `(ExecutorBinding target, IEnumerable<ExecutorBinding> sources)` | `(IEnumerable<ExecutorBinding> sources, ExecutorBinding target)` |
+| ID | Method | Obsolete signature | Replacement | Warning |
+|----|--------|--------------------|-------------|---------|
+| `MAF130-FAN-IN-001` | `WorkflowBuilder.AddFanInBarrierEdge` | `(ExecutorBinding target, IEnumerable<ExecutorBinding> sources)` | `(IEnumerable<ExecutorBinding> sources, ExecutorBinding target)` | CS0618 |
+| `MAF130-SESSION-001` | `ChatClientAgent.SerializeSession` | `SerializeSession(AgentSession)` | `await SerializeSessionAsync(AgentSession)` | CS0618 |
+| `MAF130-THREAD-001` | `ChatClientAgent.GetNewThread` | `GetNewThread()` | `await agent.CreateSessionAsync(ct)` | CS0246 |
+| `MAF130-EXEC-001` | Fan-out handler return type | `async ValueTask HandleAsync(...)` (void) | `async ValueTask<T> HandleAsync(...)` | RUNTIME_SILENT |
+| `MAF130-A2A-001` | `AIAgentExtensions.RegisterA2AAgent` | `AIAgentExtensions.RegisterA2AAgent(services, agent)` | `services.AddA2AServer(agent, new A2AServerRegistrationOptions { AgentCard = ... })` | CS0246 |
+| `MAF130-A2A-002` | `MapA2A` | `app.MapA2A(path)` | `app.MapA2AHttpJson(path)` or `app.MapA2AJsonRpc(path)` | CS0246 |
+| `MAF130-STREAM-001` | `InProcessExecution.StreamAsync` | `InProcessExecution.StreamAsync(message)` | `agent.RunStreamingAsync(message, session, ct)` | CS0246 |
+| `MAF130-EVENT-001` | Type rename | `AgentRunUpdateEvent` | `AgentResponseUpdateEvent` | CS0246 |
+| `MAF130-ATTR-001` | `[StreamsMessage]` attribute | `[StreamsMessage]` | *(delete the attribute)* | CS0246 |
+| `MAF130-ATTR-002` | `[YieldsMessage]` attribute | `[YieldsMessage(typeof(T))]` | *(delete the attribute)* | CS0246 |

@@ -146,7 +146,7 @@ public sealed class AnalysisTools
         [Description("Package name. Defaults to 'Microsoft.Agents.AI'.")] string packageName = "Microsoft.Agents.AI")
     {
         const string source = "https://api.nuget.org/v3/index.json";
-        var args = $"dotnet-inspect@0.7.6 -y --source {source} -- diff " +
+        var args = $"dotnet-inspect@0.7.8 -y --source {source} -- diff " +
                    $"--package {packageName}@{fromVersion}..{toVersion} --source {source}";
 
         var (output, exitCode) = RunProcess("dnx", args, Directory.GetCurrentDirectory(), timeoutMs: 120_000);
@@ -161,7 +161,7 @@ public sealed class AnalysisTools
                     dotnet tool install -g dnx
 
                 Then retry:
-                    dnx dotnet-inspect@0.7.6 -y --source {source} -- diff \
+                    dnx dotnet-inspect@0.7.8 -y --source {source} -- diff \
                       --package {packageName}@{fromVersion}..{toVersion} --source {source}
                 """;
         }

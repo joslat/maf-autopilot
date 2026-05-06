@@ -25,7 +25,7 @@ entries:
           new[] { osintExec, userHistoryExec, transactionExec },
           aggregatorExec);
     cs_warning: CS0618
-    guide_section: "21"
+    guide_section: "12"
     dotnet_inspect_detectable: true
     notes: >
       dotnet-inspect issue #316 (overload-level [Obsolete] detection) has been RESOLVED.
@@ -49,7 +49,7 @@ entries:
     example_after: |
       var serialized = await agent.SerializeSessionAsync(session);
     cs_warning: CS0618
-    guide_section: "6"
+    guide_section: "18"
     dotnet_inspect_detectable: false
     notes: >
       Official MAF 1.3.0 docs show 'agent.SerializeSession(session)' (synchronous). This is WRONG.
@@ -71,7 +71,7 @@ entries:
     example_after: |
       var session = await agent.CreateSessionAsync(cancellationToken);
     cs_warning: CS0246
-    guide_section: "6"
+    guide_section: "7"
     dotnet_inspect_detectable: true
     notes: >
       AgentThread type is fully removed (CS0246, not CS0618). GetNewThread() is gone.
@@ -104,7 +104,7 @@ entries:
           return await ProcessAsync(input);  // return value IS the output message
       }
     cs_warning: RUNTIME_SILENT
-    guide_section: "9"
+    guide_section: "13"
     dotnet_inspect_detectable: false
     notes: >
       This is not a CS0618 warning — it is a design contract enforced at runtime, not compile time.
@@ -134,7 +134,7 @@ entries:
           }
       });
     cs_warning: CS0246
-    guide_section: "5"
+    guide_section: "17.10"
     dotnet_inspect_detectable: true
     notes: >
       AIAgentExtensions is removed (CS0246, not just obsolete). The entire A2A DI registration
@@ -156,7 +156,7 @@ entries:
       // OR for JSON-RPC transport:
       app.MapA2AJsonRpc("/agent");
     cs_warning: CS0246
-    guide_section: "5"
+    guide_section: "17.10"
     dotnet_inspect_detectable: true
     notes: >
       MapA2A is removed entirely. Choose MapA2AHttpJson for HTTP+JSON transport or
@@ -168,7 +168,7 @@ entries:
     type: Microsoft.Agents.AI.InProcessExecution
     method: StreamAsync
     obsolete_signature: "InProcessExecution.StreamAsync(message)"
-    replacement_signature: "agent.RunStreamingAsync(session, message, cancellationToken)"
+    replacement_signature: "agent.RunStreamingAsync(userMessage, session, cancellationToken)"
     argument_order_change: false
     fix_description: "Replace InProcessExecution.StreamAsync() with agent.RunStreamingAsync(). The session is now passed directly to the agent, not held by a thread/execution object."
     example_before: |
@@ -179,7 +179,7 @@ entries:
       }
     example_after: |
       var session = await agent.CreateSessionAsync(cancellationToken);
-      await foreach (var update in agent.RunStreamingAsync(session, userMessage, cancellationToken))
+      await foreach (var update in agent.RunStreamingAsync(userMessage, session, cancellationToken))
       {
           Console.Write(update.Text);
       }
@@ -205,7 +205,7 @@ entries:
     example_after: |
       void OnUpdate(AgentResponseUpdateEvent e) { ... }
     cs_warning: CS0246
-    guide_section: "18"
+    guide_section: "17"
     dotnet_inspect_detectable: true
     notes: >
       Pure rename. Find-and-replace: AgentRunUpdateEvent -> AgentResponseUpdateEvent.
@@ -226,7 +226,7 @@ entries:
     example_after: |
       public sealed partial class MyExecutor : Executor { ... }
     cs_warning: CS0246
-    guide_section: "16"
+    guide_section: "13"
     dotnet_inspect_detectable: true
     notes: >
       StreamsMessageAttribute is completely removed (CS0246). Simply delete the attribute.
@@ -247,7 +247,7 @@ entries:
     example_after: |
       public sealed partial class MyExecutor : Executor { ... }
     cs_warning: CS0246
-    guide_section: "16"
+    guide_section: "13"
     dotnet_inspect_detectable: true
     notes: >
       YieldsMessageAttribute is completely removed (CS0246). Simply delete the attribute.

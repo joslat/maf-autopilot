@@ -18,7 +18,7 @@
 | 4 | `cs0618-hunter` skill | Compiler-based CS0618 detection and fix workflow | P1 | ✅ DONE | 100% | 90% | Complete 5-step workflow. **Missing:** direct link to [dotnet-inspect #316](https://github.com/richlander/dotnet-inspect/issues/316) in SKILL.md — fix applied in this session. |
 | 5 | `dotnet-inspect` skill | NuGet API surface inspection — `[Obsolete]` now properly surfaced (issue #316 resolved) | P1 | ✅ DONE | 100% | 95% | Has issue #316 link. Decision tree updated: issue resolved, per-member [Obsolete] lookup now works. `cs0618-hunter` still preferred for project-wide scan (faster). |
 | 6 | `obsolete-api-registry` skill + `registry.yaml` | Machine-readable CS0618 registry — 10 entries covering all known 1.3.0 obsolete patterns | P1 | ✅ DONE | 100% | 90% | 10 entries: FAN-IN-001, SESSION-001, THREAD-001, EXEC-001, A2A-001, A2A-002, STREAM-001, EVENT-001, ATTR-001, ATTR-002. Plan was out of date claiming only 1 entry. |
-| 7 | `maf-migration-guide` skill | Smart section navigator for the 21-section guide | P1 | ✅ DONE | 100% | 90% | Full section index, quick lookup by symptom, line range guidance. |
+| 7 | `maf-migration-guide` skill | Smart section navigator for the 29-section guide | P1 | ✅ DONE | 100% | 90% | Full section index, quick lookup by symptom, line range guidance. |
 | 8 | `migration-plan-creator` skill + `template.md` | Generates complete, ready-to-execute migration plans | P1 | ✅ DONE | 100% | 90% | Skill + template both present. Phase/task ID conventions documented. |
 | 9 | `fan-out-validator` skill | Validates fan-out/fan-in executor topology — detects silent starvation | P1 | ✅ DONE | 100% | 85% | Full 5-step workflow, fix patterns, both overload forms covered. |
 | 10 | `fan-in-static-analyzer` skill | Static code analysis — finds broken fan-out handlers without running code | P2 | ✅ DONE | 100% | 85% | Detailed step-by-step procedure, all 6 analysis steps. |
@@ -27,11 +27,11 @@
 | 13 | `workflow-smoke-tester` skill | Generates post-migration structural smoke test stubs | P2 | ✅ DONE | 100% | 80% | 5 patterns covered: fan-out/in, session round-trip, streaming, structured output, tool invocation. |
 | 14 | `migration-retrospective` skill | Post-migration learning loop — improves registry, guide, constraints | P2 | ✅ DONE | 100% | 80% | Full workflow Steps 1-7. Surprise categorization table. |
 | 15 | `maf-release-watcher.yml` GitHub Actions | Weekly NuGet check → auto-diff → PR creation | P1 | ✅ DONE | 95% | 85% | Real YAML workflow with 3 jobs. Inline Python scripts (plan mentioned separate script files — inline is better). PR checklist is thorough. Missing: `registry.yaml` auto-update step still manual. |
-| 16 | `guides/maf-1.3.0-migration-guide.md` | Full 21-section reference guide (2000+ lines) | P1 | ✅ DONE | 100% | 90% | Present and comprehensive. **Updated this session:** version-keyed metadata comments applied to all 25 sections. Section numbering slightly inconsistent (17.5, 17.6, etc.) — acceptable, documented in ToC. |
+| 16 | `guides/maf-1.3.0-migration-guide.md` | Full 29-section reference guide (2000+ lines) | P1 | ✅ DONE | 100% | 90% | Present and comprehensive. **Updated this session:** version-keyed metadata comments applied to all 29 sections. Sections 17.5–17.12 are subsections of section 17 — documented in ToC. |
 | 17 | `docs/compatibility-matrix.md` | MAF version ↔ dependency version table, auto-updated | P1 | ✅ DONE | 100% | 85% | Present. 4 MAF versions documented (1.0.0–1.3.0). Includes removed packages table, NuGet IDs. |
 | 18 | `.maf-version` | Tracked version file for release watcher | P1 | ✅ DONE | 100% | 100% | Contains `1.3.0`. Simple, correct. |
 | 19 | `README.md` | Project overview, structure, skill routing table, usage instructions | P1 | ✅ DONE | 100% | 85% | **Fixed this session:** Removed duplicate skill routing table rows + duplicate `> Never use...` callout. Clean now. |
-| 20 | Version-keyed guide sections | `<!-- introduced: 1.3.0 \| applies-to: ... -->` metadata in guide headings | P2 | ✅ DONE | 100% | 85% | **Implemented in this session.** All 25 sections (1–21 + 17.5–17.8) tagged. `maf-migration-guide` SKILL.md updated with usage docs. Guide header updated. |
+| 20 | Version-keyed guide sections | `<!-- introduced: 1.3.0 \| applies-to: ... -->` metadata in guide headings | P2 | ✅ DONE | 100% | 85% | **Implemented in this session.** All 29 sections (1–21 + 17.5–17.12) tagged. `maf-migration-guide` SKILL.md updated with usage docs. Guide header updated. |
 | 21 | `maf-autopilot` MCP server (MVP) | C# MCP server with `maf_api_safety` + `maf_registry_lookup` + `maf_registry_list` tools | P2 | ✅ DONE | 100% | 85% | **Done — May 2026.** Renamed from `maf-inspect` → `maf-autopilot` (matches repo, signals full scope). SDK upgraded `0.6.*` → `1.2.0` (stable). `dotnet build` passes clean. Sampling confirmed: `server.SampleAsync()` available in 1.2.0. `.vscode/mcp.json` updated. |
 | 22 | `maf-autopilot` MCP Resources | All 11 skill docs + guide sections + registry exposed as `maf://skills/*`, `maf://guide/section/*`, `maf://registry` | P2 | ✅ DONE | 100% | 90% | **Done — May 5, 2026.** `Resources/MafResources.cs` (`[McpServerResourceType]`). Static: `maf://constraints`, `maf://registry`, `maf://guide`. Template: `maf://skills{?name}` (11 skills). All files embedded via `LogicalName` in csproj. `WithResourcesFromAssembly()` in `Program.cs`. Build clean. |
 | 23 | `maf-autopilot` MCP Prompts | `/maf-audit`, `/maf-migrate`, `/maf-cs0618-hunt` — slash-command workflows with embedded skill context | P2 | ✅ DONE | 100% | 90% | **Done — May 5, 2026.** `Prompts/MafPrompts.cs` (`[McpServerPromptType]`). Three prompts: `maf-audit` (repoPath, fromVersion), `maf-migrate` (taskIds, planPath), `maf-cs0618-hunt` (projectPath). All reference `maf://` resource URIs inline. `WithPromptsFromAssembly()` in `Program.cs`. Build clean. |
@@ -256,7 +256,7 @@ maf-autopilot/
 
 **What it does:**
 
-1. Runs `dnx dotnet-inspect@0.7.6 -- diff --package Microsoft.Agents.AI@<old>..<new>`
+1. Runs `dnx dotnet-inspect@0.7.8 -- diff --package Microsoft.Agents.AI@<old>..<new>`
 2. Categorizes the raw output into:
    - **Removed types** (CS0246 risk)
    - **Removed members** (CS0246 risk)

@@ -65,7 +65,7 @@ curl -s "https://api.nuget.org/v3/registration5/microsoft.agents.ai/<new_version
 Load `.github/skills/nuget-diff-analyzer/SKILL.md` and run it for the version delta:
 
 ```bash
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- diff \
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff \
   --package Microsoft.Agents.AI@<old_version>..<new_version> \
   --source https://api.nuget.org/v3/index.json
 ```

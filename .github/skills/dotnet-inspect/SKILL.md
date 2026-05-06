@@ -1,6 +1,6 @@
 ---
 name: dotnet-inspect
-version: 0.7.6
+version: 0.7.8
 description: "Query .NET APIs across NuGet packages, platform libraries, and local files. Search for types, list API surfaces, compare and diff versions, find extension methods and implementors. [Obsolete] attributes are now surfaced at the overload level (issue #316 resolved). For project-wide CS0618 scanning, prefer cs0618-hunter (one compiler pass covers all files)."
 ---
 
@@ -52,7 +52,7 @@ The standard `member` listing marks obsolete members, and the `--index` detail v
 dotnet tool install -g dnx
 
 # Standard pattern — BOTH --source flags are required for NuGet packages
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- <command> \
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- <command> \
   --package <PackageName>@<version> --source https://api.nuget.org/v3/index.json
 ```
 
@@ -65,27 +65,27 @@ dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- <com
 ### Diff breaking changes between MAF versions
 
 ```bash
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- diff \
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff \
   --package Microsoft.Agents.AI@1.2.0..1.3.0 --source https://api.nuget.org/v3/index.json
 
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- diff \
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff \
   --package Microsoft.Agents.AI.Workflows@1.2.0..1.3.0 --source https://api.nuget.org/v3/index.json
 ```
 
 ### List types in a MAF package
 
 ```bash
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- type \
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- type \
   --package Microsoft.Agents.AI.Workflows@1.3.0 --source https://api.nuget.org/v3/index.json
 ```
 
 ### Inspect members of a specific type
 
 ```bash
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- member ChatClientAgent \
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- member ChatClientAgent \
   --package Microsoft.Agents.AI@1.3.0 --source https://api.nuget.org/v3/index.json
 
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- member WorkflowBuilder \
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- member WorkflowBuilder \
   --package Microsoft.Agents.AI.Workflows@1.3.0 --source https://api.nuget.org/v3/index.json
 ```
 
@@ -93,7 +93,7 @@ dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- memb
 
 ```bash
 # Use --params to select a specific overload, --index for full detail including custom attributes
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- member WorkflowBuilder \
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- member WorkflowBuilder \
   --package Microsoft.Agents.AI.Workflows@1.3.0 --source https://api.nuget.org/v3/index.json \
   -m AddFanInBarrierEdge --params "ExecutorBinding,IEnumerable<ExecutorBinding>" --index
 ```
@@ -106,15 +106,15 @@ dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- memb
 
 ```bash
 # List members of a type
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- member JsonSerializer \
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- member JsonSerializer \
   --package System.Text.Json --source https://api.nuget.org/v3/index.json
 
 # What changed between versions
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- diff \
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff \
   --package System.CommandLine@2.0.0-beta4.22272.1..2.0.3 --source https://api.nuget.org/v3/index.json
 
 # Check latest version
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- \
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- \
   Microsoft.Agents.AI --latest-version --source https://api.nuget.org/v3/index.json
 ```
 

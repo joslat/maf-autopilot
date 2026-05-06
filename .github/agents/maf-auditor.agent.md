@@ -39,10 +39,10 @@ Load `.github/skills/nuget-diff-analyzer/SKILL.md` and run it for each MAF packa
 Direct commands (for reference):
 
 ```bash
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- diff \
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff \
   --package Microsoft.Agents.AI@<current>..<1.3.0> --source https://api.nuget.org/v3/index.json
 
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- diff \
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff \
   --package Microsoft.Agents.AI.Workflows@<current>..<1.3.0> --source https://api.nuget.org/v3/index.json
 ```
 
