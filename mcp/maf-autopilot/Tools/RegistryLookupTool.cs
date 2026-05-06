@@ -21,7 +21,7 @@ public sealed class RegistryLookupTool
         _registry = registry;
     }
 
-    [McpServerTool]
+    [McpServerTool(Name = "maf_registry_lookup")]
     [Description("""
         Retrieve the full details for a specific MAF obsolete-API registry entry by its ID.
 
@@ -34,7 +34,7 @@ public sealed class RegistryLookupTool
           - Fix description
           - CS warning code (CS0618 / CS0246 / RUNTIME_SILENT)
           - Guide section reference
-          - Whether dotnet-inspect can detect it (usually: No)
+          - Whether dotnet-inspect can detect it via targeted member lookup (issue #316 resolved)
           - Notes from real migrations
         """)]
     public string MafRegistryLookup(
@@ -60,7 +60,7 @@ public sealed class RegistryLookupTool
         return RegistryService.FormatEntry(entry);
     }
 
-    [McpServerTool]
+    [McpServerTool(Name = "maf_registry_list")]
     [Description("""
         List all entry IDs in the MAF obsolete-API registry.
 
@@ -74,6 +74,8 @@ public sealed class RegistryLookupTool
         sb.AppendLine($"## MAF {_registry.TargetVersion} Obsolete-API Registry");
         sb.AppendLine($"*Last updated: {_registry.LastUpdated} — {ids.Count} entries*");
         sb.AppendLine();
+        sb.AppendLine($"| ID | Method | Warning | Detectable |");
+        sb.AppendLine($"|---|---|---|---|");
         foreach (var id in ids)
         {
             var entry = _registry.FindById(id)!;

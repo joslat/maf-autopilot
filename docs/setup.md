@@ -8,7 +8,7 @@ This guide explains what you need to do — as a human — to use and maintain `
 
 ## What's Already Done vs. What You Need to Do
 
-The toolkit code is fully implemented through step #24. Here is the current state:
+The toolkit code is fully implemented through step #27 plus #31. Here is the current state:
 
 | Step | What | Status | Who does it |
 |------|------|--------|-------------|
@@ -18,12 +18,15 @@ The toolkit code is fully implemented through step #24. Here is the current stat
 | #23 | MCP Prompts (`/maf-audit`, `/maf-migrate`, etc.) | ✅ Done | — |
 | #24 | `maf-autopilot init` CLI command | ✅ Done | — |
 | **#25** | **NuGet publish** | **❌ You must do this** | See [Section 3](#3-publishing-to-nugetorg-step-25) |
-| #26–#29 | Sampling tools, full analysis tools, Docker | ❌ Future work | — |
+| #26 | Sampling tools (`maf_full_audit`, `maf_migration_suggest`, etc.) | ✅ Done | — |
+| #27 | Full analysis tools (`maf_detect_cs0618`, `maf_api_diff`, etc.) | ✅ Done | — |
+| #28 | Docker distribution via GHCR | ❌ Future work | — |
+| #29 | Roslyn analyzer companion | ❌ Future work | — |
 | **#30** | **`registry.yaml` CI auto-update** | **❌ You must do this** | See [Section 4](#4-enabling-registry-auto-update-step-30) |
-| **#31** | **Feedback issue tool** | **❌ Prerequisite: #25** | After #25 |
+| #31 | Feedback issue tool | ✅ Done (code complete; requires GitHub token) | — |
 | #32 | Multi-version migration paths | ❌ Future work | — |
 
-**Steps 22–24 are fully implemented and build-verified.** Steps 25 and beyond are not started because they require external setup (NuGet account, GitHub repo secrets, organizational Copilot access) that only you can provide.
+**Steps #21–#27 and #31 are fully implemented and build-verified.** Steps 25, 30 require external setup (NuGet account, GitHub repo secrets, organizational Copilot access) that only you can provide.
 
 ---
 
@@ -44,7 +47,7 @@ Use the agents, skills, and guide directly in VS Code without running the MCP se
 **What you get:**
 - All 11 skills loaded on demand
 - Always-on constraint rules from `maf-constraints.instructions.md`
-- The full 21-section migration guide navigated by `maf-migration-guide` skill
+- The full 29-section migration guide navigated by `maf-migration-guide` skill
 - No MCP server needed
 
 ---
@@ -70,8 +73,8 @@ Run the MCP server locally to expose `maf://` resources and `/maf-*` prompts in 
 
 **What you get additionally over Mode A:**
 - `maf://constraints`, `maf://registry`, `maf://guide`, `maf://skills?name=*` as referenceable resources
-- `/maf-audit`, `/maf-migrate`, `/maf-cs0618-hunt` as slash commands
-- `maf_api_safety`, `maf_registry_lookup`, `maf_registry_list` tools
+- `/maf-audit`, `/maf-migrate`, `/maf-cs0618-hunt`, `/maf-review`, `/maf-debug`, `/maf-scaffold` as slash commands
+- 16 MCP tools: `maf_health_check`, `maf_detect_cs0618`, `maf_api_diff`, `maf_fan_out_validate`, `maf_executor_pattern_check`, `maf_compatibility`, `maf_migration_path`, `maf_api_safety`, `maf_registry_lookup`, `maf_registry_list`, `maf_full_audit`, `maf_migration_suggest`, `maf_review_code`, `maf_explain_error`, `maf_scaffold`, `maf_open_feedback_issue`
 
 ---
 

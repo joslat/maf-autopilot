@@ -1,13 +1,13 @@
 ---
 name: cs0618-hunter
-description: "Detects and fixes CS0618 obsolete API warnings in .NET builds. Use this skill — NOT dotnet-inspect — whenever you need to find deprecated API usage. dotnet-inspect does not flag [Obsolete] at the individual overload level; only the compiler does. This skill provides the exact workflow for finding, diagnosing, and fixing every CS0618 warning."
+description: "Detects and fixes CS0618 obsolete API warnings in .NET builds using the compiler. While dotnet-inspect can now detect [Obsolete] at the overload level (issue #316 fixed), the compiler-based approach here is faster for project-wide scanning — one build pass finds all CS0618 patterns across all files."
 ---
 
 # cs0618-hunter
 
-The **only reliable way** to detect `[Obsolete]` API usage in a .NET codebase is the compiler. This skill provides the exact workflow.
+The fastest way to detect all `[Obsolete]` API usages across a .NET codebase is the compiler. This skill provides the exact workflow.
 
-> **Root cause:** `dotnet-inspect` does not surface `[Obsolete]` at the individual overload level. This is a known upstream limitation tracked at [richlander/dotnet-inspect #316](https://github.com/richlander/dotnet-inspect/issues/316). Until that is resolved, the compiler is the only authoritative source — which is exactly what this skill uses.
+> **Note:** `dotnet-inspect` issue #316 was resolved — it can now surface `[Obsolete]` at the individual overload level. For targeted per-member lookup, `dotnet-inspect member ... --index` is reliable. For project-wide scanning (find every CS0618 in a solution), this compiler-based approach is still the fastest: one `dotnet build` covers all files at once.
 
 ## When to Use This Skill
 
@@ -76,11 +76,9 @@ Do NOT mark Phase 3 complete until this outputs `✅ Zero CS0618 warnings`.
 
 ---
 
-## Why Not Use dotnet-inspect?
+## Why Compiler-Based Detection?
 
-`dotnet-inspect member WorkflowBuilder` lists all overloads of `AddFanInBarrierEdge` but does **not** mark either overload as obsolete. Both appear identical in the listing. The `[Obsolete]` attribute is only visible in the single-overload `--index` detail view — but you must already know *which* overload to suspect before you can look it up.
-
-This is a known limitation filed as [richlander/dotnet-inspect #316](https://github.com/richlander/dotnet-inspect/issues/316).
+`dotnet build | Select-String CS0618` finds every obsolete API call across every file in a solution in a single pass. `dotnet-inspect` (with issue #316 now resolved) can confirm whether a specific overload is marked `[Obsolete]` via `member ... --index` — useful for targeted inspection. The two tools complement each other: use this skill to discover, use `dotnet-inspect` to confirm.
 
 ---
 

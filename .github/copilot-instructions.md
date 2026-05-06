@@ -13,7 +13,7 @@
 - **NEVER** add `[StreamsMessage]` or `[YieldsMessage]` attributes — removed in 1.3.0, causes `CS0246`
 - **NEVER** use `DefaultAzureCredential` in production code — prefer `ManagedIdentityCredential`
 - **NEVER** enable `EnableSensitiveData = true` in non-development environments
-- **NEVER** use `dotnet-inspect` alone to check for obsolete APIs — use `cs0618-hunter` skill (compiler-based)
+- **PREFER** `cs0618-hunter` (compiler-based) for project-wide obsolete API scanning — one build pass finds all CS0618 patterns. `dotnet-inspect` can now detect `[Obsolete]` at the overload level (issue #316 resolved) and is suitable for targeted per-member lookup.
 - **ALWAYS** update `src/docs/migration-plan.md` tracking table after each task is completed and build-verified
 
 ## Fan-out / Fan-in Rules (Silent Failure Risk)
@@ -59,12 +59,13 @@ AddFanInBarrierEdge argument order:
 - `FunctionApprovalRequestContent` vs `ToolApprovalRequestContent` — verify with `dotnet-inspect` for your exact version
 - `RunAsync<T>` exists on `ChatClientAgent` but NOT on `AIAgent` interface — cast may be needed
 - `ChatClientAgentOptions` has undocumented properties: `UseProvidedChatClientAsIs`, `RequirePerServiceCallChatHistoryPersistence`, `ClearOnChatHistoryProviderConflict`
-- `AddFanInBarrierEdge(target, params sources[])` is `[Obsolete]` in 1.3.0 — `dotnet-inspect member` will NOT flag this; only the compiler catches it
+- `AddFanInBarrierEdge(target, params sources[])` is `[Obsolete]` in 1.3.0 — use `cs0618-hunter` for project-wide detection; `dotnet-inspect member ... --index` can now also confirm it (issue #316 fixed).
 
-## dotnet-inspect Limitation
+## dotnet-inspect and Obsolete API Detection
 
-`dotnet-inspect` does NOT surface `[Obsolete]` attributes at the individual overload level.
+`dotnet-inspect` issue #316 has been resolved. It now surfaces `[Obsolete]` attributes including at the individual overload level.
 
-When `member WorkflowBuilder` lists two overloads for `AddFanInBarrierEdge`, neither will be marked as deprecated in the output. The obsolete status is only visible in single-overload `--index` detail view (after you already know which overload to suspect).
+- **Project-wide scan**: `dotnet build 2>&1 | Select-String "warning CS0618"` remains the fastest approach — covers all files in one pass.
+- **Targeted lookup**: `dotnet-inspect member ... --index` now reliably shows `[Obsolete]` metadata including the replacement message.
 
-**Always run** `dotnet build 2>&1 | Select-String "warning CS0618"` as a mandatory step — never rely on `dotnet-inspect` alone for obsolete API detection.
+**Always run the compiler scan as a mandatory step** — it is faster and produces actionable file:line output for every warning.

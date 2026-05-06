@@ -26,11 +26,11 @@ entries:
           aggregatorExec);
     cs_warning: CS0618
     guide_section: "21"
-    dotnet_inspect_detectable: false
+    dotnet_inspect_detectable: true
     notes: >
-      dotnet-inspect 'member WorkflowBuilder' lists both overloads but does NOT flag either as
-      [Obsolete]. Detection requires compiler: dotnet build 2>&1 | Select-String "warning CS0618".
-      Filed as dotnet-inspect issue #316 (https://github.com/richlander/dotnet-inspect/issues/316).
+      dotnet-inspect issue #316 (overload-level [Obsolete] detection) has been RESOLVED.
+      Use: dotnet-inspect member WorkflowBuilder --index  to confirm the [Obsolete] attribute.
+      For project-wide scanning, prefer the compiler: dotnet build 2>&1 | Select-String "warning CS0618".
       This argument order change also has a runtime consequence: using the wrong overload compiles
       and runs, but the argument binding is reversed — sources become the target and vice versa,
       leading to incorrect workflow topology.

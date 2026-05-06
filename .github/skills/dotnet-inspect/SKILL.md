@@ -1,33 +1,34 @@
 ---
 name: dotnet-inspect
 version: 0.7.6
-description: "Query .NET APIs across NuGet packages, platform libraries, and local files. Search for types, list API surfaces, compare and diff versions, find extension methods and implementors. Use whenever you need to answer questions about .NET library contents. IMPORTANT: Does NOT detect [Obsolete] attributes at the overload level — use cs0618-hunter for obsolete API detection."
+description: "Query .NET APIs across NuGet packages, platform libraries, and local files. Search for types, list API surfaces, compare and diff versions, find extension methods and implementors. [Obsolete] attributes are now surfaced at the overload level (issue #316 resolved). For project-wide CS0618 scanning, prefer cs0618-hunter (one compiler pass covers all files)."
 ---
 
 # dotnet-inspect
 
 Query .NET library APIs — types, members, diffs, extensions, implementations, dependencies, and source links.
 
-## ⚠️ Critical Limitation: [Obsolete] Overload Detection
+## [Obsolete] Attribute Detection — Issue #316 Resolved
 
-**dotnet-inspect does NOT flag `[Obsolete]` attributes at the individual overload level.**
+**`dotnet-inspect` now surfaces `[Obsolete]` attributes at the individual overload level** — [richlander/dotnet-inspect #316](https://github.com/richlander/dotnet-inspect/issues/316) has been resolved.
 
-When `member WorkflowBuilder` lists multiple overloads for `AddFanInBarrierEdge`, **neither overload is marked as deprecated** in the output. Both appear identical. The `[Obsolete]` attribute is only visible in the single-overload `--index` detail view — but you must already know which overload to suspect before you can drill into it.
+The standard `member` listing marks obsolete members, and the `--index` detail view shows full `[Obsolete]` metadata including the replacement message.
 
-**For obsolete API detection: use `cs0618-hunter` skill, not this skill.**
-
-This limitation is filed as [richlander/dotnet-inspect #316](https://github.com/richlander/dotnet-inspect/issues/316).
+**Recommendation for CS0618 detection:**
+- **Project-wide scan** (find all warnings across a solution): use `cs0618-hunter` — one `dotnet build | Select-String CS0618` pass covers everything.
+- **Targeted lookup** (is this specific overload obsolete?): use `dotnet-inspect member ... --index` — now reliable.
 
 ---
 
 ## When to Use This Skill (and When NOT to)
 
-| Use dotnet-inspect when… | Do NOT use dotnet-inspect when… |
-|--------------------------|----------------------------------|
-| Checking if a type exists in a package | Checking if a method is `[Obsolete]` |
-| Listing members of a type | Detecting CS0618 warnings |
-| Diffing breaking changes between versions | Verifying which overload is deprecated |
-| Finding extension methods | Confirming obsolete replacement patterns |
+| Use dotnet-inspect when… | Consider cs0618-hunter instead when… |
+|--------------------------|--------------------------------------|
+| Checking if a type exists in a package | Scanning an entire solution for all CS0618 warnings |
+| Listing members of a type | You want a one-command project-wide report |
+| Diffing breaking changes between versions | — |
+| Finding extension methods | — |
+| Checking if a specific overload is `[Obsolete]` | — |
 | Looking up method signatures | — |
 
 ---
@@ -40,7 +41,7 @@ This limitation is filed as [richlander/dotnet-inspect #316](https://github.com/
 - **What changed between versions?** → `diff --package Foo@1.2.0..1.3.0`
 - **What does this type depend on?** → `depends`
 - **Where is the source code?** → `source Type --package Foo`
-- **Are there obsolete APIs?** → **Use `cs0618-hunter` skill, not this tool**
+- **Are there obsolete APIs?** → Project-wide: `cs0618-hunter` (one build pass). Targeted per-member: `dotnet-inspect member ... --index`
 
 ---
 
@@ -97,7 +98,7 @@ dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- memb
   -m AddFanInBarrierEdge --params "ExecutorBinding,IEnumerable<ExecutorBinding>" --index
 ```
 
-> This single-overload view WILL show `[Obsolete]` in the Custom Attributes section — but only if you already know which overload to inspect. This is why `cs0618-hunter` (compiler-based) is the reliable detection method.
+> Since issue #316 was resolved, this view reliably shows `[Obsolete]` in the Custom Attributes section including the replacement message. For project-wide scanning across many files, `cs0618-hunter` (one `dotnet build` pass) is still faster.
 
 ---
 

@@ -9,9 +9,10 @@ namespace MafAutopilot.Tools;
 ///
 /// Answers the question: "Is this MAF API safe to use in MAF 1.3.0?"
 ///
-/// This directly addresses the gap created by richlander/dotnet-inspect#316:
-/// dotnet-inspect does not surface [Obsolete] at the individual overload level.
-/// This tool uses the compiler-verified registry to give a definitive answer.
+/// Searches the compiler-verified registry for known CS0618/CS0246/runtime-silent
+/// patterns matching the given API name. Complements dotnet-inspect (which queries
+/// NuGet package API surfaces) by checking whether a specific call site is known-unsafe
+/// in the migration context.
 /// </summary>
 [McpServerToolType]
 public sealed class ApiSafetyTool
@@ -23,7 +24,7 @@ public sealed class ApiSafetyTool
         _registry = registry;
     }
 
-    [McpServerTool]
+    [McpServerTool(Name = "maf_api_safety")]
     [Description("""
         Check whether a MAF API is safe to use in MAF 1.3.0.
 

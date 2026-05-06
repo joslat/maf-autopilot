@@ -34,7 +34,7 @@ Load skills using `read_file` on the SKILL.md path before using them.
 | Generate smoke tests for workflow patterns                | `.github/skills/workflow-smoke-tester/SKILL.md`    |
 | Capture surprises and improve the toolkit post-migration  | `.github/skills/migration-retrospective/SKILL.md`  |
 
-> **Critical:** NEVER use `dotnet-inspect` to check for obsolete APIs — it does NOT flag `[Obsolete]` at the overload level. Use `cs0618-hunter` for all obsolete API detection.
+> **Note:** For CS0618 obsolete API detection, prefer `cs0618-hunter` (compiler-based, one pass covers all files). `dotnet-inspect` can now confirm `[Obsolete]` at the overload level (issue #316 resolved) and is useful for targeted per-member lookup — but the compiler scan is faster for project-wide detection.
 
 ---
 

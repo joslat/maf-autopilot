@@ -48,7 +48,7 @@ dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- diff
 
 The `nuget-diff-analyzer` skill categorizes each change as: **removed type**, **removed member**, **renamed**, **signature changed**, **new obsolete overload**.
 
-> Note: `dotnet-inspect diff` will NOT flag `[Obsolete]` overloads. Cross-reference `obsolete-api-registry` skill for those.
+> Note: `dotnet-inspect diff` may not flag all `[Obsolete]` overloads in diff output — always cross-reference `obsolete-api-registry` skill. For per-member confirmation, `dotnet-inspect member ... --index` now reliably shows `[Obsolete]` (issue #316 resolved).
 
 ### Phase C — Source Pattern Scan
 

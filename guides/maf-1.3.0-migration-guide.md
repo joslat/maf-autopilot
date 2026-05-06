@@ -1,4 +1,4 @@
-# Microsoft Agent Framework (MAF) 1.3.0 — Complete Migration Guide
+﻿# Microsoft Agent Framework (MAF) 1.3.0 — Complete Migration Guide
 
 > **Purpose:** Complete reference for implementing with MAF 1.3.0. Shows the final target patterns — apply regardless of your starting point.  
 > **Audience:** LLM agents performing code migration. This document is optimized for machine consumption.  
@@ -2036,45 +2036,6 @@ Console.WriteLine(response.Text);  // "Your name is Alice."
 ---
 
 <!-- introduced: 1.3.0 | applies-to: 1.2.x → 1.3.x | deprecated-in: none -->
-## 21. Obsolete API Registry (CS0618)
-
-> **How to find all obsolete usages in your project:**
-> ```powershell
-> dotnet build 2>&1 | Select-String "warning CS0618"
-> ```
-> Note: `dotnet-inspect` does **not** reliably surface `[Obsolete]` at the overload level. The compiler build output is the authoritative source.
-
-### Why a separate registry?
-
-Some APIs are not *removed* in 1.3.0 but are *deprecated* with `[Obsolete]`. They compile cleanly, emit CS0618 warnings, and still run — making them easy to miss during migration. The build grep above is the only reliable detector.
-
-### Known Obsolete APIs in MAF 1.3.0
-
-| Package | Obsolete Member | CS0618 Message | Use Instead |
-|---------|----------------|----------------|-------------|
-| `Microsoft.Agents.AI.Workflows` | `WorkflowBuilder.AddFanInBarrierEdge(ExecutorBinding target, params IEnumerable<ExecutorBinding> sources)` | *"Use AddFanInBarrierEdge(IEnumerable\<ExecutorBinding\>, ExecutorBinding) instead."* | `AddFanInBarrierEdge(IEnumerable<ExecutorBinding> sources, ExecutorBinding target)` — **sources first, target last** |
-
-> This table is built from verified build output. When a new CS0618 warning appears, add it here with the exact warning message text.
-
-### Pattern: argument-order obsolete overloads
-
-MAF 1.3.0 uses `[Obsolete]` to enforce correct argument order on fluent builder methods. The old overload still works at runtime but produces wrong behavior (wrong topology wiring). Always verify the expected argument order with the non-obsolete signature.
-
-```csharp
-// ❌ OBSOLETE (CS0618) — target first
-.AddFanInBarrierEdge(aggregatorExec, sources: [osintExec, historyExec, txExec])
-
-// ✅ CORRECT — sources first, target last
-.AddFanInBarrierEdge([osintExec, historyExec, txExec], aggregatorExec)
-```
-
-### Limitation of `dotnet-inspect` for obsolete detection
-
-The `dotnet-inspect` tool lists method names and their overload signatures but does **not** show `[Obsolete]` attributes on individual overloads. Running `member WorkflowBuilder` will list `AddFanInBarrierEdge` twice but will not flag either as obsolete. Do not rely on `dotnet-inspect` for obsolete API discovery — always use the build grep.
-
----
-
-<!-- introduced: 1.3.0 | applies-to: 1.2.x → 1.3.x | deprecated-in: none -->
 ## 20. Migration Checklist
 
 Use this checklist when upgrading your project:
@@ -2181,6 +2142,45 @@ Use this checklist when upgrading your project:
 - [ ] Verify workflows execute in correct order
 - [ ] **If shipping a NuGet package:** Run `dotnet pack -c Release` and grep `obj/Release/*.nuspec` for the new `<version>` and `<releaseNotes>` to confirm metadata propagated from the `.csproj` to the nupkg manifest. Stale release notes are a common silent regression.
 - [ ] **If maintaining a `CHANGELOG.md` with comparison links** (Keep-a-Changelog format): update the bottom `[Unreleased]: ...compare/<old>...HEAD` link to point from the new tag, and add a new `[<version>]: ...compare/<previous>...<new>` reference. Easy to miss and breaks GitHub's diff links once the tag exists.
+
+---
+
+<!-- introduced: 1.3.0 | applies-to: 1.2.x → 1.3.x | deprecated-in: none -->
+## 21. Obsolete API Registry (CS0618)
+
+> **How to find all obsolete usages in your project:**
+> ```powershell
+> dotnet build 2>&1 | Select-String "warning CS0618"
+> ```
+> Note: `dotnet-inspect` (issue #316 resolved) can now confirm `[Obsolete]` at the overload level via `member ... --index`. For *project-wide* scanning, the compiler build output remains the fastest authoritative source.
+
+### Why a separate registry?
+
+Some APIs are not *removed* in 1.3.0 but are *deprecated* with `[Obsolete]`. They compile cleanly, emit CS0618 warnings, and still run — making them easy to miss during migration. The build grep above is the only reliable detector.
+
+### Known Obsolete APIs in MAF 1.3.0
+
+| Package | Obsolete Member | CS0618 Message | Use Instead |
+|---------|----------------|----------------|-------------|
+| `Microsoft.Agents.AI.Workflows` | `WorkflowBuilder.AddFanInBarrierEdge(ExecutorBinding target, params IEnumerable<ExecutorBinding> sources)` | *"Use AddFanInBarrierEdge(IEnumerable\<ExecutorBinding\>, ExecutorBinding) instead."* | `AddFanInBarrierEdge(IEnumerable<ExecutorBinding> sources, ExecutorBinding target)` — **sources first, target last** |
+
+> This table is built from verified build output. When a new CS0618 warning appears, add it here with the exact warning message text.
+
+### Pattern: argument-order obsolete overloads
+
+MAF 1.3.0 uses `[Obsolete]` to enforce correct argument order on fluent builder methods. The old overload still works at runtime but produces wrong behavior (wrong topology wiring). Always verify the expected argument order with the non-obsolete signature.
+
+```csharp
+// ❌ OBSOLETE (CS0618) — target first
+.AddFanInBarrierEdge(aggregatorExec, sources: [osintExec, historyExec, txExec])
+
+// ✅ CORRECT — sources first, target last
+.AddFanInBarrierEdge([osintExec, historyExec, txExec], aggregatorExec)
+```
+
+### `dotnet-inspect` and obsolete API detection
+
+`dotnet-inspect` issue #316 (overload-level `[Obsolete]` detection) has been **resolved**. Running `member WorkflowBuilder --index` will now flag the obsolete overload. For targeted per-member confirmation this is reliable. However for *project-wide* obsolete API discovery — finding every CS0618 call site across all files — the build grep remains the fastest approach: one pass, full file:line output, no per-method invocations needed.
 
 ---
 

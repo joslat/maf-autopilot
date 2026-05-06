@@ -35,7 +35,7 @@ This SKILL.md is the **index** — use it to find the right section for your que
 | 18 | Event rename | `AgentRunUpdateEvent` → `AgentResponseUpdateEvent` |
 | 19 | Namespace changes | Old vs. new namespace mappings |
 | 20 | Migration checklist | End-to-end verification steps |
-| 21 | Obsolete API Registry (CS0618) | Known `[Obsolete]` APIs, why dotnet-inspect misses them |
+| 21 | Obsolete API Registry (CS0618) | Known `[Obsolete]` APIs; dotnet-inspect issue #316 resolved — `member --index` now detects them |
 
 ---
 
