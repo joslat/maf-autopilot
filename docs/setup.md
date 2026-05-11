@@ -62,7 +62,7 @@ Run the MCP server locally to expose `maf://` resources and `/maf-*` prompts in 
    "maf-autopilot": {
      "type": "stdio",
      "command": "dotnet",
-     "args": ["run", "--project", "mcp/maf-autopilot/maf-autopilot.csproj", "--"]
+     "args": ["run", "--project", "src/maf-autopilot/maf-autopilot.csproj", "--"]
    }
    ```
 3. Open VS Code — the MCP server starts automatically when Copilot needs it
@@ -225,7 +225,7 @@ This is the next required user action. Once done, anyone can `dotnet tool instal
 
 **Option 2 — Manual first publish (bootstraps NuGet listing):**
 ```powershell
-cd mcp/maf-autopilot
+cd src/maf-autopilot
 dotnet pack -c Release -o ./nupkg
 dotnet nuget push ./nupkg/maf-autopilot.*.nupkg --api-key YOUR_KEY --source https://api.nuget.org/v3/index.json
 ```

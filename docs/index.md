@@ -38,7 +38,7 @@ Every document below is canonical for one slice of the project. **One concept, o
 
 ### 🏛️ [`architecture.md`](./architecture.md)
 
-**Purpose.** Component map. What is `maf-autopilot` vs `maf-autopilot.Analyzers` vs the two test projects? How do they relate? What does each one ship? Includes the structural recommendation (`/mcp/` → `/src/` rename — under "Open structural questions").
+**Purpose.** Component map. What is `maf-autopilot` vs `maf-autopilot.Analyzers` vs the two test projects? How do they relate? What does each one ship? Plus the rationale for the `/src/` layout and `.github/scripts/` placement (under "Structural decisions — closed").
 
 **Status.** Current as of 2026-05-12.
 

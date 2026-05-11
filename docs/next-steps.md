@@ -44,9 +44,9 @@ Items that have measurable value, no external dependency, and are not yet shippe
 
 | Order | Item | Effort | Why |
 |---|---|---|---|
-| A1 | **Rename `/mcp/` → `/src/`** | M (½ day) | Conventional .NET layout; the `/mcp/` name misrepresents the analyzer NuGet's identity. Pre-1.0 is the cheapest moment. See [`architecture.md` § Open structural questions](./architecture.md#open-structural-questions) for the migration checklist. |
-| A2 | **Verify SHA pins for third-party Actions** | S (15 min) | `softprops/action-gh-release@c95fe14...`, `peter-evans/create-pull-request@5e914681...`, `marocchino/sticky-pull-request-comment@52423e01...` were committed under their claimed-version comments. Run `gh api repos/<owner>/<repo>/git/refs/tags/<version> --jq .object.sha` for each before next release. |
-| A3 | **Run external migration** (the A.8 unblocker) | L (1–3 days, external) | Pair-program a migration against a real MAF 1.2 → 1.3 customer codebase. Use the output to validate the toolkit, file any gaps, then cut 1.0. |
+| ~~A1~~ | ~~Rename `/mcp/` → `/src/`~~ | ✅ DONE 2026-05-12 | Landed in a focused commit alongside this entry's removal. All build/CI/doc paths updated; both NuGets still pack from the new location. |
+| A1 | **Verify SHA pins for third-party Actions** | S (15 min) | `softprops/action-gh-release@c95fe14...`, `peter-evans/create-pull-request@5e914681...`, `marocchino/sticky-pull-request-comment@52423e01...` were committed under their claimed-version comments. Run `gh api repos/<owner>/<repo>/git/refs/tags/<version> --jq .object.sha` for each before next release. |
+| A2 | **Run external migration** (the A.8 unblocker) | L (1–3 days, external) | Pair-program a migration against a real MAF 1.2 → 1.3 customer codebase. Use the output to validate the toolkit, file any gaps, then cut 1.0. |
 
 ### Tier B — could land alongside A or in a 1.0.1 patch
 

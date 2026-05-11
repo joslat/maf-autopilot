@@ -7,9 +7,9 @@
 docs
 guides
 !guides
-mcp/maf-autopilot.Tests
-mcp/maf-autopilot.Analyzers
-mcp/maf-autopilot.Analyzers.Tests
+src/maf-autopilot.Tests
+src/maf-autopilot.Analyzers
+src/maf-autopilot.Analyzers.Tests
 *.sln
 LICENSE
 CONTRIBUTING.md

@@ -30,7 +30,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 │                          maf-autopilot repo                              │
 │                                                                          │
 │  ┌─────────────────────────┐   ┌────────────────────────────────────┐   │
-│  │  /mcp/maf-autopilot/    │   │  /mcp/maf-autopilot.Analyzers/    │   │
+│  │  /src/maf-autopilot/    │   │  /src/maf-autopilot.Analyzers/    │   │
 │  │  ── MCP server          │   │  ── Roslyn analyzers              │   │
 │  │  ── .NET 9 console      │   │  ── netstandard2.0 (compiler host)│   │
 │  │  ── NuGet: maf-autopilot│   │  ── NuGet: maf-autopilot.Analyzers│   │
@@ -43,7 +43,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 │           │  ../../guides/maf-1.3.0…    │                                │
 │           │                                                              │
 │  ┌────────▼────────────────┐   ┌────────▼──────────────────────────┐   │
-│  │  /mcp/maf-autopilot.Tests│  │ /mcp/maf-autopilot.Analyzers.Tests│   │
+│  │  /src/maf-autopilot.Tests│  │ /src/maf-autopilot.Analyzers.Tests│   │
 │  │  ── 415 xUnit tests      │  │ ── 11 xUnit tests                 │   │
 │  │  ── ProjectReference     │  │ ── ProjectReference               │   │
 │  │     maf-autopilot.csproj │  │    maf-autopilot.Analyzers.csproj │   │
@@ -70,7 +70,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 
 ### `maf-autopilot` (the MCP server)
 
-**Path:** `/mcp/maf-autopilot/`
+**Path:** `/src/maf-autopilot/`
 **Target framework:** .NET 9
 **Output:** a single executable (`maf-autopilot.dll`) packaged as a dotnet global tool + a Docker image.
 **Dependencies:** `ModelContextProtocol` 1.2.0, `Microsoft.CodeAnalysis.CSharp` 4.11.0, `YamlDotNet` 16.2.1, `Microsoft.Extensions.Hosting` 9.0.
@@ -86,7 +86,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 
 ### `maf-autopilot.Analyzers` (the Roslyn analyzer NuGet)
 
-**Path:** `/mcp/maf-autopilot.Analyzers/`
+**Path:** `/src/maf-autopilot.Analyzers/`
 **Target framework:** **netstandard2.0** (mandatory — Roslyn analyzers load into the compiler host, which targets netstandard2.0).
 **Output:** an analyzer NuGet that drops a DLL into consumer projects' `analyzers/dotnet/cs/`.
 **Dependencies:** `Microsoft.CodeAnalysis.CSharp` 4.11.0, `Microsoft.CodeAnalysis.Analyzers` 3.11.0 (both `PrivateAssets="all"`).
@@ -100,7 +100,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 
 ### `maf-autopilot.Tests`
 
-**Path:** `/mcp/maf-autopilot.Tests/`
+**Path:** `/src/maf-autopilot.Tests/`
 **Target framework:** .NET 9
 **Output:** an xUnit test assembly (not packed; never published).
 **Dependencies:** `ProjectReference` to `maf-autopilot`; `xunit` 2.9.2; `Microsoft.NET.Test.Sdk` 17.12.0; `Microsoft.CodeAnalysis.CSharp` 4.11.0 (for the compile-validation tests).
@@ -109,7 +109,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 
 ### `maf-autopilot.Analyzers.Tests`
 
-**Path:** `/mcp/maf-autopilot.Analyzers.Tests/`
+**Path:** `/src/maf-autopilot.Analyzers.Tests/`
 **Target framework:** .NET 9 (test host can target net9.0 even though the analyzer itself is netstandard2.0).
 **Output:** an xUnit test assembly.
 **Dependencies:** `ProjectReference` to `maf-autopilot.Analyzers`; `xunit` 2.9.2; `Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit` 1.1.2.
@@ -142,18 +142,18 @@ See [`/CONTRIBUTING.md`](../CONTRIBUTING.md) §"Skill naming convention" + "Addi
 ```
 maf-autopilot.sln
     │
-    ├── /mcp/maf-autopilot                    (.NET 9 console / NuGet tool)
+    ├── /src/maf-autopilot                    (.NET 9 console / NuGet tool)
     │       └── embeds: .github/skills/*.md, .github/instructions/*.md,
     │                   guides/maf-1.3.0-migration-guide.md,
     │                   .github/skills/obsolete-api-registry/registry.yaml
     │
-    ├── /mcp/maf-autopilot.Analyzers          (netstandard2.0 / NuGet)
+    ├── /src/maf-autopilot.Analyzers          (netstandard2.0 / NuGet)
     │       └── (no project references — fully standalone)
     │
-    ├── /mcp/maf-autopilot.Tests              (.NET 9 / xUnit)
+    ├── /src/maf-autopilot.Tests              (.NET 9 / xUnit)
     │       └── ProjectReference: maf-autopilot
     │
-    └── /mcp/maf-autopilot.Analyzers.Tests    (.NET 9 / xUnit)
+    └── /src/maf-autopilot.Analyzers.Tests    (.NET 9 / xUnit)
             └── ProjectReference: maf-autopilot.Analyzers
 ```
 
@@ -172,40 +172,17 @@ maf-autopilot.sln
 
 ---
 
-## Open structural questions
+## Structural decisions — closed
 
-### Should `/mcp/` rename to `/src/`?
+### `/mcp/` → `/src/` rename (✅ done 2026-05-12)
 
-**Status: open. Recommendation: yes, before cutting 1.0 stable.**
+The repo originally grouped the 4 .NET projects under `/mcp/`. This was non-standard (the dominant .NET convention used by `dotnet/runtime`, `dotnet/aspnetcore`, `dotnet/efcore` is `/src/` for source projects) and misleading (the analyzer NuGet under `/mcp/maf-autopilot.Analyzers/` is NOT an MCP server). The rename landed pre-1.0 to avoid post-release URL/path ossification.
 
-The current `/mcp/` directory groups the 4 .NET projects. The name is non-standard — the dominant .NET convention (used by `dotnet/runtime`, `dotnet/aspnetcore`, `dotnet/efcore`) is `/src/` for source projects, optionally with `/tests/` for test projects.
+The 4 projects are kept **flat under `/src/`** rather than split into `/src/` + `/tests/`. For this project's scale (4 projects) the extra directory level adds overhead without payoff; the `.Tests` suffix already makes the relationship obvious.
 
-**Pros of renaming:**
-- Conventional .NET layout. New contributors find the source immediately.
-- The `/mcp/` name implies "this is the MCP code" — but the analyzer NuGet is NOT an MCP server. The current name misrepresents the analyzer's identity.
-- Pre-1.0 is the cheapest time to rename: the URL shape isn't yet ossified in third-party docs / blog posts.
+### `.github/scripts/` for CI helpers — kept (not moved)
 
-**Cons / costs:**
-- ~30–50 file edits across: `maf-autopilot.sln`, `Dockerfile`, all 5 workflow YAMLs, `.dockerignore`, `.vscode/mcp.json`, README + every doc that mentions a `/mcp/` path.
-- Project relative paths in `<EmbeddedResource>` use `..\..\.github\...` — these survive a one-level rename intact (depth unchanged), so no edits needed there.
-- One disruptive commit in git history.
-
-**Recommendation:** rename `/mcp/` → `/src/` as a focused PR before A.8 (cut stable 1.3.0). Keep the 4 projects flat under `/src/` — splitting into `/src/` + `/tests/` adds an extra directory level for negligible benefit at this scale.
-
-**Migration checklist** (when executed):
-1. `git mv mcp src`
-2. Update `maf-autopilot.sln` project paths
-3. Update `Dockerfile` COPY paths
-4. Update `.github/workflows/release.yml`, `docker-publish.yml`, `maf-pr-audit.yml`, `maf-drift-detector.yml`, `maf-release-watcher.yml`
-5. Update `.dockerignore`
-6. Update `.vscode/mcp.json`
-7. Update path references in README.md, CONTRIBUTING.md, TROUBLESHOOTING.md, CHANGELOG.md, all 4 `/docs/` files
-8. Update path references in agent files under `.github/agents/`
-9. Run `dotnet build maf-autopilot.sln && dotnet test maf-autopilot.sln`
-10. Verify `docker build .` still succeeds
-11. Verify embedded resources still resolve (check `MafResourcesTests.GetSkill_AllAllowlistedNames_Resolve`)
-
-This is tracked as a candidate next-step in [`next-steps.md`](./next-steps.md).
+The 2 Python scripts (`gen_guide_section.py`, `update_compat_matrix.py`) are called exclusively by `.github/workflows/maf-release-watcher.yml`. Moving to a top-level `/scripts/` would suggest general-purpose use (they aren't). Wrapping as skills would be a category error (skills are markdown knowledge, not executable code). Kept in place; their `__pycache__/` is gitignored.
 
 ### Should `.github/scripts/` move to `/scripts/`?
 

@@ -166,7 +166,7 @@ The canonical truth is `docs/maf-migration-toolkit-plan.md` (32-row tracking tab
 | Watcher *appends* to `maf-1.3.0-migration-guide.md` without idempotency | Repeat runs duplicate sections; 1.4.0 guide is still named 1.3.0 | `maf-release-watcher.yml` |
 | `registry.yaml` is **not** auto-updated | The most important file is fully manual | watcher PR body lists as manual TODO |
 | `maf-auditor` only finds *pre-1.3.0* patterns | Pointed at a clean 1.3.0 codebase reports "nothing to migrate" — no drift detection | `maf-auditor.agent.md` Phase C grep list |
-| 1 of 11 skills (9%) is executable as an MCP tool | The other 10 require the LLM to do all the work | `mcp/maf-autopilot/Tools/` |
+| 1 of 11 skills (9%) is executable as an MCP tool | The other 10 require the LLM to do all the work | `src/maf-autopilot/Tools/` |
 | Three "hard rules" in constraints have no enforcement skill | `DefaultAzureCredential`, `EnableSensitiveData=true`, instance state in `AIContextProvider` | `maf-constraints.instructions.md` |
 | Tool names mixed snake/PascalCase across docs | `MafApiSafety` (real) vs `maf_api_safety` (docs) | `ApiSafetyTool.cs:84`, `MafPrompts.cs:39-40` |
 | 9 of 21 guide sections have no registry entries | Memory, middleware, tool-approval, observability, DevUI, structured output, source-gen, instructions placement, agent creation | `registry.yaml` |
@@ -276,7 +276,7 @@ This single split materializes the "co-pilot, not just migration tool" identity 
 7. **Decide on rename.** If yes: rename to `maf-keeper` (recommended) — package ID + repo + tool command. Provide a deprecated `maf-autopilot` shim package that points users to the new ID for one minor version. **If renaming, do it before stable 1.3.0** — much cheaper than renaming after.
 
 ### Day 3–4 — Tests + bug fixes
-7. **Add `mcp/maf-autopilot.Tests/` project** (P0.3). 20 tests minimum:
+7. **Add `src/maf-autopilot.Tests/` project** (P0.3). 20 tests minimum:
    - Registry deserialization happy path.
    - Every field `SearchByApiName` must touch (Notes, FixDescription, ExampleBefore, ExampleAfter, Package, Id).
    - `FindById` casing (exact and case-insensitive).
@@ -368,7 +368,7 @@ A single multi-batch session, driven by the four parallel deep-review audits in 
 ### Batch P0 — foundations (blockers)
 - **#33** dotnet-inspect 0.7.6 → 0.7.8 in 21 places; author attribution corrected; "[Obsolete] caveat" text rewritten in 10 files to reframe as static-vs-compiler complementary paths.
 - **#34** README install command adds `--prerelease`; csproj `<Version>` bumped to `1.3.0-alpha-4`.
-- **#35** New xUnit test harness (`mcp/maf-autopilot.Tests/`). Started at 48 tests; grew to 151 across the sprint. Wired into `release.yml` before pack step.
+- **#35** New xUnit test harness (`src/maf-autopilot.Tests/`). Started at 48 tests; grew to 151 across the sprint. Wired into `release.yml` before pack step.
 
 ### Batch P1 — bug class elimination + agentic surface expansion
 - **#36** `InitCommand` JSON-clobber fix: VS Code's `mcp.json` is JSONC (comments + trailing commas) — lenient parser; on true parse failure, timestamped + GUID-suffixed backup with retry-on-collision. 6 tests guard the contract.

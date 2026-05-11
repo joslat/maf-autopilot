@@ -35,7 +35,7 @@ jobs:
             VERSION="${GITHUB_REF#refs/tags/v}"
             echo "Using tag version: $VERSION"
           else
-            VERSION=$(grep -oP '(?<=<Version>)[^<]+' mcp/maf-autopilot/maf-autopilot.csproj)
+            VERSION=$(grep -oP '(?<=<Version>)[^<]+' src/maf-autopilot/maf-autopilot.csproj)
             echo "Using csproj version: $VERSION"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -45,7 +45,7 @@ jobs:
         if: github.event.inputs.version != '' || startsWith(github.ref, 'refs/tags/v')
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          sed -i "s|<Version>.*</Version>|<Version>${VERSION}</Version>|" mcp/maf-autopilot/maf-autopilot.csproj
+          sed -i "s|<Version>.*</Version>|<Version>${VERSION}</Version>|" src/maf-autopilot/maf-autopilot.csproj
           echo "Set csproj <Version> to $VERSION"
 
       - name: Restore
@@ -60,23 +60,23 @@ jobs:
 
       - name: Pack server tool
         run: |
-          dotnet pack mcp/maf-autopilot/maf-autopilot.csproj \
+          dotnet pack src/maf-autopilot/maf-autopilot.csproj \
             --configuration Release \
             --no-restore \
-            --output mcp/dist/
-          echo "Packed: $(ls mcp/dist/*.nupkg)"
+            --output src/dist/
+          echo "Packed: $(ls src/dist/*.nupkg)"
 
       - name: Pack analyzer package
         run: |
-          dotnet pack mcp/maf-autopilot.Analyzers/maf-autopilot.Analyzers.csproj \
+          dotnet pack src/maf-autopilot.Analyzers/maf-autopilot.Analyzers.csproj \
             --configuration Release \
             --no-restore \
-            --output mcp/dist/
-          echo "Packed: $(ls mcp/dist/maf-autopilot.Analyzers*.nupkg)"
+            --output src/dist/
+          echo "Packed: $(ls src/dist/maf-autopilot.Analyzers*.nupkg)"
 
       - name: Publish to NuGet
         run: |
-          dotnet nuget push mcp/dist/*.nupkg \
+          dotnet nuget push src/dist/*.nupkg \
             --api-key ${{ secrets.NUGET_API_KEY }} \
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate
@@ -88,5 +88,5 @@ jobs:
         # arbitrary code into our release workflow with NUGET_API_KEY in scope.
         uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda  # v2.2.1
         with:
-          files: mcp/dist/*.nupkg
+          files: src/dist/*.nupkg
           generate_release_notes: true

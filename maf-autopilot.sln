@@ -3,15 +3,15 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "mcp", "mcp", "{60D02A9B-BD8A-21E2-79E7-27A6B3D0EB49}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{60D02A9B-BD8A-21E2-79E7-27A6B3D0EB49}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "maf-autopilot", "mcp\maf-autopilot\maf-autopilot.csproj", "{36D9D643-E899-EE41-35A6-8F39323F4B9F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "maf-autopilot", "src\maf-autopilot\maf-autopilot.csproj", "{36D9D643-E899-EE41-35A6-8F39323F4B9F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "maf-autopilot.Tests", "mcp\maf-autopilot.Tests\maf-autopilot.Tests.csproj", "{CF88923F-3A6E-4B9B-B210-B4E486A4AA34}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "maf-autopilot.Tests", "src\maf-autopilot.Tests\maf-autopilot.Tests.csproj", "{CF88923F-3A6E-4B9B-B210-B4E486A4AA34}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "maf-autopilot.Analyzers", "mcp\maf-autopilot.Analyzers\maf-autopilot.Analyzers.csproj", "{9ABBAE57-DF55-4E1C-9D08-4D7CF0E9E26A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "maf-autopilot.Analyzers", "src\maf-autopilot.Analyzers\maf-autopilot.Analyzers.csproj", "{9ABBAE57-DF55-4E1C-9D08-4D7CF0E9E26A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "maf-autopilot.Analyzers.Tests", "mcp\maf-autopilot.Analyzers.Tests\maf-autopilot.Analyzers.Tests.csproj", "{2CF16367-6DA5-44AC-A8E8-17DF96F484EE}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "maf-autopilot.Analyzers.Tests", "src\maf-autopilot.Analyzers.Tests\maf-autopilot.Analyzers.Tests.csproj", "{2CF16367-6DA5-44AC-A8E8-17DF96F484EE}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

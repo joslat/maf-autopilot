@@ -25,20 +25,20 @@ FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
 # Copy only the files needed to restore — better layer caching.
-COPY mcp/maf-autopilot/maf-autopilot.csproj mcp/maf-autopilot/
-COPY mcp/maf-autopilot/*.cs mcp/maf-autopilot/
-COPY mcp/maf-autopilot/Tools/ mcp/maf-autopilot/Tools/
-COPY mcp/maf-autopilot/Prompts/ mcp/maf-autopilot/Prompts/
-COPY mcp/maf-autopilot/Resources/ mcp/maf-autopilot/Resources/
-COPY mcp/maf-autopilot/Data/ mcp/maf-autopilot/Data/
-COPY mcp/maf-autopilot/Scaffolding/ mcp/maf-autopilot/Scaffolding/
+COPY src/maf-autopilot/maf-autopilot.csproj src/maf-autopilot/
+COPY src/maf-autopilot/*.cs src/maf-autopilot/
+COPY src/maf-autopilot/Tools/ src/maf-autopilot/Tools/
+COPY src/maf-autopilot/Prompts/ src/maf-autopilot/Prompts/
+COPY src/maf-autopilot/Resources/ src/maf-autopilot/Resources/
+COPY src/maf-autopilot/Data/ src/maf-autopilot/Data/
+COPY src/maf-autopilot/Scaffolding/ src/maf-autopilot/Scaffolding/
 
 # Embedded resources required for `<EmbeddedResource>` in the csproj.
 COPY .github/ .github/
 COPY guides/ guides/
 COPY README.md ./
 
-RUN dotnet publish mcp/maf-autopilot/maf-autopilot.csproj \
+RUN dotnet publish src/maf-autopilot/maf-autopilot.csproj \
     --configuration Release \
     --output /app \
     --self-contained false \

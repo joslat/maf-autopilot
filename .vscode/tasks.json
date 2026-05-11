@@ -4,7 +4,7 @@
     {
       "label": "build maf-autopilot",
       "type": "shell",
-      "command": "dotnet build mcp/maf-autopilot/maf-autopilot.csproj",
+      "command": "dotnet build src/maf-autopilot/maf-autopilot.csproj",
       "group": "build",
       "presentation": {
         "reveal": "silent",

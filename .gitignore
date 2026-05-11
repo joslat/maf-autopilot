@@ -4,7 +4,7 @@ obj/
 nupkg/
 *.nupkg
 *.snupkg
-mcp/dist/                # release.yml output staging
+src/dist/                # release.yml output staging
 TestResults/             # `dotnet test` output (per-project)
 coverage/                # coverage reports
 *.coverage

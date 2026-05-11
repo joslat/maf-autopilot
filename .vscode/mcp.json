@@ -6,7 +6,7 @@
       "args": [
         "run",
         "--project",
-        "${workspaceFolder}/mcp/maf-autopilot/maf-autopilot.csproj",
+        "${workspaceFolder}/src/maf-autopilot/maf-autopilot.csproj",
         "--no-build",
         "--"
       ],
@@ -18,7 +18,7 @@
       "args": [
         "run",
         "--project",
-        "${workspaceFolder}/mcp/maf-autopilot/maf-autopilot.csproj",
+        "${workspaceFolder}/src/maf-autopilot/maf-autopilot.csproj",
         "--no-build",
         "--"
       ],

@@ -103,8 +103,8 @@ The `MafScanAntiPatterns(repoPath)` tool walks all `*.cs` files under `repoPath`
 When the team discovers a new anti-pattern that should be caught at scan time:
 
 1. Add a new `MAF-AP-<AREA>-<NNN>` entry above with rule + pattern + fix + source.
-2. Add the matching rule constant in `mcp/maf-autopilot/Tools/AntiPatternScannerTool.cs`.
-3. Add a test in `mcp/maf-autopilot.Tests/AntiPatternScannerToolTests.cs` proving the new rule fires.
+2. Add the matching rule constant in `src/maf-autopilot/Tools/AntiPatternScannerTool.cs`.
+3. Add a test in `src/maf-autopilot.Tests/AntiPatternScannerToolTests.cs` proving the new rule fires.
 4. Cross-reference from `maf-constraints.instructions.md` if it represents a hard rule.
 
 The cross-reference matters: if a constraint says "NEVER do X" but the scanner doesn't enforce it, the constraint is aspirational, not actionable.

@@ -140,12 +140,12 @@ The watcher used to query `microsoft/agents` for release notes — wrong repo. T
 
 ### Tests fail locally but pass in CI (or vice versa)
 
-Check the test SDK version drift — `mcp/maf-autopilot.Tests/maf-autopilot.Tests.csproj` pins specific versions for `xunit`, `Microsoft.NET.Test.Sdk`, `xunit.runner.visualstudio`, `coverlet.collector`. If `dotnet restore` resolves different versions locally, your `nuget.config` is overriding.
+Check the test SDK version drift — `src/maf-autopilot.Tests/maf-autopilot.Tests.csproj` pins specific versions for `xunit`, `Microsoft.NET.Test.Sdk`, `xunit.runner.visualstudio`, `coverlet.collector`. If `dotnet restore` resolves different versions locally, your `nuget.config` is overriding.
 
 ### The test suite (~365 tests as of 2026-05-12) times out on Windows
 
 xUnit's parallel runner respects logical-CPU count. On constrained machines, force serial:
 
 ```bash
-dotnet test mcp/maf-autopilot.Tests/maf-autopilot.Tests.csproj -- xunit.parallelizeAssembly=false xunit.parallelizeTestCollections=false
+dotnet test src/maf-autopilot.Tests/maf-autopilot.Tests.csproj -- xunit.parallelizeAssembly=false xunit.parallelizeTestCollections=false
 ```

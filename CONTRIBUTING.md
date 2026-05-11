@@ -18,7 +18,7 @@ git clone https://github.com/joslat/maf-autopilot
 cd maf-autopilot
 dotnet restore maf-autopilot.sln
 dotnet build maf-autopilot.sln
-dotnet test mcp/maf-autopilot.Tests/maf-autopilot.Tests.csproj
+dotnet test src/maf-autopilot.Tests/maf-autopilot.Tests.csproj
 ```
 
 All tests must pass. CI will block any PR that breaks them.
@@ -31,7 +31,7 @@ Each entry maps a real CS0618 / CS0246 / silent-runtime-failure pattern to a det
 2. **Populate every field** — `id, package, version_introduced, type, method, obsolete_signature, replacement_signature, argument_order_change, fix_description, example_before, example_after, cs_warning, guide_section, dotnet_inspect_detectable, notes`. The registry's value lives in completeness; partial entries silently regress.
 3. **`cs_warning`:** `CS0618`, `CS0246`, or `RUNTIME_SILENT` (for fan-in starvation–class bugs).
 4. **`dotnet_inspect_detectable`:** `true` if `dotnet-inspect@0.7.8+` flags this statically; `false` if only the compiler catches it (transitive obsoletions, overload-resolution surprises, project-local `[Obsolete]`).
-5. **Test it.** The inverted-haystack in `RegistryService` indexes every string field. Add a `[Theory]` row to `mcp/maf-autopilot.Tests/RegistryServiceTests.cs` proving your new term is searchable.
+5. **Test it.** The inverted-haystack in `RegistryService` indexes every string field. Add a `[Theory]` row to `src/maf-autopilot.Tests/RegistryServiceTests.cs` proving your new term is searchable.
 
 ## Adding a skill (`.github/skills/<name>/SKILL.md`)
 
@@ -40,7 +40,7 @@ Skills are markdown files Copilot Chat loads into the agent's context. Conventio
 1. **Frontmatter is mandatory:** `name`, `description`, optionally `version`. Description should be ≤ 2 sentences and start with a verb ("Detects…", "Validates…", "Generates…").
 2. **Lead with a Quick Decision Tree.** Tell Copilot when to use this skill vs another. Examples: `dotnet-inspect/SKILL.md` decision tree.
 3. **Cross-reference, don't duplicate.** If your skill depends on the registry, link to `obsolete-api-registry`; don't restate the entries.
-4. **Embed in the MCP server.** Add an `<EmbeddedResource ... LogicalName="skills/<name>.md" />` line to `mcp/maf-autopilot/maf-autopilot.csproj`, add `<name>` to `AllowedSkillNames` in `Resources/MafResources.cs`, and add a test row to `MafResourcesTests.GetSkill_AllAllowlistedNames_Resolve`.
+4. **Embed in the MCP server.** Add an `<EmbeddedResource ... LogicalName="skills/<name>.md" />` line to `src/maf-autopilot/maf-autopilot.csproj`, add `<name>` to `AllowedSkillNames` in `Resources/MafResources.cs`, and add a test row to `MafResourcesTests.GetSkill_AllAllowlistedNames_Resolve`.
 5. **The agents reference skills explicitly.** Add a row to the "Skill Selection Guide" table in `.github/agents/maf-migration.agent.md` (and `maf-auditor.agent.md` if pre-migration).
 
 ### Skill naming convention
@@ -65,13 +65,13 @@ Agents are GitHub Copilot Chat agents (Markdown + YAML frontmatter). The three e
 2. **Skill references must resolve.** If you change the skill name, update every agent that references it.
 3. **`@maf-auditor` is pre-migration only.** `maf-best-practice-reviewer` (plan rows #42 + #49) handles steady-state audits on clean 1.3.0 codebases. Don't pile post-migration auditing into `maf-auditor` — keep them split.
 
-## Adding an MCP server tool (`mcp/maf-autopilot/Tools/`)
+## Adding an MCP server tool (`src/maf-autopilot/Tools/`)
 
 1. Decorate with `[McpServerToolType]` on the class and `[McpServerTool]` on the method.
 2. **Inject `RegistryService` via constructor** — it's a DI singleton.
 3. **Description block is contract.** The `[Description("""...""")]` is what the model sees; write it like a function docstring for a foreign reader. Include input format, output format, and a "when to call this" sentence.
 4. **Tool name convention.** The SDK emits PascalCase from the C# method name (`MafApiSafety` → exposed as `MafApiSafety`). Use PascalCase in docs.
-5. **Tests.** Add `<ToolName>Tests.cs` in `mcp/maf-autopilot.Tests/`. Cover: empty input → friendly error; happy path; the regression case that motivated the tool.
+5. **Tests.** Add `<ToolName>Tests.cs` in `src/maf-autopilot.Tests/`. Cover: empty input → friendly error; happy path; the regression case that motivated the tool.
 
 ## PR conventions
 
