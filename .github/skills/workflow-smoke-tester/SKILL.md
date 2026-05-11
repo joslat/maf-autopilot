@@ -1,6 +1,6 @@
 ---
 name: workflow-smoke-tester
-description: "Generates minimal smoke test stubs for MAF 1.3.0 workflow patterns found in a codebase after migration. Covers fan-out/fan-in completeness, session round-trips, streaming, structured output, and tool invocation. These are structural sanity checks — not full integration tests — that catch silent runtime failures the build misses."
+description: "Generates structural smoke tests for MAF 1.3.0 workflow patterns. Five categories: fan-out/fan-in completeness, session round-trip, streaming, structured output, tool invocation. Catches the silent runtime failures static analysis cannot."
 ---
 
 # workflow-smoke-tester
@@ -9,21 +9,30 @@ description: "Generates minimal smoke test stubs for MAF 1.3.0 workflow patterns
 
 `dotnet build` passing does not mean the code works. The fan-in starvation bug is the canonical example: builds green, runs silently wrong, no error. Smoke tests add a fast, credential-free runtime check for the class of failures that static analysis alone cannot catch.
 
-These tests use **mock agents** — no Azure credentials required, no network calls. They verify structural correctness, not AI output quality.
+These tests use **mock chat clients** — no Azure credentials required, no network calls. They verify structural correctness, not AI output quality.
 
----
+## ⚡ The fastest path — use the MCP tools
 
-## When to Use This Skill
+The maf-autopilot MCP server now covers most of the smoke-test surface automatically. Prefer these:
 
-- After a migration is complete (Phase 3 / T11.x)
-- Whenever workflow topology is modified
-- As part of the post-migration `migration-retrospective`
+| What you want to verify                              | Use this tool                                |
+|------------------------------------------------------|----------------------------------------------|
+| Every fan-out `[MessageHandler]` returns `Task<T>`   | `MafValidateFanOut(repoPath)`                |
+| Workflow topology can complete (no silent starvation) | `MafSimulateWorkflow(repoPath)`             |
+| New agent/executor scaffold ships with smoke test    | `MafNewAgent` / `MafNewExecutor`             |
+| Agent prompt quality (injection, refusals, bloat)    | `MafLintAgentPrompt(repoPath)`               |
+| Single-command health letter                         | `MafDoctor(repoPath)` — covers all of above  |
 
----
+When you call `MafNewExecutor`, the generated `*Tests.cs` already includes the reflection-based "fan-out handler returns `Task<T>`" structural assertion — that's the canonical smoke-test pattern. It's compile-validated against `AntiPatternScannerTool` and `FanOutValidatorTool` by the project's own dogfood test suite.
 
-## Pattern Detection
+## When to use the manual templates below
 
-First, scan the codebase to find which patterns are present:
+Reach for them when:
+- The MCP tools are unavailable.
+- The codebase needs one of the patterns the tools don't yet cover (session round-trip, streaming, structured output, tool approval).
+- You want to drop a snippet directly into a PR review.
+
+## Pattern detection
 
 ```powershell
 # Fan-out/fan-in pattern
@@ -44,196 +53,97 @@ Select-String -Path "src/**/*.cs" -Pattern "CreateSessionAsync|SerializeSessionA
 
 Generate smoke tests only for patterns actually present.
 
----
+## Smoke test templates
 
-## Smoke Test Templates
+> ⚠️ **Templates below are illustrative.** Only Template 1 (fan-out shape) is compile-validated automatically — the rest are reference snippets you must adapt to your project's exact types. If a template fails to compile against a future MAF minor, file a registry-suggestion issue.
 
-### Template 1 — Fan-out / Fan-in Completeness
-
-**Verifies:** All N fan-out branches complete; the fan-in aggregator receives exactly N messages.
+### Template 1 — Fan-out / fan-in structural smoke test (compile-validated equivalent: `MafNewExecutor` output)
 
 ```csharp
-// File: tests/SmokeTests/FanOutFanInSmokeTest.cs
 [Fact]
-public async Task FanOut_AllBranchesComplete_AggregatorReceivesAllMessages()
+public void FanOutHandlers_AllReturnGenericTask()
 {
-    // Arrange — use a mock chat client (no Azure credentials needed)
-    var mockClient = new MockChatClient();
-    var agent = mockClient.AsAIAgent(new ChatClientAgentOptions
+    // Catches the silent-starvation pattern at build time via reflection.
+    // For full coverage, also run `MafValidateFanOut(repoPath)`.
+    var executorTypes = typeof(MyWorkflowMarker).Assembly.GetTypes()
+        .Where(t => typeof(Executor).IsAssignableFrom(t))
+        .ToList();
+
+    foreach (var t in executorTypes)
     {
-        ChatOptions = new ChatOptions { SystemPrompt = "Test agent" }
-    });
-
-    var session = await agent.CreateSessionAsync(CancellationToken.None);
-
-    // Act
-    var response = await agent.RunAsync(session, "trigger fan-out workflow");
-
-    // Assert — fan-in must have run (aggregated all branches)
-    Assert.NotNull(response);
-    Assert.NotEmpty(response.Text);  // fan-in produced output
-    // Workflow-specific assertion: check aggregated result count
-    // Assert.Equal(3, response.Result.BranchResults.Count);
-}
-```
-
-**MockChatClient pattern:**
-```csharp
-public class MockChatClient : IChatClient
-{
-    public Task<ChatCompletion> CompleteAsync(
-        IList<ChatMessage> messages,
-        ChatOptions? options = null,
-        CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult(new ChatCompletion(
-            new ChatMessage(ChatRole.Assistant, "Mock response")));
+        foreach (var method in t.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (method.GetCustomAttribute<MessageHandlerAttribute>() is null) continue;
+            var name = method.ReturnType.Name;
+            Assert.True(
+                name.StartsWith("Task`") || name.StartsWith("ValueTask`")
+                || name.StartsWith("IAsyncEnumerable`"),
+                $"{t.Name}.{method.Name} returns {method.ReturnType.FullName} — fan-out handlers must return Task<T> / ValueTask<T> / IAsyncEnumerable<T>.");
+        }
     }
-
-    public IAsyncEnumerable<StreamingChatCompletionUpdate> CompleteStreamingAsync(
-        IList<ChatMessage> messages,
-        ChatOptions? options = null,
-        CancellationToken cancellationToken = default)
-        => AsyncEnumerable.Empty<StreamingChatCompletionUpdate>();
-
-    public object? GetService(Type serviceType, object? serviceKey = null) => null;
-    public void Dispose() { }
 }
 ```
 
-### Template 2 — Session Round-Trip
-
-**Verifies:** Session can be created, used, serialized, deserialized, and used again with continuity.
+### Template 2 — Session round-trip
 
 ```csharp
 [Fact]
-public async Task Session_SerializeDeserialize_MaintainsContinuity()
+public async Task Session_SerialisesAndRehydratesAsync()
 {
-    // Arrange
-    var agent = new MockChatClient().AsAIAgent(new ChatClientAgentOptions
-    {
-        ChatOptions = new ChatOptions { SystemPrompt = "Test" }
-    });
-
-    // Act — first turn
-    var session = await agent.CreateSessionAsync(CancellationToken.None);
-    var response1 = await agent.RunAsync(session, "Hello");
-    Assert.NotNull(response1.Text);
-
-    // Act — serialize and deserialize
-    var serialized = await agent.SerializeSessionAsync(session);
-    Assert.NotNull(serialized);
-    Assert.NotEmpty(serialized);
-
-    var restoredSession = await agent.DeserializeSessionAsync(serialized, CancellationToken.None);
-
-    // Act — second turn on restored session
-    var response2 = await agent.RunAsync(restoredSession, "What did I say?");
-    Assert.NotNull(response2.Text);
+    var agent = BuildAgentWithMockClient();
+    var session = await agent.CreateSessionAsync();
+    var blob = await agent.SerializeSessionAsync(session);
+    Assert.False(string.IsNullOrEmpty(blob));
+    var restored = await agent.DeserializeSessionAsync(blob);
+    Assert.NotNull(restored);
 }
 ```
 
-### Template 3 — Streaming Output
-
-**Verifies:** `RunStreamingAsync()` produces at least one `AgentResponseUpdateEvent` with non-empty text.
+### Template 3 — Streaming smoke test
 
 ```csharp
 [Fact]
-public async Task Streaming_ProducesAtLeastOneUpdate()
+public async Task RunStreamingAsync_YieldsAtLeastOneUpdate()
 {
-    var agent = new MockStreamingChatClient().AsAIAgent(new ChatClientAgentOptions
-    {
-        ChatOptions = new ChatOptions { SystemPrompt = "Test" }
-    });
-
-    var session = await agent.CreateSessionAsync(CancellationToken.None);
-    var updates = new List<AgentResponseUpdateEvent>();
-
-    await foreach (var update in agent.RunStreamingAsync(session, "Hello", CancellationToken.None))
-    {
-        updates.Add(update);
-    }
-
+    var agent = BuildAgentWithMockClient();
+    var updates = new List<AgentResponseUpdate>();
+    await foreach (var u in agent.RunStreamingAsync("hello"))
+        updates.Add(u);
     Assert.NotEmpty(updates);
-    Assert.Contains(updates, u => !string.IsNullOrEmpty(u.Text));
 }
 ```
 
-### Template 4 — Structured Output
-
-**Verifies:** `RunAsync<T>()` returns a `T` that deserializes without error.
+### Template 4 — Structured output
 
 ```csharp
 [Fact]
-public async Task StructuredOutput_ReturnsDeserializedResult()
+public async Task RunAsyncT_ReturnsTypedResult()
 {
-    var agent = new MockStructuredChatClient<MyResult>().AsAIAgent(new ChatClientAgentOptions
-    {
-        ChatOptions = new ChatOptions { SystemPrompt = "Test" }
-    });
-
-    var session = await agent.CreateSessionAsync(CancellationToken.None);
-    var response = await ((ChatClientAgent)agent).RunAsync<MyResult>(session, "Give me result");
-
-    Assert.NotNull(response.Result);
-    // Add type-specific assertions
+    var agent = BuildAgentWithMockClient();
+    var resp = await agent.RunAsync<MyStructuredResult>("query");
+    Assert.NotNull(resp);
+    Assert.NotNull(resp.Result);
 }
 ```
 
----
+### Template 5 — Tool approval flow
 
-## Test Project Setup
-
-Add a smoke test project if one doesn't exist:
-
-```xml
-<!-- tests/<SolutionName>.SmokeTests/<SolutionName>.SmokeTests.csproj -->
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <IsPackable>false</IsPackable>
-  </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
-    <PackageReference Include="xunit" Version="2.7.0" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.7">
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
-    <PackageReference Include="Microsoft.Agents.AI" Version="1.3.0" />
-    <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.3.0" />
-    <PackageReference Include="Microsoft.Agents.AI.Workflows.Generators" Version="1.3.0">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="Microsoft.Extensions.AI" Version="10.5.0" />
-  </ItemGroup>
-  <ItemGroup>
-    <!-- Reference the main project -->
-    <ProjectReference Include="../../src/<MainProject>/<MainProject>.csproj" />
-  </ItemGroup>
-</Project>
+```csharp
+[Fact]
+public async Task ToolApproval_FlowsToApprovalContent()
+{
+    var agent = BuildAgentWithMockClient(toolRequiresApproval: true);
+    var response = await agent.RunAsync("call the tool");
+    var approvalRequest = response.Messages
+        .SelectMany(m => m.Contents)
+        .OfType<FunctionApprovalRequestContent>()
+        .FirstOrDefault();
+    Assert.NotNull(approvalRequest);
+}
 ```
 
----
+## Wiring tips
 
-## Running Smoke Tests
-
-```powershell
-# Run smoke tests (no Azure credentials needed)
-dotnet test tests/<SolutionName>.SmokeTests/ --logger "console;verbosity=normal"
-
-# Run with coverage
-dotnet test tests/<SolutionName>.SmokeTests/ --collect:"XPlat Code Coverage"
-```
-
----
-
-## Output Contract
-
-This skill produces:
-1. Generated test file(s) in `tests/<SolutionName>.SmokeTests/`
-2. Test project `.csproj` (if not present)
-3. A summary of which patterns were detected and which tests were generated
-
-The smoke tests are committed alongside migration code changes — they serve as regression guards for future migrations.
+- All templates assume an `IChatClient` mock — no Azure credentials needed. Reuse the `ScriptedChatClient` pattern emitted by `MafNewAgent`.
+- Mark the test class `[Trait("Category", "Smoke")]` so CI can run smoke tests separately from end-to-end tests.
+- Smoke tests should complete in &lt; 1 second each — they're structural, not behavioural.

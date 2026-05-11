@@ -1,3 +1,4 @@
+using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 
 namespace MafAutopilot.Data;
@@ -33,7 +34,7 @@ public sealed class RegistryEntry
     [YamlMember(Alias = "package")]
     public string Package { get; set; } = "";
 
-    [YamlMember(Alias = "version_introduced")]
+    [YamlMember(Alias = "version_introduced", ScalarStyle = ScalarStyle.DoubleQuoted)]
     public string VersionIntroduced { get; set; } = "";
 
     [YamlMember(Alias = "type")]
@@ -54,10 +55,12 @@ public sealed class RegistryEntry
     [YamlMember(Alias = "fix_description")]
     public string FixDescription { get; set; } = "";
 
-    [YamlMember(Alias = "example_before")]
+    // Block-literal `|` preserves newlines exactly — required for code samples.
+    // The reverse (folded `>`) collapses newlines into spaces and corrupts code.
+    [YamlMember(Alias = "example_before", ScalarStyle = ScalarStyle.Literal)]
     public string ExampleBefore { get; set; } = "";
 
-    [YamlMember(Alias = "example_after")]
+    [YamlMember(Alias = "example_after", ScalarStyle = ScalarStyle.Literal)]
     public string ExampleAfter { get; set; } = "";
 
     [YamlMember(Alias = "cs_warning")]
@@ -69,6 +72,8 @@ public sealed class RegistryEntry
     [YamlMember(Alias = "dotnet_inspect_detectable")]
     public bool DotnetInspectDetectable { get; set; }
 
-    [YamlMember(Alias = "notes")]
+    // Folded `>` collapses single newlines to spaces while preserving paragraph
+    // breaks. Right for free-prose `notes` fields — keeps diffs readable.
+    [YamlMember(Alias = "notes", ScalarStyle = ScalarStyle.Folded)]
     public string Notes { get; set; } = "";
 }

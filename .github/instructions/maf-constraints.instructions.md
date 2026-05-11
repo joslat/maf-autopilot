@@ -12,7 +12,7 @@ applyTo: "**"
 - **NEVER** add `[StreamsMessage]` or `[YieldsMessage]` attributes — removed in 1.3.0, causes `CS0246`
 - **NEVER** use `DefaultAzureCredential` in production code — prefer `ManagedIdentityCredential`
 - **NEVER** enable `EnableSensitiveData = true` in non-development environments
-- **NEVER** use `dotnet-inspect` alone to check for obsolete APIs — use `cs0618-hunter` skill (compiler-based)
+- **ALWAYS** pin `dotnet-inspect` to v0.7.8 or later. v0.7.8 surfaces `[Obsolete]` in listings; versions ≤ v0.7.7 miss obsoletions at the overload level. For ground-truth on what your project actually triggers, run `cs0618-hunter` (compiler-based) — it catches transitive obsoletions, overload-resolution surprises, and project-local `[Obsolete]` attributes that static inspection cannot see.
 - **ALWAYS** update `src/docs/migration-plan.md` tracking table after each task is completed and build-verified
 
 ## Fan-out / Fan-in Rules (Silent Failure Risk)
@@ -58,12 +58,26 @@ AddFanInBarrierEdge argument order:
 - `FunctionApprovalRequestContent` vs `ToolApprovalRequestContent` — verify with `dotnet-inspect` for your exact version
 - `RunAsync<T>` exists on `ChatClientAgent` but NOT on `AIAgent` interface — cast may be needed
 - `ChatClientAgentOptions` has undocumented properties: `UseProvidedChatClientAsIs`, `RequirePerServiceCallChatHistoryPersistence`, `ClearOnChatHistoryProviderConflict`
-- `AddFanInBarrierEdge(target, params sources[])` is `[Obsolete]` in 1.3.0 — `dotnet-inspect member` will NOT flag this; only the compiler catches it
+- `AddFanInBarrierEdge(target, params sources[])` is `[Obsolete]` in 1.3.0 — surfaced by `dotnet-inspect member` as of v0.7.8; older `dotnet-inspect` versions miss it and require the compiler
 
-## dotnet-inspect Limitation
+## dotnet-inspect — Required Version
 
-`dotnet-inspect` does NOT surface `[Obsolete]` attributes at the individual overload level.
+**Pin to `dotnet-inspect@0.7.8` or later.** v0.7.8 ([release notes](https://github.com/richlander/dotnet-inspect/releases/tag/v0.7.8), 2026-05-04) surfaces `[Obsolete]` members in listings (PR #318 closes issue #316). Earlier versions (≤ v0.7.7) miss obsoletions at the overload level and will silently mislead.
 
-When `member WorkflowBuilder` lists two overloads for `AddFanInBarrierEdge`, neither will be marked as deprecated in the output. The obsolete status is only visible in single-overload `--index` detail view (after you already know which overload to suspect).
+**Always run** `dotnet build 2>&1 | Select-String "warning CS0618"` as the final gate — the compiler is ground-truth and catches transitive / overload-resolution / project-local `[Obsolete]` cases that no static inspector can see. `dotnet-inspect@0.7.8` is the fast pre-build path; the compiler is the verification path. Use both.
 
-**Always run** `dotnet build 2>&1 | Select-String "warning CS0618"` as a mandatory step — never rely on `dotnet-inspect` alone for obsolete API detection.
+## How to verify each constraint (use the MCP tools)
+
+The `maf-autopilot` MCP server provides executable tools that enforce most constraints. Tool names are PascalCase.
+
+| Constraint above                               | Verify by calling                                  |
+|------------------------------------------------|----------------------------------------------------|
+| NEVER instance state in `AIContextProvider`    | `MafScanAntiPatterns(repoPath)` → rule `MAF-AP-CONC-001` |
+| NEVER `DefaultAzureCredential` in production   | `MafScanAntiPatterns(repoPath)` → rule `MAF-AP-SEC-001`  |
+| NEVER `EnableSensitiveData = true` outside dev | `MafScanAntiPatterns(repoPath)` → rule `MAF-AP-SEC-003`  |
+| Fan-out handler must return `Task<T>`          | `MafValidateFanOut(repoPath)` (or `MafSimulateWorkflow` for full topology) |
+| `AddFanInBarrierEdge` argument order           | `MafRunCs0618Hunt(projectPath)` (CS0618 path)            |
+| No `[StreamsMessage]` / `[YieldsMessage]`      | `MafRunCs0618Hunt(projectPath)` (CS0246 path)            |
+| Always run tracking-table updates              | (process — agents enforce this)                     |
+
+Also useful: `MafApiSafety(apiName)` for a quick SAFE/UNSAFE check on any MAF API, `MafExplain(snippet)` to annotate a code fragment with guide citations, and the `maf-autopilot.Analyzers` NuGet package for write-time IDE squigglies (`MAF001`/`MAF002`/`MAF003`).

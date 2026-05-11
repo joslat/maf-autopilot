@@ -5,13 +5,16 @@ using System.ComponentModel;
 namespace MafAutopilot.Tools;
 
 /// <summary>
-/// MCP tool: maf_api_safety
+/// MCP tool: MafApiSafety
 ///
 /// Answers the question: "Is this MAF API safe to use in MAF 1.3.0?"
 ///
-/// This directly addresses the gap created by richlander/dotnet-inspect#316:
-/// dotnet-inspect does not surface [Obsolete] at the individual overload level.
-/// This tool uses the compiler-verified registry to give a definitive answer.
+/// Historically motivated by richlander/dotnet-inspect#316:
+/// dotnet-inspect &lt;= v0.7.7 did not surface [Obsolete] at the individual overload level.
+/// As of dotnet-inspect v0.7.8 (PR #318), [Obsolete] is surfaced in member listings —
+/// but this tool remains the canonical answer because the registry also encodes
+/// fix patterns, runtime-only failure classes (e.g., fan-out silent starvation),
+/// and project-local invariants that no static inspector can know.
 /// </summary>
 [McpServerToolType]
 public sealed class ApiSafetyTool
@@ -71,7 +74,7 @@ public sealed class ApiSafetyTool
                 """;
         }
 
-        // Multiple matches — show a summary list and let the caller drill in with maf_registry_lookup.
+        // Multiple matches — show a summary list and let the caller drill in with MafRegistryLookup.
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"⚠️ MULTIPLE MATCHES — '{apiName}' matches {matches.Count} registry entries in MAF {_registry.TargetVersion}:");
         sb.AppendLine();
@@ -81,7 +84,7 @@ public sealed class ApiSafetyTool
             sb.AppendLine($"    Warning: `{entry.CsWarning}` | Guide section: {entry.GuideSection}");
         }
         sb.AppendLine();
-        sb.AppendLine("Use `maf_registry_lookup` with a specific entry ID for the full fix details.");
+        sb.AppendLine("Use `MafRegistryLookup` with a specific entry ID for the full fix details.");
         return sb.ToString();
     }
 }

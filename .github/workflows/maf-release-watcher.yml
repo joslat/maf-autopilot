@@ -18,20 +18,43 @@ jobs:
       new_version: ${{ steps.version-check.outputs.new_version }}
       old_version: ${{ steps.version-check.outputs.old_version }}
       has_update: ${{ steps.version-check.outputs.has_update }}
+      is_major: ${{ steps.version-check.outputs.is_major }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Check NuGet for new MAF version
         id: version-check
         run: |
-          # Use explicit version if provided, otherwise query NuGet
+          # Use explicit version if provided, otherwise query NuGet (latest STABLE)
           if [ -n "${{ github.event.inputs.maf_version }}" ]; then
             LATEST="${{ github.event.inputs.maf_version }}"
             echo "Using manually specified version: $LATEST"
           else
-            LATEST=$(curl -s "https://api.nuget.org/v3-flatcontainer/microsoft.agents.ai/index.json" | \
-              python3 -c "import sys,json; d=json.load(sys.stdin); print(d['versions'][-1])")
-            echo "Latest version on NuGet: $LATEST"
+            # Filter out prereleases (`-alpha`, `-beta`, `-rc`, `-preview`) — we only
+            # auto-process stable releases. Manual override above is the path for prereleases.
+            # Retry 3× with backoff to ride out transient NuGet rate-limiting.
+            for attempt in 1 2 3; do
+              RAW=$(curl -sS --max-time 30 "https://api.nuget.org/v3-flatcontainer/microsoft.agents.ai/index.json" || true)
+              if [ -n "$RAW" ]; then break; fi
+              echo "NuGet query attempt $attempt failed, retrying after $((attempt * 5))s..."
+              sleep $((attempt * 5))
+            done
+            if [ -z "$RAW" ]; then
+              echo "❌ NuGet API unreachable after 3 attempts — aborting cleanly."
+              echo "has_update=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            LATEST=$(echo "$RAW" | python3 -c "
+            import sys, json, re
+            data = json.load(sys.stdin)
+            stable = [v for v in data.get('versions', []) if not re.search(r'-(alpha|beta|rc|preview)', v, re.IGNORECASE)]
+            print(stable[-1] if stable else '')")
+            if [ -z "$LATEST" ]; then
+              echo "ℹ️ No stable version found on NuGet — only prereleases. Skipping."
+              echo "has_update=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            echo "Latest STABLE version on NuGet: $LATEST"
           fi
 
           CURRENT=$(cat .maf-version | tr -d '[:space:]')
@@ -43,8 +66,20 @@ jobs:
           if [ "$LATEST" != "$CURRENT" ]; then
             echo "has_update=true" >> $GITHUB_OUTPUT
             echo "✅ New version detected: $CURRENT → $LATEST"
+
+            # Detect major-version bump (semver MAJOR component changed).
+            # `1.3.0 → 2.0.0` triggers escalated treatment; `1.3.0 → 1.4.0` does not.
+            OLD_MAJOR=$(echo "$CURRENT" | cut -d. -f1)
+            NEW_MAJOR=$(echo "$LATEST" | cut -d. -f1)
+            if [ "$OLD_MAJOR" != "$NEW_MAJOR" ]; then
+              echo "is_major=true" >> $GITHUB_OUTPUT
+              echo "🚨 MAJOR version bump: ${OLD_MAJOR}.x → ${NEW_MAJOR}.x — PR will be escalated."
+            else
+              echo "is_major=false" >> $GITHUB_OUTPUT
+            fi
           else
             echo "has_update=false" >> $GITHUB_OUTPUT
+            echo "is_major=false" >> $GITHUB_OUTPUT
             echo "ℹ️ No update. $CURRENT is current."
           fi
 
@@ -65,7 +100,7 @@ jobs:
 
       - name: Install dotnet tools
         run: |
-          # dnx is the launcher — it downloads dotnet-inspect@0.7.6 on first use (no separate install needed)
+          # dnx is the launcher — it downloads dotnet-inspect@0.7.8 on first use (no separate install needed)
           dotnet tool install --global dnx
 
       - name: Run diff — Microsoft.Agents.AI
@@ -74,7 +109,7 @@ jobs:
         run: |
           OLD="${{ needs.check-for-new-maf-release.outputs.old_version }}"
           NEW="${{ needs.check-for-new-maf-release.outputs.new_version }}"
-          dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- diff \
+          dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff \
             --package "Microsoft.Agents.AI@${OLD}..${NEW}" \
             --source https://api.nuget.org/v3/index.json \
             > diff-core.txt 2>&1 || true
@@ -87,7 +122,7 @@ jobs:
         run: |
           OLD="${{ needs.check-for-new-maf-release.outputs.old_version }}"
           NEW="${{ needs.check-for-new-maf-release.outputs.new_version }}"
-          dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- diff \
+          dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff \
             --package "Microsoft.Agents.AI.Workflows@${OLD}..${NEW}" \
             --source https://api.nuget.org/v3/index.json \
             > diff-workflows.txt 2>&1 || true
@@ -99,11 +134,19 @@ jobs:
         continue-on-error: true
         run: |
           NEW="${{ needs.check-for-new-maf-release.outputs.new_version }}"
-          # Try GitHub releases first (adjust repo name if needed)
-          gh release view "v${NEW}" \
-            --repo microsoft/agents \
-            --json body --jq .body \
-            > release-notes.txt 2>/dev/null || echo "Release notes not available from GitHub" > release-notes.txt
+          # MAF releases are on github.com/microsoft/agent-framework (NOT microsoft/agents).
+          # MAF release tags follow the form `dotnet-X.Y.Z` (e.g. `dotnet-1.3.0`), per the
+          # canonical release links in guides/maf-1.3.0-migration-guide.md.
+          # Try both forms — `dotnet-X.Y.Z` first (canonical), `vX.Y.Z` as a fallback.
+          for tag in "dotnet-${NEW}" "v${NEW}"; do
+            if gh release view "$tag" --repo microsoft/agent-framework --json body --jq .body > release-notes.txt 2>/dev/null; then
+              echo "✅ Fetched release notes from tag $tag"
+              break
+            fi
+          done
+          if [ ! -s release-notes.txt ]; then
+            echo "ℹ️ Release notes not yet published on GitHub for $NEW — empty placeholder used." > release-notes.txt
+          fi
           cat release-notes.txt
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -120,26 +163,62 @@ jobs:
           NEW_VERSION: ${{ needs.check-for-new-maf-release.outputs.new_version }}
         run: python3 .github/scripts/gen_guide_section.py
 
+      - name: Auto-append draft registry entries
+        env:
+          OLD: ${{ needs.check-for-new-maf-release.outputs.old_version }}
+          NEW: ${{ needs.check-for-new-maf-release.outputs.new_version }}
+        continue-on-error: true   # never block the PR on registry extraction
+        run: |
+          # Install maf-autopilot itself so we can call the registry-extract subcommand.
+          dotnet tool install --global maf-autopilot --prerelease \
+            || dotnet tool update --global maf-autopilot --prerelease
+
+          REGISTRY=".github/skills/obsolete-api-registry/registry.yaml"
+          TMP_ENTRIES="/tmp/draft-registry-entries.yaml"
+
+          # Run extractor for each MAF package — append concatenated output.
+          : > "$TMP_ENTRIES"
+          for pkg in Microsoft.Agents.AI Microsoft.Agents.AI.Workflows; do
+            echo "=== Extracting draft entries for $pkg ($OLD → $NEW) ==="
+            maf-autopilot registry-extract "$pkg" "$OLD" "$NEW" >> "$TMP_ENTRIES" || true
+            echo "" >> "$TMP_ENTRIES"
+          done
+
+          # Only append if the extractor produced ENTRY rows (lines starting with "- id:").
+          if grep -q "^- id:" "$TMP_ENTRIES"; then
+            echo "" >> "$REGISTRY"
+            echo "# === Draft entries auto-appended by release-watcher on $(date -u +%Y-%m-%d). Review before merging. ===" >> "$REGISTRY"
+            cat "$TMP_ENTRIES" >> "$REGISTRY"
+            echo "✅ Draft registry entries appended."
+          else
+            echo "ℹ️ No new draft registry candidates from this diff."
+          fi
+
       - name: Update .maf-version
         run: |
           echo "${{ needs.check-for-new-maf-release.outputs.new_version }}" > .maf-version
           echo "Updated .maf-version to ${{ needs.check-for-new-maf-release.outputs.new_version }}"
 
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v6
+        # SHA-pinned per supply-chain hardening. Verify against tag with:
+        #   gh api repos/peter-evans/create-pull-request/git/refs/tags/v6.1.0 --jq .object.sha
+        # Update via Dependabot (.github/dependabot.yml).
+        uses: peter-evans/create-pull-request@5e914681df9dc83aa4e4905692ca88beb2f9e91f  # v6.1.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          title: "chore: Update for MAF ${{ needs.check-for-new-maf-release.outputs.new_version }}"
+          title: "${{ needs.check-for-new-maf-release.outputs.is_major == 'true' && '🚨 MAJOR: ' || 'chore: ' }}Update for MAF ${{ needs.check-for-new-maf-release.outputs.new_version }}"
+          labels: ${{ needs.check-for-new-maf-release.outputs.is_major == 'true' && 'maf-release,major-version,needs-review' || 'maf-release' }}
           body: |
             ## 🤖 Automated MAF release update
 
             MAF version: `${{ needs.check-for-new-maf-release.outputs.old_version }}` → `${{ needs.check-for-new-maf-release.outputs.new_version }}`
+            ${{ needs.check-for-new-maf-release.outputs.is_major == 'true' && '⚠️ **MAJOR VERSION BUMP** — breaking-change surface is likely large. This PR is auto-generated as a starting point only; expect significant manual updates to the migration guide, registry, and constraints. Do NOT auto-merge.' || '' }}
 
             ### Changes in this PR
             - [x] `.maf-version` updated
             - [x] `docs/compatibility-matrix.md` — new row added (dependency versions need verification)
-            - [x] `guides/maf-1.3.0-migration-guide.md` — draft section appended
-            - [ ] `registry.yaml` — new CS0618 entries (manual step required, see below)
+            - [x] `guides/maf-<new>-migration-guide.md` — per-version draft created (idempotent — AUTO/HUMAN markers)
+            - [x] `.github/skills/obsolete-api-registry/registry.yaml` — draft entries appended via `maf-autopilot registry-extract` (fill in TODO fields during review)
 
             ### ⚠️ Human Review Checklist — Required Before Merging
 
@@ -169,6 +248,7 @@ jobs:
           add-paths: |
             .maf-version
             docs/compatibility-matrix.md
-            guides/maf-1.3.0-migration-guide.md
+            guides/*.md
+            .github/skills/obsolete-api-registry/registry.yaml
 
 

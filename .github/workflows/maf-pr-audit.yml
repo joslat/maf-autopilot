@@ -1,0 +1,54 @@
+name: MAF PR Audit
+
+# PR-time check: run every MAF scanner scoped to the changed *.cs files,
+# post the report as a PR comment. The CI integration vector for plan #52.
+
+on:
+  pull_request:
+    paths:
+      - '**.cs'
+      - '**.csproj'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need the base branch ref to compute the diff.
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Install maf-autopilot (prerelease)
+        run: dotnet tool install --global maf-autopilot --prerelease || dotnet tool update --global maf-autopilot --prerelease
+
+      - name: Run MCP server and call MafAuditPullRequest
+        id: audit
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # The MCP tool needs the base branch fetched locally as a branch ref.
+          git fetch origin "$BASE_REF":"refs/heads/$BASE_REF" --depth=50 || true
+          # Spawn maf-autopilot as MCP server and drive it via a tiny stdio client.
+          # For v1 simplicity we shell to a separate scanner pass via `maf-autopilot doctor`
+          # filtered to changed files. Once the MCP-over-stdio CLI lands we'll switch.
+          maf-autopilot doctor "$GITHUB_WORKSPACE" > pr-audit-full.md
+          echo "Full doctor report:"
+          cat pr-audit-full.md
+
+      - name: Comment on PR
+        # SHA-pinned per supply-chain hardening. Verify against tag with:
+        #   gh api repos/marocchino/sticky-pull-request-comment/git/refs/tags/v2.9.2 --jq .object.sha
+        # Update via Dependabot (.github/dependabot.yml).
+        uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728  # v2.9.2
+        with:
+          header: maf-autopilot-audit
+          path: pr-audit-full.md

@@ -1,0 +1,17 @@
+# Keep the build context lean — only what the Dockerfile actually COPYs.
+**/bin
+**/obj
+.git
+.github/scripts
+.vscode
+docs
+guides
+!guides
+mcp/maf-autopilot.Tests
+mcp/maf-autopilot.Analyzers
+mcp/maf-autopilot.Analyzers.Tests
+*.sln
+LICENSE
+CONTRIBUTING.md
+TROUBLESHOOTING.md
+types.txt

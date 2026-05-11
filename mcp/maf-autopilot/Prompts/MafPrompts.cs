@@ -36,8 +36,8 @@ public static class MafPrompts
         sb.AppendLine("BEFORE STARTING:");
         sb.AppendLine("1. Read the hard constraints at maf://constraints — these must never be violated.");
         sb.AppendLine("2. Read the obsolete API registry at maf://registry for known fix patterns.");
-        sb.AppendLine("3. Use maf_api_safety to validate any API you are unsure about.");
-        sb.AppendLine("4. Use maf_registry_lookup to check if a specific CS0618 pattern already has a registered fix.");
+        sb.AppendLine("3. Use MafApiSafety to validate any API you are unsure about.");
+        sb.AppendLine("4. Use MafRegistryLookup to check if a specific CS0618 pattern already has a registered fix.");
         sb.AppendLine();
         sb.AppendLine("OUTPUT: A complete migration-plan.md tracking table following the migration-plan-creator skill format.");
         sb.AppendLine("Read maf://skills?name=migration-plan-creator for the canonical template and task ID conventions.");
@@ -65,11 +65,16 @@ public static class MafPrompts
         sb.AppendLine("- NEVER add [StreamsMessage] or [YieldsMessage] attributes — they are removed in 1.3.0.");
         sb.AppendLine("- NEVER store session state in AIContextProvider/ChatHistoryProvider instance fields.");
         sb.AppendLine("- NEVER use DefaultAzureCredential in production code.");
-        sb.AppendLine("- For CS0618 warnings: use the cs0618-hunter skill workflow, NOT dotnet-inspect alone.");
         sb.AppendLine("- ALWAYS update the tracking table in migration-plan.md after each build-verified task.");
         sb.AppendLine();
-        sb.AppendLine("Fan-out/fan-in silent failure check: after each executor change, verify handlers return ValueTask<T> (not void).");
-        sb.AppendLine("Read maf://skills?name=fan-out-validator for the validation procedure.");
+        sb.AppendLine("EXECUTION LOOP — for each task:");
+        sb.AppendLine("1. Apply the change.");
+        sb.AppendLine("2. Run `dotnet build` and ensure it is green before mark-complete.");
+        sb.AppendLine("3. If you touched CS0618 sites: call `MafRunCs0618Hunt(projectPath)` to confirm no warnings remain.");
+        sb.AppendLine("4. If you touched an executor: call `MafValidateFanOut(<path>)` — silent fan-in starvation is the #1 class of bug this toolkit catches.");
+        sb.AppendLine("5. After every 5 tasks (or at end-of-session): call `MafDoctor(repoPath)` for an A/B/C/F grade + top 3 remaining fixes.");
+        sb.AppendLine();
+        sb.AppendLine("Use `MafAuditPullRequest(repoPath, baseBranch)` before opening the migration PR — it runs every scanner only on the files this branch changed, so the comment stays scoped.");
 
         return [new PromptMessage { Role = Role.User, Content = new TextContentBlock { Text = sb.ToString() } }];
     }
@@ -77,23 +82,33 @@ public static class MafPrompts
     [McpServerPrompt(Name = "maf-cs0618-hunt",
         Title = "MAF CS0618: Find and Fix Obsolete APIs")]
     [Description(
-        "Generates a starter prompt to find and fix all CS0618 obsolete API warnings " +
-        "using the cs0618-hunter skill. Compiler-based detection — not dotnet-inspect.")]
+        "Calls the MafRunCs0618Hunt tool to detect and fix every CS0618 / CS0246 " +
+        "diagnostic in the project. Replaces the older 'run bash and parse output by hand' " +
+        "procedure with a single deterministic tool call.")]
     public static IList<PromptMessage> Cs0618Hunt(
         [Description("Path to the .NET solution or project file.")] string projectPath)
     {
+        // Rewritten 2026-05-12 (Phase F.1, post-Opus review). Previously the prompt
+        // instructed the LLM to run `dotnet build | Select-String "CS0618"` — but
+        // `MafRunCs0618Hunt` now automates that AND registry-joins each finding to
+        // its canonical fix. Telling the LLM to do it by hand is a footgun: it skips
+        // the registry join and produces a noisier, less-actionable report.
         var sb = new StringBuilder();
-        sb.AppendLine("Use the cs0618-hunter skill to find and fix all CS0618 obsolete API warnings.");
+        sb.AppendLine($"Call `MafRunCs0618Hunt(projectPath: \"{projectPath}\")` to detect every CS0618 / CS0246 diagnostic in the project.");
         sb.AppendLine();
-        sb.AppendLine($"Project: {projectPath}");
+        sb.AppendLine("The tool runs `dotnet build`, parses every diagnostic, and joins each one to its canonical fix in the obsolete-API registry. For each finding the tool returns:");
         sb.AppendLine();
-        sb.AppendLine("WORKFLOW (from maf://skills?name=cs0618-hunter):");
-        sb.AppendLine("1. Run: dotnet build 2>&1 | Select-String 'warning CS0618'  — this is the baseline.");
-        sb.AppendLine("2. For each warning, look up the fix in maf://registry using maf_registry_lookup.");
-        sb.AppendLine("3. Apply the fix. Re-run the build. Confirm the warning is gone before moving on.");
-        sb.AppendLine("4. Do NOT use dotnet-inspect to detect [Obsolete] — it does not flag overload-level deprecations.");
+        sb.AppendLine("- File + line of the diagnostic");
+        sb.AppendLine("- The exact warning / error message");
+        sb.AppendLine("- The matching registry entry ID (e.g. `MAF130-THREAD-001`) when one exists");
+        sb.AppendLine("- The deterministic fix to apply");
         sb.AppendLine();
-        sb.AppendLine("Cross-reference with the hard constraints at maf://constraints for any AddFanInBarrierEdge usage.");
+        sb.AppendLine("For each finding:");
+        sb.AppendLine("1. Read the registry entry via `MafRegistryLookup(<entry-id>)` if you need the full before/after example.");
+        sb.AppendLine("2. Apply the documented fix.");
+        sb.AppendLine("3. Re-run `MafRunCs0618Hunt` to confirm the warning is gone before moving to the next.");
+        sb.AppendLine();
+        sb.AppendLine("Cross-reference `maf://constraints` for any `AddFanInBarrierEdge` usage that doesn't surface a registry hit.");
 
         return [new PromptMessage { Role = Role.User, Content = new TextContentBlock { Text = sb.ToString() } }];
     }

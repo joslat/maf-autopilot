@@ -1,111 +1,55 @@
 ---
 name: fan-out-validator
-description: "Validates fan-out/fan-in executor topology in MAF 1.3.0 workflows. Detects the silent runtime failure where a fan-out executor handler returns void or non-generic ValueTask, causing the fan-in barrier to starve with no build error. Use during Phase 3 review and whenever a workflow contains AddFanOutEdge."
+description: "Validates fan-out / fan-in workflow topology — detects the silent fan-in starvation pattern (handlers returning void / non-generic Task that produce no downstream message). Canonical rules + procedure for what the compiler cannot catch and the build cannot surface."
 ---
 
-# fan-out-validator
+# fan-out-validator — silent fan-in starvation detection
 
-## The Silent Failure Pattern
+> **⚡ Prefer the MCP tools.** The `maf-autopilot` MCP server exposes:
+> - **`MafValidateFanOut(repoPath)`** — Roslyn syntax walk; flags any `[MessageHandler]` returning `void` / non-generic `Task` / `ValueTask` (the silent-starvation patterns).
+> - **`MafSimulateWorkflow(repoPath)`** — builds the full executor topology graph (fan-out + fan-in edges resolved through variable bindings), emits a Mermaid diagram, and gives an end-to-end completion forecast.
+>
+> Use both: `MafValidateFanOut` for per-handler verdicts, `MafSimulateWorkflow` for "would this workflow complete?"
+>
+> *This skill formerly had a sibling `fan-in-static-analyzer` that walked the same patterns by hand; both have been merged here now that the MCP tools cover the procedural work.*
 
-In MAF 1.3.0, `WorkflowBuilder.AddFanOutEdge` routes the **return value** of a fan-out executor handler to all connected targets. If the handler returns `void` or non-generic `ValueTask`, it produces no output message. The fan-in barrier never receives the required number of messages, so it never fires — and the workflow exits cleanly with no error.
+## The bug class — "silent fan-in starvation"
 
-```
-Build:   ✅ green
-Test:    ✅ passes (if tests don't check fan-in output)
-Runtime: ✗ fan-in never reached, partial results silently dropped
-```
+A fan-out executor's `[MessageHandler]` method MUST return one of:
+- `Task<TMessage>`
+- `ValueTask<TMessage>`
+- `IAsyncEnumerable<TMessage>` (streaming)
 
-This is the most dangerous class of MAF migration bug.
+A handler that returns `void`, `Task`, or `ValueTask` (non-generic) produces **no output message**. The fan-in barrier on the downstream edge then **starves silently** — the workflow exits cleanly but incompletely.
 
-## When to Use This Skill
+**This is NOT a build error.** `dotnet build` is clean. Tests that don't exercise the fan-in path are clean. The bug only surfaces in production traces (or with one of the tools above).
 
-- Whenever a workflow file contains `AddFanOutEdge`
-- During Phase 3 review (mandatory, after CS0618 check)
-- After any executor handler method is modified
-- When a workflow "runs to completion" but produces unexpected/missing output
+## Return-type verdict table
 
-## The Validation Workflow
+| Return type                              | Verdict                  | Why                                       |
+|------------------------------------------|--------------------------|-------------------------------------------|
+| `Task<TMessage>`, `ValueTask<TMessage>`  | ✅ OK                    | Produces a downstream message             |
+| `IAsyncEnumerable<TMessage>`             | ✅ OK (streaming pattern)| Produces a stream of messages             |
+| `void`                                   | ❌ SILENT_STARVATION_RISK | No completion signal AND no message      |
+| `Task`, `ValueTask` (non-generic)        | ❌ SILENT_STARVATION_RISK | Completes but emits nothing               |
+| `int`, `string`, raw concrete types      | ⚠ LIKELY_INVALID         | Cannot satisfy MAF's fan-out contract    |
 
-### Step 1 — Find all fan-out edges
+## Fan-in argument-order rule
 
-```powershell
-Select-String -Path "src/**/*.cs" -Pattern "AddFanOutEdge" -Recurse
-```
+The canonical 1.3.0 form of `AddFanInBarrierEdge` is:
 
-For each match, note:
-1. The file and line
-2. The executor binding passed as the source (e.g., `fanOutExec`)
-
-### Step 2 — Find the executor class and handler
-
-For each fan-out executor binding, find the `Executor` subclass it wraps. Then find its `[MessageHandler]`-attributed method.
-
-The critical property: **what is the return type?**
-
-### Step 3 — Check return types
-
-```
-CORRECT:   async ValueTask<T> HandleAsync(TInput input, ...)
-           where T = the message type that fan-in expects
-           
-WRONG:     async ValueTask HandleAsync(...)        ← produces nothing
-WRONG:     void HandleAsync(...)                   ← produces nothing
-WRONG:     Task HandleAsync(...)                   ← produces nothing
-```
-
-If ANY fan-out handler has a non-generic return type → it is broken.
-
-### Step 4 — Verify fan-in match
-
-For each `AddFanInBarrierEdge` call in the same workflow:
-1. Confirm it uses the **non-obsolete overload**: `AddFanInBarrierEdge(IEnumerable<ExecutorBinding> sources, ExecutorBinding target)`
-2. Confirm the `sources` list contains ALL fan-out executor bindings that should contribute
-3. Confirm the count: if 3 fan-out executors feed into a fan-in, the barrier expects exactly 3 messages
-
-### Step 5 — Fix pattern
-
-**Wrong (void fan-out handler):**
-```csharp
-[MessageHandler]
-public async ValueTask HandleAsync(ClaimData claim, ExecutorContext context)
-{
-    var result = await ProcessAsync(claim);
-    await context.SendMessageAsync(result);  // ← old pattern, wrong in 1.3.0
-}
-```
-
-**Correct (ValueTask<T> fan-out handler):**
-```csharp
-[MessageHandler]
-public async ValueTask<ValidationResult> HandleAsync(ClaimData claim, ExecutorContext context)
-{
-    return await ProcessAsync(claim);  // ← return value IS the fan-out message
-}
-```
-
-**Wrong (obsolete fan-in overload):**
-```csharp
-builder.AddFanInBarrierEdge(aggregatorExec, osintExec, userHistoryExec, transactionExec);
-//                          ↑ target first — obsolete (CS0618)
-```
-
-**Correct (sources first):**
 ```csharp
 builder.AddFanInBarrierEdge(
-    new[] { osintExec, userHistoryExec, transactionExec },  // sources first
-    aggregatorExec);                                         // target last
+    new[] { sourceA, sourceB, sourceC },   // sources first (IEnumerable<ExecutorBinding>)
+    target);                               // target last (single ExecutorBinding)
 ```
 
----
+The legacy `(target, sources)` overload is `[Obsolete]` in 1.3.0 — triggers `CS0618`. The compiler catches that one. (See registry entry `MAF130-FAN-IN-001`.)
 
-## Validation Checklist
+## Manual fallback
 
-For each workflow with fan-out:
+When the MCP tools are unavailable, walk every `MethodDeclarationSyntax` in the codebase that has `[MessageHandler]` and inspect its `ReturnType`. Apply the verdict table above. Cross-reference each fan-out edge against the producing executor's handler.
 
-- [ ] Every fan-out executor handler returns `ValueTask<T>` (generic)
-- [ ] The `T` type matches what the fan-in aggregator handler accepts as input
-- [ ] `AddFanInBarrierEdge` uses sources-first overload
-- [ ] The sources list is complete (no missing fan-out executor)
-- [ ] Count matches: N fan-out executors → fan-in barrier expects N messages
+## Companion analyzer (write-time enforcement)
 
-All boxes must be checked before marking fan-out tasks as `✅ Verified`.
+The `maf-autopilot.Analyzers` NuGet package ships **`MAF001`** (Error severity) for exactly this pattern — `[MessageHandler]` returning a non-generic awaitable. Add `<PackageReference Include="maf-autopilot.Analyzers" />` to your project to catch this at write-time, before commit.

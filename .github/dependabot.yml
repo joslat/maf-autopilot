@@ -1,0 +1,60 @@
+# Dependabot configuration for maf-autopilot.
+#
+# Goals:
+#   1. Keep NuGet dependencies on supported versions (security patches land within a week).
+#   2. Keep GitHub Actions SHA-pinned and auto-update SHAs when upstream cuts a new tag.
+#   3. Keep Docker base image current.
+#
+# All updates open PRs against `main` with `dependencies` label. Reviewer responsibility:
+# verify the SHA matches the named version tag via `gh api ...` before merging.
+
+version: 2
+updates:
+  # .NET / NuGet across all csproj files in the solution.
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - nuget
+    commit-message:
+      prefix: "deps(nuget)"
+      include: scope
+
+  # GitHub Actions — Dependabot will rewrite the SHA + the `# vX.Y.Z` comment together,
+  # keeping the audit trail intact.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "deps(actions)"
+      include: scope
+
+  # Docker base image (mcr.microsoft.com/dotnet/sdk + runtime).
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 2
+    labels:
+      - dependencies
+      - docker
+    commit-message:
+      prefix: "deps(docker)"
+      include: scope

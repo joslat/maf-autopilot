@@ -17,24 +17,39 @@ Constraints and breaking changes are in **`maf-constraints.instructions.md`** (a
 
 ---
 
-## Skill Selection Guide
+## MCP Tool Shortcuts (prefer these — they replace manual procedures)
 
-Load skills using `read_file` on the SKILL.md path before using them.
+The `maf-autopilot` MCP server is running in this workspace. Use its **executable tools** for the heavy lifting instead of "load skill and run by hand". Tool names are PascalCase:
+
+| When you need to…                                          | Call MCP tool                                          | Replaces |
+|------------------------------------------------------------|--------------------------------------------------------|----------|
+| Check if a MAF API name is safe in 1.3.0                   | `MafApiSafety(apiName)`                                | (new capability) |
+| Look up full fix for a known CS0618 entry                  | `MafRegistryLookup(entryId)`                           | `obsolete-api-registry` skill |
+| List all registry entries                                  | `MafRegistryList()`                                    | (new capability) |
+| Run CS0618 / CS0246 hunt across a project                  | `MafRunCs0618Hunt(projectPath)`                        | `cs0618-hunter` skill manual loop |
+| Validate fan-out / fan-in executor topology (Roslyn)       | `MafValidateFanOut(repoPath)`                          | `fan-in-static-analyzer` skill manual walk |
+| Diff two NuGet versions of a package                       | `MafDiffPackage(packageId, oldVersion, newVersion)`    | `nuget-diff-analyzer` skill manual `dnx` call |
+| Scan repo for security/concurrency/observability bad code  | `MafScanAntiPatterns(repoPath)`                        | (new capability) |
+| Simulate workflow topology (Mermaid + completion forecast) | `MafSimulateWorkflow(repoPath)`                        | (new capability) |
+| Explain a MAF code snippet inline                          | `MafExplain(snippet)`                                  | (new capability) |
+| Scaffold a new MAF agent class + smoke test                | `MafNewAgent(projectPath, agentName, instructions?)`   | (new capability) |
+| Scaffold a new workflow executor (fan-out-safe)            | `MafNewExecutor(projectPath, name, inputType, outputType)` | (new capability) |
+
+## Skill Selection Guide (for context the tools don't carry)
+
+Skills remain the source of truth for *narrative* knowledge — when to use what, decision trees, common pitfalls. Load them via `read_file` when the tool output alone doesn't answer your question.
 
 | When you need to…                                         | Load skill                                         |
 |-----------------------------------------------------------|----------------------------------------------------|
 | Look up MAF API signatures, patterns, or guide sections   | `.github/skills/maf-migration-guide/SKILL.md`      |
-| Check if a NuGet type/member exists                       | `.github/skills/dotnet-inspect/SKILL.md`           |
-| Detect and fix CS0618 obsolete warnings                   | `.github/skills/cs0618-hunter/SKILL.md`            |
-| Look up the fix for a specific known CS0618 warning       | `.github/skills/obsolete-api-registry/SKILL.md`    |
-| Generate a migration plan for this codebase               | `.github/skills/migration-plan-creator/SKILL.md`   |
-| Validate fan-out/fan-in executor topology (conceptual)    | `.github/skills/fan-out-validator/SKILL.md`        |
-| Static analysis of fan-out topology (code walking)        | `.github/skills/fan-in-static-analyzer/SKILL.md`   |
-| Post-process NuGet version diff into actionable report    | `.github/skills/nuget-diff-analyzer/SKILL.md`      |
+| Check if a NuGet type/member exists (beyond MAF surface)  | `.github/skills/dotnet-inspect/SKILL.md`           |
+| Generate a migration plan template                        | `.github/skills/migration-plan-creator/SKILL.md`   |
+| Fan-out / fan-in conceptual rules                         | `.github/skills/fan-out-validator/SKILL.md`        |
 | Generate smoke tests for workflow patterns                | `.github/skills/workflow-smoke-tester/SKILL.md`    |
 | Capture surprises and improve the toolkit post-migration  | `.github/skills/migration-retrospective/SKILL.md`  |
+| Steady-state anti-pattern rules (8 codified rules)        | `.github/skills/maf-anti-pattern-scanner/SKILL.md` |
 
-> **Critical:** NEVER use `dotnet-inspect` to check for obsolete APIs — it does NOT flag `[Obsolete]` at the overload level. Use `cs0618-hunter` for all obsolete API detection.
+> **Critical:** Pin `dotnet-inspect` to v0.7.8 or later — v0.7.8 surfaces `[Obsolete]` in member listings. For ground-truth on what your project actually triggers (transitive obsoletions, overload-resolution surprises, project-local `[Obsolete]`), `MafRunCs0618Hunt` (compiler-based) is the authoritative path.
 
 ---
 
@@ -69,8 +84,8 @@ Load skills using `read_file` on the SKILL.md path before using them.
 
 After the last task of each phase:
 1. Run: `dotnet build <solution>.sln`
-2. Run CS0618 check: `dotnet build 2>&1 | Select-String "warning CS0618"` — fix every match
-3. Load `fan-out-validator` skill → validate all fan-out executor return types
+2. Call **`MafRunCs0618Hunt(projectPath)`** — fix every match the tool surfaces
+3. Call **`MafValidateFanOut(repoPath)`** — fix every `SilentStarvationRisk` / `LikelyInvalid` finding
 4. Only if ALL checks pass: proceed to next phase
 
 ### Never skip, never batch
@@ -88,9 +103,10 @@ Work through these in strict order.
 1. Read `src/docs/migration-plan.md` in full.
 2. Load and read the `maf-migration-guide` skill.
 3. Read all `.csproj` files — confirm current package versions.
-4. Skim all `.cs` source files — confirm the migration plan is accurate.
-5. Use `dotnet-inspect` skill to verify any API that is unclear or not in the guide.
-6. If the plan is incomplete, generate a complete one: load `migration-plan-creator` skill.
+4. Call **`MafDiffPackage("Microsoft.Agents.AI", oldVersion, "1.3.0")`** and **`MafDiffPackage("Microsoft.Agents.AI.Workflows", oldVersion, "1.3.0")`** to enumerate every breaking and additive change. The tool returns a Mermaid-ready structured report cross-referenced against the registry.
+5. Skim all `.cs` source files — confirm the migration plan is accurate.
+6. For any unclear API, call **`MafApiSafety(apiName)`** first. If the registry has it, you get the canonical fix in one round-trip. Fall back to the `dotnet-inspect` skill only when `MafApiSafety` returns SAFE on an API you still suspect.
+7. If the plan is incomplete, generate a complete one: load `migration-plan-creator` skill.
 
 ### Phase 1 — Plan Review
 1. Review the tracking table in `src/docs/migration-plan.md`.
@@ -111,16 +127,20 @@ Follow the **Mandatory Workflow** above. Tasks in order:
 - T9.x — DevUI guard  
 
 ### Phase 3 — Review
+
+**Use the MCP tools — they replace 90% of the manual procedure that used to live here.**
+
 1. Run `dotnet build` on the full solution.
 2. Run `dotnet test` if tests exist.
 3. Run all grep checks from the migration plan. Every grep must return 0 matches.
 4. Verify each executor class is `sealed partial` with `[MessageHandler]` on all handlers.
 5. Verify all agent options have `Instructions` inside `ChatOptions`, not at the top level.
-6. **CS0618 check** — load `cs0618-hunter` skill and run it. Fix every match.
-7. **Fan-out static analysis** — load `fan-in-static-analyzer` skill. Walk every workflow builder file, verify all fan-out handler return types are `ValueTask<T>`. Fix any non-generic returns.
-8. **Fan-out topology check** — load `fan-out-validator` skill and validate fan-in argument order and branch coverage.
-9. **Smoke tests** — if workflows are present, load `workflow-smoke-tester` skill and generate + run smoke tests for fan-out/fan-in patterns.
-10. Update tracking table: mark T10.x as complete and verified.
+6. **CS0618 check** — call **`MafRunCs0618Hunt(projectPath)`**. The tool builds the project, parses every CS0618/CS0246 diagnostic, and registry-joins each one to its canonical fix. Apply each fix, re-run the tool, repeat until clean.
+7. **Fan-out topology check** — call **`MafValidateFanOut(repoPath)`**. The tool walks every `[MessageHandler]` method via Roslyn and flags any `void` / non-generic `Task` / `ValueTask` returns. Fix each finding.
+8. **Workflow simulation** — call **`MafSimulateWorkflow(repoPath)`**. Emits a Mermaid diagram of the executor topology and proves end-to-end whether the workflow can complete without silent fan-in starvation. Paste the diagram into your PR description.
+9. **Anti-pattern sweep** — call **`MafScanAntiPatterns(repoPath)`**. Catches `DefaultAzureCredential` slipping into prod, `EnableSensitiveData = true` outside dev, mutable state on `AIContextProvider`, missing `UseOpenTelemetry`. Address every Error-severity finding; review every Warning.
+10. **Smoke tests** — if workflows are present, load `workflow-smoke-tester` skill and generate + run smoke tests for fan-out/fan-in patterns.
+11. Update tracking table: mark T10.x as complete and verified.
 
 ### Phase 4 — Polish and Iterate
 1. Fix any issues from Phase 3. Follow the tracking table process for each fix.

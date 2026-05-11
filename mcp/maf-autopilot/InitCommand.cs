@@ -1,5 +1,3 @@
-using System.Reflection;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -18,7 +16,39 @@ namespace MafAutopilot;
 /// </summary>
 internal static class InitCommand
 {
-    private static readonly Assembly _asm = typeof(InitCommand).Assembly;
+    /// <summary>
+    /// VS Code's mcp.json is JSONC — supports // line comments, /* block */ comments,
+    /// and trailing commas. Use these options instead of strict JSON parsing.
+    /// </summary>
+    private static readonly JsonDocumentOptions JsoncOptions = new()
+    {
+        CommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
+
+    /// <summary>
+    /// Copies the file to a backup path with a unique suffix, retrying on collision.
+    /// Returns the path that was actually used.
+    /// </summary>
+    private static string CreateBackupWithRetry(string originalPath)
+    {
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var candidate = $"{originalPath}.bak.{DateTime.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid().ToString("N")[..8]}";
+            try
+            {
+                File.Copy(originalPath, candidate, overwrite: false);
+                return candidate;
+            }
+            catch (IOException) when (attempt < 4)
+            {
+                // Same-millisecond collision is astronomically unlikely; retry regenerates the suffix.
+            }
+        }
+        throw new IOException(
+            $"Could not create a unique backup for '{originalPath}' after 5 attempts. " +
+            $"Check that the directory is writable.");
+    }
 
     public static async Task<int> RunAsync()
     {
@@ -32,13 +62,18 @@ internal static class InitCommand
         await WriteCopilotInstructionsAsync(targetDir);
 
         Console.WriteLine();
-        Console.WriteLine("Done. Open this folder in VS Code, then in Copilot Chat:");
-        Console.WriteLine("  /maf-audit     — scan the codebase and generate a migration plan");
-        Console.WriteLine("  /maf-migrate   — execute tasks from your migration plan");
-        Console.WriteLine("  /maf-cs0618-hunt — find and fix all obsolete API warnings");
+        Console.WriteLine("Done. ⚡ Try these three commands first:");
         Console.WriteLine();
-        Console.WriteLine("Full guide: read maf://guide");
-        Console.WriteLine("Constraint rules: read maf://constraints");
+        Console.WriteLine("  maf-autopilot doctor .            # instant A/B/C/F health letter");
+        Console.WriteLine("  maf-autopilot new agent ChatBot   # scaffold a clean 1.3.0 agent");
+        Console.WriteLine();
+        Console.WriteLine("Then open this folder in VS Code. In Copilot Chat:");
+        Console.WriteLine("  @maf-auditor                      # pre-migration scan + plan");
+        Console.WriteLine("  @maf-best-practice-reviewer       # steady-state best-practice audit");
+        Console.WriteLine("  @maf-migration                    # execute a migration-plan.md");
+        Console.WriteLine();
+        Console.WriteLine("Full guide:        read maf://guide");
+        Console.WriteLine("Constraint rules:  read maf://constraints");
 
         return 0;
     }
@@ -47,25 +82,49 @@ internal static class InitCommand
     //  .vscode/mcp.json                                                    //
     // ------------------------------------------------------------------ //
 
-    private static async Task WriteMcpJsonAsync(string targetDir)
+    internal static async Task WriteMcpJsonAsync(string targetDir)
     {
         var vscodeDir = Path.Combine(targetDir, ".vscode");
         var mcpJsonPath = Path.Combine(vscodeDir, "mcp.json");
 
         Directory.CreateDirectory(vscodeDir);
 
-        // Read existing file if present; tolerate malformed JSON by starting fresh
+        // Read existing file if present. VS Code's mcp.json spec allows // and /* */
+        // comments and trailing commas (JSON-with-comments / JSONC), so use lenient
+        // parser options before deciding the file is malformed. On a true parse failure,
+        // back up the original so we never silently destroy other MCP-server entries.
+        // Security: cap the JSON read at 1 MB. A malicious or corrupt mcp.json (from a
+        // template repo, a stale upstream, or a paste accident) could otherwise OOM the
+        // host on the very first `maf-autopilot init` invocation. Real mcp.json files
+        // are kilobytes at most.
+        const long McpJsonMaxBytes = 1 * 1024 * 1024;
         JsonObject root;
         if (File.Exists(mcpJsonPath))
         {
-            try
+            var info = new FileInfo(mcpJsonPath);
+            if (info.Length > McpJsonMaxBytes)
             {
-                root = JsonNode.Parse(await File.ReadAllTextAsync(mcpJsonPath))!.AsObject();
-            }
-            catch
-            {
-                Console.WriteLine($"  ⚠ .vscode/mcp.json exists but could not be parsed — recreating");
+                var backupPath = CreateBackupWithRetry(mcpJsonPath);
+                Console.WriteLine($"  ⚠ .vscode/mcp.json is {info.Length / 1024} KB — exceeds the 1 MB safety cap.");
+                Console.WriteLine($"    Backed up to: {backupPath}");
+                Console.WriteLine($"    Starting fresh — restore any other server entries from the backup manually.");
                 root = new JsonObject();
+            }
+            else
+            {
+                var raw = await File.ReadAllTextAsync(mcpJsonPath);
+                try
+                {
+                    root = JsonNode.Parse(raw, nodeOptions: null, documentOptions: JsoncOptions)!.AsObject();
+                }
+                catch
+                {
+                    var backupPath = CreateBackupWithRetry(mcpJsonPath);
+                    Console.WriteLine($"  ⚠ .vscode/mcp.json exists but could not be parsed as JSON (even allowing // comments).");
+                    Console.WriteLine($"    Backed up to: {backupPath}");
+                    Console.WriteLine($"    Starting fresh — restore any other server entries from the backup manually.");
+                    root = new JsonObject();
+                }
             }
         }
         else
@@ -116,56 +175,59 @@ internal static class InitCommand
 
         Directory.CreateDirectory(githubDir);
 
-        // Embed the MAF hard constraint rules (stripped of VS Code instructions frontmatter)
-        var constraintsRaw = ReadEmbedded("constraints.md");
-        var constraintsBody = StripFrontmatter(constraintsRaw).TrimStart();
+        // Write a thin POINTER, not a copy. The previous version embedded the full
+        // constraints content here, which drifted the moment the MCP server bundle
+        // shipped a new revision. A pointer file is always current — Copilot fetches
+        // `maf://constraints` from the live MCP server on every chat turn.
+        //
+        // Rationale: a fixed-at-install-time copy of a living document is technical
+        // debt. See plan #66.
+        var pointer = """
+            # MAF Migration — Auto-Loaded Constraints
 
-        var content = new StringBuilder();
-        content.AppendLine("# MAF 1.3.0 Migration — Auto-Loaded Constraints");
-        content.AppendLine();
-        content.AppendLine("> Auto-generated by `maf-autopilot init`. Do not hand-edit.");
-        content.AppendLine("> Regenerate: delete this file and re-run `maf-autopilot init`.");
-        content.AppendLine("> Authoritative version: read `maf://constraints` in Copilot Chat.");
-        content.AppendLine();
-        content.Append(constraintsBody);
+            > **Auto-generated by `maf-autopilot init`. Do not hand-edit.**
+            > This file is a stable pointer; the authoritative content lives in the MCP server.
+            > **Regenerate:** delete this file and re-run `maf-autopilot init`.
 
-        await File.WriteAllTextAsync(instructionsPath, content.ToString());
-        Console.WriteLine("  ✓ .github/copilot-instructions.md — MAF hard constraints installed");
-        Console.WriteLine("    (Auto-loads in every Copilot chat in this workspace)");
+            ## How constraints work in this workspace
+
+            The `maf-autopilot` MCP server (configured in `.vscode/mcp.json`) exposes the
+            current MAF best-practice constraints at the resource URI **`maf://constraints`**.
+            GitHub Copilot Chat reads that resource on demand — the constraints stay current
+            with whatever version of `maf-autopilot` is installed, with no manual sync.
+
+            To read the constraints right now, in Copilot Chat:
+            > Read `maf://constraints` and summarise the hard rules.
+
+            ## How constraints are enforced
+
+            The `maf-autopilot` MCP server exposes executable tools that verify each constraint:
+
+            | Constraint                                     | Verify by calling                                  |
+            |------------------------------------------------|----------------------------------------------------|
+            | Instance state in `AIContextProvider`          | `MafScanAntiPatterns(repoPath)` → `MAF-AP-CONC-001` |
+            | `DefaultAzureCredential` in production         | `MafScanAntiPatterns(repoPath)` → `MAF-AP-SEC-001`  |
+            | `EnableSensitiveData = true` outside dev       | `MafScanAntiPatterns(repoPath)` → `MAF-AP-SEC-003`  |
+            | `Instructions` outside `ChatOptions` (silent ignore) | `MafScanAntiPatterns(repoPath)` → `MAF-AP-AGENT-001` |
+            | Executor class must be `sealed partial`        | `MafScanAntiPatterns(repoPath)` → `MAF-AP-WF-001`   |
+            | Middleware `Use()` missing `runStreamingFunc`  | `MafScanAntiPatterns(repoPath)` → `MAF-AP-MID-001`  |
+            | DevUI references must be `#if DEVUI_ENABLED`   | `MafScanAntiPatterns(repoPath)` → `MAF-AP-DEVUI-001` |
+            | Fan-out handler must return `Task<T>`          | `MafValidateFanOut(repoPath)` (or `MafSimulateWorkflow`) |
+            | `AddFanInBarrierEdge` argument order / removed attrs | `MafRunCs0618Hunt(projectPath)`               |
+            | Agent prompt quality (injection, bloat, refusals)    | `MafLintAgentPrompt(repoPath)`                |
+            | Quick "is this API safe in 1.3.0?"             | `MafApiSafety(apiName)`                             |
+            | Explain any MAF snippet inline                 | `MafExplain(snippet)`                               |
+            | Scaffold a new MAF agent / executor            | `MafNewAgent(projectPath, name)` / `MafNewExecutor` |
+            | Workflow topology proof + Mermaid diagram      | `MafSimulateWorkflow(repoPath)`                     |
+            | Single-command health letter (A/B/C/F)         | `MafDoctor(repoPath)` — or CLI `maf-autopilot doctor` |
+
+            For IDE-time enforcement (red squigglies as you type), add the `maf-autopilot.Analyzers`
+            NuGet package to your project — ships rules `MAF001` / `MAF002` / `MAF003`.
+            """;
+
+        await File.WriteAllTextAsync(instructionsPath, pointer);
+        Console.WriteLine("  ✓ .github/copilot-instructions.md — pointer to maf://constraints installed");
+        Console.WriteLine("    (Always-current — fetched from the live MCP server, not a stale copy)");
     }
 
-    // ------------------------------------------------------------------ //
-    //  Helpers                                                             //
-    // ------------------------------------------------------------------ //
-
-    /// <summary>Strips YAML frontmatter (--- ... ---) from a markdown string.</summary>
-    private static string StripFrontmatter(string content)
-    {
-        var trimmed = content.TrimStart();
-        if (!trimmed.StartsWith("---", StringComparison.Ordinal))
-            return content;
-
-        var endMarker = trimmed.IndexOf("\n---", 3, StringComparison.Ordinal);
-        if (endMarker < 0)
-            return content;
-
-        // Skip past the closing --- and any immediately following newline
-        var bodyStart = endMarker + 4; // "\n---".Length
-        if (bodyStart < trimmed.Length && trimmed[bodyStart] == '\n')
-            bodyStart++;
-        if (bodyStart < trimmed.Length && trimmed[bodyStart] == '\r')
-            bodyStart++;
-
-        return trimmed[bodyStart..];
-    }
-
-    private static string ReadEmbedded(string logicalName)
-    {
-        using var stream = _asm.GetManifestResourceStream(logicalName)
-            ?? throw new InvalidOperationException(
-                $"Embedded resource '{logicalName}' not found. " +
-                $"Available: {string.Join(", ", _asm.GetManifestResourceNames())}");
-        using var reader = new StreamReader(stream);
-        return reader.ReadToEnd();
-    }
 }

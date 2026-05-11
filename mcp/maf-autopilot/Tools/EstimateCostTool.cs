@@ -1,0 +1,272 @@
+using System.ComponentModel;
+using System.Text;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using ModelContextProtocol.Server;
+
+namespace MafAutopilot.Tools;
+
+/// <summary>
+/// MCP tool: MafEstimateCost
+///
+/// Token-cost auditor. Walks every <c>RunAsync</c> / <c>RunStreamingAsync</c>
+/// call site, attributes it to the nearest <c>ChatOptions</c> initializer in
+/// the same method/class, and flags the bug class that gets shipped most often
+/// in production: missing <c>MaxOutputTokens</c> (cost runaway), missing
+/// caching, no rate limit.
+///
+/// This is the "unsexy enterprise differentiator" feature — production teams
+/// pay for prompt bloat in ways no LLM SaaS tool catches.
+/// </summary>
+[McpServerToolType]
+public sealed class EstimateCostTool
+{
+    /// <summary>Rule-of-thumb chars per token.</summary>
+    private const int CharsPerToken = 4;
+
+    [McpServerTool]
+    [Description("""
+        Static token-cost audit of every `RunAsync` / `RunStreamingAsync` call
+        site. Reports per-call-site:
+          - Whether `MaxOutputTokens` is set on the nearest `ChatOptions` (cost cap)
+          - Estimated input-token cost (sum of nearest `Instructions` literal length / 4)
+          - Estimated output-token cap (MaxOutputTokens value, or "unbounded" if missing)
+          - Flags any call site without a `MaxOutputTokens` cap as unbounded-cost risk
+
+        Input:
+          - repoPath: absolute path to the repository root.
+
+        Returns a markdown report with per-call-site rows and aggregate stats.
+        """)]
+    public string MafEstimateCost(
+        [Description("Absolute path to the repository root.")] string repoPath)
+    {
+        if (PathGuard.ValidateRepoPath(repoPath) is { } err) return err;
+
+        var findings = new List<CostFinding>();
+        foreach (var path in EnumerateScannableFiles(repoPath))
+        {
+            var source = File.ReadAllText(path);
+            findings.AddRange(AnalyzeSource(source, MakeRelative(repoPath, path)));
+        }
+
+        return FormatReport(repoPath, findings);
+    }
+
+    // -------------------------------------------------------------------------
+    // Pure analysis core (testable)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Walks the source tree, locates every <c>RunAsync</c> / <c>RunStreamingAsync</c>
+    /// invocation, and attributes each to the nearest <c>ChatOptions</c> initializer
+    /// in the same compilation unit. Returns per-call-site findings. Pure: no I/O.
+    /// </summary>
+    public static IReadOnlyList<CostFinding> AnalyzeSource(string source, string fileName = "<inline>")
+    {
+        var tree = CSharpSyntaxTree.ParseText(source);
+        var root = tree.GetRoot();
+        var findings = new List<CostFinding>();
+
+        // Build a global view of ChatOptions initializers in this file — each
+        // captures: file-position, MaxOutputTokens value (if set), Instructions literal.
+        var chatOptions = root.DescendantNodes()
+            .OfType<ObjectCreationExpressionSyntax>()
+            .Where(IsChatOptionsCreation)
+            .Select(ExtractChatOptionsInfo)
+            .ToList();
+
+        foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            if (invocation.Expression is not MemberAccessExpressionSyntax member) continue;
+            var name = member.Name.Identifier.ValueText;
+            if (name is not ("RunAsync" or "RunStreamingAsync")) continue;
+
+            // Skip Task.Run, ValueTask.Run, etc. — only agent-style invocations.
+            // The heuristic: the receiver expression isn't a static type Task / ValueTask.
+            var receiver = member.Expression.ToString();
+            if (receiver is "Task" or "ValueTask"
+                || receiver.EndsWith(".Task", StringComparison.Ordinal)
+                || receiver.EndsWith(".ValueTask", StringComparison.Ordinal))
+                continue;
+
+            var loc = invocation.GetLocation().GetLineSpan();
+            var line = loc.StartLinePosition.Line + 1;
+
+            // Merge every ChatOptions/ChatClientAgentOptions creation above this
+            // invocation, taking the most-recent NON-NULL value for each field.
+            // This handles the common pattern:
+            //   var opts = new ChatOptions { MaxOutputTokens = 512 };          // line N
+            //   var agent = new ChatClientAgent(client, new ChatClientAgentOptions
+            //   {                                                              // line N+1
+            //       ChatOptions = opts,   // references the var; no MaxTokens directly
+            //   });
+            //   await agent.RunAsync(...);                                     // line N+2
+            // Without merge, the wrapper at line N+1 would shadow the real options at line N.
+            int? maxTokens = null;
+            int? estimatedInputTokens = null;
+            foreach (var co in chatOptions.Where(o => o.Line <= line).OrderBy(o => o.Line))
+            {
+                if (co.MaxOutputTokens is not null) maxTokens = co.MaxOutputTokens;
+                if (co.InstructionsLiteralChars > 0)
+                    estimatedInputTokens = co.InstructionsLiteralChars / CharsPerToken;
+            }
+
+            findings.Add(new CostFinding(
+                File: fileName,
+                Line: line,
+                CallSite: name,
+                ReceiverExpression: receiver,
+                MaxOutputTokens: maxTokens,
+                EstimatedInputTokens: estimatedInputTokens,
+                HasCapWarning: maxTokens is null,
+                HasInputUnknownWarning: estimatedInputTokens is null));
+        }
+
+        return findings;
+    }
+
+    private static bool IsChatOptionsCreation(ObjectCreationExpressionSyntax oce)
+    {
+        var typeName = oce.Type.ToString();
+        var simpleName = typeName.Contains('.') ? typeName[(typeName.LastIndexOf('.') + 1)..] : typeName;
+        return simpleName is "ChatOptions" or "ChatClientAgentOptions";
+    }
+
+    private static ChatOptionsInfo ExtractChatOptionsInfo(ObjectCreationExpressionSyntax oce)
+    {
+        var line = oce.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+        int? maxTokens = null;
+        int instructionsChars = 0;
+
+        if (oce.Initializer is not null)
+        {
+            foreach (var expr in oce.Initializer.Expressions.OfType<AssignmentExpressionSyntax>())
+            {
+                var leftText = expr.Left.ToString();
+                if (leftText == "MaxOutputTokens" && expr.Right is LiteralExpressionSyntax lit
+                    && lit.Token.Value is int n)
+                {
+                    maxTokens = n;
+                }
+                else if (leftText == "Instructions")
+                {
+                    instructionsChars = ExtractLiteralLength(expr.Right);
+                }
+                else if (leftText == "ChatOptions" && expr.Right is ObjectCreationExpressionSyntax nestedOce
+                         && IsChatOptionsCreation(nestedOce))
+                {
+                    // ChatClientAgentOptions has a nested ChatOptions — recurse.
+                    var nested = ExtractChatOptionsInfo(nestedOce);
+                    maxTokens ??= nested.MaxOutputTokens;
+                    if (nested.InstructionsLiteralChars > instructionsChars)
+                        instructionsChars = nested.InstructionsLiteralChars;
+                }
+            }
+        }
+
+        return new ChatOptionsInfo(line, maxTokens, instructionsChars);
+    }
+
+    private static int ExtractLiteralLength(ExpressionSyntax expr) => expr switch
+    {
+        LiteralExpressionSyntax lit when lit.Kind() == SyntaxKind.StringLiteralExpression
+            => lit.Token.ValueText.Length,
+        InterpolatedStringExpressionSyntax interp
+            when interp.Contents.All(c => c is InterpolatedStringTextSyntax)
+            => interp.Contents
+                .OfType<InterpolatedStringTextSyntax>()
+                .Sum(t => t.TextToken.ValueText.Length),
+        _ => 0,
+    };
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    private static IEnumerable<string> EnumerateScannableFiles(string repoRoot)
+        => SourceFileWalker.EnumerateCsFiles(repoRoot);
+
+    private static string MakeRelative(string root, string file)
+        => SourceFileWalker.MakeRelative(root, file);
+
+    // -------------------------------------------------------------------------
+    // Report
+    // -------------------------------------------------------------------------
+
+    private static string FormatReport(string repoPath, IReadOnlyList<CostFinding> findings)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("## 💰 MAF token-cost audit");
+        sb.AppendLine();
+        sb.AppendLine($"**Repo:** `{repoPath}`");
+        sb.AppendLine();
+
+        if (findings.Count == 0)
+        {
+            sb.AppendLine("ℹ️ No `RunAsync` / `RunStreamingAsync` call sites detected. Nothing to audit.");
+            return sb.ToString();
+        }
+
+        var unbounded = findings.Count(f => f.HasCapWarning);
+        var unknownInput = findings.Count(f => f.HasInputUnknownWarning);
+        var totalInputTokens = findings.Sum(f => f.EstimatedInputTokens ?? 0);
+        var totalOutputCap = findings.Sum(f => f.MaxOutputTokens ?? 0);
+
+        sb.AppendLine($"| Metric | Value |");
+        sb.AppendLine($"|---|---:|");
+        sb.AppendLine($"| Total agent call sites | {findings.Count} |");
+        sb.AppendLine($"| 🚨 Unbounded (no MaxOutputTokens) | {unbounded} |");
+        sb.AppendLine($"| ⚠️ Input size unknown (no nearby Instructions literal) | {unknownInput} |");
+        sb.AppendLine($"| Estimated total input tokens (per single call across all sites) | {totalInputTokens} |");
+        sb.AppendLine($"| Sum of all MaxOutputTokens caps | {totalOutputCap} |");
+        sb.AppendLine();
+
+        sb.AppendLine("### Per call-site");
+        sb.AppendLine();
+        sb.AppendLine("| File | Line | Call | MaxOutputTokens | Est. input tokens | Flag |");
+        sb.AppendLine("|---|---:|---|---:|---:|---|");
+        foreach (var f in findings.OrderByDescending(f => f.HasCapWarning))
+        {
+            var cap = f.MaxOutputTokens?.ToString() ?? "(unset)";
+            var input = f.EstimatedInputTokens?.ToString() ?? "?";
+            var flags = string.Concat(
+                f.HasCapWarning ? "🚨 unbounded " : "",
+                f.HasInputUnknownWarning ? "⚠️ no nearby Instructions" : "");
+            sb.AppendLine($"| `{f.File}` | {f.Line} | `{f.CallSite}` on `{f.ReceiverExpression}` | {cap} | {input} | {flags.TrimEnd()} |");
+        }
+        sb.AppendLine();
+
+        if (unbounded > 0)
+        {
+            sb.AppendLine("### Fix");
+            sb.AppendLine();
+            sb.AppendLine("Each unbounded call site should set `MaxOutputTokens` on the `ChatOptions`:");
+            sb.AppendLine();
+            sb.AppendLine("```csharp");
+            sb.AppendLine("var opts = new ChatOptions { MaxOutputTokens = 1024 /* cap for THIS agent */ };");
+            sb.AppendLine("```");
+            sb.AppendLine();
+            sb.AppendLine("`MafNewAgent` generates agents with `MaxOutputTokens = 1024` by default — re-scaffold or copy the pattern.");
+        }
+
+        return sb.ToString();
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Models
+// -----------------------------------------------------------------------------
+
+public sealed record CostFinding(
+    string File,
+    int Line,
+    string CallSite,
+    string ReceiverExpression,
+    int? MaxOutputTokens,
+    int? EstimatedInputTokens,
+    bool HasCapWarning,
+    bool HasInputUnknownWarning);
+
+internal sealed record ChatOptionsInfo(int Line, int? MaxOutputTokens, int InstructionsLiteralChars);

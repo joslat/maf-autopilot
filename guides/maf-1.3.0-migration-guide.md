@@ -2,7 +2,7 @@
 
 > **Purpose:** Complete reference for implementing with MAF 1.3.0. Shows the final target patterns — apply regardless of your starting point.  
 > **Audience:** LLM agents performing code migration. This document is optimized for machine consumption.  
-> **Last verified:** April 2026 against `Microsoft.Agents.AI 1.3.0` ([NuGet](https://www.nuget.org/packages/Microsoft.Agents.AI/1.3.0)), API surface verified via `dotnet-inspect 0.7.6`  
+> **Last verified:** April 2026 against `Microsoft.Agents.AI 1.3.0` ([NuGet](https://www.nuget.org/packages/Microsoft.Agents.AI/1.3.0)), API surface verified via `dotnet-inspect 0.7.8` (pinned — surfaces `[Obsolete]` in listings)  
 > **Official docs:** [learn.microsoft.com/agent-framework](https://learn.microsoft.com/en-us/agent-framework/)  
 > **Release notes:** [dotnet-1.3.0](https://github.com/microsoft/agent-framework/releases/tag/dotnet-1.3.0) · [Changelog vs 1.2.0](https://github.com/microsoft/agent-framework/compare/dotnet-1.2.0...dotnet-1.3.0)  
 > **Version metadata:** Each section carries `<!-- introduced: X.Y.Z | applies-to: A.B.x → X.Y.x | deprecated-in: ... -->` comments. Use these to load only sections relevant to a specific migration path.
@@ -42,7 +42,7 @@ When patterns in this guide are unclear or you suspect an API has changed, use t
 
 ```bash
 # Install and run dotnet-inspect (requires .NET SDK)
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- <command> --package <PackageName>@<Version> --source https://api.nuget.org/v3/index.json
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- <command> --package <PackageName>@<Version> --source https://api.nuget.org/v3/index.json
 ```
 
 > **Important:** The `--source https://api.nuget.org/v3/index.json` flag must appear on **both** the `dnx` command (tool installation) **and** the inspect command (package resolution). This is required when the workspace has custom NuGet feeds that don't host these packages.
@@ -51,13 +51,13 @@ Example commands:
 
 ```bash
 # List all types in a package
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- types --package Microsoft.Agents.AI@1.3.0 --source https://api.nuget.org/v3/index.json
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- types --package Microsoft.Agents.AI@1.3.0 --source https://api.nuget.org/v3/index.json
 
 # Inspect a specific type's API surface
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- apis --package Microsoft.Agents.AI@1.3.0 --type ChatClientAgent --source https://api.nuget.org/v3/index.json
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- apis --package Microsoft.Agents.AI@1.3.0 --type ChatClientAgent --source https://api.nuget.org/v3/index.json
 
 # Check package dependency tree
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- depends --package Microsoft.Agents.AI@1.3.0 --source https://api.nuget.org/v3/index.json
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- depends --package Microsoft.Agents.AI@1.3.0 --source https://api.nuget.org/v3/index.json
 ```
 
 > **Skill reference:** For full `dotnet-inspect` documentation and advanced usage, see `.github/skills/dotnet-inspect/SKILL.md` in this repository.
@@ -87,7 +87,7 @@ Or manually:
 2. Copy the raw content
 3. Save to `.github/skills/dotnet-inspect/SKILL.md` in your repository
 
-> **This repository** already has the skill installed at [`.github/skills/dotnet-inspect/SKILL.md`](../.github/skills/dotnet-inspect/SKILL.md) (version 0.7.6).
+> **This repository** already has the skill installed at [`.github/skills/dotnet-inspect/SKILL.md`](../.github/skills/dotnet-inspect/SKILL.md) (version 0.7.8 — surfaces `[Obsolete]` members in listings).
 
 #### Installing the `dotnet-inspect` CLI Tool
 
@@ -106,7 +106,7 @@ dnx dotnet-inspect -y -- <command>
 To pin to a specific version (recommended for reproducible CI):
 
 ```bash
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- <command>
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- <command>
 ```
 
 ---
@@ -2042,7 +2042,7 @@ Console.WriteLine(response.Text);  // "Your name is Alice."
 > ```powershell
 > dotnet build 2>&1 | Select-String "warning CS0618"
 > ```
-> Note: `dotnet-inspect` does **not** reliably surface `[Obsolete]` at the overload level. The compiler build output is the authoritative source.
+> Note: As of `dotnet-inspect@0.7.8` (2026-05-04), `[Obsolete]` members are surfaced in listings ([PR #318](https://github.com/richlander/dotnet-inspect/pull/318)). Pin to v0.7.8+. The compiler build output remains the authoritative source for transitive obsoletions and overload-resolution surprises.
 
 ### Why a separate registry?
 

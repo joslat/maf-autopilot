@@ -12,7 +12,12 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>maf-autopilot</ToolCommandName>
     <PackageId>maf-autopilot</PackageId>
-    <Version>1.3.0-tool.1</Version>
+    <!-- Version policy: csproj <Version> = latest version on nuget.org.
+         When cutting a new alpha, bump this AND push the workflow_dispatch
+         on `release.yml`. Don't bump locally without pushing — the README
+         documents the NuGet version, so any drift confuses users.
+         (See plan #A.7 — version-drift fix landed 2026-05-12.) -->
+    <Version>1.3.0-alpha-3</Version>
     <Authors>joslat</Authors>
     <Description>MAF autopilot MCP server — Tools + Resources + Prompts + Sampling for MAF 1.3.0 migrations. Answers "is this API safe?", exposes migration guide as resources, and uses sampling for multi-step agentic analysis.</Description>
     <PackageTags>maf;migration;mcp;dotnet;agents</PackageTags>
@@ -25,11 +30,17 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="maf-autopilot.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- MCP server SDK — provides McpServerToolType, McpServerTool, WithStdioServerTransport, etc. -->
+    <!-- Pinned: floating versions made the shipped binary non-reproducible. -->
     <PackageReference Include="ModelContextProtocol" Version="1.2.0" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.*" />
-    <!-- YAML parsing for registry.yaml -->
-    <PackageReference Include="YamlDotNet" Version="16.*" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
+    <PackageReference Include="YamlDotNet" Version="16.2.1" />
+    <!-- Roslyn syntax-tree only (no Workspaces). Used by FanOutValidatorTool. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -50,7 +61,7 @@
     <EmbeddedResource Include="..\..\guides\maf-1.3.0-migration-guide.md"
                       LogicalName="guide.md" />
 
-    <!-- All 11 skill SKILL.md files — served at maf://skills?name=<skill-name> -->
+    <!-- All 12 skill SKILL.md files — served at maf://skills?name=<skill-name> -->
     <EmbeddedResource Include="..\..\.github\skills\cs0618-hunter\SKILL.md"
                       LogicalName="skills/cs0618-hunter.md" />
     <EmbeddedResource Include="..\..\.github\skills\dotnet-inspect\SKILL.md"
@@ -59,6 +70,8 @@
                       LogicalName="skills/fan-in-static-analyzer.md" />
     <EmbeddedResource Include="..\..\.github\skills\fan-out-validator\SKILL.md"
                       LogicalName="skills/fan-out-validator.md" />
+    <EmbeddedResource Include="..\..\.github\skills\maf-anti-pattern-scanner\SKILL.md"
+                      LogicalName="skills/maf-anti-pattern-scanner.md" />
     <EmbeddedResource Include="..\..\.github\skills\maf-migration-guide\SKILL.md"
                       LogicalName="skills/maf-migration-guide.md" />
     <EmbeddedResource Include="..\..\.github\skills\maf-release-watcher\SKILL.md"

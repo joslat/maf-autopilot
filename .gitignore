@@ -1,20 +1,69 @@
-# .NET build output
+# --- .NET build output ---
 bin/
 obj/
 nupkg/
 *.nupkg
 *.snupkg
+mcp/dist/                # release.yml output staging
+TestResults/             # `dotnet test` output (per-project)
+coverage/                # coverage reports
+*.coverage
+*.coveragexml
 
-# User-specific files
+# --- User / IDE / editor ---
 *.user
 *.suo
 .vs/
 .idea/
+*.swp
+*.swo
+*~
 
-# NuGet
+# --- Claude Code per-user state (NEVER commit) ---
+# .claude/settings.json IS committed (team-wide).
+# .claude/settings.local.json is per-developer overrides — never commit.
+.claude/settings.local.json
+.claude/cache/
+
+# --- Python (CI helpers in .github/scripts/) ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Secrets / environment ---
+# Catch the usual suspects. Anything matching these should NEVER be committed.
+.env
+.env.*
+!.env.example                # template files are fine
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.json
+secrets.yaml
+appsettings.*.local.json
+
+# --- Logs ---
+*.log
+logs/
+
+# --- NuGet lock files ---
 *.lock.json
-!packages.lock.json
+!packages.lock.json          # explicitly opt-in via csproj
 
-# OS
+# --- OS noise ---
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# --- Misc dev scratch ---
+# `types.txt` at the repo root was a one-time dev reference dump from
+# `dotnet-inspect lib ModelContextProtocol`. Removed from tracking; ignoring
+# in case anyone regenerates it locally.
+/types.txt
+*.scratch.md
+*.scratch.txt

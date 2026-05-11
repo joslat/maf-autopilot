@@ -71,7 +71,7 @@ Run the MCP server locally to expose `maf://` resources and `/maf-*` prompts in 
 **What you get additionally over Mode A:**
 - `maf://constraints`, `maf://registry`, `maf://guide`, `maf://skills?name=*` as referenceable resources
 - `/maf-audit`, `/maf-migrate`, `/maf-cs0618-hunt` as slash commands
-- `maf_api_safety`, `maf_registry_lookup`, `maf_registry_list` tools
+- `MafApiSafety`, `MafRegistryLookup`, `MafRegistryList` tools
 
 ---
 
@@ -79,12 +79,12 @@ Run the MCP server locally to expose `maf://` resources and `/maf-*` prompts in 
 
 Install `maf-autopilot` as a global .NET tool so any project can run `maf-autopilot init` and use the MCP server without cloning this repo.
 
-**Prerequisites:** .NET 9 SDK, `maf-autopilot` published to NuGet (#25 must be done first)
+**Prerequisites:** .NET 9 SDK. `maf-autopilot` is published to NuGet as prereleases ([`1.3.0-alpha-3`](https://www.nuget.org/packages/maf-autopilot) latest). Stable 1.3.0 is gated on #50 (see plan tracking table).
 
-**Steps (after #25 is published):**
+**Steps:**
 ```bash
 # Install once, globally
-dotnet tool install -g maf-autopilot
+dotnet tool install -g maf-autopilot --prerelease
 
 # In any MAF project folder:
 maf-autopilot init
@@ -209,7 +209,7 @@ The file `.github/workflows/maf-release-watcher.yml` is already in the repo. Git
 
 ## Publishing to NuGet.org (Step #25)
 
-This is the next required user action. Once done, anyone can `dotnet tool install -g maf-autopilot`.
+This is the next required user action. Once done, anyone can `dotnet tool install -g maf-autopilot --prerelease`.
 
 ### Prerequisites
 - NuGet.org account (free at [nuget.org](https://www.nuget.org/users/account/LogOn))
@@ -232,7 +232,7 @@ dotnet nuget push ./nupkg/maf-autopilot.*.nupkg --api-key YOUR_KEY --source http
 
 ### After publishing
 - The package appears on NuGet.org within ~15 minutes
-- Users can then `dotnet tool install -g maf-autopilot` and `maf-autopilot init`
+- Users can then `dotnet tool install -g maf-autopilot --prerelease` and `maf-autopilot init`
 - The workflow's `publish-mcp-release` job handles all future releases automatically
 
 ---
@@ -334,7 +334,7 @@ Here is an honest comparison:
 ## Prerequisite Chain Summary
 
 ```
-You want: dotnet tool install -g maf-autopilot
+You want: dotnet tool install -g maf-autopilot --prerelease
   └─ Requires: #25 NuGet publish
        └─ Requires: NuGet.org account + API key
             └─ Action: Add NUGET_API_KEY to GitHub repo secrets
@@ -362,7 +362,7 @@ You want: maf_open_feedback_issue tool
 |-----------|-----------|-------|
 | Agents / skills / instructions | VS Code Copilot Chat (host-side) | VS Code + Copilot |
 | MCP server (local dev) | Your machine | .NET 9 SDK |
-| MCP server (global tool) | Your machine | `dotnet tool install -g maf-autopilot` (#25) |
+| MCP server (global tool) | Your machine | `dotnet tool install -g maf-autopilot --prerelease` (#25) |
 | Release watcher workflow | GitHub Actions | GitHub repo |
 | NuGet publish | GitHub Actions | `NUGET_API_KEY` secret |
 | Registry auto-update | GitHub Actions | Copilot Enterprise or LLM API key (#30) |

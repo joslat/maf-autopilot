@@ -16,9 +16,17 @@ public sealed class RegistryService
 {
     private readonly Registry _registry;
 
+    /// <summary>
+    /// Pre-built lowercase haystack per entry, covering every searchable string field.
+    /// Centralising the field list here means adding a new field is a single-line change
+    /// (in <see cref="BuildHaystack"/>) instead of an OR-chain that grew bug-by-bug.
+    /// </summary>
+    private readonly Dictionary<RegistryEntry, string> _haystacks;
+
     public RegistryService()
     {
         _registry = Load();
+        _haystacks = _registry.Entries.ToDictionary(e => e, BuildHaystack);
     }
 
     // -------------------------------------------------------------------------
@@ -41,19 +49,41 @@ public sealed class RegistryService
             e.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// Search for entries where the API name appears in the method name, obsolete signature,
-    /// type name, or replacement signature — case-insensitive partial match.
+    /// Search for entries where the API name appears anywhere in the entry's textual
+    /// content (case-insensitive substring). Covers every string field — see
+    /// <see cref="BuildHaystack"/> for the list. To extend, edit that one method.
     /// </summary>
-    public IReadOnlyList<RegistryEntry> SearchByApiName(string apiName) =>
-        _registry.Entries
-            .Where(e => Contains(e.Method, apiName)
-                     || Contains(e.ObsoleteSignature, apiName)
-                     || Contains(e.Type, apiName)
-                     || Contains(e.ReplacementSignature, apiName)
-                     || Contains(e.Notes, apiName)
-                     || Contains(e.FixDescription, apiName)
-                     || Contains(e.ExampleBefore, apiName))
+    public IReadOnlyList<RegistryEntry> SearchByApiName(string apiName)
+    {
+        if (string.IsNullOrWhiteSpace(apiName))
+            return [];
+
+        var needle = apiName.Trim().ToLowerInvariant();
+        return _registry.Entries
+            .Where(e => _haystacks[e].Contains(needle, StringComparison.Ordinal))
             .ToList();
+    }
+
+    /// <summary>
+    /// Concatenates every searchable string field on a registry entry into a single
+    /// lowercase blob. **This is the canonical "what is searchable" definition** — add
+    /// new fields here and only here.
+    /// </summary>
+    private static string BuildHaystack(RegistryEntry e) =>
+        string.Join(
+            '\n',
+            e.Id,
+            e.Package,
+            e.Type,
+            e.Method,
+            e.ObsoleteSignature,
+            e.ReplacementSignature,
+            e.FixDescription,
+            e.ExampleBefore,
+            e.ExampleAfter,
+            e.CsWarning,
+            e.GuideSection,
+            e.Notes).ToLowerInvariant();
 
     // -------------------------------------------------------------------------
     // Formatting helpers used by tools
@@ -110,9 +140,6 @@ public sealed class RegistryService
     // Private helpers
     // -------------------------------------------------------------------------
 
-    private static bool Contains(string source, string term) =>
-        source.Contains(term, StringComparison.OrdinalIgnoreCase);
-
     private static Registry Load()
     {
         var yaml = ReadYaml();
@@ -123,12 +150,25 @@ public sealed class RegistryService
         return deserializer.Deserialize<Registry>(yaml);
     }
 
+    // Security: cap the env-var-supplied registry size at 5 MB. The embedded registry
+    // is ~50 KB; the env-var path is a developer convenience for local registry overrides.
+    // A multi-gigabyte file silently dropped at the override path would OOM the host on
+    // first MCP request. Real registries are KB-scale.
+    private const long RegistryMaxBytes = 5 * 1024 * 1024;
+
     private static string ReadYaml()
     {
         // 1. Developer override via environment variable.
         var envPath = Environment.GetEnvironmentVariable("MAF_REGISTRY_PATH");
         if (!string.IsNullOrWhiteSpace(envPath) && File.Exists(envPath))
+        {
+            var info = new FileInfo(envPath);
+            if (info.Length > RegistryMaxBytes)
+                throw new InvalidOperationException(
+                    $"MAF_REGISTRY_PATH file '{envPath}' is {info.Length / 1024} KB — exceeds the {RegistryMaxBytes / 1024 / 1024} MB safety cap. " +
+                    "Real MAF registries are KB-scale; refusing to load.");
             return File.ReadAllText(envPath);
+        }
 
         // 2. Embedded resource (bundled at build time — works standalone as a NuGet tool).
         var asm = typeof(RegistryService).Assembly;

@@ -65,7 +65,7 @@ curl -s "https://api.nuget.org/v3/registration5/microsoft.agents.ai/<new_version
 Load `.github/skills/nuget-diff-analyzer/SKILL.md` and run it for the version delta:
 
 ```bash
-dnx dotnet-inspect@0.7.6 -y --source https://api.nuget.org/v3/index.json -- diff \
+dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff \
   --package Microsoft.Agents.AI@<old_version>..<new_version> \
   --source https://api.nuget.org/v3/index.json
 ```
@@ -183,5 +183,5 @@ After this skill completes:
 ## Notes on Automation Limitations
 
 - LLM analysis of release notes is good but imperfect — always human-review before merging
-- `dotnet-inspect diff` does NOT surface `[Obsolete]` at the overload level — run `cs0618-hunter` against the new version manually
+- `dotnet-inspect diff` (v0.7.8+) surfaces `[Obsolete]` at the overload level, but the compiler is still ground-truth — also run `cs0618-hunter` against the new version (catches transitive / overload-resolution / project-local obsoletions)
 - If no release notes are available (NuGet-only release), rely entirely on the diff output + dotnet build CS0618 check

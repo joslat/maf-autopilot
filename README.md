@@ -2,12 +2,12 @@
 
 > Not just a migration tool — your permanent AI co-pilot for MAF. Migrate to 1.3.0, verify your code follows best practices, catch obsolete APIs before they bite you, and stay current automatically as MAF evolves.
 
-**maf-autopilot** is an MCP server that turns GitHub Copilot into a MAF expert for the lifetime of your project. One install, one `init`, and Copilot gains live access to the full knowledge base — API signatures, breaking change rules, a machine-readable fix registry, and 11 specialized skills — wired up as agentic tool calls it invokes automatically while auditing, migrating, reviewing, and maintaining your agents and workflows.
+**maf-autopilot** is an MCP server that turns GitHub Copilot into a MAF expert for the lifetime of your project. One install, one `init`, and Copilot gains live access to the full knowledge base — API signatures, breaking change rules, a 13-entry machine-readable fix registry, and 12 specialised skills — wired up as **17 executable MCP tools** + 3 Roslyn analyzers for write-time enforcement. Copilot invokes them automatically while auditing, migrating, reviewing, and maintaining your agents and workflows.
 
 ### What makes it worth trying
 
 - 🔍 **Catches the bugs that compile clean** — detects fan-out/fan-in silent failures where a workflow exits successfully but produces no output. Runtime-only, zero build signal, invisible without this tool.
-- 🩺 **CS0618 detection that `dotnet-inspect` misses** — the overload-level `[Obsolete]` gap is a known blind spot. `maf-autopilot` routes around it using the compiler directly.
+- 🩺 **Compiler ground-truth for CS0618** — `dotnet-inspect` v0.7.8 surfaces `[Obsolete]` statically (pre-build), but only the compiler catches transitive obsoletions, overload-resolution surprises, and project-local `[Obsolete]` attributes. `maf-autopilot` pairs both.
 - ✅ **Best-practice auditing, not just migration** — reviews your MAF agents and workflows against current patterns after migration too. Catches drift, anti-patterns, and deprecated usage before they become production bugs.
 - 🤖 **Fully agentic loop** — Copilot audits your codebase, generates a tracked migration plan, executes it task-by-task with `dotnet build` verification after every step, and updates the plan as it goes.
 - 📖 **Self-updating knowledge** — a GitHub Actions workflow watches NuGet weekly, diffs the MAF API surface, and opens a PR updating the migration guide and compatibility matrix automatically when a new version ships.
@@ -18,9 +18,10 @@
 
 `maf-autopilot` is a **[Model Context Protocol (MCP)](https://modelcontextprotocol.io) server** packaged as a .NET global tool. When running, it exposes:
 
-- **Tools** — `maf_api_safety`, `maf_registry_lookup`, `maf_registry_list` — callable by Copilot during migration
-- **Resources** — `maf://guide`, `maf://constraints`, `maf://registry`, `maf://skills?name=...` — the full migration knowledge base, readable on demand
-- **Prompts** — `maf-audit`, `maf-migrate`, `maf-cs0618-hunt` — structured conversation starters
+- **17 executable tools** — registry lookup (`MafApiSafety`, `MafRegistryLookup`, `MafRegistryList`), code scanning (`MafScanAntiPatterns`, `MafValidateFanOut`, `MafLintAgentPrompt`, `MafEstimateCost`), build-verified hunts (`MafRunCs0618Hunt`), NuGet diffing (`MafDiffPackage`, `MafPreUpgradeDryRun`), workflow simulation (`MafSimulateWorkflow`), explanations (`MafExplain`), scaffolders (`MafNewAgent`, `MafNewExecutor`), PR-scoped audits (`MafAuditPullRequest`), version planning (`MafMigrationPath`), and the single-command health letter `MafDoctor`. Anti-pattern + fan-out scanners both support `format: "sarif"` for GitHub Advanced Security integration.
+- **4 resources** — `maf://guide`, `maf://constraints`, `maf://registry`, `maf://skills?name=...` — the full migration knowledge base, readable on demand.
+- **3 prompts** — `maf-audit`, `maf-migrate`, `maf-cs0618-hunt` — structured conversation starters.
+- **3 Roslyn analyzers** (separate `maf-autopilot.Analyzers` NuGet) — `MAF001` fan-out, `MAF002` `DefaultAzureCredential`, `MAF003` `EnableSensitiveData`. Write-time enforcement.
 
 GitHub Copilot Chat connects to the MCP server and gains agentic access to all of this during migration work.
 
@@ -32,14 +33,63 @@ Install the NuGet global tool, then run `init` in your target project:
 
 ```powershell
 # 1. Install the MCP server as a .NET global tool
-dotnet tool install --global maf-autopilot
+#    Note: currently in prerelease — the --prerelease flag is required until stable 1.3.0 ships.
+dotnet tool install --global maf-autopilot --prerelease
 
 # 2. In your MAF project — writes .vscode/mcp.json + .github/copilot-instructions.md
 cd your-maf-project
 maf-autopilot init
 ```
 
+> 📦 Latest prerelease: [`1.3.0-alpha-3`](https://www.nuget.org/packages/maf-autopilot). Stable `1.3.0` will follow once the post-review acceptance criteria in [`docs/project-status-and-vision.md`](docs/project-status-and-vision.md) are met.
+
+### ⚡ First 5 minutes — try these three commands
+
+```powershell
+# 1. Instant health check on any MAF project (A/B/C/F grade + top 3 fixes)
+maf-autopilot doctor .
+
+# 2. Scaffold a brand-new MAF 1.3.0 agent + smoke test (10 seconds, anti-pattern-clean)
+maf-autopilot new agent ChatBot
+
+# 3. Open VS Code; in Copilot Chat:
+@maf-auditor                           # full pre-migration audit + plan
+@maf-best-practice-reviewer            # steady-state best-practice review
+```
+
+For deeper queries, ask Copilot:
+
+> "Use `MafPreUpgradeDryRun` to tell me which files would break if I upgraded `Microsoft.Agents.AI` from 1.2.0 to 1.3.0."
+
+> "Run `MafSimulateWorkflow` against this repo and embed the Mermaid topology in my PR description."
+
+> "Use `MafLintAgentPrompt` to audit every agent's `Instructions` string for prompt-injection risk."
+
 VS Code picks up `.vscode/mcp.json` automatically and starts the MCP server. Copilot Chat gains live tool calls, resource reads, and structured prompts.
+
+### ⭐ Mode 1b: Docker container (no .NET SDK on the host)
+
+If you'd rather not install the .NET SDK locally, pull the container instead:
+
+```bash
+docker pull ghcr.io/joslat/maf-autopilot:latest
+```
+
+Wire it into your IDE's `mcp.json`:
+
+```json
+{
+  "servers": {
+    "maf-autopilot": {
+      "type": "stdio",
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "ghcr.io/joslat/maf-autopilot:latest"]
+    }
+  }
+}
+```
+
+Same tools, same skills, same resources — just isolated inside a container. Multi-arch (`amd64` + `arm64`).
 
 ### Mode 2: Skills + Agents only (no MCP server required)
 
@@ -61,7 +111,7 @@ Then open Copilot Chat and use `@maf-migration` or `@maf-auditor`.
 - MAF-specific executor pattern migration (`ReflectingExecutor` → `partial class : Executor` + `[MessageHandler]`)
 - Session API changes (`AgentThread` → `AgentSession`)
 - Fan-out/fan-in silent failure detection — a class of bug that builds green but runs wrong
-- CS0618 obsolete API detection that `dotnet-inspect` alone misses at the overload level
+- Compiler ground-truth CS0618 detection (transitive obsoletions, overload-resolution surprises, project-local `[Obsolete]`) that pairs with `dotnet-inspect@0.7.8`'s new static surfacing
 - Build-verified, task-by-task execution with a full tracking table
 - A machine-readable Obsolete API Registry so fixes are deterministic, not guessed
 
@@ -72,33 +122,47 @@ Then open Copilot Chat and use `@maf-migration` or `@maf-auditor`.
 ```
 maf-autopilot/
 ├── .github/
-│   ├── agents/
-│   │   ├── maf-migration.agent.md       # Main migration orchestrator
-│   │   └── maf-auditor.agent.md         # Audits a codebase → generates migration plan
+│   ├── agents/                            # 3 GitHub Copilot Chat agents
+│   │   ├── maf-migration.agent.md         # Build-verified task-by-task migration orchestrator
+│   │   ├── maf-auditor.agent.md           # Pre-migration scan → generates migration-plan.md
+│   │   └── maf-best-practice-reviewer.agent.md   # Steady-state audit (post-migration) → audit-report.md
 │   ├── instructions/
-│   │   └── maf-constraints.instructions.md  # Always-loaded: breaking changes, constraints
-│   ├── skills/
-│   │   ├── dotnet-inspect/              # NuGet API surface inspection (+ Obsolete caveat)
-│   │   ├── maf-migration-guide/         # Full MAF 1.3.0 guide, navigated by section
-│   │   ├── obsolete-api-registry/       # Machine-readable CS0618 fix registry
-│   │   ├── migration-plan-creator/      # Generates migration plans with tracking tables
-│   │   ├── cs0618-hunter/               # Detects + fixes obsolete API warnings
-│   │   ├── fan-out-validator/           # Validates fan-out/fan-in workflow topology (conceptual)
-│   │   ├── fan-in-static-analyzer/      # Static code analysis of fan-out topology (code walking)
-│   │   ├── nuget-diff-analyzer/         # Post-processes dotnet-inspect diff into actionable report
-│   │   ├── maf-release-watcher/         # Detects new MAF releases, updates guide + registry
-│   │   ├── workflow-smoke-tester/       # Generates structural smoke tests for workflow patterns
-│   │   └── migration-retrospective/     # Post-migration learning → improves the toolkit
-│   └── workflows/
-│       └── maf-release-watcher.yml      # GitHub Actions: weekly MAF version check + PR
+│   │   └── maf-constraints.instructions.md       # Always-loaded: breaking changes, constraints
+│   ├── skills/                            # 12 specialised skills (loaded by agents on demand)
+│   │   ├── dotnet-inspect/                # pinned to v0.7.8 (surfaces [Obsolete])
+│   │   ├── maf-migration-guide/           # 21-section guide navigator (version-keyed)
+│   │   ├── obsolete-api-registry/         # 13-entry CS0618 fix registry
+│   │   ├── maf-anti-pattern-scanner/      # 9-rule canonical anti-pattern list (post-migration)
+│   │   ├── migration-plan-creator/        # template + ID conventions for tracking tables
+│   │   ├── cs0618-hunter/                 # compiler-ground-truth path (paired with MafRunCs0618Hunt)
+│   │   ├── fan-out-validator/             # silent fan-in starvation rules
+│   │   ├── fan-in-static-analyzer/        # (merged with fan-out-validator)
+│   │   ├── nuget-diff-analyzer/           # (subsumed by MafDiffPackage tool)
+│   │   ├── maf-release-watcher/           # weekly NuGet check workflow
+│   │   ├── workflow-smoke-tester/         # smoke test templates
+│   │   └── migration-retrospective/       # post-migration learning loop
+│   └── workflows/                         # 5 GitHub Actions
+│       ├── release.yml                    # NuGet publish (test → pack → push)
+│       ├── maf-release-watcher.yml        # weekly MAF version check + auto-PR with draft registry entries
+│       ├── maf-pr-audit.yml               # PR-scoped scan, posts a sticky comment
+│       ├── maf-drift-detector.yml         # weekly MafDoctor; opens issue if grade < A
+│       └── docker-publish.yml             # multi-arch GHCR image on tag push
 ├── mcp/
-│   └── maf-autopilot/                   # MCP server — NuGet global tool (dotnet tool install --global maf-autopilot)
+│   ├── maf-autopilot/                     # MCP server — 17 executable tools, 4 resources, 3 prompts
+│   ├── maf-autopilot.Analyzers/           # Roslyn analyzer package (MAF001/002/003 — separate NuGet)
+│   ├── maf-autopilot.Tests/               # ~354 xUnit tests
+│   └── maf-autopilot.Analyzers.Tests/     # ~11 analyzer tests
+├── Dockerfile                             # multi-stage build → ghcr.io/joslat/maf-autopilot:latest
 ├── guides/
-│   └── maf-1.3.0-migration-guide.md    # Source-of-truth MAF 1.3.0 migration guide (21 sections)
+│   └── maf-1.3.0-migration-guide.md       # 21-section migration guide (version-keyed)
 ├── docs/
-│   ├── maf-migration-toolkit-plan.md   # Full project plan and design decisions
-│   └── compatibility-matrix.md         # MAF version ↔ dependency version table
-└── .maf-version                         # Tracks current MAF version (for release watcher)
+│   ├── maf-migration-toolkit-plan.md      # 🗺️ phased roadmap + full 68-row tracking table
+│   ├── project-status-and-vision.md       # stage assessment + completeness audit
+│   ├── compatibility-matrix.md            # MAF version ↔ dependency versions
+│   └── setup.md                           # detailed install + configure
+├── CONTRIBUTING.md                        # 4 contribution shapes + PR conventions
+├── TROUBLESHOOTING.md                     # install / init / MCP / dotnet-inspect / CI failure modes
+└── .maf-version                           # tracked version (for release watcher)
 ```
 
 ---
@@ -119,7 +183,7 @@ maf-autopilot/
 | Generate smoke tests for migrated workflows       | `workflow-smoke-tester`        |
 | Learn from migration surprises, improve toolkit   | `migration-retrospective`      |
 
-> **Never** use `dotnet-inspect` alone to check for obsolete APIs — it does not flag `[Obsolete]` at the individual overload level. Use `cs0618-hunter` (compiler-based) for that.
+> **Pin to `dotnet-inspect@0.7.8` or later.** v0.7.8 (2026-05-04) [closes the `[Obsolete]`-overload gap](https://github.com/richlander/dotnet-inspect/releases/tag/v0.7.8). For ground-truth on what your project actually triggers (transitive obsoletions, overload resolution, project-local `[Obsolete]`), `cs0618-hunter` (compiler-based) is still the canonical path.
 
 ---
 
@@ -133,38 +197,30 @@ The MCP server tools are called automatically by Copilot during steps 1–3 — 
 
 ---
 
-## Roadmap
+## Roadmap & Status
 
-- [x] `maf-migration.agent.md` — full migration orchestrator with build-verified task loop
-- [x] `maf-auditor.agent.md` — pre-migration plan generator
-- [x] `maf-constraints.instructions.md` — always-loaded breaking changes + hard rules
-- [x] `cs0618-hunter` — compiler-based CS0618 detection
-- [x] `fan-out-validator` — silent fan-in starvation detection
-- [x] `obsolete-api-registry` — machine-readable CS0618 registry (10 entries)
-- [x] `migration-plan-creator` — plan template + generation instructions
-- [x] `maf-migration-guide` — 21-section guide navigator
-- [x] `dotnet-inspect` — enhanced with ⚠️ [Obsolete] limitation warning
-- [x] `guides/maf-1.3.0-migration-guide.md` — full 21-section reference guide
-- [x] `docs/compatibility-matrix.md` — MAF version ↔ dependency versions
-- [x] `nuget-diff-analyzer` — structured diff post-processing skill
-- [x] `maf-release-watcher` skill — manual + automated update workflow
-- [x] `.github/workflows/maf-release-watcher.yml` — GitHub Actions weekly check
-- [x] `fan-in-static-analyzer` — static code analysis of fan-out topology
-- [x] `workflow-smoke-tester` — post-migration structural smoke test generation
-- [x] `migration-retrospective` — post-migration learning loop
-- [x] `maf-autopilot` MCP server — tools + resources + prompts, published to NuGet as `maf-autopilot` global tool
-- [ ] Docker distribution via GHCR
-- [ ] Roslyn analyzer companion — flags fan-out void handlers at write-time
-- [ ] Version-keyed guide sections — load only sections relevant to specific migration path
-- [ ] Multi-version migration paths (e.g., 1.1.0 → 1.3.0 in one pass)
+For an up-to-date, evidence-anchored view of what is done, what is in progress, and what is pending, see:
+
+- **[`docs/maf-migration-toolkit-plan.md`](docs/maf-migration-toolkit-plan.md)** — phased roadmap (Phase A → B → C → D) + the 66-row tracking table (single source of truth)
+- **[`docs/project-status-and-vision.md`](docs/project-status-and-vision.md)** — stage assessment, the broader vision beyond migration, completeness audit
+
+> The README used to carry its own tick-list of features. It drifted from the plan twice in two months. The plan tracking table is now authoritative; the README sticks to "what this is" and "how to use it."
+
+### Distribution status (2026-05-12)
+
+- ✅ **NuGet** — 3 alphas on [nuget.org/packages/maf-autopilot](https://www.nuget.org/packages/maf-autopilot) (latest: `1.3.0-alpha-3`)
+- ✅ **Docker GHCR** — multi-arch (amd64+arm64) container, semver tags
+- ✅ **Roslyn analyzers** — `maf-autopilot.Analyzers` package ships 3 write-time rules
+- ✅ **Multi-version migration paths** — `MafMigrationPath(currentVer, targetVer)` walks version-keyed guide metadata
+- 🔄 **Stable `1.3.0`** — gated on at least one external migration validation; tracked as plan row #50
 
 ---
 
 ## Acknowledgements
 
-This toolkit relies heavily on **[dotnet-inspect](https://github.com/filipw/dotnet-inspect)** by [Filip W](https://github.com/filipw) — a powerful CLI for querying .NET API surfaces across NuGet packages, platform libraries, and local assemblies. The `nuget-diff-analyzer` skill and the `maf-release-watcher` workflow both use `dotnet-inspect` (via [dnx](https://github.com/filipw/dnx)) to diff MAF package versions and surface breaking API changes.
+This toolkit relies heavily on **[dotnet-inspect](https://github.com/richlander/dotnet-inspect)** by [Rich Lander](https://github.com/richlander) — a powerful CLI for querying .NET API surfaces across NuGet packages, platform libraries, and local assemblies. The `nuget-diff-analyzer` skill and the `maf-release-watcher` workflow both use `dotnet-inspect` (via [dnx](https://github.com/filipw/dnx)) to diff MAF package versions and surface breaking API changes.
 
-> ⚠️ One important caveat: `dotnet-inspect` does **not** surface `[Obsolete]` attributes at the individual overload level. The `cs0618-hunter` skill works around this by using the compiler directly (`dotnet build | grep CS0618`). Never rely on `dotnet-inspect` alone for obsolete API detection.
+> ℹ️ As of `dotnet-inspect` **v0.7.8** (2026-05-04), `[Obsolete]` members are surfaced in listings ([PR #318](https://github.com/richlander/dotnet-inspect/pull/318) closes [issue #316](https://github.com/richlander/dotnet-inspect/issues/316)). Versions ≤ v0.7.7 missed `[Obsolete]` at the overload level — historic motivation for `cs0618-hunter` as a workaround. **Pin to v0.7.8 or later.** `cs0618-hunter` remains valuable as the compiler ground-truth path (catches transitive obsoletions, overload-resolution surprises, project-local `[Obsolete]`); `dotnet-inspect` is the static / pre-build path. They are complementary.
 
 ---
 

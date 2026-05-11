@@ -6,13 +6,37 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 
-// 'maf-autopilot init' — CLI mode: configure a target repo for MAF migration.
-// Must be checked before Host.CreateApplicationBuilder so stdin/stdout remain clean.
+// CLI mode: short-circuit before Host.CreateApplicationBuilder so stdin/stdout remain clean.
+// Supported subcommands:
+//   maf-autopilot init                       — scaffold .vscode/mcp.json + copilot-instructions
+//   maf-autopilot new agent <Name>           — generate a MAF 1.3.0 agent + smoke test
+//   maf-autopilot new executor <Name> [In] [Out]  — generate a workflow executor + smoke test
+//   maf-autopilot doctor [path]              — one-command repo health report (A/B/C/F grade)
 if (args.Length > 0 && args[0] == "init")
 {
     var exitCode = await InitCommand.RunAsync();
     Environment.Exit(exitCode);
     return; // unreachable; satisfies compiler
+}
+if (args.Length >= 2 && args[0] == "new")
+{
+    var exitCode = NewCommand.Run(args);
+    Environment.Exit(exitCode);
+    return;
+}
+if (args.Length >= 1 && args[0] == "doctor")
+{
+    var path = args.Length >= 2 ? args[1] : Directory.GetCurrentDirectory();
+    var report = new MafAutopilot.Tools.DoctorTool().MafDoctor(path);
+    Console.WriteLine(report);
+    Environment.Exit(0);
+    return;
+}
+if (args.Length >= 1 && args[0] == "registry-extract")
+{
+    var exitCode = RegistryExtractCommand.Run(args);
+    Environment.Exit(exitCode);
+    return;
 }
 
 // All logs must go to stderr — stdout is reserved for the MCP JSON-RPC protocol.

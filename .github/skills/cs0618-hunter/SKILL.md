@@ -1,99 +1,48 @@
 ---
 name: cs0618-hunter
-description: "Detects and fixes CS0618 obsolete API warnings in .NET builds. Use this skill — NOT dotnet-inspect — whenever you need to find deprecated API usage. dotnet-inspect does not flag [Obsolete] at the individual overload level; only the compiler does. This skill provides the exact workflow for finding, diagnosing, and fixing every CS0618 warning."
+description: "Detects and fixes CS0618 obsolete API warnings in .NET builds. The compiler is the authoritative source for what your project actually triggers — it catches transitive obsoletions, overload-resolution surprises, and project-local [Obsolete] attributes that static inspection cannot see. Pair with dotnet-inspect@0.7.8+ for the static / pre-build view."
 ---
 
-# cs0618-hunter
+# cs0618-hunter — compiler ground-truth for obsolete API usage
 
-The **only reliable way** to detect `[Obsolete]` API usage in a .NET codebase is the compiler. This skill provides the exact workflow.
+> **⚡ Prefer the MCP tool.** The `maf-autopilot` MCP server exposes **`MafRunCs0618Hunt(projectPath)`** — it shells `dotnet build`, parses every CS0618 / CS0246 diagnostic, joins each one to its canonical fix in the obsolete-API registry, and returns a structured report. The procedural walkthrough below is preserved for when you need to run the steps manually (offline, debugging the tool itself, etc.).
 
-> **Root cause:** `dotnet-inspect` does not surface `[Obsolete]` at the individual overload level. This is a known upstream limitation tracked at [richlander/dotnet-inspect #316](https://github.com/richlander/dotnet-inspect/issues/316). Until that is resolved, the compiler is the only authoritative source — which is exactly what this skill uses.
+## Why the compiler stays authoritative
 
-## When to Use This Skill
+`dotnet-inspect@0.7.8+` now surfaces `[Obsolete]` in member listings (PR [#318](https://github.com/richlander/dotnet-inspect/pull/318) closes issue [#316](https://github.com/richlander/dotnet-inspect/issues/316)). That's an excellent pre-build static check, but **three classes of obsoletion remain compiler-only**:
 
-- During Phase 3 (Review) — mandatory step before declaring migration complete
-- After any executor or workflow file is modified
-- Whenever you suspect an overload might be obsolete but `dotnet-inspect` didn't flag it
-- Before marking any task in the tracking table as `✅ Verified`
+1. **Transitive obsoletions** — the API your code calls isn't obsolete, but it forwards to one that is.
+2. **Overload-resolution surprises** — a more-specific overload was added in a minor release and your literal types now bind to it.
+3. **Project-local `[Obsolete]`** — types your team marked obsolete in this solution. Static inspection of NuGet packages can't see those.
 
-## The Workflow
+For all three, `dotnet build | Select-String "warning CS0618"` is the only authoritative answer.
 
-### Step 1 — Run the CS0618 scan
+## Manual fallback workflow
+
+When `MafRunCs0618Hunt` is unavailable:
 
 ```powershell
+# Step 1: get the baseline
 dotnet build 2>&1 | Select-String "warning CS0618"
+
+# Step 2: for each warning, look up the canonical fix in the registry
+# (the LLM should call MafRegistryLookup with the matching entry ID,
+#  or open .github/skills/obsolete-api-registry/registry.yaml)
+
+# Step 3: apply the fix; re-run the build; confirm the warning is gone
+
+# Step 4: move on to the next warning. Never batch.
+
+# Step 5: declare done only when:
+dotnet build 2>&1 | Select-String "warning CS0618" | Measure-Object | Select-Object -ExpandProperty Count
+# returns 0.
 ```
 
-> Run this from the solution root or the project directory.
-> Every line that matches is a separate fix needed.
+## Quick reference
 
-### Step 2 — Parse each warning
-
-A CS0618 warning looks like:
-```
-src/Foo/Bar.cs(42,15): warning CS0618: 'WorkflowBuilder.AddFanInBarrierEdge(ExecutorBinding, IEnumerable<ExecutorBinding>)' is obsolete: 'Use AddFanInBarrierEdge(IEnumerable<ExecutorBinding>, ExecutorBinding) instead.'
-```
-
-Extract:
-1. **File and line** — `src/Foo/Bar.cs(42,15)`
-2. **Obsolete member** — the first quoted identifier
-3. **Replacement hint** — text after `'is obsolete:'`
-
-### Step 3 — Look up the fix pattern
-
-Load `.github/skills/obsolete-api-registry/SKILL.md` and check if this warning is in the registry.
-
-- **If found**: apply the exact replacement pattern from the registry entry
-- **If not found**: read the obsolete message text — it usually contains the correct replacement signature. Add a new entry to `obsolete-api-registry/registry.yaml` so future migrations benefit.
-
-### Step 4 — Apply the fix
-
-Edit the file at the reported line. The fix is usually one of:
-- Argument reorder (e.g., `AddFanInBarrierEdge`)
-- Method rename
-- Type rename
-
-After editing, run:
-```powershell
-dotnet build 2>&1 | Select-String "warning CS0618"
-```
-
-Confirm the fixed file no longer appears in the output.
-
-### Step 5 — Verify zero matches
-
-```powershell
-$remaining = dotnet build 2>&1 | Select-String "warning CS0618"
-if ($remaining) {
-    Write-Host "REMAINING CS0618 WARNINGS:"
-    $remaining | ForEach-Object { Write-Host $_ }
-} else {
-    Write-Host "✅ Zero CS0618 warnings"
-}
-```
-
-Do NOT mark Phase 3 complete until this outputs `✅ Zero CS0618 warnings`.
-
----
-
-## Why Not Use dotnet-inspect?
-
-`dotnet-inspect member WorkflowBuilder` lists all overloads of `AddFanInBarrierEdge` but does **not** mark either overload as obsolete. Both appear identical in the listing. The `[Obsolete]` attribute is only visible in the single-overload `--index` detail view — but you must already know *which* overload to suspect before you can look it up.
-
-This is a known limitation filed as [richlander/dotnet-inspect #316](https://github.com/richlander/dotnet-inspect/issues/316).
-
----
-
-## Quick Reference
-
-| Command | Purpose |
-|---------|---------|
-| `dotnet build 2>&1 \| Select-String "warning CS0618"` | Find all obsolete API usages |
-| `dotnet build 2>&1 \| Select-String "CS0618\|CS0246"` | Find both obsolete and removed APIs |
-| `dotnet build 2>&1 \| Select-String "warning CS"` | All warnings (broader scan) |
-
-Run the scan at minimum:
-1. After completing all package updates
-2. After all executor migrations
-3. During Phase 3 review (mandatory)
-4. Before marking the migration as done
+| Command                                        | Purpose                              |
+|------------------------------------------------|--------------------------------------|
+| `MafRunCs0618Hunt(projectPath)` (MCP)          | Full automated CS0618/CS0246 hunt    |
+| `MafApiSafety(apiName)` (MCP)                  | Is a single API safe? (registry only)|
+| `MafRegistryLookup(entryId)` (MCP)             | Full fix details for entry ID        |
+| `dotnet build 2>&1 \| Select-String "CS0618"` | Manual baseline scan                  |

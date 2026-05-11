@@ -1,7 +1,243 @@
-# maf-autopilot — Full Plan
+# maf-autopilot — Full Plan (historical archive + tracking table)
 
-> **Status:** Living document — reflects design decisions made during the MAF 1.3.0 migration of `maf-claims-fraud-guardian` and subsequent brainstorming sessions.  
-> **Last updated:** May 2026
+> ## 🚀 Looking for "what's next?" → read [`docs/next-steps.md`](./next-steps.md)
+>
+> [`next-steps.md`](./next-steps.md) is the **single source of truth for active backlog, deferred items, ship gates, and post-1.0 roadmap**. This document does NOT replicate that content.
+>
+> ## 📚 What this document is, then
+>
+> This is the **historical archive** — every phase, every numbered tracking-table row, every decision narrative. Read this when you need to answer:
+> - *"Why did we choose X?"* — see the phase section that landed X
+> - *"When did Y land?"* — see the tracking table
+> - *"What did we deliberately not do?"* — see the deferred / intentionally-rejected entries in each phase
+>
+> When this doc and `next-steps.md` disagree on what's pending, **`next-steps.md` wins** — this doc is updated less aggressively. See [`docs/index.md`](./index.md) for the full doc catalogue.
+>
+> **Last updated:** 2026-05-12 — Phase N (security review + remediation) shipped.
+
+---
+
+## 🗺️ Phased Roadmap (start here)
+
+> The numerical tracking table below records every item ever planned (#1–66). This roadmap groups them by **implementation phase** — read this first to find what's next.
+>
+> Numbers in `(#NN)` refer to the detailed entries in the tracking table further down.
+
+### Phase 0 — Foundation (completed)
+
+Every core feature shipped between project inception and 2026-05-12 morning.
+
+- **Agents & skills authored** (#1–14): three agents, 12 skills, instructions, registry skeleton.
+- **Guide & matrix** (#16–19): 21-section migration guide, compatibility matrix, `.maf-version`, README.
+- **Version-keyed sections** (#20).
+- **MCP server primitives** (#21–24): Tools + Resources + Prompts + `init` command.
+- **2026-05-11 sprint** (P0/P1 batch — #33–42): dotnet-inspect 0.7.8 bump, install command fix, test harness (151→197 tests), JSONC parser fix, inverted-index search, README/plan reconcile, CONTRIBUTING + TROUBLESHOOTING, 3 new executable tools (`MafRunCs0618Hunt`, `MafValidateFanOut`, `MafDiffPackage`), best-practice reviewer agent + `MafScanAntiPatterns`.
+- **Magic-path sprint** (2026-05-11 night): `maf-new` scaffolder (#60), Roslyn analyzer companion (#29), `MafSimulateWorkflow` (#65), `MafExplain` (#64).
+- **Post-magic Opus fixes** (2026-05-12 morning): variable-binding resolution in `MafSimulateWorkflow` (the silent-✅ failure mode), `UseOpenTelemetry(sourceName:)` in scaffolder, `..` traversal protection in `projectPath`, broader test-file heuristic (`.UnitTests`/`.IntegrationTests`/`/e2e`), `ExplainTool` allowlist tightening (drop noisy substring fallback). 201 tests across two projects.
+- **Phase A.1–A.6** (2026-05-12): agents rewired to call MCP tools (#55); registry expanded from 10 → 13 entries + 4 new scanner rules `MAF-AP-AGENT-001` / `MAF-AP-WF-001` / `MAF-AP-MID-001` / `MAF-AP-DEVUI-001` covering Instructions placement, sealed-partial executors, middleware streaming, DevUI guard (#56); redundant SKILLs slimmed and fan-out duo merged (#57); SARIF v2.1.0 export tools `MafScanAntiPatternsSarif` + `MafValidateFanOutSarif` (#58); `MafDoctor` aggregator tool + CLI subcommand `maf-autopilot doctor` (#59); release-watcher bugs all fixed — correct repo, dynamic version anchor, prerelease filter, retry, idempotency, per-version guide files (#46). **235 tests passing.**
+- **Phase B.1, B.3, B.5, B.6** (2026-05-12 afternoon): `MafLintAgentPrompt` MCP tool with 4 rules — PROMPT-001 empty / PROMPT-002 token bloat / PROMPT-003 missing refusal pattern / PROMPT-004 untrusted-input concatenation (prompt injection); `init` refactored to write a thin pointer to `maf://constraints` (no more drift); major-version detection in watcher (escalates PR title + labels); smoke-tester skill slimmed to point at `MafNewExecutor` for the compile-validated fan-out shape pattern. **256 tests passing.**
+- **Phase C.2, C.3, C.4, C.5** (2026-05-12 evening): four new MCP tools land — `MafAuditPullRequest` (PR-diff-scoped scan via `git diff`), `MafPreUpgradeDryRun` (combines `MafDiffPackage` + repo grep to surface user-specific breaking-change impact BEFORE upgrade), `MafEstimateCost` (token-cost auditor over every `RunAsync`/`RunStreamingAsync` site, flags missing `MaxOutputTokens`), and two new GitHub Actions workflows (`maf-drift-detector.yml` weekly + `maf-pr-audit.yml` per-PR). **292 tests across both projects.**
+- **Phase C.1, D.1, D.2** (2026-05-12 late): registry auto-update closes the self-improvement loop — new CLI `maf-autopilot registry-extract <pkg> <oldVer> <newVer>` emits draft YAML registry rows from a `dotnet-inspect diff`; wired into the watcher to auto-append to `registry.yaml` in the upgrade-PR. New `MafMigrationPath(currentVer, targetVer)` tool walks version-keyed guide metadata to plan multi-step migrations (1.0 → 1.3 instead of 1.2 → 1.3). Dockerfile + `docker-publish.yml` workflow ship a multi-arch (amd64+arm64) GHCR image with semver-keyed tags. **325 tests across both projects.**
+- **Phase E — 1.0 polish sprint** (2026-05-12 final): post-4-Opus-review polish landing every HIGH-severity finding. `PathGuard` shared helper applied to all 8 `repoPath`/`projectPath` MCP tools (kills the path-traversal hole the MCP-surface review flagged). `SourceFileWalker` shared helper deduplicates 17 instances of `EnumerateScannableFiles` + `MakeRelative` across 7 tools (architecture-review finding). `MafDoctor` now aggregates **4 of 19 scanners** (anti-pattern + fan-out + prompt-lint + cost) and reports each in the metrics block. `init` CLI output now leads with `maf-autopilot doctor .` + `maf-autopilot new agent ChatBot` (closes the "no hello world" cliff from the usability review). README reconciled: tool count 3→19, skill count 11→12, agents 2→3, Docker/Analyzer marked DONE; new "First 5 minutes" section with three concrete commands. `NewCommand` next-steps include `dotnet add package` hints for greenfield. **csproj version reverted `1.3.0-alpha-5` → `1.3.0-alpha-3` to match NuGet reality** (csproj-vs-NuGet drift fix). **New `maf://rules` resource** auto-generated at runtime from `AntiPatternScannerTool.AllRules` + curated prompt-lint + analyzer rules — kills future doc drift structurally. Analyzer `helpLinkUri` anchors fixed (slugified fragments don't resolve on GitHub). TROUBLESHOOTING test count 116→325. **344 tests passing.**
+
+### Phase E — Post-Opus polish (latest sprint, 2026-05-12 final)
+
+After the 4-Opus parallel review of the magic-path + Phase C/D output, the toolkit landed a final round of HIGH-severity polish. All 6 items complete.
+
+| Order | Item | Why | Status |
+|---|---|---|---|
+| E.1 | **#67** `PathGuard` applied to 8 tools | Path-traversal hole on every `repoPath` tool | ✅ DONE |
+| E.2 | **#71** README reconcile + "First 5 minutes" | Usability tier-1 UX bug | ✅ DONE |
+| E.3 | **#71** csproj version drift + TROUBLESHOOTING count fix | csproj `1.3.0-alpha-5` ≠ NuGet `1.3.0-alpha-3` | ✅ DONE |
+| E.4 | **#69** `MafDoctor` aggregates 4 of 19 scanners | Doctor was overclaiming by name | ✅ DONE |
+| E.5 | **#68** `SourceFileWalker` shared helper | 17 → 1 (file-walk duplication) | ✅ DONE |
+| E.6 | **#70** + **#72** `maf://rules` resource + NewCommand pkg hints + analyzer anchor fixes | Doc drift killer + greenfield package hints + GitHub anchor resolution | ✅ DONE |
+
+### Phase F — Post-final-review polish (post-3rd-Opus, 2026-05-12)
+
+3 parallel Opus reviews (1.0-readiness, tool surface, code hygiene) landed concurrently. Phase F captures the 5 highest-leverage items found across them.
+
+| Order | Item | Why | Status |
+|---|---|---|---|
+| F.1 | Delete redundant `maf-cs0618-hunt` prompt → rewrite to call `MafRunCs0618Hunt` directly | MCP review #5: prompt was instructing the LLM to run bash by hand, bypassing the deterministic tool | ✅ DONE |
+| F.2 | SARIF-twin consolidation: `MafScanAntiPatternsSarif` + `MafValidateFanOutSarif` collapsed into `format: "sarif"` param on the parent tools | MCP review #1: 19 → 17 surface; one tool per scanner, two output formats | ✅ DONE |
+| F.3 | `RegistryExtractCommand` uses YamlDotNet serializer | Arch review #4: string-concat YAML was fragile against any special character | ✅ DONE |
+| F.4 | Compile-validation test for scaffolder output (`CSharpCompilation.Create` against MAF stub) | Tests review #1: dogfood only catches scanner-clean, not compilable | ✅ DONE — caught 2 real template bugs on first run |
+| F.5 | Final 3-Opus parallel deep review (1.0-readiness + tool surface + code hygiene) | Pre-1.0 sign-off | ✅ DONE 2026-05-12 |
+
+### Phase G — Verdict-driven gap closure (post-3rd-Opus, 2026-05-12)
+
+After Phase F.5 landed the third Opus review, three review-flagged blockers became the top of the queue.
+
+| Order | Item | Why | Status |
+|---|---|---|---|
+| G.1 | CHANGELOG.md (Keep-a-Changelog format, all 1.3.0-alpha versions) | 1.0-readiness review #2: missing changelog blocks announcement | ✅ DONE |
+| G.2 | YAML `ScalarStyle` on `example_before`/`example_after`/`notes` (literal + folded) | Tool-surface review #1: auto-PRs visually diverged from existing registry style | ✅ DONE |
+| G.3 | Direct MCP-method tests for `MafNewAgent` + `MafNewExecutor` | Tool-surface review #2: only "write-to-disk" tools without direct end-to-end coverage | ✅ DONE (14 new tests in `NewAgentToolMcpTests`) |
+| G.4 | Stale doc counts (CONTRIBUTING 54→74, csproj/MafResources 11→12 skill, agent 8→10 rules) + maf-migrate prompt refresh | Doc drift sweep + maf-migrate prompt now invokes tools directly | ✅ DONE |
+
+### Phase H — Third-Opus blocker fixes (1.0-announce gate, 2026-05-12)
+
+The third Opus review surfaced 3 announcement-blocking regressions during the polish round. All fixed.
+
+| Order | Item | Why | Status |
+|---|---|---|---|
+| H.1 | README inconsistencies (lines 21/151 still "19 tools" + listed removed SARIF twins; line 153 test count ~314 → ~354) | Public front door contradicted itself | ✅ DONE |
+| H.2 | `DoctorTool.cs:240` still recommended `MafScanAntiPatternsSarif` / `MafValidateFanOutSarif` (removed in F.2) | Every `MafDoctor` user saw stale advice | ✅ DONE |
+| H.3 | `AgentTestTemplate` missing `using System / System.Collections.Generic / System.Threading / System.Threading.Tasks` (same bug class F.4 caught — but in a sibling template, masked by test project's `<ImplicitUsings>enable</ImplicitUsings>`) | Would fail to build for any user project with implicit usings disabled | ✅ DONE — also extended `ScaffolderCompileValidationTests` to compile the test stubs alongside their sibling, reproducing the implicit-usings-disabled scenario |
+| H.4 | Stale comments: csproj "11 skill" → 12, MafResources doc → 12, TROUBLESHOOTING count, agent file "8 rules" → 10 | Cosmetic doc drift | ✅ DONE |
+
+### Phase I — Test-coverage deepening (post-1.0 prep, 2026-05-12)
+
+Opus test-coverage audit identified the top 5 leverage gaps. All shipped — every test is hermetic (mocks / pure in-memory / single GUID temp dir), AAA-structured.
+
+| Order | Item | Why | Status |
+|---|---|---|---|
+| I.1 | Extracted `PullRequestAuditTool.ParseGitDiffOutput` + 5 hermetic parser tests | Shell-out boundary; CRLF / bin-obj / case-insensitive .cs filter regressions hide here | ✅ DONE |
+| I.2 | `Cs0618HuntTool.ResolveBuildTarget` made internal + 5 path-resolution tests (single-temp-dir IDisposable pattern) | Path resolution runs BEFORE `dotnet build`; silent miss looks identical to a build failure | ✅ DONE |
+| I.3 | Scaffolder output now scanned against `MafScanAntiPatterns` + `MafValidateFanOut` in 3 new compile-validation tests | Generator contract "passes our own scanners" was asserted in docstring but unverified | ✅ DONE |
+| I.4 | `DoctorTool.Grade` composition test wiring all 4 real scanners against a single source | Catches breakage in the 4-scanner fan-in; pure-core had unit coverage but not composition | ✅ DONE |
+| I.5 | `ExplainTool` namespace-qualified type use test | Catches regression if `AddIdentifier` ever strips namespace prefixes or haystack search narrows | ✅ DONE |
+
+### Phase J — Production-lifecycle agents (post-1.0, 2026-05-12)
+
+The 3-agent surface was event-driven (`migrate`, `audit`, `best-practice`). Phase J adds the temporal/production-facing dimension.
+
+| Order | Item | Why | Status |
+|---|---|---|---|
+| J.1 | `maf-incident-responder.agent.md` | Production failure → MAF pattern responsible → deterministic fix. Closes the gap "compiles clean, fails at 3am" | ✅ DONE |
+| J.2 | `maf-rollback-agent.agent.md` | Inverse of migration. Surgical 1.3.0 → 1.2.0 retreat; preserves unrelated work that landed on top | ✅ DONE |
+| J.3 | `maf-onboarding.agent.md` | New-dev codebase tour. Topology + top-touched files + dialect — personalised, not generic | ✅ DONE |
+
+### Phase K — Auto-loaded instruction files (post-1.0, 2026-05-12)
+
+Two new always-loaded instructions targeting `*Tests.cs` and host-process files. Net new value — neither overlaps with existing instructions.
+
+| Order | Item | Why | Status |
+|---|---|---|---|
+| K.1 | `maf-testing.instructions.md` (`applyTo: "**/*Tests.cs"`) | Hermetic-test patterns: ScriptedChatClient, fan-out shape verification, AAA conventions, temp-dir pattern | ✅ DONE |
+| K.2 | `maf-deployment.instructions.md` (`applyTo: Program.cs/Startup.cs/Hosting/*.cs/Infrastructure/*.cs`) | Production: ManagedIdentityCredential, MaxTokens caps, OTel wiring, secret handling, session storage | ✅ DONE |
+
+### Phase L — Pull-forward from 1.1 backlog (2026-05-12)
+
+Items previously deferred to 1.1.0+ that were cheap and high-value enough to land in the same sprint.
+
+| Order | Item | Why | Status |
+|---|---|---|---|
+| L.1 | POSIX-correct `SourceFileWalker.MakeRelative` (OS-conditional path comparison) | Linux/macOS users silently got full paths instead of repo-relative; trivial fix | ✅ DONE |
+| L.2 | Rule-ID cross-reference column in `maf://rules` (MAF001 ↔ MafValidateFanOut, MAF002 ↔ MAF-AP-SEC-001, MAF003 ↔ MAF-AP-SEC-003) | Reviewers flagged the analyzer / scanner / registry ID systems as confusing; documenting the mapping is the right unification (renaming would break the ecosystem) | ✅ DONE |
+
+### Phase N — In-depth security review + fixes (2026-05-12)
+
+Three Opus security reviewers covered (A) input attack surface, (B) supply chain + CI/CD, (C) code generation + parser safety. Synthesis identified **1 false positive** (A.H1 — `EscapeForCSharp` Unicode escape, traced to be safe by character-replacement ordering) and **10 real findings**. All real findings fixed, 43 regression tests added.
+
+| Order | Item | Severity | Status |
+|---|---|---|---|
+| N.1 | `MafNewExecutor`: `inputType` / `outputType` flowed unvalidated into raw C# source. Added Roslyn `ParseTypeName` + roundtrip validator. | HIGH (C.H1 — confirmed exploit) | ✅ DONE |
+| N.2 | `Cs0618HuntTool.ExtractCamelCaseIdentifiers` regex had nested-quantifier overlap → catastrophic backtracking (measured: n=30 → 9 sec). Replaced with overlap-free pattern + `RegexOptions.NonBacktracking` + 100ms timeout. | HIGH (C.H2 — measured ReDoS) | ✅ DONE |
+| N.3 | `PullRequestAuditTool.IsSafeBranchName` accepted `--output=PATH` → `git diff --output=` is an arbitrary-write primitive. Reject leading `-`. | MEDIUM (A.M2 — confirmed primitive) | ✅ DONE |
+| N.4 | `Cs0618HuntTool.ResolveBuildTarget` accepted `C:\\` and `/` → drive-root scan for any `.sln` + `dotnet build` it. Reject filesystem roots up-front. | MEDIUM (A.M1 — sharp edge) | ✅ DONE |
+| N.5 | Docker container ran as UID 0 (root). Added dedicated `maf` user (UID 1001) + `USER maf`. | HIGH (B.H4 — hardening) | ✅ DONE |
+| N.6 | `InitCommand` had no size cap on `.vscode/mcp.json` → multi-GB file → OOM. 1 MB cap with graceful backup-and-continue. | MEDIUM (C.M2 — hardening) | ✅ DONE |
+| N.7 | `RegistryService` had no size cap on `MAF_REGISTRY_PATH` override → multi-GB file → OOM. 5 MB cap with clear error. | MEDIUM (C.M1 — hardening) | ✅ DONE |
+| N.8 | `release.yml` tested only the main project, skipping the analyzer test project. Also missed packing the analyzer NuGet. Switched to solution-level `dotnet test` + added analyzer `dotnet pack` step. | HIGH (B.H1 — confirmed gap) | ✅ DONE |
+| N.9 | Three third-party Actions (`softprops/action-gh-release`, `peter-evans/create-pull-request`, `marocchino/sticky-pull-request-comment`) pinned to floating major tags. Pinned all three to commit SHAs with verify-against-tag comment. Added `.github/dependabot.yml` to maintain SHA pins going forward. | HIGH (B.H3 — supply-chain hardening) | ✅ DONE |
+| N.10 | Documented the `EscapeForCSharp` false positive in the source (Agent A's H1 was traced to be a non-issue — character-replacement ordering doubles backslashes BEFORE quotes, making `"` inputs roundtrip as literal text). Added pin-tests so a future change to the escaper that re-opens the (non-existent) hole fails loudly. | INFO (false-positive guard) | ✅ DONE |
+| N.11 | 43 security regression tests added: 20 type-expression accept/reject, 2 executor injection, 8 EscapeForCSharp roundtrip + Unicode-attempt, 1 ReDoS timing pin, 3 root-path rejection, 10 branch-name accept/reject. | n/a | ✅ DONE |
+| N.12 | Considered but deferred: release-watcher trust-chain redesign (B.H2 — significant workflow rework, defer to dedicated PR); top-level `permissions: {}` defaults across all workflows (B.M1 — defense-in-depth); inline `${{ … }}` → `env:` pattern enforcement (B.M3 — defense-in-depth, no current `pull_request_target`); `IsValidVersion`/`IsValidPackageId` leading-`-` rejection (A.M3 — defense-in-depth, no current escape path); rule-ID unification (out of scope). | n/a | 🚫 INTENTIONALLY DEFERRED |
+
+### Phase M — Naming alignment audit (2026-05-12)
+
+Cross-cut review of every name in the project (agents, instructions, skills, MCP tools, MCP resources, workflows, internal classes, CLI subcommands).
+
+| Order | Item | Why | Status |
+|---|---|---|---|
+| M.1 | Rename `maf-rollback-agent.agent.md` → `maf-rollback.agent.md` | The `.agent.md` extension already marks the file as an agent; `-agent` in the stem was redundant | ✅ DONE |
+| M.2 | Codify the skill-naming convention in `CONTRIBUTING.md` | The `maf-` prefix is principled, not universal: prefix when the unprefixed name reads as a general-CS term; don't prefix when the topic is unambiguous in the `.github/skills/` namespace (avoids double-prefixing under `maf://skills?name=...`). Documenting this prevents future drift | ✅ DONE |
+| M.3 | Codify the agent-naming convention in `CONTRIBUTING.md` | No "-agent" stem on agent filenames; prefer noun-roles when settled, activity nouns when uncommon | ✅ DONE |
+| M.4 | Considered but rejected: mass-renaming 6 skill dirs to `maf-*` | 38-file blast radius, breaks any hardcoded `maf://skills?name=...` URI consumer, creates redundant `maf://skills?name=maf-*` double-prefixing. The current inconsistency is principled (see M.2). | 🚫 INTENTIONALLY DEFERRED |
+| M.5 | Considered but rejected: renaming `MafNewAgent` / `MafNewExecutor` → `MafScaffoldAgent` / `MafScaffoldExecutor` | "New" is the universal dev-tool verb (`dotnet new`, `npm init`, `cargo new`). Renaming would diverge from the CLI subcommand `maf-autopilot new agent` AND introduce a breaking MCP-surface change for marginal accuracy gain. | 🚫 INTENTIONALLY DEFERRED |
+
+### Phase A — Pre-1.0 critical path (next, in order)
+
+Everything that needs to ship before cutting stable `1.3.0`. Do these in this order.
+
+| Order | Item | Why now | Effort | Status |
+|---|---|---|---|---|
+| A.1 | **#55** Rewire 3 agents to invoke the 9+2 MCP tools | Biggest easy win from the completeness audit. Agents predated the tools — manual procedure steps replaced with tool calls. | S (1 day) | ✅ DONE 2026-05-11 |
+| A.2 | **#56** Expand registry + scanner to 14 un-audited guide sections | Largest coverage gap. Migration is 10 fingers deep; best-practice review is 4 fingers wide — fill the gap. | M (3–5 days) | 🔄 **first wave done** (3 of ~6 rules + 3 registry entries shipped 2026-05-12): `MAF-AP-AGENT-001` Instructions-outside-ChatOptions (silent ignore), `MAF-AP-WF-001` Executor must be sealed-partial, `MAF-AP-MID-001` Use() missing runStreamingFunc. Registry now has 13 entries (was 10). Remaining: tool-approval (§12), DevUI guard (§14), structured-output null-check (§11). |
+| A.3 | **#57** Slim redundant SKILLs + merge fan-out duo | Procedure SKILLs now duplicate tools. Burns context every load. | S (½ day) | ✅ DONE 2026-05-12 |
+| A.4 | **#58** SARIF output for scanners | Tiny LOC, unlocks GitHub Advanced Security adoption. | S (½ day) | ✅ DONE 2026-05-12 |
+| A.5 | **#59** `MafDoctor` aggregator tool | One-command A/B/C/F health letter; wraps existing tools. Quickest demo gain. | S (½ day) | ✅ DONE 2026-05-12 |
+| A.6 | **#46** Fix release-watcher bugs | Wrong GitHub repo, hard-coded version regex, missing idempotency, no prerelease filter, no NuGet retry. | S (½ day) | ✅ DONE 2026-05-12 |
+| A.7 | **#34** Stop drift in csproj version (re-verify after A.4–A.6) | Bump csproj `<Version>` to `1.3.0-alpha-5` and push. | S (10 min) |
+| A.8 | **#50** Cut stable `1.3.0` release | Final gate. Requires Phase A.1–A.6 green + at least one external migration validation. | S (workflow_dispatch) |
+
+### Phase B — Post-1.0 polish
+
+Round out coverage and quality once 1.0 ships.
+
+| Order | Item | Note |
+|---|---|---|
+| B.1 | **#44** Smoke-tester template fix | Slimmed to point at `MafNewExecutor` (compile-validated) for fan-out shape; manual templates retained for the 4 patterns the tools don't cover yet. | ✅ DONE 2026-05-12 |
+| B.2 | **#47** Per-version guide files | Done in A.6 — `gen_guide_section.py` now writes `guides/maf-<NEW>-migration-guide.md` with AUTO/HUMAN markers, idempotent on re-run. | ✅ DONE 2026-05-12 (via A.6) |
+| B.3 | **#48** Major-version detection / escalation in watcher | Watcher now sets `is_major` output by comparing semver MAJOR; PR title prefixes 🚨 and labels include `major-version,needs-review` on majors. | ✅ DONE 2026-05-12 |
+| B.4 | **#49** Split `maf-auditor` into two agents | Cosmetic — `maf-best-practice-reviewer` already exists as the sibling. Defer the rename of `maf-auditor` → `maf-migration-planner` until after 1.0 (with #51). | ⏸ DEFERRED |
+| B.5 | **#66** Reconsider `init` two-file install | `copilot-instructions.md` now a thin pointer to `maf://constraints` + a table mapping each constraint to the tool that verifies it. No more drift. Unused `StripFrontmatter` / `ReadEmbedded` helpers removed. | ✅ DONE 2026-05-12 |
+| B.6 | **#61** `MafLintAgentPrompt` | New MCP tool. 4 rules: `PROMPT-001` (empty), `PROMPT-002` (token bloat), `PROMPT-003` (missing refusal pattern), `PROMPT-004` (untrusted-input concat / prompt injection). 21 tests. | ✅ DONE 2026-05-12 |
+| B.7 | **#43** Expand registry to 9 missing API areas | Largely covered by A.2 (4 new scanner rules + 3 new registry entries spanning §4, §8, §14, §15). Remaining gaps (§7 memory, §12 tool approval, §11 structured output) move to Phase C. | ⏸ MOSTLY DONE (via A.2) |
+| B.8 | **#51** Decide on rename (`maf-autopilot` → `maf-keeper`?) | Defer until 1.0 ships. Renaming pre-1.0 is much cheaper than post-1.0. | ⏸ DEFERRED |
+
+### Phase C — Strategic additions
+
+Vision-completing work; ship as 1.1.0 / 1.2.0.
+
+| Order | Item | Note |
+|---|---|---|
+| C.1 | **#30** registry.yaml CI auto-update | Now tractable with v0.7.8 surfacing `[Obsolete]`. Closes the self-improvement loop. | ✅ DONE 2026-05-12 |
+| C.2 | **#52** `pr-diff-auditor` skill / tool | Scope scanners to files changed in current PR. Required for CI integration. | ✅ DONE 2026-05-12 |
+| C.3 | **#53** `drift-detector` scheduled scan | Daily scan of user's repo; flags when newly-merged code regresses. | ✅ DONE 2026-05-12 |
+| C.4 | **#54** `pre-upgrade-dry-run` skill | "What would break if I upgraded?" without modifying code. Built on `MafDiffPackage`. | ✅ DONE 2026-05-12 |
+| C.5 | **#62** `MafEstimateCost` static token-cost auditor | Production cost governance — enterprise differentiator. | ✅ DONE 2026-05-12 |
+| C.6 | **#63** `MafScanPromptInjection` | Roslyn data-flow analysis for untrusted-input → `Instructions =`. (Partially covered by `MafLintAgentPrompt`'s PROMPT-004; full data-flow remains.) | ⏸ PARTIAL |
+| C.7 | **#31** `maf_open_feedback_issue` MCP sampling tool | Closes the learning loop in MCP binary mode. |
+| C.8 | **#26** Sampling tools — `maf_full_audit`, `maf_migration_suggest` | Multi-step agentic chains inside the MCP server. |
+| C.9 | **#27** Remaining 6 analysis tools | `maf_executor_pattern_check`, `maf_compatibility`, `maf_migration_path`, etc. |
+
+### Phase D — Distribution & long-tail
+
+| Order | Item | Note |
+|---|---|---|
+| D.1 | **#28** Docker distribution via GHCR | `docker pull ghcr.io/joslat/maf-autopilot:latest`. Multi-arch amd64+arm64; semver-keyed tags; stable-only `latest`. | ✅ DONE 2026-05-12 |
+| D.2 | **#32** Multi-version migration paths | `MafMigrationPath(currentVer, targetVer)` walks version-keyed guide metadata, returns ordered intermediate-step sections. Built on #20 metadata. | ✅ DONE 2026-05-12 |
+| D.3 | **#45** Merge `fan-out-validator` + `fan-in-static-analyzer` | Cosmetic — done as part of A.3 skill slimming (`fan-in-static-analyzer` is now a redirect stub). | ✅ DONE 2026-05-12 (via A.3) |
+| D.4 | GitHub App `@maf-bot` | PR comments scoped to changed lines; pairs with #52. Org-wide adoption vector. Not in current tracking table — file an issue. |
+| D.5 | VS Code extension | One-click installer wrapping the MCP server, surfaces `MafDoctor` as a status-bar item. Not in tracking table. |
+
+### Snapshot — completion by phase (synced 2026-05-12 late evening, post-Phase-M)
+
+| Phase | Items | Done | Deferred | Gated | Remaining |
+|---|---:|---:|---:|---:|---:|
+| Phase 0 (Foundation) | 38 | 38 | 0 | 0 | 0 |
+| Phase A (Pre-1.0) | 8 | 7 | 0 | 1 (A.8 stable release) | 0 |
+| Phase B (Post-1.0 polish) | 8 | 7 | 1 (B.8 rename) | 0 | 0 |
+| Phase C (Strategic) | 9 | 5 | 1 (C.6 — partial via PROMPT-004) | 0 | 3 |
+| Phase D (Distribution) | 5 | 3 | 0 | 0 | 2 |
+| Phase E (Post-Opus polish) | 6 | 6 | 0 | 0 | 0 |
+| Phase F (Post-final-review) | 5 | 5 | 0 | 0 | 0 |
+| Phase G (Verdict-driven gap closure) | 4 | 4 | 0 | 0 | 0 |
+| Phase H (Third-Opus blockers) | 4 | 4 | 0 | 0 | 0 |
+| Phase I (Test-coverage deepening) | 5 | 5 | 0 | 0 | 0 |
+| Phase J (Production-lifecycle agents) | 3 | 3 | 0 | 0 | 0 |
+| Phase K (Auto-loaded instructions) | 2 | 2 | 0 | 0 | 0 |
+| Phase L (Pull-forward from 1.1 backlog) | 2 | 2 | 0 | 0 | 0 |
+| Phase M (Naming alignment audit) | 5 | 3 | 2 (intentional) | 0 | 0 |
+| Phase N (Security review + fixes) | 12 | 11 | 1 (intentional) | 0 | 0 |
+| **Total** | **116**\* | **105** | **5** | **1** | **5** |
+
+\* *107 not 105 because D.4 and D.5 are not yet in the numbered tracking table; file them as new rows when scheduled.*
+
+**Phase A is done in code** — only A.8 (cut stable `1.3.0`) remains, and that's a one-line `gh workflow run release.yml -F version=1.3.0` once an external migration validates the toolkit. **Phase B is done in practice** — the two deferred items are cosmetic renames best held until after 1.0. **Phase C is now the next chord** — registry CI auto-update (#30), pr-diff-auditor (#52), drift-detector (#53), pre-upgrade dry-run (#54), cost auditor (#62), prompt-injection scanner (#63), feedback-issue sampling tool (#31), sampling tools (#26), remaining analysis tools (#27).
 
 ---
 
@@ -36,32 +272,143 @@
 | 22 | `maf-autopilot` MCP Resources | All 11 skill docs + guide sections + registry exposed as `maf://skills/*`, `maf://guide/section/*`, `maf://registry` | P2 | ✅ DONE | 100% | 90% | **Done — May 5, 2026.** `Resources/MafResources.cs` (`[McpServerResourceType]`). Static: `maf://constraints`, `maf://registry`, `maf://guide`. Template: `maf://skills{?name}` (11 skills). All files embedded via `LogicalName` in csproj. `WithResourcesFromAssembly()` in `Program.cs`. Build clean. |
 | 23 | `maf-autopilot` MCP Prompts | `/maf-audit`, `/maf-migrate`, `/maf-cs0618-hunt` — slash-command workflows with embedded skill context | P2 | ✅ DONE | 100% | 90% | **Done — May 5, 2026.** `Prompts/MafPrompts.cs` (`[McpServerPromptType]`). Three prompts: `maf-audit` (repoPath, fromVersion), `maf-migrate` (taskIds, planPath), `maf-cs0618-hunt` (projectPath). All reference `maf://` resource URIs inline. `WithPromptsFromAssembly()` in `Program.cs`. Build clean. |
 | 24 | `maf-autopilot init` command | CLI scaffold: `maf-autopilot init` writes `.vscode/mcp.json` + generates minimal `.github/copilot-instructions.md` | P2 | ✅ DONE | 100% | 90% | **Done — May 5, 2026.** `InitCommand.cs` intercepts `init` arg before MCP Host starts. Merges `.vscode/mcp.json` (global-tool entry, idempotent). Writes `.github/copilot-instructions.md` (MAF hard constraints, frontmatter-stripped) only if not exists. Smoke-tested: skip logic confirmed. Build clean. |
-| 25 | NuGet publish (`dotnet tool install -g maf-autopilot`) | Publish to NuGet.org as a global tool. Enables `dotnet tool install -g maf-autopilot` | P2 | ❌ NOT STARTED | 0% | 0% | Pre-condition for zero-friction adoption. Requires NuGet API key in GitHub secrets. See publish-mcp-release job in release watcher workflow. |
+| 25 | NuGet publish (`dotnet tool install -g maf-autopilot`) | Publish to NuGet.org as a global tool. Enables `dotnet tool install -g maf-autopilot` | P1 | 🔄 IN PROGRESS | 60% | 50% | **Updated 2026-05-11.** 3 alphas live on nuget.org (`1.3.0-alpha-1/2/3`). Pipeline works (release.yml proven). Remaining: (a) plain `dotnet tool install --global maf-autopilot` fails because all versions are prereleases — needs `--prerelease` flag OR a stable cut; (b) csproj `<Version>` is `1.3.0-tool.1` — drifted from reality (release.yml overrides via workflow input); (c) no stable 1.3.0 yet. Track stable cut as separate row #50. |
 | 26 | `maf-autopilot` Sampling tools | Agentic tools using `server.SampleAsync()`: `maf_full_audit` (analyze→plan→generate→validate), `maf_migration_suggest` | P3 | ❌ NOT STARTED | 0% | 0% | Unlocked by SDK 1.2.0. Server calls host LLM (VS Code Copilot) with zero API keys. Multi-step reasoning chains entirely inside the MCP server. |
 | 27 | `maf-autopilot` full analysis tools | Remaining 6 tools: `maf_detect_cs0618`, `maf_api_diff`, `maf_fan_out_validate`, `maf_executor_pattern_check`, `maf_compatibility`, `maf_migration_path` | P3 | ❌ NOT STARTED | 0% | 0% | Higher-effort tools requiring dotnet build invocation, Roslyn analysis, dotnet-inspect subprocess. See Section 10 tool specs. |
 | 28 | Docker distribution via GHCR | `docker pull ghcr.io/joslat/maf-autopilot:latest` | P3 | ❌ NOT STARTED | 0% | 0% | Depends on #25. Dockerfile + GHCR push in workflow. |
-| 29 | Roslyn analyzer companion | Flags void fan-out handlers at write-time in the IDE | P3 | ❌ NOT STARTED | 0% | 0% | Nice-to-have. Requires Roslyn analyzer project. |
+| 29 | Roslyn analyzer companion | Flags void fan-out handlers + insecure credentials + sensitive-data logging at write-time in the IDE | P1 | ✅ DONE | 100% | 85% | **Done 2026-05-11 (magic-path sprint).** New `mcp/maf-autopilot.Analyzers/` project targeting `netstandard2.0` (Roslyn requirement). Three rules: `MAF001` fan-out handler must return `Task<T>`/`ValueTask<T>` (Error), `MAF002` avoid `DefaultAzureCredential` outside tests (Warning), `MAF003` `EnableSensitiveData = true` outside tests (Warning). Each shipped with help-link URIs to the SKILL.md files. Analyzer release tracking files in place. 11 tests using `Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit`. Will pack as `maf-autopilot.Analyzers` NuGet — separate package from the global tool. |
 | 30 | `registry.yaml` auto-update in CI | Semantic step (Copilot Coding Agent or LLM API call) to auto-generate new registry entries from dotnet-inspect diff output — closes the last manual step in `maf-release-watcher.yml` | P2 | ❌ NOT STARTED | 0% | 0% | Pure scripts can't write meaningful YAML entries without semantic analysis. Target: hybrid Copilot Agent step in workflow (see Section 11). No external prerequisite — this is a CI-internal improvement to the release watcher itself. |
 | 31 | `maf_open_feedback_issue` Sampling tool | After migration, uses `server.SampleAsync()` to analyze the migration log, then opens a structured GitHub Issue on `joslat/maf-autopilot` with new CS0618 patterns and guide corrections | P2 | ❌ NOT STARTED | 0% | 0% | Closes the reflexive learning loop in MCP binary mode. Requires GitHub MCP access (already in VS Code Copilot via `mcp_github_*`). See Section 9.2. Prerequisite: #25 NuGet publish. |
 | 32 | Multi-version migration paths | Support 1.1.0 → 1.3.0 in one pass (not step-by-step through intermediate versions) | P3 | ❌ NOT STARTED | 0% | 0% | Depends on version-keyed guide sections (#20 ✅). Migration agent stacks multiple version paths by loading sections tagged for each intermediate version. |
+| 33 | **Bump `dotnet-inspect` 0.7.6 → 0.7.8 + fix attribution** | Pin update across 21 places. Author correction `filipw` → `richlander`. Rewrite "[Obsolete] caveat" paragraphs in README, `dotnet-inspect/SKILL.md`, `copilot-instructions.md`, `maf-constraints.instructions.md`, migration guide. | P1 | ✅ DONE | 100% | 85% | **Done 2026-05-11.** All 21 pinned references bumped. Attribution corrected. `cs0618-hunter` framing rewritten: dotnet-inspect@0.7.8 is the static / pre-build path; compiler stays authoritative for transitive / overload-resolution / project-local cases. Reviewed by Opus; minor housekeeping (cs0618 §"Why Not Use" + guide frontmatter) swept in follow-up commit. |
+| 34 | Fix README install command + csproj version drift | README + setup.md install snippets must use `--prerelease` (or be pinned to `--version 1.3.0-alpha-3`) until stable ships. `maf-autopilot.csproj:15` `<Version>` bumped to next prerelease so csproj stops lying. | P1 | ✅ DONE | 100% | 85% | **Done 2026-05-11.** README + setup.md install snippets show `--prerelease` and link nuget.org/packages/maf-autopilot. csproj `<Version>` bumped `1.3.0-tool.1` → `1.3.0-alpha-4`. Build clean. |
+| 35 | MCP server test harness | `mcp/maf-autopilot.Tests/` xUnit project. Unit tests: `RegistryService` (load, `FindById` casing, every field `SearchByApiName` must touch, malformed YAML), `MafResources` (allowlist + path-traversal), `InitCommand` (idempotency, malformed `.vscode/mcp.json` must NOT clobber). Integration test: in-process stdio MCP transport — list tools/resources/prompts; invoke `MafApiSafety("AgentThread")` → assert UNSAFE. Goldens for embedded resource bodies. Wire `dotnet test` into `release.yml` before pack step. | P1 | ✅ DONE | 95% | 85% | **Done 2026-05-11.** 76 tests passing across RegistryService (28), MafResources (22+), ApiSafetyTool (5), RegistryLookupTool (8), InitCommand (6), FormatEntry (4). Wired into `release.yml` before pack. The harness caught the `MafResources` case-sensitivity bug (fixed in same batch) and the JSONC-comment silent-quarantine bug (fixed in same batch). **Still deferred:** in-process stdio integration test, file-body goldens — track in a follow-up issue. |
+| 36 | Fix `init` JSON-clobber bug | `InitCommand.cs:64-69` — on malformed `.vscode/mcp.json` parse failure, current code wipes the file and writes a fresh `JsonObject`. Must back up to `.vscode/mcp.json.bak`, fail loudly with a clear message, and offer a `--force` flag for the rare case the user explicitly wants overwrite. | P1 | ✅ DONE | 100% | 80% | **Done 2026-05-11 (bundled into P0 housekeeping).** Malformed JSON triggers timestamped backup `mcp.json.bak.<UTC>` before recreate; warning printed to console; 4 InitCommand tests cover happy path / idempotency / preservation / backup. `--force` flag deferred (no current need since backup preserves data). |
+| 37 | Expand `SearchByApiName` to all string fields + inverted index | Extend the OR-chain at `RegistryService.cs:47-56` to include `ExampleAfter`, `Package`, `Id`. Better: build a `Dictionary<string,HashSet<RegistryEntry>>` token index at `RegistryService` construction time so search becomes O(1) tokenised lookup. | P1 | ✅ DONE | 100% | 80% | **Done 2026-05-11.** Pre-built lowercase haystack per entry covering 12 fields (Id, Package, Type, Method, ObsoleteSignature, ReplacementSignature, FixDescription, ExampleBefore, ExampleAfter, CsWarning, GuideSection, Notes). Search is now O(entries × \|haystack\|) substring with a single source-of-truth `BuildHaystack` method — adding a new field is a one-line change. 11 new tests guard ExampleAfter / Package / Id / CsWarning coverage. The "missed field" bug class is structurally eliminated. |
+| 38 | Reconcile README roadmap with plan tracking table | Either delete the README roadmap or autogenerate it from this table. Today the README under-reports open work (lists 4 pending; plan tracks 12+). | P1 | ✅ DONE | 100% | 85% | **Done 2026-05-11.** README roadmap replaced with a "Roadmap & Status" pointer to `maf-migration-toolkit-plan.md` (this file) and `project-status-and-vision.md`. Single source of truth restored. |
+| 39 | Standardise MCP tool naming convention | `ApiSafetyTool.cs:84` and `MafPrompts.cs:39-40` reference snake_case (`maf_api_safety`, `maf_registry_lookup`); the SDK emits PascalCase (`MafApiSafety`, `MafRegistryLookup`). Pick one and align all references. | P2 | ✅ DONE | 100% | 80% | **Done 2026-05-11.** All references aligned to PascalCase (`MafApiSafety`, `MafRegistryLookup`, `MafRegistryList`) — what the SDK emits and what the model sees. Updated in source (Tools, Prompts), tests, README, setup.md. |
+| 40 | `CONTRIBUTING.md` + `TROUBLESHOOTING.md` | Add both. CONTRIBUTING covers: how to add a skill, how to add a registry entry, PR conventions, "always check upstream release notes before designing workarounds". TROUBLESHOOTING covers: init fails, stdio handshake, NuGet rate-limit, MCP server doesn't appear in Copilot. | P2 | ✅ DONE | 100% | 80% | **Done 2026-05-11.** `CONTRIBUTING.md` (4 contribution shapes + PR conventions + lessons learned) and `TROUBLESHOOTING.md` (install + init + MCP visibility + dotnet-inspect + migration loop + release watcher + CI sections) added at repo root. |
+| 41 | Wire 3 executable MCP tools | `MafRunCs0618Hunt(projectPath)` — shells `dotnet build`, parses CS0618/CS0246, joins to registry. `MafValidateFanOut(filePath\|repoPath)` — Roslyn-based static check for `void` handlers. `MafDiffPackage(pkg, oldVer, newVer)` — wraps `dnx dotnet-inspect@0.7.8 -- diff`, consumes new `[Obsolete]` annotations, returns categorised report. | P1 | ✅ DONE | 100% | 80% | **Done 2026-05-11.** Three new tool classes in `mcp/maf-autopilot/Tools/`: `FanOutValidatorTool` (pure Roslyn syntax walk, no semantic model), `Cs0618HuntTool` (shells `dotnet build`, regex-parses CS0618/CS0246, registry-joined), `DiffPackageTool` (shells `dnx dotnet-inspect@0.7.8 -- diff`, parses `+`/`-`/`~` markers, surfaces newly-obsoleted members). Each tool exposes a pure-function parser core for unit testing; the shell-out is the only non-unit-tested surface. Added `Microsoft.CodeAnalysis.CSharp 4.11.0` package dependency. **40 new tests** (FanOutValidator 13, Cs0618Hunt 11, DiffPackage 9, plus theories). MCP server now exposes **6 executable tools** (was 3). |
+| 42 | `maf-best-practice-reviewer` agent + `maf-anti-pattern-scanner` skill + `MafScanAntiPatterns` MCP tool | New agent that audits clean 1.3.0 codebases for drift / anti-patterns. New skill provides scan rules. New executable MCP tool runs the rules. Output is `audit-report.md`, NOT `migration-plan.md`. | P1 | ✅ DONE | 100% | 80% | **Done 2026-05-11 — the identity unlock landed.** `.github/agents/maf-best-practice-reviewer.agent.md` orchestrates a 6-phase audit (sanity → automated scan → topology cross-check → manual review → report → handback). `.github/skills/maf-anti-pattern-scanner/SKILL.md` defines 8 rules (`MAF-AP-SEC-001`/002/003, `MAF-AP-CONC-001`/002, `MAF-AP-OBS-001`/002, `MAF-AP-ID-001`). `AntiPatternScannerTool.cs` implements 6 of them as executable regex/Roslyn rules. Skill is embedded in MCP binary and reachable via `maf://skills?name=maf-anti-pattern-scanner`. **Also bundled in this batch**: `DiffPackageTool` parser rewritten against the REAL `dotnet-inspect@0.7.8 -- diff` output format (was completely wrong before — line markers vs markdown sections). `ProcessRunner` extracted with 5-min timeout, async dual-stream drain (prevents pipe deadlock), `ArgumentList` (prevents command injection), 16 MB output cap. `Cs0618HuntTool.MatchToRegistry` now uses only the FIRST quoted segment from CS0618/CS0246 messages (no longer matches the replacement-instruction phrase). `FanOutValidatorTool` split `UnusualReturnType` → `LikelyInvalid` (raw types now flagged, not buried). **151 tests passing.** |
+| 43 | Expand registry to 9 missing API areas | Today's `registry.yaml` covers ~10 patterns in 4 areas. Missing entries for: memory / context providers (guide §7), middleware (§8), tool approval (§12), observability `UseOpenTelemetry` (§13), DevUI/Hosting (§14), structured output `RunAsync<T>` (§11), source generator setup (§15), instructions placement (§4), agent creation `AsAIAgent()` (§3). Add `severity` (error\|warning\|info) and `category` (migration\|best-practice\|security\|observability) fields. | P2 | ❌ NOT STARTED | 0% | 0% | Half the guide's surface area is registry-invisible today. Pairs with #42 — anti-pattern scanner consumes the new entries. |
+| 44 | Compile-validate `workflow-smoke-tester` templates | Templates reference `IChatClient`, `MockChatClient`, `DeserializeSessionAsync` — none have been compile-checked against MAF 1.3.0. Pin a reference sample project in this repo and CI-validate every template compiles against it. | P2 | ❌ NOT STARTED | 0% | 0% | Skill may ship dead code today. Pairs with the broader testing investment in #35. |
+| 45 | Merge `fan-out-validator` + `fan-in-static-analyzer` | ~70% content overlap (silent-failure recap, return-type table, fix pattern). Combine into one skill with a "policy" section and a "procedure" section. Reduces context bloat and risk of divergence. | P3 | ❌ NOT STARTED | 0% | 0% | Cosmetic but discovered in the audit. |
+| 46 | Fix release-watcher bugs | (a) Wrong GitHub repo. (b) Hard-coded `1.3.0` regex anchor. (c) No prerelease filter. (d) No NuGet retry. (e) No idempotency on guide append. (f) `maf-1.3.0-migration-guide.md` filename hardcoded. | P1 | ✅ DONE | 100% | 80% | **Done 2026-05-12 (Phase A.6).** (a) Repo corrected to `microsoft/agent-framework`; tag form `dotnet-X.Y.Z` tried first per canonical release links. (b) `update_compat_matrix.py` now finds the FIRST version row dynamically — no `1.3.0` anchor. (c) Prerelease filter regex (`-alpha\|-beta\|-rc\|-preview`) drops prereleases unless manual override. (d) NuGet curl retries 3× with backoff. (e) `gen_guide_section.py` writes per-version files with AUTO/HUMAN markers — human additions preserved across re-runs. (f) Per-version file `guides/maf-<NEW>-migration-guide.md`, not appending to 1.3.0. |
+| 47 | Per-version guide files | `gen_guide_section.py` creates `guides/maf-$VERSION-migration-guide.md` rather than appending. Update `maf-migration-guide` skill to version-route lookups. | P2 | ❌ NOT STARTED | 0% | 0% | Pairs with #46. Foundation for #32 multi-version paths. |
+| 48 | Major-version detection / escalation in watcher | Today the watcher treats `1.3.0 → 2.0.0` identically to `1.3.0 → 1.3.1`. Add: detect major-version bumps, escalate PR title/body, run extra analysis, require maintainer review. | P3 | ❌ NOT STARTED | 0% | 0% | Risk control. |
+| 49 | Split `maf-auditor` into two agents | Rename current `maf-auditor` → `maf-migration-planner` (pre-migration scope). New `maf-best-practice-reviewer` (from #42) is the second agent. Materialises the "co-pilot, not just migration tool" identity in code. | P2 | ❌ NOT STARTED | 0% | 0% | Pairs with rename decision (#51). |
+| 50 | Cut stable `1.3.0` (non-prerelease) NuGet release | Trigger `release.yml` via `workflow_dispatch` with `version=1.3.0` (or push `v1.3.0` git tag → also creates GitHub Release). Pre-conditions: P0 + P1 batches green, at least one external migration completed. | P1 | ❌ NOT STARTED | 0% | 0% | Final gate for "beta" status. Today only prereleases exist. |
+| 51 | Decide on rename — `maf-autopilot` → `maf-keeper` / `maf-copilot` / `maf-steward`? | Project has outgrown the "autopilot" framing. Candidates: `maf-keeper` (recommended — maintenance scope), `maf-copilot` (Microsoft brand collision risk), `maf-steward` (less punchy). If renaming: package ID + repo + tool command. Provide a deprecated `maf-autopilot` shim package for one minor. **Decide before stable 1.3.0** — renaming after stable is much costlier. | P2 | ❌ NOT STARTED | 0% | 0% | Surfaced in 2026-05-11 project review (§5 of project-status-and-vision.md). |
+| 52 | `pr-diff-auditor` skill | Audit only files changed in current PR/branch (not the whole repo). Unlocks CI integration: every PR opened against a MAF project gets an audit comment. | P3 | ❌ NOT STARTED | 0% | 0% | Strategic — required for CI integration and the future GitHub App vector. |
+| 53 | `drift-detector` skill | Scheduled scan of user's repo flagging when newly-merged code regresses from MAF best practices. Counterpart to release-watcher but pointed inward. | P3 | ❌ NOT STARTED | 0% | 0% | Strategic — daily-use vector that turns the toolkit into a steady-state co-pilot. |
+| 54 | `pre-upgrade-dry-run` skill | Given current MAF version and proposed target: simulate what would break before modifying any code. Pairs with the auto-PR from the watcher so users can preview. | P3 | ❌ NOT STARTED | 0% | 0% | Built on top of #41 `MafDiffPackage` and v0.7.8's new `[Obsolete]` surfacing. |
+| 55 | **Rewire 3 agents to invoke the 9+2 MCP tools** | Update `maf-migration.agent.md`, `maf-auditor.agent.md`, and `maf-best-practice-reviewer.agent.md` to call MCP tools instead of "load skill / read_file / run by hand". Also update `maf-constraints.instructions.md` + `copilot-instructions.md` so the always-loaded rules cross-link to the tools that verify them. | P1 | ✅ DONE | 100% | 80% | **Done 2026-05-11 night (Phase A.1).** Migration agent: added MCP Tool Shortcuts table at top; Phase 0 now calls `MafDiffPackage` + `MafApiSafety`; Phase 3 now uses `MafRunCs0618Hunt` / `MafValidateFanOut` / `MafSimulateWorkflow` / `MafScanAntiPatterns` instead of manual loops; phase completion gate updated. Auditor agent: added MCP Tools table; Phase B/D/E/E.5/E.6 all use tools. Best-practice reviewer: Phase A.1 now uses `MafRunCs0618Hunt` (was raw `Select-String`); Phase C adds `MafSimulateWorkflow`; Phase D adds `MafExplain` for suspicious snippets. Constraints + copilot-instructions: added "How to verify each constraint" table mapping every hard rule to the tool that enforces it. Build clean. |
+| 56 | **Expand registry + scanner to cover 14 un-audited guide sections** | Today only 3 of 21 guide sections have anti-pattern rules; 7 have registry entries. Add rules/entries for: memory/context providers (§7), middleware `.AsBuilder().Use().Build()` (§8), tool approval `ApprovalRequiredAIFunction` (§12), observability beyond `UseOpenTelemetry` presence (§13), DevUI `#if DEVUI_ENABLED` guard (§14), structured output `RunAsync<T>` null/exception checks (§11), source-generator `EmitCompilerGeneratedFiles` (§15), Instructions-placement-inside-`ChatOptions` (§4), agent-creation `.AsAIAgent()` patterns (§3). Each new rule: registry entry + scanner rule + test. | P1 | ❌ NOT STARTED | 0% | 0% | **The largest feature-completeness gap.** Without this the toolkit is "a migration tool with extras"; with it, the toolkit becomes the canonical MAF lint. Prerequisite for #29 Roslyn analyzer and SARIF output (#58). |
+| 57 | Slim redundant procedure SKILLs to pointers + merge fan-out duo | `cs0618-hunter`, `nuget-diff-analyzer` → 10-line stubs pointing at `MafRunCs0618Hunt` / `MafDiffPackage`. `fan-in-static-analyzer` + `fan-out-validator` → merge into one "fan-out" skill with "policy" + "procedure" sections (#45). Each procedure skill currently burns ~150 lines of agent context every load. | P2 | ❌ NOT STARTED | 0% | 0% | Surfaced by the 2026-05-11 audit. Procedure prose duplicates tool implementations. |
+| 58 | SARIF v2.1.0 output for `MafScanAntiPatterns` + `MafValidateFanOut` | Add `--format sarif` to each scanner tool. Unlocks GitHub code-scanning / Advanced Security ingestion + VS Code Problems panel. | P2 | ❌ NOT STARTED | 0% | 0% | Small LOC, large integration win. Required for CI gating. Depends on #56 (rules to enforce). |
+| 59 | `MafDoctor` aggregator tool | Single-command repo health letter: A/B/C/F score + top 3 fixes + link to detail. Wraps `MafRunCs0618Hunt` + `MafValidateFanOut` + `MafScanAntiPatterns`. | P2 | ❌ NOT STARTED | 0% | 0% | Quickest demo gain in the audit ideas. Low effort, high "first impression" value. |
+| 60 | `maf-new` agent / executor scaffolder | `MafNewAgent(projectPath, agentName, instructions?)` and `MafNewExecutor(projectPath, executorName, inputType?, outputType?)` MCP tools + CLI subcommand `maf-autopilot new agent|executor <Name>`. Generates clean MAF 1.3.0 code from templates: ChatClientAgent + `UseOpenTelemetry` + `MaxOutputTokens` + `ManagedIdentityCredential` guidance + hermetic xUnit smoke test (ScriptedChatClient mock). For executors: `sealed partial class : Executor` + `[MessageHandler]` returning `Task<TOutput>` (fan-out-safe). | P1 | ✅ DONE | 100% | 85% | **Done 2026-05-11 (magic-path sprint).** Closes the greenfield pillar. Code in `mcp/maf-autopilot/Scaffolding/AgentScaffolder.cs` (templates) + `mcp/maf-autopilot/Tools/NewAgentTool.cs` (MCP) + `mcp/maf-autopilot/NewCommand.cs` (CLI). 19 tests including the **dogfood test**: generated agent code MUST pass `MafScanAntiPatterns`; generated executor MUST pass `MafValidateFanOut`. If the generator regresses, the scanner catches it. |
+| 61 | `MafLintAgentPrompt(file)` tool | Inspect agent `Instructions` strings for: length (warn > N tokens), conflicting directives, untrusted-input concatenation without templating, missing refusal patterns, structured-output schema mismatches. | P2 | ❌ NOT STARTED | 0% | 0% | Nothing else in the .NET ecosystem does this. Agent quality is mostly prompt quality. |
+| 62 | `MafEstimateCost(repoPath)` tool | Static token-cost auditor. For each `RunAsync` site: estimate input/output tokens, flag missing `MaxTokens`, flag no caching, flag no streaming. Production cost governance. | P3 | ❌ NOT STARTED | 0% | 0% | Enterprise-grade feature; unsexy but locks-in adoption. |
+| 63 | `MafScanPromptInjection(repoPath)` tool | Roslyn data-flow analysis: untrusted input (controller params, HTTP body) flowing into `Instructions =` / `SystemPrompt =` without a templating function in between. | P3 | ❌ NOT STARTED | 0% | 0% | #1 LLM-app security failure class. Currently a "manual check" in the best-practice reviewer agent. |
+| 64 | `MafExplain(snippet)` tool | Paste any MAF code snippet, get an annotated explanation linking to canonical guide sections. **Built as deterministic static analysis (not sampling-dependent) — works against any MCP host.** | P1 | ✅ DONE | 100% | 80% | **Done 2026-05-11 (magic-path sprint).** `ExplainTool` walks the snippet syntax tree, identifies MAF API touchpoints (type refs, invocations, attributes), cross-references the obsolete-API registry, emits a per-line table with registry/guide citations + canonical notes per identifier. 8 tests. Onboarding gold; works offline; deterministic. |
+| 65 | `MafSimulateWorkflow(repoPath)` — multi-agent simulation harness | Drive a workflow with synthetic inputs via mock `IChatClient`; assert topology completion; capture fan-in starvation at simulation time WITHOUT running the LLM. The closest thing to magic. | P1 | ✅ DONE | 100% | 80% | **Done 2026-05-11 (magic-path sprint).** `SimulateWorkflowTool` walks `WorkflowBuilder.AddEdge` / `AddFanOutEdge` / `AddFanInBarrierEdge` invocations via Roslyn; builds a directed executor graph; cross-checks every `[MessageHandler]` return type; emits a Mermaid diagram + per-edge verdict + overall completion forecast. 7 tests covering executor discovery, edge collection, void-source fan-in detection, unresolved executors. |
+| 66 | Reconsider `init` two-file install | Currently writes `.github/copilot-instructions.md` as a copy of `maf-constraints.instructions.md`. The copy drifts the moment this repo updates. Option A: rely solely on `maf://constraints` resource for always-loaded rules. Option B: keep but auto-refresh on every `init` re-run. | P3 | ✅ DONE | 100% | 80% | **Done 2026-05-12 (Phase B.5).** `init` now writes a thin pointer table that maps every constraint to the verifying tool, no embedded constraint copy. `StripFrontmatter` + `ReadEmbedded` helpers removed (dead code). |
+| 67 | `PathGuard` shared input validation (Phase E.1) | Path-traversal hole flagged by both architecture + MCP-surface reviews. Only `MafNewAgent`/`MafNewExecutor` had the `..` check; all other `repoPath`/`projectPath` tools were exposed. | P1 | ✅ DONE | 100% | 80% | **Done 2026-05-12 (Phase E.1, post-Opus review).** New `Tools/PathGuard.ValidateRepoPath` applied to 8 tools: `MafScanAntiPatterns`, `MafValidateFanOut`, `MafSimulateWorkflow`, `MafDoctor`, `MafEstimateCost`, `MafLintAgentPrompt`, `MafAuditPullRequest`, `MafPreUpgradeDryRun`, plus existing `MafNewAgent`/`MafNewExecutor`. `MafRunCs0618Hunt` uses a relaxed variant (path may be file OR directory). 6 dedicated tests. |
+| 68 | `SourceFileWalker` shared helper (Phase E.5) | Architecture review flagged 17 instances of `EnumerateScannableFiles` + `MakeRelative` duplicated verbatim across 7 tool classes. Slow-drift risk — a `/bin/` exclusion fix would land in some tools but not others. | P2 | ✅ DONE | 100% | 80% | **Done 2026-05-12 (Phase E.5).** New `Tools/SourceFileWalker.{EnumerateCsFiles,MakeRelative}`. 17 → 1. Applied to 7 tools (`AntiPatternScannerTool`, `DoctorTool`, `EstimateCostTool`, `PromptLintTool`, `SarifExportTool`, `SimulateWorkflowTool`, `PreUpgradeDryRunTool`). |
+| 69 | `MafDoctor` expanded to 4 scanners (Phase E.4) | MCP review #8: doctor was overclaiming by name while only running 2 of 19 scanners. | P1 | ✅ DONE | 100% | 80% | **Done 2026-05-12 (Phase E.4).** Doctor now aggregates `MafScanAntiPatterns` + `MafValidateFanOut` + `MafLintAgentPrompt` + `MafEstimateCost`. `DoctorSummary` record extended with `PromptErrors`/`PromptWarnings`/`UnboundedCostSites`/`AgentCallSitesChecked`. Grade incorporates prompt-injection errors. `Grade` signature backwards-compatible via optional params (existing tests unchanged). |
+| 70 | `maf://rules` live resource (Phase E.6) | MCP review #4: README perpetually drifts from actual rule list; need a runtime catalog. | P1 | ✅ DONE | 100% | 80% | **Done 2026-05-12 (Phase E.6).** New `maf://rules` resource — auto-generated at runtime from `AntiPatternScannerTool.AllRules` + curated prompt-lint + analyzer rules. 4 new tests including a doc-↔-code drift property test (every scanner rule must appear in the catalog). Structurally kills the doc-drift bug class. |
+| 71 | README reconcile + "First 5 minutes" + version drift fix (Phase E.2 + E.3) | Usability review's tier-1 UX bug: README listed 3 tools (reality 19), 11 skills (reality 12), Docker/Analyzer marked pending (both done); csproj `<Version>1.3.0-alpha-5</Version>` ≠ NuGet `1.3.0-alpha-3`; no "hello world" after init. | P1 | ✅ DONE | 100% | 80% | **Done 2026-05-12 (Phase E.2 + E.3).** README tool/skill/agent counts synced; Distribution status updated (Docker ✅, Analyzer ✅); new "First 5 minutes" section with three concrete commands; `init` CLI output leads with `maf-autopilot doctor .`; csproj reverted to `1.3.0-alpha-3` (matches NuGet); TROUBLESHOOTING test count 116 → 325. |
+| 72 | `NewCommand` package-add hints + analyzer anchor fix (Phase E.6) | Usability review §4: `maf-autopilot new agent` doesn't tell greenfield users to `dotnet add package`. Architecture review §6: analyzer `helpLinkUri` slugified anchors don't resolve on GitHub. | P2 | ✅ DONE | 100% | 80% | **Done 2026-05-12 (Phase E.6).** `NewCommand.GenerateAgent` / `GenerateExecutor` next-steps output now lists the `dotnet add package` commands for `Microsoft.Agents.AI` / `Workflows.Generators` / `Extensions.AI` / `Azure.AI.OpenAI` / `Azure.Identity`. Analyzer `helpLinkUri` anchors trimmed to document root (slugified fragments fail on GitHub). |
 
-### Summary
+### Summary — canonical row-count
 
-| Tier | Items | Done | Needs Work | Not Started |
-|------|------:|-----:|-----------:|------------:|
-| Core infrastructure | 8 | 8 | 0 | 0 |
-| Tier 1 — Obvious gaps | 3 | 3 | 0 | 0 |
-| Tier 3 — Auto-generated plans | 2 | 2 | 0 | 0 |
-| Tier 4 — Runtime verification | 3 | 3 | 0 | 0 |
-| Tier 5 — Reflexive learning | 2 | 1 | 0 | 1 |
-| Architectural capstone | 9 | 4 | 0 | 5 |
-| CI automation | 1 | 0 | 0 | 1 |
-| Multi-version support | 1 | 0 | 0 | 1 |
-| **Total** | **32** | **25** | **0** | **7** |
+Audited row-by-row through the 54-row tracking table on 2026-05-11 (post #41 batch):
 
-**Overall completion: 25/32 = 78% — MCP primitives (Resources, Prompts, init) done. Remaining: NuGet publish, reflexive learning, CI automation.**
+| Status | Rows | Count |
+|---|---|---:|
+| ✅ DONE | 1–24, 29, 33–42, 60, 64–65 | 38 |
+| 🔄 IN PROGRESS | 25 | 1 |
+| ❌ NOT STARTED | 26–28, 30–32, 43–54, 55–59, 61–63, 66 | 27 |
+| **Total** | — | **66** |
 
-**Next priorities (P2):** NuGet publish (#25) → `maf_open_feedback_issue` Sampling tool (#31) → `registry.yaml` auto-update in CI (#30). After those: full analysis tools (#27) and sampling tools (#26).
+**Overall completion: 38/66 = 58%.** **197 tests passing across two projects** (186 in MCP server + 11 in Analyzers). The MCP server now exposes **9 executable tools** (`MafApiSafety`, `MafRegistryLookup`, `MafRegistryList`, `MafValidateFanOut`, `MafRunCs0618Hunt`, `MafDiffPackage`, `MafScanAntiPatterns`, `MafSimulateWorkflow`, `MafExplain`) plus **2 scaffolders** (`MafNewAgent`, `MafNewExecutor`) plus **CLI subcommands** (`maf-autopilot init`, `maf-autopilot new agent|executor <Name>`). Separate `maf-autopilot.Analyzers` package ships **3 Roslyn rules** (MAF001/002/003) for write-time enforcement.
+
+### Magic-path sprint (2026-05-11 night, after the completeness audit)
+
+The user picked the magic path over Path α (close coverage gap first). Result: 4 flagship features shipped instead of 14 incremental rules:
+
+- **#60** `maf-new` scaffolder (greenfield pillar unlocked — dogfooded against own scanners)
+- **#29** Roslyn analyzer companion (write-time red squigglies in the IDE — `MAF001`/002/003)
+- **#65** `MafSimulateWorkflow` (in-vitro topology analysis + Mermaid diagram — proves workflow completion without LLM calls)
+- **#64** `MafExplain` (paste MAF code, get annotated explanation citing canonical guide sections)
+
+The "ongoing best-practice enforcement" pillar (audit verdict §3) is now real via the analyzer. The "implement greenfield" pillar (audit verdict §1) is now real via the scaffolder. The "audit existing code" pillar gained a flagship feature in `MafSimulateWorkflow`. The remaining audit-recommended work (#55 agent rewiring, #56 rule coverage, #58 SARIF, #59 MafDoctor, #61–#63 specialized scanners) is now incremental polish on top of the magic foundation.
+
+### Recommended order of work after the 2026-05-11 sprint
+
+**Pre-1.0 (gold path to a credible release):**
+1. **#55** — rewire 3 agents to invoke the 7 MCP tools (1 day, highest leverage)
+2. **#56** — expand registry + scanner to cover the 14 un-audited guide sections (3-5 days)
+3. **#57** — slim redundant SKILLs + merge fan-out duo (half day)
+4. **#46** — fix release-watcher bugs (half day)
+5. **#50** — cut stable `1.3.0` once one external migration validates
+
+**Post-1.0 (turn the toolkit from "lint we run" into "Roslyn-grade enforcement"):**
+6. **#29** — Roslyn analyzer companion (write-time enforcement)
+7. **#58** — SARIF output (GitHub Advanced Security integration)
+8. **#52** + GitHub App `@maf-bot` — PR-diff scoped reviews
+9. **#59** — `MafDoctor` one-command health letter
+10. **#60** — `maf-new` scaffolder (greenfield support)
+11. **#15** — auto-update registry from `migration-retrospective` (close the learning loop)
+
+**Experimental / "magic":**
+- **#65** — `MafSimulateWorkflow` (in-vitro test harness)
+- **#64** — `MafExplain` (paste-MAF-code, get explanation)
+- **#63** — `MafScanPromptInjection` (LLM security) Acceptance criteria checklist mirror lives in [`project-status-and-vision.md`](./project-status-and-vision.md) §9.
+
+#### Completed in the 2026-05-11 batch
+- P0: #33 (dotnet-inspect bump), #34 (install + version), #35 (test harness)
+- P1: #36 (init JSON-clobber + JSONC parser), #37 (inverted-haystack search), #38 (README ↔ plan reconcile), #39 (PascalCase tool names), #40 (CONTRIBUTING + TROUBLESHOOTING), #41 (three executable MCP tools)
+- Bonuses: FormatEntry tests, version pin tightening, `MafResources.GetSkill` case-sensitivity fix, `File.Copy` retry-on-collision
+
+### Re-prioritised work order (post-review, 2026-05-11)
+
+**P0 — blockers (must do first):**
+1. **#33 Bump `dotnet-inspect` 0.7.6 → 0.7.8** + author attribution + caveat rewrite — foundational, blocks #30 redesign and #41 `MafDiffPackage`
+2. **#34 Fix install command + csproj version drift** — first-time-user blocker today
+3. **#35 MCP test harness** — would have caught the `AgentThread` regression in commit 393b7a2
+
+**P1 — critical path to credible beta:**
+4. **#36 Fix `init` JSON-clobber bug** — silent data loss
+5. **#37 Expand `SearchByApiName` + inverted index** — closes a recurring bug class
+6. **#38 Reconcile README roadmap with plan** — single source of truth
+7. **#40 CONTRIBUTING.md + TROUBLESHOOTING.md** — adoption risk
+8. **#41 Wire 3 executable MCP tools** — closes the "1 of 11 skills exposed" gap
+9. **#42 `maf-best-practice-reviewer` + `maf-anti-pattern-scanner`** — the identity unlock
+
+**P2 — close gap to README's promise & self-upgrade:**
+10. **#43 Expand registry to 9 missing API areas**
+11. **#39 Standardise tool naming**
+12. **#44 Compile-validate workflow-smoke-tester**
+13. **#46 Fix release-watcher bugs**
+14. **#47 Per-version guide files**
+15. **#30 `registry.yaml` auto-update** — now tractable with v0.7.8
+16. **#49 Split `maf-auditor` into two agents**
+
+**P3 — strategic / nice-to-have:**
+17. #45 Merge fan-out-validator + fan-in-static-analyzer
+18. #48 Major-version detection in watcher
+19. #51 Rename decision
+20. #52 `pr-diff-auditor`
+21. #53 `drift-detector`
+22. #54 `pre-upgrade-dry-run`
+23. #28 Docker GHCR
+24. #29 Roslyn analyzer companion
+25. #32 Multi-version migration paths
+26. #26 / #27 / #31 Sampling tools
+
+**Final gate:** #50 Cut stable `1.3.0` release once P0+P1 are green and at least one external migration completes.
 
 ---
 
@@ -256,7 +603,7 @@ maf-autopilot/
 
 **What it does:**
 
-1. Runs `dnx dotnet-inspect@0.7.6 -- diff --package Microsoft.Agents.AI@<old>..<new>`
+1. Runs `dnx dotnet-inspect@0.7.8 -- diff --package Microsoft.Agents.AI@<old>..<new>`
 2. Categorizes the raw output into:
    - **Removed types** (CS0246 risk)
    - **Removed members** (CS0246 risk)

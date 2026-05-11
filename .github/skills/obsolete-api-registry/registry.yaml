@@ -6,7 +6,7 @@
 
 schema_version: "1.0"
 target_maf_version: "1.3.0"
-last_updated: "2026-05-04"
+last_updated: "2026-05-12"
 
 entries:
   - id: MAF130-FAN-IN-001
@@ -252,3 +252,92 @@ entries:
     notes: >
       YieldsMessageAttribute is completely removed (CS0246). Simply delete the attribute.
       Same applies to [StreamsMessage] — see MAF130-ATTR-001.
+
+  - id: MAF130-INSTRUCTIONS-001
+    package: Microsoft.Agents.AI
+    version_introduced: "1.3.0"
+    type: Microsoft.Agents.AI.ChatClientAgentOptions
+    method: Instructions
+    obsolete_signature: "new ChatClientAgentOptions { Instructions = \"...\" }"
+    replacement_signature: "new ChatClientAgentOptions { ChatOptions = new() { Instructions = \"...\" } }"
+    argument_order_change: false
+    fix_description: "Move Instructions assignment from the top of ChatClientAgentOptions into ChatOptions. The top-level Instructions property still compiles in 1.3.0 but is SILENTLY IGNORED by the agent."
+    example_before: |
+      var agent = new ChatClientAgent(client, new ChatClientAgentOptions
+      {
+          Name = "Bot",
+          Instructions = "You are helpful.",   // silently ignored in 1.3.0!
+      });
+    example_after: |
+      var agent = new ChatClientAgent(client, new ChatClientAgentOptions
+      {
+          Name = "Bot",
+          ChatOptions = new ChatOptions
+          {
+              Instructions = "You are helpful.",
+          },
+      });
+    cs_warning: RUNTIME_SILENT
+    guide_section: "4"
+    dotnet_inspect_detectable: false
+    notes: >
+      The Instructions property still exists at the top of ChatClientAgentOptions for source
+      compatibility, but the agent runtime no longer reads it from there. Agents that compile
+      and run normally will silently ignore the system prompt. This is the same class of bug
+      as fan-in starvation: builds clean, runs clean, produces wrong behaviour.
+
+  - id: MAF130-EXEC-002
+    package: Microsoft.Agents.AI.Workflows
+    version_introduced: "1.3.0"
+    type: Microsoft.Agents.AI.Workflows.Executor
+    method: "(class declaration)"
+    obsolete_signature: "public class MyExecutor : Executor { ... }"
+    replacement_signature: "public sealed partial class MyExecutor : Executor { ... }"
+    argument_order_change: false
+    fix_description: "Executor classes MUST be declared `sealed partial` so the source generator can emit the dispatcher partial. Missing the modifiers causes compile errors at generator-time, NOT at usage-time — easy to miss in casual review."
+    example_before: |
+      public class MyExecutor : Executor
+      {
+          [MessageHandler]
+          public Task<string> Handle(int input) => ...;
+      }
+    example_after: |
+      public sealed partial class MyExecutor : Executor
+      {
+          [MessageHandler]
+          public Task<string> Handle(int input) => ...;
+      }
+    cs_warning: CS0246
+    guide_section: "15"
+    dotnet_inspect_detectable: false
+    notes: >
+      Requires Microsoft.Agents.AI.Workflows.Generators 1.3.0 to be installed. The source
+      generator emits a partial class with the message-dispatch logic; without `partial` the
+      generator output cannot be merged. Without `sealed` the generator emits a warning.
+
+  - id: MAF130-MIDDLEWARE-001
+    package: Microsoft.Extensions.AI
+    version_introduced: "1.3.0"
+    type: Microsoft.Extensions.AI.ChatClientBuilder
+    method: Use
+    obsolete_signature: ".Use(runFunc: ..., runStreamingFunc: null)"
+    replacement_signature: ".Use(runFunc: ..., runStreamingFunc: ...)"
+    argument_order_change: false
+    fix_description: "When using `.AsBuilder().Use(...)`, BOTH `runFunc` AND `runStreamingFunc` callbacks must be provided. Passing only one means the streaming path silently bypasses your middleware."
+    example_before: |
+      chatClient.AsBuilder()
+          .Use(runFunc: async (messages, options, next, ct) => await next(messages, options, ct))
+          .Build();
+    example_after: |
+      chatClient.AsBuilder()
+          .Use(
+              runFunc: async (messages, options, next, ct) => await next(messages, options, ct),
+              runStreamingFunc: (messages, options, next, ct) => next(messages, options, ct))
+          .Build();
+    cs_warning: RUNTIME_SILENT
+    guide_section: "8"
+    dotnet_inspect_detectable: false
+    notes: >
+      Same silent-bypass class as fan-in starvation: builds clean, runs clean for non-streaming
+      calls, but any RunStreamingAsync invocation flows around your middleware as if it weren't
+      there. Easy to miss in casual review.

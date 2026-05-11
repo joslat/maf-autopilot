@@ -5,10 +5,10 @@ using System.ComponentModel;
 namespace MafAutopilot.Tools;
 
 /// <summary>
-/// MCP tool: maf_registry_lookup
+/// MCP tool: MafRegistryLookup
 ///
 /// Retrieves the full details for a specific obsolete-API registry entry by its ID.
-/// Useful after maf_api_safety returns multiple matches, or when you already know
+/// Useful after MafApiSafety returns multiple matches, or when you already know
 /// which entry you want (e.g. from the cs0618-hunter skill output).
 /// </summary>
 [McpServerToolType]
@@ -64,7 +64,7 @@ public sealed class RegistryLookupTool
     [Description("""
         List all entry IDs in the MAF obsolete-API registry.
 
-        Use this to discover what's in the registry before calling maf_registry_lookup,
+        Use this to discover what's in the registry before calling MafRegistryLookup,
         or to verify that a specific pattern is covered.
         """)]
     public string MafRegistryList()
@@ -81,7 +81,7 @@ public sealed class RegistryLookupTool
             sb.AppendLine($"| `{id}` | `{entry.Method}` | `{entry.CsWarning}` | {detectable} |");
         }
         sb.AppendLine();
-        sb.AppendLine("Use `maf_registry_lookup <id>` for the full fix details of any entry.");
+        sb.AppendLine("Use `MafRegistryLookup <id>` for the full fix details of any entry.");
         return sb.ToString();
     }
 }
