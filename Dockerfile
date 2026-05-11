@@ -46,7 +46,7 @@ RUN dotnet publish src/maf-autopilot/maf-autopilot.csproj \
 
 # ---------- Stage 2 — runtime ----------
 # The runtime image is much smaller than the SDK image (~125 MB vs ~860 MB).
-FROM mcr.microsoft.com/dotnet/runtime:9.0
+FROM mcr.microsoft.com/dotnet/runtime:10.0
 WORKDIR /app
 
 # Copy build output. Embedded resources (registry.yaml, constraints.md,
