@@ -202,7 +202,7 @@ jobs:
         # reviewer can audit the breaking-change surface without re-running
         # dotnet-inspect locally. Cheap (~few KB), high signal-to-effort.
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: maf-diff-${{ needs.check-for-new-maf-release.outputs.new_version }}
           path: |

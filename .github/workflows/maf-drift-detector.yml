@@ -39,7 +39,7 @@ jobs:
           echo "Detected MAF health grade: $GRADE"
 
       - name: Upload report as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: maf-doctor-report
           path: maf-doctor-report.md
