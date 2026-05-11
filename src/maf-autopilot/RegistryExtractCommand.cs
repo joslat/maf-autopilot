@@ -199,7 +199,15 @@ internal static class RegistryExtractCommand
             .DisableAliases()
             .Build();
         var yaml = serializer.Serialize(new[] { registryEntry });
-        return yaml + "\n";
+
+        // Indent every line by 2 spaces so the entry slots cleanly under the existing
+        // `entries:` block in registry.yaml. The serializer emits `- id: …` at column 0;
+        // the production registry indents list items by 2. Without this, the watcher's
+        // `>> $REGISTRY` append produces malformed YAML (the appended `- id: …` at
+        // column 0 isn't a child of `entries:` anymore).
+        // Pinned by `RegistryExtractCommandTests.Additivity_DraftEntries_AppendedToExistingRegistry_PreserveAllOriginalEntries`.
+        var indented = string.Join('\n', yaml.Split('\n').Select(line => line.Length == 0 ? line : "  " + line));
+        return indented + "\n";
     }
 
     private static string ClassifyCsWarning(DiffEntry entry) => entry switch

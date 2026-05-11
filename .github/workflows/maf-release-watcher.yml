@@ -184,8 +184,11 @@ jobs:
             echo "" >> "$TMP_ENTRIES"
           done
 
-          # Only append if the extractor produced ENTRY rows (lines starting with "- id:").
-          if grep -q "^- id:" "$TMP_ENTRIES"; then
+          # Only append if the extractor produced ENTRY rows. The extractor now indents
+          # entries by 2 spaces so they slot under the existing `entries:` block — so
+          # the check must be indentation-tolerant. (Pre-2026-05-12: anchor was `^- id:`
+          # which silently broke when the indent fix landed in RegistryExtractCommand.)
+          if grep -qE "^[[:space:]]*- id:" "$TMP_ENTRIES"; then
             echo "" >> "$REGISTRY"
             echo "# === Draft entries auto-appended by release-watcher on $(date -u +%Y-%m-%d). Review before merging. ===" >> "$REGISTRY"
             cat "$TMP_ENTRIES" >> "$REGISTRY"
@@ -193,6 +196,21 @@ jobs:
           else
             echo "ℹ️ No new draft registry candidates from this diff."
           fi
+
+      - name: Upload diff artifacts for reviewer
+        # Make the raw diffs downloadable on the workflow run page so the human
+        # reviewer can audit the breaking-change surface without re-running
+        # dotnet-inspect locally. Cheap (~few KB), high signal-to-effort.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maf-diff-${{ needs.check-for-new-maf-release.outputs.new_version }}
+          path: |
+            diff-core.txt
+            diff-workflows.txt
+            release-notes.txt
+          retention-days: 30
+          if-no-files-found: warn
 
       - name: Update .maf-version
         run: |

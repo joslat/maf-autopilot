@@ -51,6 +51,7 @@ public class MafResourcesTests
     [InlineData("fan-in-static-analyzer")]
     [InlineData("fan-out-validator")]
     [InlineData("maf-anti-pattern-scanner")]
+    [InlineData("maf-issue-reporter")]
     [InlineData("maf-migration-guide")]
     [InlineData("maf-release-watcher")]
     [InlineData("migration-plan-creator")]

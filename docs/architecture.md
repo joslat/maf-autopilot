@@ -172,6 +172,53 @@ maf-autopilot.sln
 
 ---
 
+## Auto-update — additivity
+
+The `maf-release-watcher` workflow runs weekly + on-demand, detecting new MAF releases on NuGet. When a new version (e.g. 1.4.0) is found, it opens an auto-PR that updates the toolkit. **This update must be ADDITIVE — every existing entry, rule, and reference for prior versions survives unchanged.** This invariant is critical: a downstream user upgrading from 1.3 → 1.4 still needs the toolkit's full 1.3 knowledge intact.
+
+### What's additive (the data plane — automated)
+
+| Surface | Additive? | How it's enforced |
+|---|---|---|
+| `.github/skills/obsolete-api-registry/registry.yaml` | ✅ | `maf-autopilot registry-extract` emits draft entries; watcher appends via `>> $REGISTRY`. **Pinned by test** `RegistryExtractCommandTests.Additivity_DraftEntries_AppendedToExistingRegistry_PreserveAllOriginalEntries`. |
+| `docs/compatibility-matrix.md` | ✅ | `.github/scripts/update_compat_matrix.py` inserts at top of data section; checks for duplicate version rows (no-op on re-run). Idempotency documented in the script's docstring. |
+| `guides/maf-<NEW-VERSION>-migration-guide.md` | ✅ | `.github/scripts/gen_guide_section.py` writes a NEW per-version file. If the file already exists, the AUTO-GENERATED region is overwritten but the `## Human additions` heading and everything below it is preserved. The 1.3.0 guide is never touched. |
+| `.maf-version` (tracked version pointer) | ✅ (overwritten cleanly) | One-line file; the watcher writes the new latest version. The old value is replaced — but the old version's registry/matrix/guide data stays intact (rows above). |
+
+### What's NOT additive (the code plane — requires a human PR)
+
+| Surface | Why not | What human work is needed when MAF X.Y ships |
+|---|---|---|
+| Anti-pattern scanner rules (`AntiPatternScannerTool.AllRules`) | Hard-coded in C#. Adding a new rule requires writing a Roslyn syntax walker. | If a new anti-pattern emerges in MAF X.Y, file a new rule with id `MAF-AP-<AREA>-NNN`. |
+| Roslyn analyzer rules (`MAF001` / `MAF002` / `MAF003`) | Hard-coded in C#. Analyzer surface is a public API. | If a new write-time enforcement is appropriate, file a new analyzer `MAF004+` with `AnalyzerReleases.Unshipped.md` updated. |
+| MCP tools (`[McpServerTool]` methods) | Tool surface only changes via human PR. | If MAF X.Y introduces a pattern worth a new tool, file the tool + its test + its `MafTour` catalogue row. |
+| Agent personas | Mostly static markdown with embedded decision trees. | Rarely needs change between minor MAF versions. |
+
+### When MAF X.Y ships — the actual flow
+
+1. **Watcher fires** (weekly cron OR manual `gh workflow run maf-release-watcher.yml`).
+2. **Detection step** compares NuGet's latest stable against `.maf-version`. If different, proceeds.
+3. **Major-version check** sets `is_major=true` for X.0 bumps — auto-PR title gets a 🚨 prefix + `major-version,needs-review` labels.
+4. **dotnet-inspect diff** runs for each MAF NuGet package; output captured.
+5. **`registry-extract` CLI** parses each diff, emits draft YAML entries to `tmp-entries.yaml`.
+6. **Append step** appends the drafts to the live `registry.yaml` via `>> $REGISTRY` (additive). A separator comment marks the auto-appended region for reviewer clarity.
+7. **Matrix update** appends a new row to `compatibility-matrix.md` (additive).
+8. **Guide generation** writes a per-version file `guides/maf-X.Y.0-migration-guide.md` (additive — new file, doesn't touch existing guides).
+9. **Auto-PR** opens with the cumulative diff, labels (`maf-release` + optional `major-version,needs-review`), and a body summarising what landed.
+10. **Human reviewer** fills in the TODO placeholders in the new registry entries (`replacement_signature`, `fix_description`, `example_after`, `guide_section`) and either merges or escalates.
+
+### How additivity is engraved
+
+- **Test pinned**: `RegistryExtractCommandTests.Additivity_DraftEntries_AppendedToExistingRegistry_PreserveAllOriginalEntries` builds a synthetic combined document and asserts every original entry survives.
+- **Test pinned**: `Additivity_EmptyDraftSet_LeavesExistingRegistryUntouched` asserts no-op when there's nothing to add.
+- **Workflow design**: every modification is `>>` (append) or "new file" — never `>` (overwrite) or `sed -i` over existing entries.
+- **Python script docstrings**: each helper script (`gen_guide_section.py`, `update_compat_matrix.py`) explicitly documents idempotency + the protected sections (`## Human additions`).
+- **PR review gate**: branch protection on `main` requires human review of `maf-release` labelled PRs before merge — the final additivity check is a human eye.
+
+If any of those guards regresses, this section needs an update to reflect the new reality. **Don't silently break additivity.**
+
+---
+
 ## Structural decisions — closed
 
 ### `/mcp/` → `/src/` rename (✅ done 2026-05-12)

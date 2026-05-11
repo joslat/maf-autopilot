@@ -15,7 +15,7 @@ namespace MafAutopilot.Resources;
 ///   maf://guide        — full MAF 1.3.0 migration guide
 ///
 /// Template resource (one per skill):
-///   maf://skills?name=&lt;skillName&gt;  — any of the 12 skill SKILL.md files
+///   maf://skills?name=&lt;skillName&gt;  — any of the 13 skill SKILL.md files
 /// </summary>
 [McpServerResourceType]
 public static class MafResources
@@ -53,6 +53,13 @@ public static class MafResources
         Title = "Live catalog of every scanner + analyzer rule")]
     [Description("Machine-readable catalog of every rule the toolkit can enforce. Generated at runtime from the actual code — no drift between docs and implementation. Includes anti-pattern scanner rules (MAF-AP-*), prompt-lint rules (PROMPT-*), and Roslyn analyzer rules (MAF001/002/003).")]
     public static string GetRules() => BuildRulesCatalog();
+
+    [McpServerResource(UriTemplate = "maf://help",
+        MimeType = "text/markdown",
+        Name = "maf-help",
+        Title = "Capability catalogue — what every tool / agent / resource does")]
+    [Description("Same content as the `MafTour` tool but as a static resource. Useful when a caller wants the capability inventory without spinning up a tool call. Auto-generated from the same hand-curated catalogue, so the two surfaces never drift.")]
+    public static string GetHelp() => Tools.TourTool.BuildFullCatalogue();
 
     private static string BuildRulesCatalog()
     {
@@ -114,9 +121,9 @@ public static class MafResources
     [Description(
         "A specific MAF skill document. Pass name= one of: " +
         "cs0618-hunter, dotnet-inspect, fan-in-static-analyzer, fan-out-validator, " +
-        "maf-anti-pattern-scanner, maf-migration-guide, maf-release-watcher, " +
-        "migration-plan-creator, migration-retrospective, nuget-diff-analyzer, " +
-        "obsolete-api-registry, workflow-smoke-tester")]
+        "maf-anti-pattern-scanner, maf-issue-reporter, maf-migration-guide, " +
+        "maf-release-watcher, migration-plan-creator, migration-retrospective, " +
+        "nuget-diff-analyzer, obsolete-api-registry, workflow-smoke-tester")]
     public static string GetSkill(string name)
     {
         if (!AllowedSkillNames.TryGetValue(name ?? string.Empty, out var canonical))
@@ -140,6 +147,7 @@ public static class MafResources
             "fan-in-static-analyzer",
             "fan-out-validator",
             "maf-anti-pattern-scanner",
+            "maf-issue-reporter",
             "maf-migration-guide",
             "maf-release-watcher",
             "migration-plan-creator",

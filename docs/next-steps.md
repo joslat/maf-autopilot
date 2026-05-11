@@ -1,6 +1,6 @@
 # Next steps
 
-> **Last refreshed:** 2026-05-12 evening — end of Phase N (security review + remediation).
+> **Last refreshed:** 2026-05-12 late evening — end of Phase O (UX + product polish + watcher hardening).
 > **Single source of truth for "what's next."** When this contradicts other docs, this wins.
 > **For history of done work:** see [`maf-migration-toolkit-plan.md`](./maf-migration-toolkit-plan.md).
 
@@ -20,7 +20,19 @@
 
 ## Current state
 
-The toolkit ships **17 MCP tools, 6 agents, 12 skills, 3 always-loaded instructions, 3 Roslyn analyzers (separate NuGet), 4 MCP resources, 3 MCP prompts, multi-arch Docker container, and 5 GitHub Actions workflows**. Test suite: **426 passing** (415 main + 11 analyzer). Plan tracking table: **116 items / 105 done / 5 intentionally deferred / 1 external-gated / 5 strategic-remaining**. Security review (3 parallel Opus reviewers) complete; all confirmed findings remediated. Project is feature-complete for 1.0 — only the external validation gate (A.8) remains.
+The toolkit ships **19 MCP tools, 7 agents (including `@maf` primary), 13 skills, 3 always-loaded instructions, 3 Roslyn analyzers (separate NuGet), 5 MCP resources (including `maf://help`), 4 MCP prompts (including `maf-help`), multi-arch Docker container, and 5 GitHub Actions workflows**. Test suite: **456 passing** (445 main + 11 analyzer). Plan tracking table: **121 items / 110 done / 5 intentionally deferred / 1 external-gated / 5 strategic-remaining**. Security review complete (Phase N). UX + product polish complete (Phase O): single primary `@maf` agent, capability tour, issue-drafter, additivity engraved + watcher hardened. Project is feature-complete for 1.0 — only the external validation gate (A.8) remains.
+
+### What landed in Phase O (2026-05-12 late evening)
+
+| ID | Item | Status |
+|---|---|---|
+| O1 | `@maf` primary agent for triage (no autonomous handoff — recommendation only) | ✅ DONE |
+| O2 | `MafTour` MCP tool + `maf-help` prompt + `maf://help` resource (drift-tested) | ✅ DONE |
+| O3 | `MafDraftIssue` MCP tool + `maf-issue-reporter` skill (no auto-post; user reviews + routes via github-mcp-server if installed) | ✅ DONE |
+| O4 | Auto-update additivity engraved in code + docs + pinned by 2 new tests | ✅ DONE |
+| O5 | Release-watcher re-review — caught + fixed 2 bugs (indent regression detected by O4 test; grep anchor follow-up); added diff-artefact upload | ✅ DONE |
+
+**Bonus discovery (O4 + O5 together):** the additivity unit test surfaced a real bug — `RegistryExtractCommand.BuildYamlEntry` emitted draft entries at column 0, but the production `registry.yaml` indents entries by 2 spaces under `entries:`. The watcher's `cat $TMP_ENTRIES >> $REGISTRY` would have produced malformed YAML on its first real run. Fixed in `BuildYamlEntry` (indent by 2 spaces) + the grep check in the watcher updated to be indentation-tolerant. **The bug never shipped because the watcher hadn't fired against a real MAF release yet.** This is the value of pinning invariants in tests.
 
 ---
 
@@ -44,9 +56,10 @@ Items that have measurable value, no external dependency, and are not yet shippe
 
 | Order | Item | Effort | Why |
 |---|---|---|---|
-| ~~A1~~ | ~~Rename `/mcp/` → `/src/`~~ | ✅ DONE 2026-05-12 | Landed in a focused commit alongside this entry's removal. All build/CI/doc paths updated; both NuGets still pack from the new location. |
-| A1 | **Verify SHA pins for third-party Actions** | S (15 min) | `softprops/action-gh-release@c95fe14...`, `peter-evans/create-pull-request@5e914681...`, `marocchino/sticky-pull-request-comment@52423e01...` were committed under their claimed-version comments. Run `gh api repos/<owner>/<repo>/git/refs/tags/<version> --jq .object.sha` for each before next release. |
-| A2 | **Run external migration** (the A.8 unblocker) | L (1–3 days, external) | Pair-program a migration against a real MAF 1.2 → 1.3 customer codebase. Use the output to validate the toolkit, file any gaps, then cut 1.0. |
+| ~~A1~~ | ~~Rename `/mcp/` → `/src/`~~ | ✅ DONE 2026-05-12 | Landed; all build/CI/doc paths updated. |
+| A1 | **Fire `maf-release-watcher` against real MAF 1.4 / 1.5** | M (½ day, real upstream) | The watcher has shipped untested against an actual major release. Phase O5's bug-hunt cleared two regressions before firing; now run it. Confirms the auto-PR flow end-to-end against real upstream content. |
+| A2 | **Verify SHA pins for third-party Actions** | S (15 min) | Three Actions are SHA-pinned with claimed-version comments. Run `gh api repos/<owner>/<repo>/git/refs/tags/<version> --jq .object.sha` for each. Dependabot will catch divergence on first scan too. |
+| A3 | **Run external migration** (the A.8 unblocker) | L (1–3 days, external) | Pair-program a migration against a real MAF 1.2 → 1.3 customer codebase. Use the output to validate the toolkit, file any gaps, then cut 1.0. |
 
 ### Tier B — could land alongside A or in a 1.0.1 patch
 

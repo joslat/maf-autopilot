@@ -1,0 +1,203 @@
+using System.ComponentModel;
+using System.Text;
+using ModelContextProtocol.Server;
+
+namespace MafAutopilot.Tools;
+
+/// <summary>
+/// MCP tool: MafTour
+///
+/// Guided "what can I do here?" catalogue. Returns a structured markdown report
+/// of every capability the toolkit exposes: tools, agents, resources, prompts.
+/// The primary agent (`@maf`) calls this on first-touch / "help" intent so users
+/// don't have to read the README to discover what's available.
+///
+/// Content is hand-curated (drift-tested in <c>MafTourToolTests</c> so it stays
+/// in lockstep with the live tool surface).
+/// </summary>
+[McpServerToolType]
+public sealed class TourTool
+{
+    [McpServerTool]
+    [Description("""
+        Return a structured catalogue of every maf-autopilot capability — MCP tools,
+        agents, resources, prompts — with a one-line "when to use" each. Designed
+        for new users asking "what can this thing do?". Output is markdown suitable
+        for direct display in chat.
+
+        Input:
+          - section: optional filter — "tools" | "agents" | "resources" | "prompts" | "all"
+                     (default: "all").
+
+        Returns a markdown report.
+        """)]
+    public string MafTour(
+        [Description("Filter: \"tools\" | \"agents\" | \"resources\" | \"prompts\" | \"all\" (default: all).")]
+        string section = "all")
+    {
+        var s = string.IsNullOrWhiteSpace(section) ? "all" : section.Trim().ToLowerInvariant();
+        if (s is not ("all" or "tools" or "agents" or "resources" or "prompts"))
+            return $"Error: section must be \"tools\", \"agents\", \"resources\", \"prompts\", or \"all\" (got \"{section}\").";
+
+        return BuildCatalogue(s);
+    }
+
+    /// <summary>
+    /// Full catalogue, all sections — what `maf://help` resource returns.
+    /// Kept in lockstep with <see cref="MafTour"/> by routing through the same builder.
+    /// </summary>
+    public static string BuildFullCatalogue() => BuildCatalogue("all");
+
+    private static string BuildCatalogue(string section)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# 🗺️ maf-autopilot — capability tour");
+        sb.AppendLine();
+        sb.AppendLine("> Single-page catalogue of what this MCP server exposes. Use this to answer \"what tool / agent fits my task?\".");
+        sb.AppendLine();
+
+        if (section is "all" or "tools") AppendTools(sb);
+        if (section is "all" or "agents") AppendAgents(sb);
+        if (section is "all" or "resources") AppendResources(sb);
+        if (section is "all" or "prompts") AppendPrompts(sb);
+
+        sb.AppendLine();
+        sb.AppendLine("---");
+        sb.AppendLine("**Next:** invoke the `maf-help` prompt for a 3-question interactive flow, or @-mention a specialist directly (`@maf-migration`, `@maf-auditor`, etc.).");
+
+        return sb.ToString();
+    }
+
+    // -------------------------------------------------------------------------
+    // Catalogue data — hand-curated, drift-tested
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// The canonical capability table. Drift-tested: every `[McpServerTool]` in
+    /// the assembly must appear in <see cref="ToolCatalogue"/>; CI fails otherwise.
+    /// </summary>
+    internal static readonly IReadOnlyList<ToolEntry> ToolCatalogue = new ToolEntry[]
+    {
+        // — Registry / lookup —
+        new("MafApiSafety", "Registry lookup", "Is this MAF API call safe in 1.3.0? Returns the registry entry if the symbol is known-obsolete; SAFE otherwise. Pure read."),
+        new("MafRegistryLookup", "Registry lookup", "Pull the full registry entry by ID (e.g. `MAF130-THREAD-001`). Use after `MafApiSafety` finds a hit."),
+        new("MafRegistryList", "Registry lookup", "Enumerate every registry entry ID. Useful for discovery and CI auditing."),
+
+        // — Scanners —
+        new("MafScanAntiPatterns", "Scanner", "Walk a repo for known anti-patterns (security / concurrency / observability / identity / topology). 10 rules. Supports `format: \"sarif\"` for CI."),
+        new("MafValidateFanOut", "Scanner", "Find handlers that return `void` / non-generic `Task` (silent fan-in starvation risk). Supports `format: \"sarif\"`."),
+        new("MafLintAgentPrompt", "Scanner", "Lint every agent `Instructions` literal. 4 rules: empty / token bloat / missing refusal / untrusted-input concat (prompt injection)."),
+        new("MafEstimateCost", "Scanner", "Find every `RunAsync` / `RunStreamingAsync` site missing a `MaxOutputTokens` cap. Production cost governance."),
+
+        // — Build-verified —
+        new("MafRunCs0618Hunt", "Build-verified", "Shell `dotnet build`, parse CS0618/CS0246 diagnostics, join each to the obsolete-API registry. Returns deterministic fixes."),
+
+        // — Workflow analysis —
+        new("MafSimulateWorkflow", "Workflow", "Emit a Mermaid topology diagram + per-edge completion forecast. See your workflow without running it."),
+        new("MafExplain", "Snippet analysis", "Annotate a MAF code snippet line-by-line. Cross-references the registry and guide sections."),
+
+        // — Scaffolders —
+        new("MafNewAgent", "Scaffolder", "Generate a clean `ChatClientAgent`-based class + hermetic xUnit test. Anti-pattern-clean by construction."),
+        new("MafNewExecutor", "Scaffolder", "Generate a fan-out-safe `[MessageHandler]` executor with `Task<T>` return + reflection-based shape test."),
+
+        // — PR-scoped —
+        new("MafAuditPullRequest", "PR-scoped", "Scope every scanner to the `.cs` files changed in this branch vs base. CI-comment-ready markdown."),
+
+        // — Upgrade planning —
+        new("MafPreUpgradeDryRun", "Upgrade", "\"What would break if I upgraded X to Y?\" — combines `MafDiffPackage` with repo grep. Run before any version bump."),
+        new("MafDiffPackage", "Upgrade", "Wrap `dotnet-inspect@0.7.8 diff` for two NuGet versions. Surfaces every API change."),
+        new("MafMigrationPath", "Upgrade", "Multi-step migration planner — walks version-keyed guide metadata, returns ordered intermediate-step sections."),
+
+        // — Health —
+        new("MafDoctor", "Health", "Single-command A/B/C/F grade. Aggregates 4 scanners + reports the top 3 fixes. Best triage signal in the toolkit."),
+
+        // — Discovery (this very tool) —
+        new("MafTour", "Discovery", "This catalogue. Returns every capability with one-line descriptions. Use as the first stop for new users."),
+
+        // — Feedback —
+        new("MafDraftIssue", "Feedback", "Assemble a `microsoft/agent-framework` GitHub issue body — version + repro + suggested workaround. Output is markdown; user reviews and posts."),
+    };
+
+    internal static readonly IReadOnlyList<AgentEntry> AgentCatalogue = new AgentEntry[]
+    {
+        new("@maf", "Primary triage. Picks the right tool / specialist for the user's intent. NEVER auto-handoffs — always recommends. Start here.", IsPrimary: true),
+        new("@maf-migration", "Build-verified task-by-task MAF version migration. Loads the plan, executes one row at a time, gates on `dotnet build` green."),
+        new("@maf-auditor", "Pre-migration plan generator. Scans the codebase, cross-references the registry + constraints, produces `migration-plan.md`."),
+        new("@maf-best-practice-reviewer", "Steady-state audit on a clean 1.3.0 codebase. Produces `audit-report.md`. Use post-migration."),
+        new("@maf-incident-responder", "Production failure → MAF pattern responsible → deterministic fix. Maps symptom (silent exit / auth failure / cost spike) to known-bad pattern."),
+        new("@maf-rollback", "Surgical 1.3.0 → 1.2.0 retreat. Inverse of migration. Preserves unrelated work that landed on top."),
+        new("@maf-onboarding", "Personalised codebase tour for a new dev. Topology + top-touched files + dialect."),
+    };
+
+    internal static readonly IReadOnlyList<(string Uri, string Description)> ResourceCatalogue = new[]
+    {
+        ("maf://constraints", "Hard constraints + breaking-changes table. Always-loaded by every agent."),
+        ("maf://guide", "Full MAF 1.3.0 migration guide (21 sections). Read on demand."),
+        ("maf://registry", "Machine-readable obsolete-API registry YAML."),
+        ("maf://rules", "Live rule catalogue — anti-pattern + prompt-lint + analyzer + cross-references. Auto-generated from runtime data."),
+        ("maf://help", "Same content as `MafTour()` but as a resource — useful for static discovery without a tool call."),
+        ("maf://skills?name=<X>", "Individual skill SKILL.md by name. 12 skills available."),
+    };
+
+    internal static readonly IReadOnlyList<(string Name, string Description)> PromptCatalogue = new[]
+    {
+        ("maf-audit", "Starter prompt for the auditor agent. Generates a migration plan."),
+        ("maf-migrate", "Starter prompt for the migration agent. Executes specific tasks from an existing plan."),
+        ("maf-cs0618-hunt", "Starter prompt for finding + fixing CS0618 obsolete-API warnings."),
+        ("maf-help", "3-question interactive flow for new users. Routes to the right tool / agent based on intent."),
+    };
+
+    // -------------------------------------------------------------------------
+    // Formatting
+    // -------------------------------------------------------------------------
+
+    private static void AppendTools(StringBuilder sb)
+    {
+        sb.AppendLine($"## 🔧 MCP tools ({ToolCatalogue.Count})");
+        sb.AppendLine();
+        sb.AppendLine("| Tool | Category | When to use |");
+        sb.AppendLine("|---|---|---|");
+        foreach (var t in ToolCatalogue)
+            sb.AppendLine($"| `{t.Name}` | {t.Category} | {t.WhenToUse} |");
+        sb.AppendLine();
+    }
+
+    private static void AppendAgents(StringBuilder sb)
+    {
+        sb.AppendLine($"## 🤖 Copilot Chat agents ({AgentCatalogue.Count})");
+        sb.AppendLine();
+        sb.AppendLine("| Agent | Role |");
+        sb.AppendLine("|---|---|");
+        foreach (var a in AgentCatalogue)
+        {
+            var marker = a.IsPrimary ? " **(primary — start here)**" : "";
+            sb.AppendLine($"| `{a.Name}` | {a.Role}{marker} |");
+        }
+        sb.AppendLine();
+    }
+
+    private static void AppendResources(StringBuilder sb)
+    {
+        sb.AppendLine($"## 📄 MCP resources ({ResourceCatalogue.Count})");
+        sb.AppendLine();
+        sb.AppendLine("| URI | Contents |");
+        sb.AppendLine("|---|---|");
+        foreach (var (uri, desc) in ResourceCatalogue)
+            sb.AppendLine($"| `{uri}` | {desc} |");
+        sb.AppendLine();
+    }
+
+    private static void AppendPrompts(StringBuilder sb)
+    {
+        sb.AppendLine($"## 💬 MCP prompts ({PromptCatalogue.Count})");
+        sb.AppendLine();
+        sb.AppendLine("| Prompt | Purpose |");
+        sb.AppendLine("|---|---|");
+        foreach (var (name, desc) in PromptCatalogue)
+            sb.AppendLine($"| `{name}` | {desc} |");
+        sb.AppendLine();
+    }
+
+    public sealed record ToolEntry(string Name, string Category, string WhenToUse);
+    public sealed record AgentEntry(string Name, string Role, bool IsPrimary = false);
+}

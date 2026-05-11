@@ -1,6 +1,9 @@
 using MafAutopilot;
+using MafAutopilot.Data;
 using MafAutopilot.Tools;
 using Xunit;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
 
 namespace MafAutopilot.Tests;
 
@@ -126,4 +129,89 @@ public class RegistryExtractCommandTests
     [InlineData("", "AREA")]
     public void AreaCodeFromType_ProducesExpected(string typeName, string expected) =>
         Assert.Equal(expected, RegistryExtractCommand.AreaCodeFromType(typeName));
+
+    // -------------------------------------------------------------------------
+    // ADDITIVITY INVARIANT — engraved in test.
+    //
+    // The release-watcher workflow appends draft entries to the existing
+    // registry.yaml via `>> $REGISTRY`. This test pins the contract that
+    // (a) the emitted YAML is parseable as registry-entry list items, and
+    // (b) appending them to an existing registry document preserves every
+    // pre-existing entry. If a future refactor breaks this — e.g. by re-writing
+    // the file from scratch, or emitting an invalid YAML shape — this test
+    // fails loudly.
+    //
+    // Documented in `docs/architecture.md § "Auto-update — additivity"`.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Additivity_DraftEntries_AppendedToExistingRegistry_PreserveAllOriginalEntries()
+    {
+        // Arrange — minimal synthetic "existing" registry with one known entry.
+        const string existingDoc = """
+            schema_version: "1.0"
+            target_maf_version: "1.3.0"
+            last_updated: "2026-05-12"
+            entries:
+              - id: MAF130-EXISTING-001
+                package: Microsoft.Agents.AI
+                version_introduced: "1.3.0"
+                type: Microsoft.Agents.AI.ExistingType
+                method: DoStuff
+                obsolete_signature: "void DoStuff()"
+                replacement_signature: "void DoStuffAsync()"
+                argument_order_change: false
+                fix_description: "Use the async version."
+                example_before: |
+                  x.DoStuff();
+                example_after: |
+                  await x.DoStuffAsync();
+                cs_warning: CS0618
+                guide_section: "1"
+                dotnet_inspect_detectable: false
+                notes: "test"
+            """;
+
+        // Produce two synthetic draft entries from a fake MAF 1.4 diff.
+        var parsed = new DiffParseResult(
+            Breaking:
+            [
+                new DiffEntry("FuturisticTypeRemoved", "Type 'FuturisticTypeRemoved' was removed", DiffEntryKind.Removed, false),
+                new DiffEntry("Microsoft.Agents.AI.FuturisticTypeChanged", "Member 'Microsoft.Agents.AI.FuturisticTypeChanged.Method()' signature changed", DiffEntryKind.SignatureChanged, false),
+            ],
+            Additive: [],
+            NoChangesDetected: false);
+        var drafts = RegistryExtractCommand.ExtractDraftEntries(parsed, "Microsoft.Agents.AI", "1.4.0");
+        Assert.NotEmpty(drafts);
+
+        // Act — simulate the watcher's append flow (`>> $REGISTRY`) and parse the
+        // combined document with the same YamlDotNet pipeline RegistryService uses.
+        var combinedDoc = existingDoc + "\n" + string.Join("\n", drafts);
+        var deserializer = new DeserializerBuilder()
+            .WithNamingConvention(NullNamingConvention.Instance)
+            .IgnoreUnmatchedProperties()
+            .Build();
+        var loaded = deserializer.Deserialize<Registry>(combinedDoc);
+
+        // Assert — original entry survived; new drafts added; total count = original + drafts.
+        Assert.NotNull(loaded);
+        Assert.Contains(loaded.Entries, e => e.Id == "MAF130-EXISTING-001");
+        Assert.Contains(loaded.Entries, e => e.Id.StartsWith("MAF140-", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(1 + drafts.Count, loaded.Entries.Count);
+    }
+
+    [Fact]
+    public void Additivity_EmptyDraftSet_LeavesExistingRegistryUntouched()
+    {
+        // Arrange — no breaking changes detected.
+        var parsed = new DiffParseResult([], [], NoChangesDetected: true);
+
+        // Act
+        var drafts = RegistryExtractCommand.ExtractDraftEntries(parsed, "Microsoft.Agents.AI", "1.4.0");
+
+        // Assert — when there's nothing to append, the watcher writes nothing.
+        // This pins the "no-op when clean" invariant: the existing registry
+        // is preserved bit-identical because there's no new text to append.
+        Assert.Empty(drafts);
+    }
 }

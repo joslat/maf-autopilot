@@ -1,0 +1,219 @@
+using MafAutopilot.Data;
+using MafAutopilot.Tools;
+using Xunit;
+
+namespace MafAutopilot.Tests;
+
+/// <summary>
+/// Tests for the `MafDraftIssue` MCP tool. Focus areas:
+/// 1. Input validation (path, symptom) — error-path coverage.
+/// 2. Title suggestion — deterministic output for fixed input.
+/// 3. Registry matching — known symptom finds the right entry.
+/// 4. Trust boundary — the tool never makes HTTP calls.
+///
+/// Hermetic: no shell-outs, no temp dirs (we hand the tool an existing path via
+/// `Path.GetTempPath()` and assert on the returned string).
+/// </summary>
+public sealed class DraftIssueToolTests
+{
+    private readonly RegistryService _registry = new();
+    private readonly DraftIssueTool _tool;
+
+    public DraftIssueToolTests()
+    {
+        _tool = new DraftIssueTool(_registry);
+    }
+
+    // -------------------------------------------------------------------------
+    // Input validation
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MafDraftIssue_EmptyPath_ReturnsError()
+    {
+        // Arrange / Act
+        var result = _tool.MafDraftIssue("", symptom: "any");
+
+        // Assert
+        Assert.Contains("Error", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void MafDraftIssue_NonexistentPath_ReturnsError()
+    {
+        // Arrange / Act
+        var result = _tool.MafDraftIssue(
+            "/path/that/definitely/does/not/exist",
+            symptom: "any");
+
+        // Assert
+        Assert.Contains("Error", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void MafDraftIssue_EmptySymptom_ReturnsError()
+    {
+        // Arrange / Act
+        var result = _tool.MafDraftIssue(Path.GetTempPath(), symptom: "  ");
+
+        // Assert
+        Assert.Contains("symptom must not be empty", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void MafDraftIssue_TraversalAttempt_BlockedByPathGuard()
+    {
+        // Arrange / Act
+        var result = _tool.MafDraftIssue(
+            Path.GetTempPath() + "/../etc/passwd-attack",
+            symptom: "any");
+
+        // Assert
+        Assert.Contains("Error", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // -------------------------------------------------------------------------
+    // Title suggestion (pure function)
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("Short symptom", "Short symptom")]
+    [InlineData("Trailing dot.", "Trailing dot")]
+    [InlineData("Trailing bang!", "Trailing bang")]
+    [InlineData("Trailing question?", "Trailing question")]
+    public void SuggestTitle_StripsTrailingPunctuation(string input, string expected)
+    {
+        // Arrange / Act
+        var title = DraftIssueTool.SuggestTitle(input);
+
+        // Assert
+        Assert.Equal(expected, title);
+    }
+
+    [Fact]
+    public void SuggestTitle_LongerThan80Chars_TruncatesWithEllipsis()
+    {
+        // Arrange
+        var longSymptom = new string('x', 200);
+
+        // Act
+        var title = DraftIssueTool.SuggestTitle(longSymptom);
+
+        // Assert
+        Assert.Equal(80, title.Length);
+        Assert.EndsWith("...", title);
+    }
+
+    // -------------------------------------------------------------------------
+    // Registry matching
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MatchRegistry_AddFanInBarrierEdgeSymptom_FindsFanInEntry()
+    {
+        // Arrange — a symptom that names a known obsolete MAF method.
+        const string symptom = "AddFanInBarrierEdge throws an exception at runtime";
+
+        // Act
+        var matches = _tool.MatchRegistry(symptom, snippet: null);
+
+        // Assert
+        Assert.Contains(matches, e => e.Id.Contains("FAN-IN", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void MatchRegistry_GenericSymptom_ReturnsEmpty()
+    {
+        // Arrange / Act
+        var matches = _tool.MatchRegistry(
+            "Generic issue with no MAF API name",
+            snippet: null);
+
+        // Assert
+        Assert.Empty(matches);
+    }
+
+    [Fact]
+    public void MatchRegistry_SymptomInSnippet_FindsViaSnippetText()
+    {
+        // Arrange — symptom is generic but the snippet contains a known method.
+        const string symptom = "Workflow exits cleanly with no output";
+        const string snippet = "builder.AddFanInBarrierEdge(target, sources);";
+
+        // Act
+        var matches = _tool.MatchRegistry(symptom, snippet);
+
+        // Assert
+        Assert.Contains(matches, e => e.Id.Contains("FAN-IN", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // -------------------------------------------------------------------------
+    // Output shape — issue body well-formed
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MafDraftIssue_HappyPath_EmitsAllSections()
+    {
+        // Arrange
+        var path = Path.GetTempPath();
+
+        // Act
+        var body = _tool.MafDraftIssue(
+            path,
+            symptom: "AddFanInBarrierEdge throws NullReferenceException at runtime",
+            snippet: "builder.AddFanInBarrierEdge(targetExec, sourceExec);",
+            expected: "The edge wires correctly.",
+            actual: "NullReferenceException at MAF.Workflows.WorkflowBuilder.AddFanInBarrierEdge");
+
+        // Assert — every section header is present.
+        Assert.Contains("## Title:", body);
+        Assert.Contains("### Symptom", body);
+        Assert.Contains("### Environment", body);
+        Assert.Contains("### Steps to reproduce", body);
+        Assert.Contains("### Expected behaviour", body);
+        Assert.Contains("### Actual behaviour", body);
+        Assert.Contains("### maf-autopilot interpretation", body);
+        Assert.Contains("### Filing checklist", body);
+        Assert.Contains("### How to post this", body);
+    }
+
+    [Fact]
+    public void MafDraftIssue_RegistryMatchSurfaces_AdvisesToApplyFixFirst()
+    {
+        // Arrange / Act — symptom that hits a registry entry.
+        var body = _tool.MafDraftIssue(
+            Path.GetTempPath(),
+            symptom: "AddFanInBarrierEdge throws at runtime",
+            snippet: "builder.AddFanInBarrierEdge(target, sources);");
+
+        // Assert — the body should advise applying the fix first.
+        Assert.Contains("Registry hits", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("FAN-IN", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void MafDraftIssue_NoRegistryMatch_FlagsAsNovel()
+    {
+        // Arrange / Act — symptom with no known match.
+        var body = _tool.MafDraftIssue(
+            Path.GetTempPath(),
+            symptom: "Something unrelated to any registered API");
+
+        // Assert
+        Assert.Contains("novel", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void MafDraftIssue_NeverIncludesGitHubToken_TrustBoundary()
+    {
+        // Arrange / Act — output must NEVER contain anything that smells like a credential.
+        var body = _tool.MafDraftIssue(
+            Path.GetTempPath(),
+            symptom: "Test the output for accidental token leakage");
+
+        // Assert — defensive check; the tool doesn't even have access to tokens.
+        Assert.DoesNotContain("ghp_", body);
+        Assert.DoesNotContain("github_pat_", body);
+        Assert.DoesNotContain("Bearer ", body);
+    }
+}

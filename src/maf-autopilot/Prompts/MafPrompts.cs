@@ -112,4 +112,49 @@ public static class MafPrompts
 
         return [new PromptMessage { Role = Role.User, Content = new TextContentBlock { Text = sb.ToString() } }];
     }
+
+    [McpServerPrompt(Name = "maf-help",
+        Title = "MAF Help: Guided 3-question onboarding")]
+    [Description(
+        "3-question interactive flow for users who don't yet know which tool / agent fits their task. " +
+        "Asks: (1) current MAF state, (2) immediate goal, (3) production context. Routes to the right entry point.")]
+    public static IList<PromptMessage> Help()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("You are `@maf` triaging a new user. Walk them through the **3-question intake**:");
+        sb.AppendLine();
+        sb.AppendLine("**Q1.** What's the current MAF state in your codebase?");
+        sb.AppendLine("- *(a)* Already on MAF 1.3.0 — clean build, no CS0618 warnings.");
+        sb.AppendLine("- *(b)* Pre-1.3.0 (on 1.0/1.1/1.2) and want to upgrade.");
+        sb.AppendLine("- *(c)* Greenfield — no MAF code yet, planning a new project.");
+        sb.AppendLine("- *(d)* I don't know — help me find out.");
+        sb.AppendLine();
+        sb.AppendLine("**Q2.** What do you want to do next?");
+        sb.AppendLine("- *(a)* Review / audit the code for anti-patterns.");
+        sb.AppendLine("- *(b)* Plan or execute a version migration.");
+        sb.AppendLine("- *(c)* Investigate a production failure / silent workflow exit.");
+        sb.AppendLine("- *(d)* Scaffold a new agent or workflow executor.");
+        sb.AppendLine("- *(e)* Understand the codebase (I just joined the team).");
+        sb.AppendLine("- *(f)* File an upstream MAF bug.");
+        sb.AppendLine();
+        sb.AppendLine("**Q3.** Anything time-sensitive? (production incident / approaching release / blocking PR)");
+        sb.AppendLine();
+        sb.AppendLine("Once the user answers, route as follows:");
+        sb.AppendLine();
+        sb.AppendLine("| Q1 + Q2 combo | Route |");
+        sb.AppendLine("|---|---|");
+        sb.AppendLine("| (a)+(a) | `@maf-best-practice-reviewer` |");
+        sb.AppendLine("| (b)+(a) or (b)+(b) | `@maf-auditor` → `@maf-migration` |");
+        sb.AppendLine("| any+(c) | `@maf-incident-responder` |");
+        sb.AppendLine("| (c)+(d) | Call `MafNewAgent` / `MafNewExecutor` directly |");
+        sb.AppendLine("| any+(e) | `@maf-onboarding` |");
+        sb.AppendLine("| any+(f) | Call `MafDraftIssue` directly |");
+        sb.AppendLine("| (d) for Q1 | Call `MafDoctor(repoPath)` first to determine state, then re-route. |");
+        sb.AppendLine();
+        sb.AppendLine("**Always cite the route**: \"Based on your answers, I'm pointing you at `<X>` because <reason>.\" Never auto-handoff — the user @-mentions the specialist themselves.");
+        sb.AppendLine();
+        sb.AppendLine("If Q3 indicates time-sensitivity, prefix the route with a one-line `MafDoctor` call to surface the most-impactful fix first.");
+
+        return [new PromptMessage { Role = Role.User, Content = new TextContentBlock { Text = sb.ToString() } }];
+    }
 }
