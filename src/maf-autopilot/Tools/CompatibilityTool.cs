@@ -1,0 +1,114 @@
+using System.ComponentModel;
+using ModelContextProtocol.Server;
+
+namespace MafAutopilot.Tools;
+
+/// <summary>
+/// MCP tool: MafCompatibility
+///
+/// Returns the compatibility row for a specific MAF version — which .NET runtime,
+/// `Microsoft.Extensions.AI`, Azure.AI.OpenAI, and Generators-package versions are
+/// required / compatible. Data mirrors `docs/compatibility-matrix.md`, which is
+/// the canonical doc; this tool just exposes it programmatically for LLM consumption.
+///
+/// Salvaged from the May-6 pre-Phase-O sketch (tag: `pre-phase-o-may6-sketch`),
+/// rewritten in local PascalCase style + drift-tested against the doc.
+/// </summary>
+[McpServerToolType]
+public sealed class CompatibilityTool
+{
+    [McpServerTool]
+    [Description("""
+        Return compatibility information for a specific MAF version. Shows which
+        .NET runtime, Azure SDK, `Microsoft.Extensions.AI`, and Generators-package
+        versions are required or compatible.
+
+        Input:
+          - mafVersion: SemVer string, e.g. "1.3.0" / "1.2.0" / "1.1.0" / "1.0.0".
+
+        Returns a structured markdown summary. If the version isn't known, returns
+        the list of known versions + a pointer to `docs/compatibility-matrix.md`
+        and `maf-release-watcher.yml` (which auto-adds rows as new MAF ships).
+        """)]
+    public string MafCompatibility(
+        [Description("MAF version to query, e.g. '1.3.0'.")] string mafVersion)
+    {
+        if (string.IsNullOrWhiteSpace(mafVersion))
+            return "Error: mafVersion must not be empty.";
+
+        var key = mafVersion.Trim();
+        if (Matrix.TryGetValue(key, out var info))
+            return info;
+
+        return $"""
+            No compatibility data for MAF version '{mafVersion}'.
+
+            Known versions: {string.Join(", ", Matrix.Keys.OrderBy(k => k, StringComparer.Ordinal))}
+
+            For up-to-date data:
+            - `docs/compatibility-matrix.md` in the maf-autopilot repo (canonical source).
+            - The `maf-release-watcher` GitHub Actions workflow auto-adds a new row when MAF
+              ships a new version; if your version is missing, fire the watcher manually
+              (`gh workflow run maf-release-watcher.yml -f maf_version={mafVersion}`).
+            """;
+    }
+
+    /// <summary>
+    /// Static compatibility matrix — exposed `internal static` so the drift test
+    /// (in <c>CompatibilityToolTests</c>) can verify each row stays in lockstep with
+    /// `docs/compatibility-matrix.md`.
+    /// </summary>
+    internal static readonly IReadOnlyDictionary<string, string> Matrix =
+        new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["1.3.0"] = """
+                ## MAF 1.3.0 Compatibility
+
+                | Dependency                                | Version          | Notes |
+                |-------------------------------------------|------------------|-------|
+                | .NET runtime                              | `>= 8.0`         | net8.0 and net9.0 TFMs both supported |
+                | Microsoft.Extensions.AI                   | `>= 10.5.0`      | |
+                | Azure.AI.OpenAI                           | `>= 2.8.0-beta.1`| |
+                | Microsoft.Agents.AI.Workflows.Generators  | `1.3.0` (required) | Source-gen package — executor partial classes need it |
+                | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
+
+                **Removed in 1.3.0** — guard with `#if DEVUI_ENABLED`:
+                - `Microsoft.Agents.AI.DevUI`
+                - `Microsoft.Agents.AI.Hosting`
+                """,
+
+            ["1.2.0"] = """
+                ## MAF 1.2.0 Compatibility
+
+                | Dependency                | Version      | Notes |
+                |---------------------------|--------------|-------|
+                | .NET runtime              | `>= 8.0`     | |
+                | Microsoft.Extensions.AI   | `>= 10.3.0`  | |
+                | Azure.AI.OpenAI           | `>= 2.6.0`   | |
+                | Generators package        | N/A          | Source gen optional in 1.2.0 (executor pattern still used `ReflectingExecutor<T>`) |
+                """,
+
+            ["1.1.0"] = """
+                ## MAF 1.1.0 Compatibility
+
+                | Dependency                | Version      | Notes |
+                |---------------------------|--------------|-------|
+                | .NET runtime              | `>= 8.0`     | net9.0 not officially supported |
+                | Microsoft.Extensions.AI   | `>= 9.4.0`   | |
+                | Azure.AI.OpenAI           | `>= 2.4.0`   | |
+                | Executor pattern          | Pre-1.3.0    | `ReflectingExecutor<T>` + `IMessageHandler<TIn,TOut>` |
+                """,
+
+            ["1.0.0"] = """
+                ## MAF 1.0.0 Compatibility
+
+                | Dependency                | Version      | Notes |
+                |---------------------------|--------------|-------|
+                | .NET runtime              | `>= 8.0`     | |
+                | Microsoft.Extensions.AI   | `>= 9.0.0`   | |
+                | Azure.AI.OpenAI           | `>= 2.0.0`   | |
+                | Executor pattern          | Pre-1.3.0    | `ReflectingExecutor<T>` + `IMessageHandler<TIn,TOut>` |
+                | Sessions                  | `AgentThread`| Pre-`AgentSession` API (`GetNewThread()`) |
+                """,
+        };
+}

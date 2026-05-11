@@ -114,6 +114,9 @@ public sealed class TourTool
         // — Discovery (this very tool) —
         new("MafTour", "Discovery", "This catalogue. Returns every capability with one-line descriptions. Use as the first stop for new users."),
 
+        // — Compatibility lookup —
+        new("MafCompatibility", "Compatibility", "Compatibility row for a specific MAF version — .NET runtime, Extensions.AI, Azure.AI.OpenAI, Generators-package versions. Source of truth is `docs/compatibility-matrix.md`."),
+
         // — Feedback —
         new("MafDraftIssue", "Feedback", "Assemble a `microsoft/agent-framework` GitHub issue body — version + repro + suggested workaround. Output is markdown; user reviews and posts."),
     };
@@ -144,6 +147,9 @@ public sealed class TourTool
         ("maf-audit", "Starter prompt for the auditor agent. Generates a migration plan."),
         ("maf-migrate", "Starter prompt for the migration agent. Executes specific tasks from an existing plan."),
         ("maf-cs0618-hunt", "Starter prompt for finding + fixing CS0618 obsolete-API warnings."),
+        ("maf-review", "Best-practices code review starter — day-to-day development, PR review, post-migration validation. Routes to MafDoctor / MafScanAntiPatterns / MafValidateFanOut."),
+        ("maf-debug", "Reactive-debugging starter — paste an error or symptom, the prompt routes to the right diagnostic tool by symptom class."),
+        ("maf-scaffold", "Boilerplate generation starter — routes to MafNewAgent or MafNewExecutor depending on what you want to build."),
         ("maf-help", "3-question interactive flow for new users. Routes to the right tool / agent based on intent."),
     };
 

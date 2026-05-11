@@ -367,6 +367,20 @@ public sealed class AntiPatternScannerTool
                 }
                 return findings;
             }),
+
+        // MAF-AP-EXEC-001 — Pre-1.3.0 executor patterns. Detects the legacy executor
+        // surface that should have been migrated. Salvaged from the May-6 pre-Phase-O
+        // sketch (tag: pre-phase-o-may6-sketch). The corresponding CS0618 patterns
+        // are also in the registry (`MAF130-EXEC-001`, `MAF130-ATTR-001/002`), but a
+        // syntax-only scan catches them BEFORE you run `dotnet build` — useful for
+        // the auditor agent's pre-migration pass.
+        new RegexRule(
+            id: "MAF-AP-EXEC-001",
+            name: "Pre-1.3.0 executor pattern (ReflectingExecutor / IMessageHandler / [StreamsMessage] / [YieldsMessage])",
+            severity: AntiPatternSeverity.Error,
+            // Matches any of the four legacy surfaces in one pass.
+            pattern: new Regex(@"\bReflectingExecutor\s*<|\bIMessageHandler\s*<|\[\s*StreamsMessage\s*\]|\[\s*YieldsMessage\s*\]", RegexOptions.Compiled),
+            skipInTestFiles: false),
     };
 
     private static int FirstLineMatching(string source, string regex)

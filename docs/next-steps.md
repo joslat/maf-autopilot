@@ -20,7 +20,7 @@
 
 ## Current state
 
-The toolkit ships **19 MCP tools, 7 agents (including `@maf` primary), 13 skills, 3 always-loaded instructions, 3 Roslyn analyzers (separate NuGet), 5 MCP resources (including `maf://help`), 4 MCP prompts (including `maf-help`), multi-arch Docker container, and 5 GitHub Actions workflows**. Test suite: **456 passing** (445 main + 11 analyzer). Plan tracking table: **121 items / 110 done / 5 intentionally deferred / 1 external-gated / 5 strategic-remaining**. Security review complete (Phase N). UX + product polish complete (Phase O): single primary `@maf` agent, capability tour, issue-drafter, additivity engraved + watcher hardened. Project is feature-complete for 1.0 — only the external validation gate (A.8) remains.
+The toolkit ships **20 MCP tools, 7 agents (including `@maf` primary), 13 skills, 3 always-loaded instructions, 3 Roslyn analyzers (separate NuGet), 5 MCP resources, 7 MCP prompts, multi-arch Docker container, and 5 GitHub Actions workflows**. Test suite: **474 passing** (463 main + 11 analyzer). Plan tracking table: **124 items / 113 done / 5 intentionally deferred / 1 external-gated / 5 strategic-remaining**. Security review complete (Phase N). UX + product polish complete (Phase O). May-6 parallel sketch salvaged + tagged for archive (Phase P). Project is feature-complete for 1.0 — only the external validation gate (A.8) remains.
 
 ### What landed in Phase O (2026-05-12 late evening)
 
@@ -122,6 +122,49 @@ Sketch of where 1.1 and 1.2 should focus, in priority order:
 **1.2 — Adoption vectors.** C1 (`@maf-bot` GitHub App), C2 (VS Code extension). The theme: meet developers where they already are.
 
 **1.3+ — Vision questions.** Multi-version migration paths (currently `MafMigrationPath` walks guide metadata; extend to actually scaffold the intermediate refactor steps), MAF-version-watching beyond 1.x (matrix entries for 2.x will need to land), Foundry-deployment skill (currently a gap — see Phase J residue).
+
+---
+
+## Annex — May-6 pre-Phase-O sketch (tag `pre-phase-o-may6-sketch`)
+
+A parallel exploration of the same conceptual ground existed on `origin/main` from 2026-05-06, in snake_case `[McpServerTool(Name = "maf_xxx")]` / bundled-class style. After the Phase H-O work superseded most of it, the May-6 commits were preserved by **git tag `pre-phase-o-may6-sketch`** at SHA `4525ab8` (run `git checkout pre-phase-o-may6-sketch` to recover the full working tree).
+
+### Salvaged into the current codebase
+
+| From May-6 | Ported as | Where it lives now |
+|---|---|---|
+| `AnalysisTools.maf_executor_pattern_check` (regex search for legacy executor patterns) | Anti-pattern rule **`MAF-AP-EXEC-001`** (Roslyn syntax-scan, error severity) | `src/maf-autopilot/Tools/AntiPatternScannerTool.cs` |
+| `AnalysisTools.maf_compatibility` (static MAF-version → deps matrix) | New MCP tool **`MafCompatibility`** + drift-tested against `docs/compatibility-matrix.md` | `src/maf-autopilot/Tools/CompatibilityTool.cs` |
+| `MafPrompts.maf-review` | MCP prompt **`maf-review`** (PascalCase tool routing) | `src/maf-autopilot/Prompts/MafPrompts.cs` |
+| `MafPrompts.maf-debug` | MCP prompt **`maf-debug`** (PascalCase tool routing) | `src/maf-autopilot/Prompts/MafPrompts.cs` |
+| `MafPrompts.maf-scaffold` | MCP prompt **`maf-scaffold`** (routes to `MafNewAgent` / `MafNewExecutor`) | `src/maf-autopilot/Prompts/MafPrompts.cs` |
+
+### Deferred to future Tier B work (good seed material at the tag)
+
+| At the tag | Use when |
+|---|---|
+| `SamplingTools.maf_full_audit` (full repo audit via `server.SampleAsync()`) | MCP host sampling is widely supported. Sketch shows the prompt + flow shape. |
+| `SamplingTools.maf_migration_suggest` (LLM-driven per-snippet migration suggestion) | Same — depends on host sampling. |
+| `SamplingTools.maf_review_code` (LLM-powered code review) | Same. Complements `maf-review` prompt by delegating to LLM rather than routing to deterministic tools. |
+| `SamplingTools.maf_explain_error` (LLM-driven error explanation) | Same. Complements `MafExplain` (which is deterministic). |
+| `FeedbackTool.maf_open_feedback_issue` (sampling-based issue draft) | Same. Today's `MafDraftIssue` is deterministic; the sampling version would generate richer prose when host LLM is available. |
+| `ScaffoldTool.maf_scaffold` `session-provider` + `a2a-server` templates | When demand surfaces for these scaffolds beyond `agent` + `executor`. ~1 hour each to port in local style. |
+
+### How to recover the May-6 working tree
+
+```powershell
+# View the tag (annotated) — explains what's in it and what got salvaged
+git show pre-phase-o-may6-sketch
+
+# Check out the May-6 tree at a temp branch (won't affect main)
+git checkout -b inspect-may6 pre-phase-o-may6-sketch
+
+# When done, get back to main
+git checkout main
+git branch -D inspect-may6
+```
+
+The tag is pushed to origin, so it's recoverable from any clone.
 
 ---
 
