@@ -21,7 +21,7 @@
 # documents are embedded into the .dll at build time (no extra COPY needed).
 
 # ---------- Stage 1 — build ----------
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy only the files needed to restore — better layer caching.
