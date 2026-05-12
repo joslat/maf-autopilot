@@ -2,6 +2,16 @@
 
 <!-- auto-updated-by: maf-release-watcher | last-updated: 2026-05-12 -->
 
+<!--
+  Note on the Azure.AI.OpenAI column: MAF doesn't pin Azure.AI.OpenAI directly.
+  It exposes IChatClient as the extension point, and Azure.AI.OpenAI (or any
+  other backing implementation) is configured by the consumer at composition
+  time. The 1.3.0 value (≥ 2.8.0-beta.1) reflects the version the MAF docs /
+  samples used at the time of the 1.3.0 release — not a hard csproj constraint.
+  For 1.4+, the chat-client extension point is unchanged; we don't have a
+  hard MAF-enforced pin to record so the cell shows "(not pinned by MAF)".
+-->
+
 > This file is the single source of truth for MAF version ↔ dependency version compatibility.
 > It is referenced by `maf-autopilot` MCP server tools (`maf_compatibility`) and auto-updated by the `maf-release-watcher` skill and GitHub Actions workflow.
 
@@ -11,8 +21,8 @@
 
 | MAF Version | Microsoft.Extensions.AI | .NET | Azure.AI.OpenAI | Generators Package | Notes |
 |-------------|------------------------|------|-----------------|--------------------|-------|
-| **1.5.0** | `>= unknown` | `>= 8.0` | `>= unknown` | `1.5.0` | Auto-detected — verify versions in PR review. |
-| **1.4.0** | `>= unknown` | `>= 8.0` | `>= unknown` | `1.4.0` | Auto-detected — verify versions in PR review. <!-- TODO: verify from MAF csproj --> |
+| **1.5.0** | `≥ 10.5.1` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.5.0` | Additive release; new `ToolApprovalAgent`. |
+| **1.4.0** | `≥ 10.5.0` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.4.0` | `AgentSkillScript` surface changed: `AIFunctionArguments` → `JsonElement?` + `IServiceProvider?`. |
 | **1.3.0** | `≥ 10.5.0` | `≥ 8.0` | `≥ 2.8.0-beta.1` | `1.3.0` **(required)** | Major breaking release. Generators package mandatory for executors. |
 | 1.2.0 | `≥ 10.3.0` | `≥ 8.0` | `≥ 2.6.0` | N/A | No source generator requirement. |
 | 1.1.0 | `≥ 9.4.0` | `≥ 8.0` | `≥ 2.4.0` | N/A | |
