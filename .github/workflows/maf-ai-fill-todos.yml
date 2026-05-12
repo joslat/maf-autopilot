@@ -127,8 +127,10 @@ jobs:
 
           4. **\`guide_section\`** — section number from the existing 1.3.0
              guide if there's a clear parallel pattern (look at the headings of
-             \`guides/maf-1.3.0-migration-guide.md\`). If no clear match, leave
-             as \`TBD\` — **do NOT invent section numbers**.
+             \`guides/maf-1.3.0-migration-guide.md\`). If there's NO parallel
+             section (because the change touches a surface that didn't exist
+             in 1.3.0), use **\`N/A\`** — not \`TBD\`, not \`TODO\`. Never
+             invent section numbers.
 
           ## What to fill — compatibility matrix
 
