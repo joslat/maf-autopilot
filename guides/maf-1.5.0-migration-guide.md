@@ -2,6 +2,17 @@
 
 <!-- introduced: 1.5.0 | applies-to: 1.4.0.x → 1.5.0.x | deprecated-in: none -->
 
+> ## ⚠️ This is the **1.4.0 → 1.5.0** delta ONLY
+>
+> This file documents what changed between MAF 1.4.0 and MAF 1.5.0. It is **not** a complete migration guide for users on versions older than 1.4.0.
+>
+> **Migrating from an earlier version?** Read the chain in order:
+> [1.3.0](./maf-1.3.0-migration-guide.md) → [1.4.0](./maf-1.4.0-migration-guide.md) → [1.5.0](./maf-1.5.0-migration-guide.md)
+>
+> Or ask Copilot to call **`MafMigrationPath(currentVer, targetVer)`** — the MCP tool returns the ordered set of guide sections you need.
+>
+> Or open **[`guides/maf-current-migration-guide.md`](./maf-current-migration-guide.md)** — the auto-generated cumulative reference that concatenates every per-version guide in version order.
+
 <!-- AUTO-GENERATED START — anything between AUTO-GENERATED START and AUTO-GENERATED END is overwritten on re-run -->
 
 > ⚠️ Auto-generated stub. Review before relying on it for migrations.

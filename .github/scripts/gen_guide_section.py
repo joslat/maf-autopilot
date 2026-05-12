@@ -9,7 +9,14 @@ guides/maf-1.4.0-migration-guide.md instead of polluting the 1.3.0 doc.
 
 Idempotency: if the per-version file already exists, the script overwrites the
 auto-generated stub but PRESERVES any content under the `## Human additions`
-heading. If the file existed but had no marker, we exit with status 0 (no-op).
+heading. If the file existed but had no marker, the human section is set to
+an empty stub.
+
+Also (Option C): after writing the per-version file, regenerates the cumulative
+guide at guides/maf-current-migration-guide.md by concatenating every per-version
+guide in ascending version order. The cumulative file is the one the README
+points to as the canonical "start here" reference; per-version files remain the
+canonical source-of-truth for their respective deltas and are what auto-update.
 """
 import os
 import re
@@ -28,6 +35,64 @@ def read_file(path: str, fallback: str) -> str:
         return fallback
 
 
+def list_per_version_guides():
+    """
+    Returns a list of (semver_tuple, version_string, path) sorted ascending.
+    Excludes the cumulative file itself and any non-matching filenames.
+    """
+    guides_dir = Path('guides')
+    pattern = re.compile(r'^maf-(\d+\.\d+\.\d+)-migration-guide\.md$')
+    out = []
+    if not guides_dir.exists():
+        return out
+    for f in guides_dir.iterdir():
+        if not f.is_file():
+            continue
+        if f.name == 'maf-current-migration-guide.md':
+            continue
+        m = pattern.match(f.name)
+        if not m:
+            continue
+        version = m.group(1)
+        semver = tuple(int(p) for p in version.split('.'))
+        out.append((semver, version, f))
+    out.sort()
+    return out
+
+
+def build_chain_banner(old_version: str, new_version: str) -> str:
+    """
+    Builds the Option-A banner that goes at the top of every per-version
+    auto-generated guide. The banner makes it explicit that the file is a
+    DELTA, not a complete reference, and shows the chain of prior guides.
+    """
+    # Collect all known per-version versions PLUS the new one (which may not
+    # yet exist on disk when this runs — first-time creation).
+    known = [v for _, v, _ in list_per_version_guides()]
+    if new_version not in known:
+        known.append(new_version)
+    known_sorted = sorted(set(known), key=lambda v: tuple(int(p) for p in v.split('.')))
+    chain = ' → '.join(f'[{v}](./maf-{v}-migration-guide.md)' for v in known_sorted)
+
+    return (
+        f"> ## ⚠️ This is the **{old_version} → {new_version}** delta ONLY\n"
+        f">\n"
+        f"> This file documents what changed between MAF {old_version} and MAF "
+        f"{new_version}. It is **not** a complete migration guide for users on "
+        f"versions older than {old_version}.\n"
+        f">\n"
+        f"> **Migrating from an earlier version?** Read the chain in order:\n"
+        f"> {chain}\n"
+        f">\n"
+        f"> Or ask Copilot to call **`MafMigrationPath(currentVer, targetVer)`** "
+        f"— the MCP tool returns the ordered set of guide sections you need.\n"
+        f">\n"
+        f"> Or open **[`guides/maf-current-migration-guide.md`](./maf-current-migration-guide.md)** "
+        f"— the auto-generated cumulative reference that concatenates every "
+        f"per-version guide in version order.\n"
+    )
+
+
 diff_lines = read_file('diff-core.txt', '(diff not available)').splitlines()
 # Trim to a reasonable length — full diffs can be huge.
 diff = '\n'.join(diff_lines[:120])
@@ -37,9 +102,12 @@ AUTO_START = '<!-- AUTO-GENERATED START — anything between AUTO-GENERATED STAR
 AUTO_END = '<!-- AUTO-GENERATED END -->'
 HUMAN_HEADING = '## Human additions'
 
+banner = build_chain_banner(old, new)
+
 auto_body = (
     f"# MAF {new} Migration Guide (draft)\n\n"
     f"<!-- introduced: {new} | applies-to: {old}.x → {new}.x | deprecated-in: none -->\n\n"
+    f"{banner}\n\n"
     f"{AUTO_START}\n\n"
     f"> ⚠️ Auto-generated stub. Review before relying on it for migrations.\n\n"
     f"## Versions\n\n"
@@ -79,3 +147,76 @@ else:
 
 guide_path.write_text(new_content, encoding='utf-8')
 print(f"Wrote {guide_path} (idempotent — human additions preserved if present).")
+
+
+# =============================================================================
+# Option C: regenerate the cumulative guide.
+# =============================================================================
+
+def regenerate_cumulative_guide():
+    """
+    Writes guides/maf-current-migration-guide.md by concatenating every
+    maf-<X.Y.Z>-migration-guide.md in ascending version order.
+
+    The cumulative file is OVERWRITTEN on every run — humans should NOT hand-
+    edit it; edit the per-version files instead. A README banner at the top
+    of the cumulative file states this.
+    """
+    files = list_per_version_guides()
+    if not files:
+        print("(no per-version guides found — skipping cumulative regeneration)")
+        return
+
+    out = []
+    out.append("# MAF Migration Guide — Cumulative\n\n")
+    out.append(
+        "<!-- AUTO-GENERATED — do NOT hand-edit. Regenerated on every "
+        "maf-release-watcher run. Edit the per-version files instead. -->\n\n"
+    )
+    out.append(
+        "This file is the **cumulative reference**: every per-version migration "
+        "guide in ascending order, concatenated. It is the canonical \"start here\" "
+        "doc for anyone migrating to the current MAF version from any earlier "
+        "version.\n\n"
+    )
+    out.append(
+        "**Where do I look?**\n\n"
+        "- **Migrating from any version to the latest** → start at the top of this "
+        "file, skim section by section.\n"
+        "- **Targeted lookup** → ask Copilot to call `MafMigrationPath(currentVer, "
+        "targetVer)` to get the ordered subset.\n"
+        "- **Per-version source-of-truth edits** → edit `guides/maf-X.Y.Z-migration"
+        "-guide.md` directly. This cumulative file regenerates from those on every "
+        "release-watcher run.\n\n"
+    )
+    out.append("---\n\n")
+
+    # Table of contents
+    out.append("## Table of contents\n\n")
+    for _, version, _ in files:
+        anchor = f"migrating-to-maf-{version.replace('.', '-')}"
+        out.append(f"- [Migrating to MAF {version}](#{anchor})\n")
+    out.append("\n---\n\n")
+
+    # Per-version sections
+    for _, version, path in files:
+        anchor = f"migrating-to-maf-{version.replace('.', '-')}"
+        out.append(f"## Migrating to MAF {version}\n\n")
+        out.append(
+            f"<small>Source: [`{path.as_posix()}`](./{path.name}) — edit there "
+            f"for changes to this section.</small>\n\n"
+        )
+        content = path.read_text(encoding='utf-8')
+        out.append(content.rstrip() + "\n\n")
+        out.append("---\n\n")
+
+    cumulative_path = Path('guides/maf-current-migration-guide.md')
+    cumulative_path.write_text(''.join(out), encoding='utf-8')
+    print(
+        f"Regenerated {cumulative_path} "
+        f"({len(files)} per-version files concatenated: "
+        f"{', '.join(v for _, v, _ in files)})"
+    )
+
+
+regenerate_cumulative_guide()
