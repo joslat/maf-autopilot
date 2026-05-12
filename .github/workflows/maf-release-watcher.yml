@@ -281,27 +281,26 @@ jobs:
           echo "committed=true" >> $GITHUB_OUTPUT
           echo "✅ Pushed watcher updates directly to main."
 
-      - name: Trigger AI auto-fill (decoupled workflow)
+      - name: Open issue for Copilot Coding Agent to fill TODOs
         if: ${{ steps.commit_to_main.outputs.committed == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET: ${{ needs.check-for-new-maf-release.outputs.new_version }}
         run: |
-          # Kick off `maf-ai-fill-todos.yml` to fill the TODO placeholders the
-          # watcher just left behind. The fill workflow runs decoupled (async)
-          # — this step returns immediately; the fill commit lands on main a
-          # minute or two later.
+          # Kick off `maf-ai-fill-todos.yml` to open an issue assigned to
+          # GitHub Copilot Coding Agent. Copilot reads the issue, edits the
+          # TODOs, opens a PR. Fully GitHub-native — uses the existing Copilot
+          # subscription, no third-party API key.
           #
-          # The fill workflow fails fast if ANTHROPIC_API_KEY is not set, so a
-          # missing-key state surfaces in the Actions UI rather than silently
-          # leaving TODOs. To skip auto-fill entirely, comment this step out
-          # (the watcher commit + TODOs remain on main and can be filled by
-          # hand later via `gh workflow run maf-ai-fill-todos.yml`).
+          # Decoupled (async): this step returns immediately. The fill PR
+          # lands on the `maf-release,ai-fill` label a few minutes later.
+          # To skip auto-fill entirely, comment this step out (the watcher
+          # commit + TODOs remain on main; fills can be requested manually
+          # via `gh workflow run maf-ai-fill-todos.yml -f target_version=…`).
           if gh workflow run maf-ai-fill-todos.yml -f target_version="$TARGET" 2>&1; then
-            echo "✅ AI auto-fill workflow dispatched for MAF $TARGET."
+            echo "✅ Copilot-fill issue dispatched for MAF $TARGET."
           else
-            echo "⚠️ Couldn't dispatch AI auto-fill — workflow may not exist yet on this branch, or token lacks workflow:write."
-            echo "   The watcher commit landed successfully; TODOs can be filled manually via:"
+            echo "⚠️ Couldn't dispatch fill workflow. Manual fallback:"
             echo "   gh workflow run maf-ai-fill-todos.yml -f target_version=$TARGET"
           fi
 
