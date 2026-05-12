@@ -198,17 +198,39 @@ jobs:
           EOF
           )
 
-          gh issue create \
+          # Two-step pattern: create the issue first (always), then attempt
+          # to assign Copilot separately. The previous "create-with-assignee
+          # || create-without" approach made TWO issues whenever the assignee
+          # path returned non-zero (which happens when Copilot CAN be looked
+          # up as a user but isn't granted access to the repo — the issue
+          # still gets created, but gh returns 1).
+
+          ISSUE_URL=$(gh issue create \
             --title "Fill TODOs for MAF $TARGET" \
             --body "$ISSUE_BODY" \
-            --label "maf-release,ai-fill" \
-            --assignee "Copilot" \
-            || gh issue create \
-                 --title "Fill TODOs for MAF $TARGET" \
-                 --body "$ISSUE_BODY" \
-                 --label "maf-release,ai-fill"
+            --label "maf-release,ai-fill")
+          echo "✅ Issue created: $ISSUE_URL"
 
-          # The first attempt tries to assign Copilot directly. If that fails
-          # (e.g. the bot username differs for your repo / org), the fallback
-          # opens the issue UNASSIGNED — go to the issue in the UI and click
-          # "Assignees → Copilot" manually. One-time friction per run.
+          ISSUE_NUM=$(echo "$ISSUE_URL" | grep -oE '[0-9]+$')
+
+          # Best-effort: assign Copilot Coding Agent. Suppress the gh CLI's
+          # own error formatting; print our own clearer diagnostic.
+          if gh issue edit "$ISSUE_NUM" --add-assignee "Copilot" >/dev/null 2>&1; then
+            echo "✅ Assigned to Copilot Coding Agent — work should start within minutes."
+          else
+            echo ""
+            echo "⚠️  Could NOT auto-assign Copilot Coding Agent."
+            echo "    Most likely cause: the Coding Agent isn't enabled on this repo."
+            echo ""
+            echo "    To enable (one-time):"
+            echo "      Settings → Code & automation → Copilot → Coding Agent → Enable"
+            echo "      (Requires Copilot Pro / Business / Enterprise; not in Copilot Free)"
+            echo ""
+            echo "    To manually proceed THIS time:"
+            echo "      1. Open: $ISSUE_URL"
+            echo "      2. Click 'Assignees' in the right sidebar"
+            echo "      3. Select 'Copilot' if it appears"
+            echo "      If Copilot doesn't appear in the assignee list, the agent feature"
+            echo "      is unavailable in your subscription tier — see the README for"
+            echo "      fallback options (GitHub Models, Anthropic API, or do it by hand)."
+          fi
