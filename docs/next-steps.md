@@ -1,61 +1,222 @@
 # Next steps
 
-> **Last refreshed:** 2026-05-12 — end of Phase Q (auto-update loop end-to-end-validated on real MAF 1.4 + 1.5 data).
+> **Last refreshed:** 2026-05-12 — end of Phase Q (auto-update loop end-to-end validated on real MAF 1.4 + 1.5 data).
 > **Single source of truth for "what's next."** When this contradicts other docs, this wins.
-> **For history of done work:** see [`maf-migration-toolkit-plan.md`](./maf-migration-toolkit-plan.md).
+> **For history of done work:** see the **[`Done`](#-done--phases-a-through-q-history) section at the bottom** of this file, plus the full archive in [`maf-migration-toolkit-plan.md`](./maf-migration-toolkit-plan.md).
 
 ---
 
 ## Index
 
-1. [Current state — one paragraph](#current-state)
-2. [Pre-1.0 ship gate](#pre-10-ship-gate)
-3. [Active backlog (top of queue)](#active-backlog)
-4. [Deferred — with explicit rationale](#deferred)
-5. [Acceptance criteria for 1.0 announcement](#acceptance-criteria-for-10-announcement)
-6. [Post-1.0 roadmap (1.1+)](#post-10-roadmap)
-7. [Out-of-scope](#out-of-scope)
+1. [Current state](#current-state)
+2. [My recommendations — at a glance](#my-recommendations--at-a-glance)
+3. [Active backlog — phased plan](#active-backlog--phased-plan)
+   - [Phase R — in-flight + finishing touches](#phase-r--in-flight--finishing-touches-this-week)
+   - [Phase S — TFM decision](#phase-s--tfm-decision-the-non-obvious-call)
+   - [Phase T — MAF 1.3 sample + migration dogfood](#phase-t--maf-13-sample--migration-dogfood-the-a8-unblocker)
+   - [Phase U — 1.0 polish (post-A.8)](#phase-u--10-polish-post-a8)
+4. [In-depth recommendations (my reasoning)](#in-depth-recommendations-my-reasoning)
+   - [TFM strategy](#tfm-strategy)
+   - [Dependabot triage](#dependabot-triage)
+   - [MAF 1.3 sample as the A.8 unblocker](#maf-13-sample-as-the-a8-unblocker)
+   - [Analyzer test infra (Roslyn 4→5)](#analyzer-test-infra-roslyn-4--5)
+   - [Agents audit](#agents-audit)
+5. [Pre-1.0 ship gate](#pre-10-ship-gate)
+6. [Acceptance criteria for 1.0 announcement](#acceptance-criteria-for-10-announcement)
+7. [Deferred — with rationale](#deferred--with-rationale)
+8. [Out-of-scope](#out-of-scope)
+9. [Annex — May-6 pre-Phase-O sketch](#annex--may-6-pre-phase-o-sketch)
+10. [✅ Done — Phases A through Q (history)](#-done--phases-a-through-q-history)
 
 ---
 
 ## Current state
 
-The toolkit ships **20 MCP tools, 7 agents (including `@maf` primary), 13 skills, 3 always-loaded instructions, 3 Roslyn analyzers (separate NuGet), 5 MCP resources, 7 MCP prompts, multi-arch Docker container, and 6 GitHub Actions workflows** (including the new `maf-ai-fill-todos.yml`). Test suite: **474 passing** (463 main + 11 analyzer). Plan tracking table: **124 items / 113 done / 5 intentionally deferred / 1 external-gated / 5 strategic-remaining**. Security review complete (Phase N). UX + product polish complete (Phase O). May-6 parallel sketch salvaged + tagged (Phase P). **Auto-update loop end-to-end-validated against real MAF 1.4 + 1.5 data with GitHub Copilot Coding Agent for AI fill (Phase Q).** Project is feature-complete for 1.0 — only the external validation gate (A.8) remains.
+The toolkit ships **20 MCP tools, 7 agents (including `@maf` primary), 13 skills, 3 always-loaded instructions, 3 Roslyn analyzers (separate NuGet `maf-autopilot.Analyzers`), 5 MCP resources, 7 MCP prompts, multi-arch Docker container, and 6 GitHub Actions workflows** (release, release-watcher, ai-fill-todos, pr-audit, drift-detector, docker-publish). Test suite: **474 passing** (463 main + 11 analyzer), 0 warnings, 0 errors. **`maf-autopilot 1.3.0-alpha-5`** is published to NuGet (current latest).
 
-### What landed in Phase Q (2026-05-12 — auto-update loop validation + AI fill)
+**The auto-update loop is end-to-end validated** against real MAF 1.4 + 1.5 data. PR #15 (1.4 fills by Copilot Coding Agent) merged. PR for 1.5 (issue #16) in flight at time of writing.
 
-| ID | Item | Status |
+**Current TFMs:** `maf-autopilot` + tests on **`net9.0`**. Analyzer on **`netstandard2.0`** (Roslyn requirement — locked).
+
+**Pre-1.0 gate:** A.8 — "one external migration validates the toolkit end-to-end against a real customer codebase." Currently the only thing blocking the stable cut. **Phase T below proposes a way to unblock this without waiting for an external customer.**
+
+---
+
+## My recommendations — at a glance
+
+1. **Drop TFM from `net9.0` → `net8.0` LTS.** The simplest, broadest, future-proof move. Skips the dying `net9.0` (STS, EOL ~Nov 2026) without paying the multi-target build-time cost. Lets you close 3 Dependabot PRs immediately (#1, #2, #11 — all of which forced .NET 10 ecosystem on us).
+2. **Build a MAF 1.3 sample inside `samples/maf-1.3-test-project/`** and dogfood the migration end-to-end (`@maf-auditor` → `@maf-migration` → `MafDoctor`). This **is** the A.8 unblocker — a synthetic-but-real validation we control, ready in 1-2 days instead of waiting for an external customer.
+3. **Triage Dependabot PRs surgically.** Close 3 (the .NET 10 forcers), verify-and-merge 6 (low-risk Actions + Test.Sdk), pair-and-defer 2 (Roslyn 4→5 SDK bump — wait until after Phase T to bump anything that could break the analyzer).
+
+Below is the phased plan, then the reasoning behind each call.
+
+---
+
+## Active backlog — phased plan
+
+### Phase R — in-flight + finishing touches (this week)
+
+The cleanup that's already running or close to running. Should land in the next day or two.
+
+| ID | Item | Owner | Effort | Status |
+|---|---|---|---|---|
+| R.1 | Wait for Copilot's PR for MAF 1.5 (issue #16) and review + merge | YOU | S (5 min) | ⏳ Copilot working |
+| R.2 | Close Dependabot PRs #1, #2, #11 (.NET 10 forcers) — they'll be re-openable after Phase S | YOU or me (with consent) | S (5 min) | 📋 |
+| R.3 | Merge low-risk Action bumps (#3, #4) after a sanity glance at each diff | YOU | S (10 min) | 📋 |
+| R.4 | Verify + merge mid-risk Actions (#5 upload-artifact, #6 softprops, #7 checkout) — see [Dependabot triage](#dependabot-triage) | YOU | M (30 min) | 📋 |
+| R.5 | Merge `Microsoft.NET.Test.Sdk` bump (#12) and re-run test suite | YOU or me | S (15 min) | 📋 |
+
+### Phase S — TFM decision (the non-obvious call)
+
+The right time to make this is **before Phase T** (so the sample project picks up the new TFM) and **before cutting 1.0** (so consumers don't have to upgrade through a TFM change later).
+
+| ID | Item | Owner | Effort | Decision needed |
+|---|---|---|---|---|
+| S.0 | **Decide:** single-target `net8.0`, or multi-target `net8.0;net10.0`, or stay `net9.0` | YOU | — | See [TFM strategy](#tfm-strategy) below |
+| S.1 | Bump `src/maf-autopilot/maf-autopilot.csproj` TFM | me | S (5 min) | Depends on S.0 |
+| S.2 | Bump test csproj TFMs to match | me | S (5 min) | Same |
+| S.3 | Bump `Microsoft.Extensions.Hosting` package version to LTS line (`8.0.x`) | me | S (5 min) | |
+| S.4 | Update Dockerfile base images (`mcr.microsoft.com/dotnet/sdk:<NEW>` + `runtime:<NEW>`) | me | S (5 min) | |
+| S.5 | Run full test suite locally; CI confirms; cut `1.3.0-alpha-6` with new TFM | me + YOU | M (30 min) | |
+| S.6 | After S.5, **re-open and merge** Dependabot #11 (Hosting bump) if you went multi-target with net10; otherwise leave closed | YOU | — | |
+
+### Phase T — MAF 1.3 sample + migration dogfood (the A.8 unblocker)
+
+Currently A.8 says "wait for an external customer migration." That's an indefinite wait. **A synthetic-but-real sample is the same validation in 1-2 days of work I can do autonomously.**
+
+| ID | Item | Owner | Effort | What it proves |
+|---|---|---|---|---|
+| T.1 | Create `samples/maf-1.3-sample/` — a real .NET project pinned to MAF 1.3.0 | me | S (30 min) | Skeleton |
+| T.2 | Hand-author content that uses **every canonical 1.3 obsolete pattern** — `ReflectingExecutor<T>`, `IMessageHandler<TIn,TOut>`, `[StreamsMessage]`/`[YieldsMessage]`, `AddFanInBarrierEdge(target, sources)`, `GetNewThread()`, `SerializeSession`, `DefaultAzureCredential`, instance state on `AIContextProvider`, top-level `Instructions`, etc. | me | M (1-2 hr) | Coverage — the sample tickles every registry entry |
+| T.3 | Run `@maf-auditor` against the sample to generate `samples/maf-1.3-sample/docs/migration-plan.md` | YOU (assigned to Copilot Chat) | S (10 min interactive) | Plan generation works on a real codebase |
+| T.4 | Run `@maf-migration` against the plan, task-by-task, with `dotnet build` gates | YOU | M (1 hr interactive) | The whole migration loop works |
+| T.5 | After T.4, sample should be at MAF 1.4 then 1.5 baseline — verify all tests still pass | me | S (15 min) | Migration is correct end-to-end |
+| T.6 | File any gaps in the toolkit (missing registry entries, wrong fix descriptions, broken examples) | me | depends | Toolkit hardening from real-world signal |
+| T.7 | **Cut stable `1.3.0` to NuGet** (A.8 unblocked by T) | YOU | S (10 min) | 1.0 ships |
+
+### Phase U — 1.0 polish (post-A.8)
+
+After A.8 ships, the toolkit's stable. These are nice-to-haves for 1.0.x patches.
+
+| ID | Item | Effort | Why |
+|---|---|---|---|
+| U.1 | Top-level `permissions: {}` defaults in all 6 workflows (Phase N B.M1 deferred) | S (15 min) | Defense-in-depth |
+| U.2 | `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true` in workflows (Node 20 deprecation hits 2026-09-16) | S (15 min) | Forward compat |
+| U.3 | Trust-chain quarantine for release-watcher (Phase N B.H2 deferred) — `drafts/` folder + 2-human review on `maf-release` label | M (1 day) | Only material if maf-autopilot ever gets external maintainers; for solo project deferred indefinitely |
+| U.4 | Merge `Microsoft.CodeAnalysis.CSharp` bumps (#9, #10) — Roslyn 4 → 5 | M (½ day) | After Phase T proves the analyzer works on real data; bumping infra during validation is risky |
+| U.5 | Merge `coverlet.collector` bump (#8) | S (15 min) | Coverage tooling; run tests after |
+
+---
+
+## In-depth recommendations (my reasoning)
+
+### TFM strategy
+
+**Current:** `net9.0` everywhere (except the analyzer on `netstandard2.0`).
+
+**Why we shouldn't stay on `net9.0`:** .NET 9 is an STS (Standard Term Support) release with **18 months of support — ending ~Nov 2026**. We're in May 2026. `net9.0` is roughly six months from EOL. Any consumer installing `maf-autopilot` next year needs to be on a runtime that's about to lose security patches.
+
+**Three options:**
+
+| Option | TFM change | Pros | Cons | My take |
+|---|---|---|---|---|
+| **A. Drop to `net8.0`** (single target, LTS) | `net9.0 → net8.0` | Broadest consumer reach. `net8.0` LTS until Nov 2026 (matches `net9.0`'s actual EOL — same support window) but `net8.0` continues with extended support whereas `net9.0` is hard EOL. Net8 widely deployed already (the LTS line installed on most build machines). Simple — no multi-target complexity. | "Downgrading" feels backwards. A few .NET 9 APIs would need a `#if NET9_0_OR_GREATER` removal — but we don't use any net9-specific APIs (we checked: just `IHostedService`, `Host.CreateDefaultBuilder`, both stable since net6). | **My recommendation.** Cleanest. |
+| **B. Multi-target `net8.0;net10.0`** | `net9.0 → net8.0;net10.0` | Max reach across LTS-to-LTS. Forward-compatible. Lets net10-only consumers pick the net10 flavor. | Build time roughly 3x. Occasional `#if` for divergent APIs. Adds complexity to release.yml's pack step. | Right call **if** you expect non-trivial net10-only consumer base. For a tool, probably overkill. |
+| **C. Bump to `net10.0`** (single target, upcoming LTS) | `net9.0 → net10.0` | Newest LTS, supported until Nov 2028. Lets us close fewer Dependabot PRs. | Loses net8 / net9 / et al users. Consumers must have net10 SDK installed. .NET 10 is brand-new — possible early-life bugs. | Premature. Net10 has only been GA a few months. |
+
+**Recommendation: Option A — drop to `net8.0`.**
+
+After this:
+- **Close** Dependabot #1 (`docker/sdk 9→10`), #2 (`docker/runtime 9→10`), #11 (`Hosting 9→10`). They're all forcing the .NET 10 ecosystem.
+- **`Microsoft.Extensions.Hosting`** stays on `8.0.x` (LTS line). Dependabot will start tracking that line.
+- **Dockerfile** changes to `mcr.microsoft.com/dotnet/sdk:8.0` + `runtime:8.0`.
+
+If, post-1.0, the project gets traction and you want multi-target, that's a clean follow-up. The change `net8.0 → net8.0;net10.0` is additive.
+
+### Dependabot triage
+
+The 12 open Dependabot PRs split into three buckets:
+
+**Bucket 1 — Close right now** (`.NET 10` ecosystem forcers, incompatible with net8/net9):
+
+| # | What | Why close |
 |---|---|---|
-| Q1 | `release.yml` trigger filter: accept both `v*` and `[0-9]*` shapes — alpha-4/5 tags without `v` now auto-fire | ✅ DONE |
-| Q2 | `maf-release-watcher.yml` direct-to-main commits (replaced PR-based gate; user prefers main-trunk workflow for solo project) | ✅ DONE |
-| Q3 | Replaced unlisted `dnx` NuGet with direct `dotnet-inspect` global install — fixed the watcher's cron failure | ✅ DONE |
-| Q4 | `maf-ai-fill-todos.yml` — dispatches GitHub Copilot Coding Agent to fill TODO placeholders post-watcher | ✅ DONE |
-| Q5 | GraphQL-based Copilot bot assignment (`addAssigneesToAssignable` with `BOT_kgDOC9w8XQ`) — gh CLI's REST `--assignee Copilot` doesn't work because bots aren't returned by the user-lookup endpoint | ✅ DONE |
-| Q6 | Migration-guide banners (Option A) + cumulative `maf-current-migration-guide.md` (Option C) — fixes the "1.4/1.5 guides look thin vs 1.3's 2400 lines" mental-model mismatch | ✅ DONE |
-| Q7 | TBD → N/A convention for `guide_section` on new-surface entries (Copilot was instructed "TBD" but it read as procrastination; "N/A" is explicit) | ✅ DONE |
-| Q8 | Compat-matrix backfill for 1.4/1.5: pulled real `Microsoft.Extensions.AI` constraints from NuGet API; documented that MAF doesn't pin `Azure.AI.OpenAI` directly (BYO via IChatClient) | ✅ DONE |
-| Q9 | `.github/skills/maf-release-watcher/SKILL.md` rewritten to document the 3-stage architecture (deterministic data → AI-fill dispatch → Copilot agent) + the Python helpers + the cumulative guide | ✅ DONE |
-| Q10 | End-to-end validation: fired watcher against MAF 1.4 + 1.5; Copilot opened PR #15 with high-quality fills; #15 merged | ✅ DONE |
+| 1 | `docker dotnet/sdk` 9.0 → 10.0 | We'll target net8 (Phase S). Re-openable when bumping TFM if we ever go to .NET 10. |
+| 2 | `docker dotnet/runtime` 9.0 → 10.0 | Same. |
+| 11 | `Microsoft.Extensions.Hosting` 9.0.0 → 10.0.7 | Same. After Phase S we'll be on Hosting 8.0.x. |
 
-**The auto-update loop is now demonstrably functional** end-to-end: MAF version ships → watcher commits raw data with TODOs → AI-fill workflow dispatches → Copilot Coding Agent opens a PR with the filled values → human reviews + merges. Future MAF releases require **zero manual baseline-update effort**; the only human input is reviewing Copilot's PR.
+**Bucket 2 — Verify + merge** (low/medium risk, no incompat):
 
-### Immediate next moves
-
-1. **Wait for Copilot's PR for MAF 1.5.0** (issue #16 is open and assigned; PR usually lands within ~5 min of issue creation). Review + merge same as #15.
-2. **Triage 12 open Dependabot PRs** (#1–#12). See the triage table at the bottom of this document.
-3. **(Tier 1) Spin up a real MAF 1.4 or 1.5 test project** to verify Copilot's `example_before`/`example_after` snippets actually compile against the live MAF surface. This is the final piece of "auto-update loop validation."
-
-### What landed in Phase O (2026-05-12 late evening)
-
-| ID | Item | Status |
+| # | What | Verification |
 |---|---|---|
-| O1 | `@maf` primary agent for triage (no autonomous handoff — recommendation only) | ✅ DONE |
-| O2 | `MafTour` MCP tool + `maf-help` prompt + `maf://help` resource (drift-tested) | ✅ DONE |
-| O3 | `MafDraftIssue` MCP tool + `maf-issue-reporter` skill (no auto-post; user reviews + routes via github-mcp-server if installed) | ✅ DONE |
-| O4 | Auto-update additivity engraved in code + docs + pinned by 2 new tests | ✅ DONE |
-| O5 | Release-watcher re-review — caught + fixed 2 bugs (indent regression detected by O4 test; grep anchor follow-up); added diff-artefact upload | ✅ DONE |
+| 3 | `docker/setup-buildx-action` 3 → 4 | Glance at changelog. Used only in `docker-publish.yml`. Merge. |
+| 4 | `docker/login-action` 3 → 4 | Same. |
+| 5 | `actions/upload-artifact` 4 → 7 | **Has known breaking changes between v4 and v5** (artifact-name defaults). Check changelog for v5/v6/v7 specifically. Used in `maf-release-watcher.yml` and CI runs. |
+| 6 | `softprops/action-gh-release` 2.2.1 → 3.0.0 | Phase N **SHA-pinned this to `c95fe14…` with the `v2.2.1` comment**. Dependabot should have updated both the SHA and the comment to a `v3.x` SHA. **Verify both in the PR diff before merging.** |
+| 7 | `actions/checkout` 4 → 6 | Scan v5+v6 changelogs. Used in every workflow. High blast radius if it breaks. |
+| 12 | `Microsoft.NET.Test.Sdk` 17.12.0 → 18.5.1 | Major bump. Usually backward-compat for xUnit + standard test discovery. Run full test suite after merge. |
 
-**Bonus discovery (O4 + O5 together):** the additivity unit test surfaced a real bug — `RegistryExtractCommand.BuildYamlEntry` emitted draft entries at column 0, but the production `registry.yaml` indents entries by 2 spaces under `entries:`. The watcher's `cat $TMP_ENTRIES >> $REGISTRY` would have produced malformed YAML on its first real run. Fixed in `BuildYamlEntry` (indent by 2 spaces) + the grep check in the watcher updated to be indentation-tolerant. **The bug never shipped because the watcher hadn't fired against a real MAF release yet.** This is the value of pinning invariants in tests.
+**Bucket 3 — Defer to Phase U** (test infra major bumps, risky during validation):
+
+| # | What | Why defer |
+|---|---|---|
+| 8 | `coverlet.collector` 6.0.2 → 10.0.0 | Four major versions skipped. Coverage tooling. Defer until after Phase T (MAF 1.3 sample) is green — no reason to disrupt coverage during validation. |
+| 9 | grouped `Microsoft.CodeAnalysis.Analyzers + CSharp` in analyzer project | Roslyn SDK 4.11 → 5.3. Major version bump — could break the analyzer or its test harness. **See [Analyzer test infra](#analyzer-test-infra-roslyn-4--5) below.** |
+| 10 | `Microsoft.CodeAnalysis.CSharp` 4.11.0 → 5.3.0 in Analyzers.Tests | Pairs with #9. Same logic. |
+
+### MAF 1.3 sample as the A.8 unblocker
+
+**The current A.8 wording is too restrictive.** "Wait for an external customer migration" is an indefinite gate — could be weeks, could be never.
+
+**Reframe A.8 as: "validated against ONE real MAF 1.3 codebase end-to-end."** A synthetic sample we control is the same evidence as an external customer's project — provided the sample exercises every canonical 1.3-era anti-pattern that the registry knows about.
+
+**Why this works:**
+
+- A synthetic sample lets us **deliberately tickle every registry entry** (`MAF130-FAN-IN-001`, `MAF130-SESSION-001`, `MAF130-THREAD-001`, `MAF130-EXEC-001`, `MAF130-A2A-001/002`, `MAF130-STREAM-001`, `MAF130-EVENT-001`, `MAF130-ATTR-001/002`, `MAF130-INSTRUCTIONS-001`, `MAF130-EXEC-002`, `MAF130-MIDDLEWARE-001` — all 13 entries).
+- An external customer codebase tickles whatever it tickles — coverage is opportunistic.
+- The sample lives in the repo as a permanent regression artefact — if Phase T proves migration works against the sample, every future MAF version can be regression-tested by re-running the migration on the same sample with the new toolkit.
+
+**Phase T workflow:**
+
+1. **`samples/maf-1.3-sample/`** — new directory. Contains:
+   - `MyApp.csproj` pinned to `Microsoft.Agents.AI 1.3.0` exactly (not `>= 1.3.0`)
+   - `Program.cs` — wires up agents using `DefaultAzureCredential` (the wrong way — triggers `MAF-AP-SEC-001`)
+   - `Agents/LegacyExec.cs` — uses `ReflectingExecutor<>` + `IMessageHandler<>` + `[StreamsMessage]` (triggers `MAF130-EXEC-001`, `MAF130-ATTR-001`, `MAF130-ATTR-002`)
+   - `Workflows/BadTopology.cs` — uses `AddFanInBarrierEdge(target, sources)` wrong-arg-order (triggers `MAF130-FAN-IN-001`)
+   - `Sessions/OldSession.cs` — uses `agent.GetNewThread()` + `SerializeSession` (triggers `MAF130-THREAD-001`, `MAF130-SESSION-001`)
+   - `Providers/MyContext.cs` — instance fields on `AIContextProvider` (triggers `MAF-AP-CONC-001`)
+   - `Tests/` — xUnit tests that the migration must preserve
+
+2. **Phase T.3:** ask Copilot Chat in this repo: `@maf-auditor scan samples/maf-1.3-sample/`. Should produce `samples/maf-1.3-sample/docs/migration-plan.md` with every anti-pattern listed.
+
+3. **Phase T.4:** `@maf-migration execute samples/maf-1.3-sample/docs/migration-plan.md`. Watch each task land. `dotnet build` must be green between tasks.
+
+4. **Phase T.5:** at the end, sample should target MAF 1.4 or 1.5 with the migrations applied. All tests pass. `MafDoctor` returns A or B grade.
+
+5. **Phase T.6:** if anything failed, the gap is in the toolkit (a registry entry's `fix_description` was wrong, or a scanner missed something). Fix in this repo, re-run.
+
+6. **Phase T.7:** the working migration log + green tests = A.8 unblocked. `gh workflow run release.yml -f version=1.3.0` cuts stable.
+
+### Analyzer test infra (Roslyn 4 → 5)
+
+Dependabot #9 + #10 propose `Microsoft.CodeAnalysis.* 4.11.0 → 5.3.0` — a major version bump of the Roslyn SDK that the analyzer NuGet is built against.
+
+**Why defer this to Phase U (after Phase T):**
+
+1. Phase T relies on the analyzer working correctly to validate `MAF001` (fan-out return type), `MAF002` (`DefaultAzureCredential`), `MAF003` (`EnableSensitiveData`). If we bump Roslyn 4→5 first, any analyzer test breakage is intermingled with migration-loop testing — hard to isolate.
+2. Roslyn API renames between major versions are common — `SyntaxTree`, `SymbolKind` etc. may need callsite updates.
+3. The 11 analyzer tests are good coverage but won't catch *every* API drift.
+4. Once Phase T is green, we know the analyzer works on real data. Then we bump the Roslyn SDK and re-run; any breakage is now isolated.
+
+**The right execution order:** Phase R → S → T → cut 1.0 → Phase U (and only then merge #9, #10).
+
+### Agents audit
+
+You flagged that agent changes might not be captured in `next-steps.md`. I checked all 7 agent files (`maf.agent.md`, `maf-migration`, `maf-auditor`, `maf-best-practice-reviewer`, `maf-incident-responder`, `maf-rollback`, `maf-onboarding`) — they're all up-to-date and **the `@maf` primary + 6 specialists architecture is captured in Phase O** (rows O1–O5 in the Done section).
+
+One observation worth flagging: **`maf-migration.agent.md` has a much bigger `tools:` list** than the other agents (it has the full `vscode/*` + `github/*` toolsets; the others have a basic subset). This is intentional — the migration agent needs to push commits, create branches, run notebooks, etc. — but the discrepancy means certain tasks can only be done from `@maf-migration`, not from the `@maf` primary. **If the user wants the primary to route to migration tasks, the user explicitly @-mentions `@maf-migration` to get the bigger toolset.** Per Phase O's design ("no autonomous handoff — primary recommends, user routes"), this is correct.
+
+No agent-level work is needed for 1.0. Agent-level evolution is post-1.0 Phase V territory.
 
 ---
 
@@ -65,57 +226,7 @@ The toolkit ships **20 MCP tools, 7 agents (including `@maf` primary), 13 skills
 
 | ID | Title | Owner | What unblocks it |
 |---|---|---|---|
-| **A.8** | Cut stable `1.3.0` to NuGet | maintainer | At least one **external** MAF migration validates the toolkit end-to-end against a real customer codebase. After that: `gh workflow run release.yml -F version=1.3.0`. |
-
-The release workflow itself is ready: solution-level test gate, analyzer NuGet pack step, SHA-pinned third-party Actions. Nothing internal blocks A.8.
-
----
-
-## Active backlog
-
-Items that have measurable value, no external dependency, and are not yet shipped. Listed in recommended execution order.
-
-### Tier A — small, high-leverage, do before announcement
-
-| Order | Item | Effort | Why |
-|---|---|---|---|
-| ~~A1~~ | ~~Rename `/mcp/` → `/src/`~~ | ✅ DONE 2026-05-12 | Landed; all build/CI/doc paths updated. |
-| A1 | **Fire `maf-release-watcher` against real MAF 1.4 / 1.5** | M (½ day, real upstream) | The watcher has shipped untested against an actual major release. Phase O5's bug-hunt cleared two regressions before firing; now run it. Confirms the auto-PR flow end-to-end against real upstream content. |
-| A2 | **Verify SHA pins for third-party Actions** | S (15 min) | Three Actions are SHA-pinned with claimed-version comments. Run `gh api repos/<owner>/<repo>/git/refs/tags/<version> --jq .object.sha` for each. Dependabot will catch divergence on first scan too. |
-| A3 | **Run external migration** (the A.8 unblocker) | L (1–3 days, external) | Pair-program a migration against a real MAF 1.2 → 1.3 customer codebase. Use the output to validate the toolkit, file any gaps, then cut 1.0. |
-
-### Tier B — could land alongside A or in a 1.0.1 patch
-
-| Order | Item | Effort | Why |
-|---|---|---|---|
-| B1 | **C.6 — full Roslyn data-flow `MafScanPromptInjection`** | L (1–2 days) | Currently covered by `MafLintAgentPrompt`'s PROMPT-004 (syntactic match). Data-flow would catch the case where untrusted input flows through a variable into `Instructions =` indirectly. |
-| B2 | **C.7 — `maf_open_feedback_issue` MCP sampling tool** | M (½ day) | Closes the learning loop: when a scan fires no registry match, the tool opens a GitHub issue with the snippet so the registry can be expanded. Depends on host sampling support. |
-| B3 | **C.8 — `maf_full_audit`, `maf_migration_suggest` sampling tools** | M (1 day) | Multi-step agentic chains. Depend on MCP host sampling. |
-| B4 | **Top-level `permissions: {}` defaults in all 5 workflows** | S (15 min) | Defense-in-depth (Phase N B.M1 deferred). No exploit demonstrated; this is hygiene. |
-
-### Tier C — strategic / multi-day
-
-| Order | Item | Effort | Why |
-|---|---|---|---|
-| C1 | **D.4 — GitHub App `@maf-bot`** | L (3–5 days) | PR comments scoped to changed lines; org-wide adoption vector. Pairs with `MafAuditPullRequest`. Distinct codebase. |
-| C2 | **D.5 — VS Code extension** | L (3–5 days) | One-click installer wrapping the MCP server; surfaces `MafDoctor` as a status-bar item. Distinct codebase. |
-| C3 | **Release-watcher trust-chain redesign** (Phase N B.H2 deferred) | M (1 day) | Quarantine upstream NuGet content into a `drafts/` folder before merging to the embedded `registry.yaml`. Requires workflow rework. |
-
----
-
-## Deferred
-
-Items considered and *intentionally* not done, each with its rationale. Don't re-litigate without reading the reason.
-
-| ID | Item | Why deferred |
-|---|---|---|
-| B.4 | Split `maf-auditor` into two agents | `maf-best-practice-reviewer` already exists as the sibling. Renaming `maf-auditor` → `maf-migration-planner` is cosmetic; defer until post-1.0. |
-| B.8 | Project rename (`maf-autopilot` → `maf-keeper` / `maf-forge` / etc.) | Naming exercise produced `maf-forge` (Catchiness 9/10) as the leading recommendation. User decision deferred. Rename pre-1.0 is cheaper than post-1.0; if not decided before A.8, ship 1.0 as `maf-autopilot`. |
-| M.4 | Mass-rename 6 unprefixed skills to `maf-*` | 38-file blast radius; creates double-prefixed URIs (`maf://skills?name=maf-fan-out-validator`); breaks any hardcoded URI. Current naming is principled (codified in CONTRIBUTING.md "Skill naming convention"). |
-| M.5 | Rename `MafNewAgent` / `MafNewExecutor` → `MafScaffoldAgent` / `MafScaffoldExecutor` | "New" is the universal dev-tool verb (`dotnet new`, `cargo new`, `npm init`). CLI is `maf-autopilot new agent`. Breaking surface change for marginal accuracy gain. |
-| N.12 (B.M3) | `${{ ... }}` → `env:` pattern enforcement in workflows | Defense-in-depth; no current `pull_request_target` workflow exists, so the bug class isn't reachable today. |
-| N.12 (A.M3) | `IsValidVersion` / `IsValidPackageId` reject leading `-` | Defense-in-depth; `ArgumentList` boundary intact, no current escape path. |
-| N.12 (others) | Rule-ID unification (`MAF001` ↔ `MAF-AP-SEC-001`), shared `netstandard2.0` `IsTestFile` project, IAnalyzer/IScanner interface | Cross-referenced in `maf://rules` catalog (good enough); renaming would break consumer projects pinning rule IDs in `.editorconfig`. |
+| **A.8** | Cut stable `1.3.0` to NuGet | maintainer | **Phase T** (MAF 1.3 sample dogfood) provides the validation. After Phase T, run `gh workflow run release.yml -f version=1.3.0`. |
 
 ---
 
@@ -127,98 +238,29 @@ All of the following are **already true** unless marked otherwise:
 - ✅ All 17 MCP tools have direct entry-method tests. (Phase G.3)
 - ✅ Scaffolder output passes our own scanners (dogfood + compile-validation). (Phase F.4 + I.3)
 - ✅ CHANGELOG complete and Keep-a-Changelog-formatted. (Phase G.1)
-- ✅ README counts reconciled (17 tools, 12 skills, 6 agents, ~426 tests). (Phase H.1)
+- ✅ README counts reconciled. (Phase H.1)
 - ✅ `MafDoctor` output recommends only extant tools. (Phase H.2)
-- ✅ Roslyn analyzer NuGet published path verified in release.yml. (Phase N.8)
+- ✅ Roslyn analyzer NuGet published path verified in `release.yml`. (Phase N.8)
 - ✅ Container runs as non-root. (Phase N.5)
 - ✅ Dependabot configured for NuGet + Actions + Docker. (Phase N.9)
-- ⏳ **One external migration validates the toolkit end-to-end.** (gates A.8)
+- ✅ Auto-update loop validated against real MAF 1.4 + 1.5 data. (Phase Q)
+- ⏳ **Phase T green — MAF 1.3 sample successfully migrates end-to-end with `MafDoctor` A/B grade.** (replaces "external migration" — Phase T below)
 
 ---
 
-## Post-1.0 roadmap
+## Deferred — with rationale
 
-Sketch of where 1.1 and 1.2 should focus, in priority order:
+Items considered and *intentionally* not done, each with its rationale. Don't re-litigate without reading the reason.
 
-**1.1 — Production lifecycle deepening.** B1 (`MafScanPromptInjection` Roslyn data-flow), B2 (`maf_open_feedback_issue`), C3 (release-watcher trust-chain). The theme: close the production-incident loop that Phase J started with `maf-incident-responder`.
-
-**1.2 — Adoption vectors.** C1 (`@maf-bot` GitHub App), C2 (VS Code extension). The theme: meet developers where they already are.
-
-**1.3+ — Vision questions.** Multi-version migration paths (currently `MafMigrationPath` walks guide metadata; extend to actually scaffold the intermediate refactor steps), MAF-version-watching beyond 1.x (matrix entries for 2.x will need to land), Foundry-deployment skill (currently a gap — see Phase J residue).
-
----
-
-## Annex — May-6 pre-Phase-O sketch (tag `pre-phase-o-may6-sketch`)
-
-A parallel exploration of the same conceptual ground existed on `origin/main` from 2026-05-06, in snake_case `[McpServerTool(Name = "maf_xxx")]` / bundled-class style. After the Phase H-O work superseded most of it, the May-6 commits were preserved by **git tag `pre-phase-o-may6-sketch`** at SHA `4525ab8` (run `git checkout pre-phase-o-may6-sketch` to recover the full working tree).
-
-### Salvaged into the current codebase
-
-| From May-6 | Ported as | Where it lives now |
+| ID | Item | Why deferred |
 |---|---|---|
-| `AnalysisTools.maf_executor_pattern_check` (regex search for legacy executor patterns) | Anti-pattern rule **`MAF-AP-EXEC-001`** (Roslyn syntax-scan, error severity) | `src/maf-autopilot/Tools/AntiPatternScannerTool.cs` |
-| `AnalysisTools.maf_compatibility` (static MAF-version → deps matrix) | New MCP tool **`MafCompatibility`** + drift-tested against `docs/compatibility-matrix.md` | `src/maf-autopilot/Tools/CompatibilityTool.cs` |
-| `MafPrompts.maf-review` | MCP prompt **`maf-review`** (PascalCase tool routing) | `src/maf-autopilot/Prompts/MafPrompts.cs` |
-| `MafPrompts.maf-debug` | MCP prompt **`maf-debug`** (PascalCase tool routing) | `src/maf-autopilot/Prompts/MafPrompts.cs` |
-| `MafPrompts.maf-scaffold` | MCP prompt **`maf-scaffold`** (routes to `MafNewAgent` / `MafNewExecutor`) | `src/maf-autopilot/Prompts/MafPrompts.cs` |
-
-### Deferred to future Tier B work (good seed material at the tag)
-
-| At the tag | Use when |
-|---|---|
-| `SamplingTools.maf_full_audit` (full repo audit via `server.SampleAsync()`) | MCP host sampling is widely supported. Sketch shows the prompt + flow shape. |
-| `SamplingTools.maf_migration_suggest` (LLM-driven per-snippet migration suggestion) | Same — depends on host sampling. |
-| `SamplingTools.maf_review_code` (LLM-powered code review) | Same. Complements `maf-review` prompt by delegating to LLM rather than routing to deterministic tools. |
-| `SamplingTools.maf_explain_error` (LLM-driven error explanation) | Same. Complements `MafExplain` (which is deterministic). |
-| `FeedbackTool.maf_open_feedback_issue` (sampling-based issue draft) | Same. Today's `MafDraftIssue` is deterministic; the sampling version would generate richer prose when host LLM is available. |
-| `ScaffoldTool.maf_scaffold` `session-provider` + `a2a-server` templates | When demand surfaces for these scaffolds beyond `agent` + `executor`. ~1 hour each to port in local style. |
-
-### How to recover the May-6 working tree
-
-```powershell
-# View the tag (annotated) — explains what's in it and what got salvaged
-git show pre-phase-o-may6-sketch
-
-# Check out the May-6 tree at a temp branch (won't affect main)
-git checkout -b inspect-may6 pre-phase-o-may6-sketch
-
-# When done, get back to main
-git checkout main
-git branch -D inspect-may6
-```
-
-The tag is pushed to origin, so it's recoverable from any clone.
-
----
-
-## Open Dependabot PRs — triage table (2026-05-12)
-
-| # | Change | Risk | My recommendation | Why |
-|---|---|---|---|---|
-| 1 | `docker dotnet/sdk` 9.0 → 10.0 | **HIGH (incompat)** | **Close** — re-open when bumping TFM | Our solution targets `net9.0`. Bumping the build-stage SDK image to 10.0 could change build defaults; not worth it without a TFM bump. |
-| 2 | `docker dotnet/runtime` 9.0 → 10.0 | **HIGH (incompat)** | **Close** | Same reasoning — our runtime image must match the net9.0 TFM we publish. |
-| 3 | `docker/setup-buildx-action` 3 → 4 | LOW | **Merge** | Docker actions are usually backward-compat. Low blast radius. |
-| 4 | `docker/login-action` 3 → 4 | LOW | **Merge** | Same. |
-| 5 | `actions/upload-artifact` 4 → 7 | MEDIUM | **Verify changelog, then merge** | v5 had a breaking artifact-name change. Check whether v7 has more. Used in release-watcher's diff-artefact upload. |
-| 6 | `softprops/action-gh-release` 2.2.1 → 3.0.0 | MEDIUM | **Verify SHA in PR diff, then merge** | This action is SHA-pinned per Phase N's hardening (commit `c95fe14...`). Dependabot should have updated both the version AND the SHA — verify in the PR diff. |
-| 7 | `actions/checkout` 4 → 6 | MEDIUM | **Verify changelog, then merge** | v5 had a Node.js bump; v6 may have more. Used everywhere — high blast radius if it breaks. |
-| 8 | `coverlet.collector` 6.0.2 → 10.0.0 | MEDIUM | **Verify — run tests** | Major version bump 4 versions apart. Coverage might behave differently. |
-| 9 | grouped `Microsoft.CodeAnalysis.Analyzers` + `CSharp` (Analyzers project) | **HIGH** | **Verify — run all analyzer tests** | The Analyzers project's SDK. Major bumps may break the analyzer or its test harness. |
-| 10 | `Microsoft.CodeAnalysis.CSharp` 4.11.0 → 5.3.0 (Analyzers.Tests) | **HIGH** | **Verify — coordinate with #9** | Companion to #9. Run analyzer tests after merging both. |
-| 11 | `Microsoft.Extensions.Hosting` 9.0.0 → 10.0.7 | **HIGH (incompat)** | **Close** | Forces .NET 10 ecosystem. We target net9.0. Re-open when bumping TFM. |
-| 12 | `Microsoft.NET.Test.Sdk` 17.12.0 → 18.5.1 | MEDIUM | **Verify — run all tests** | Major bump. Usually backward-compat but worth a CI run. |
-
-**Suggested execution order:**
-
-1. **Close #1, #2, #11** (the three .NET-10-only bumps). Comment with "deferred until we bump TFM to net10.0."
-2. **Merge #3, #4** (Docker actions — low risk).
-3. **Open #6's diff** and verify the SHA was updated alongside the version. If yes, merge.
-4. **Open #5's and #7's changelogs**, scan for breaking changes. If clean, merge.
-5. **Merge #9 + #10 together** in a single combined branch. Run all analyzer tests after.
-6. **Merge #12 last**, run all tests.
-7. **Merge #8 last** (coverage infrastructure).
-
-The audit failures on these PRs from May 11 were because the pinned `maf-autopilot` NuGet was `1.3.0-alpha-3` (no `doctor` CLI). With `1.3.0-alpha-5` now published (with the doctor CLI), re-running the audit on each PR should now succeed. To re-trigger: push an empty commit to the PR branch, or use the PR's "Re-run all jobs" button.
+| B.4 | Split `maf-auditor` into two agents | `maf-best-practice-reviewer` already exists as the sibling. Cosmetic rename of `maf-auditor` → `maf-migration-planner`; defer until post-1.0. |
+| B.8 | Project rename (`maf-autopilot` → `maf-keeper` / `maf-forge` / etc.) | Naming exercise produced `maf-forge` (Catchiness 9/10) as leading recommendation. User decision deferred. Rename pre-1.0 is cheaper than post-1.0; if not decided before A.8, ship 1.0 as `maf-autopilot`. |
+| M.4 | Mass-rename 6 unprefixed skills to `maf-*` | 38-file blast radius; creates double-prefixed URIs (`maf://skills?name=maf-fan-out-validator`); breaks any hardcoded URI. Current naming is principled (codified in CONTRIBUTING.md "Skill naming convention"). |
+| M.5 | Rename `MafNewAgent` / `MafNewExecutor` → `MafScaffoldAgent` / `MafScaffoldExecutor` | "New" is the universal dev-tool verb (`dotnet new`, `cargo new`, `npm init`). CLI is `maf-autopilot new agent`. Breaking surface change for marginal accuracy gain. |
+| N.12 (B.M3) | `${{ ... }}` → `env:` pattern enforcement in workflows | Defense-in-depth; no current `pull_request_target` workflow exists. Phase U.1 candidate. |
+| N.12 (A.M3) | `IsValidVersion` / `IsValidPackageId` reject leading `-` | Defense-in-depth; `ArgumentList` boundary intact. |
+| N.12 (B.H2) | Trust-chain quarantine for release-watcher (`drafts/` folder + 2-human review) | The watcher commits MAF upstream content directly to main. Risk: a compromised MAF NuGet upstream could land malicious content in the embedded `registry.yaml`. **For a solo project, acceptable.** Revisit if maf-autopilot ever gets external maintainers. Phase U.3 candidate. |
 
 ---
 
@@ -228,5 +270,115 @@ Things this project has explicitly decided **not** to do:
 
 - **Code execution / sandboxing.** The MCP server reads files, parses them with Roslyn syntax-only, and emits markdown / SARIF. It does NOT execute user code. `MafRunCs0618Hunt` shells out to `dotnet build` — that's compilation, not execution.
 - **A general-purpose linter.** Anti-pattern scanner is MAF-specific. If a rule wouldn't bite a MAF user, it doesn't ship.
-- **A migration tool for non-MAF agent frameworks.** The skill content, registry, and analyzer rules all target Microsoft Agent Framework. Other frameworks would need their own toolkits.
-- **AI generation of fix patches.** Scanners report findings + cite the registry/constraint. The actual fix is the developer's decision (or Copilot Chat's, using the cited entry). The scanner does not auto-patch.
+- **A migration tool for non-MAF agent frameworks.** Other frameworks would need their own toolkits.
+- **AI generation of fix patches.** Scanners report findings + cite the registry/constraint. The actual fix is the developer's decision (or Copilot Chat's, using the cited entry).
+
+---
+
+## Annex — May-6 pre-Phase-O sketch
+
+A parallel exploration of the same conceptual ground existed on `origin/main` from 2026-05-06, in snake_case `[McpServerTool(Name = "maf_xxx")]` / bundled-class style. After the Phase H-O work superseded most of it, the May-6 commits were preserved by **git tag `pre-phase-o-may6-sketch`** at SHA `4525ab8`.
+
+### Salvaged into the current codebase (Phase P)
+
+| From May-6 | Ported as |
+|---|---|
+| `AnalysisTools.maf_executor_pattern_check` | Anti-pattern rule **`MAF-AP-EXEC-001`** |
+| `AnalysisTools.maf_compatibility` | New MCP tool **`MafCompatibility`** + drift-tested |
+| `MafPrompts.maf-review` / `maf-debug` / `maf-scaffold` | Ported in local PascalCase tool-routing style |
+
+### Deferred to Tier B work (seed material at the tag)
+
+`SamplingTools.*` (full audit, migration suggest, code review, error explain) and `FeedbackTool.maf_open_feedback_issue` — sampling-dependent. Wait until MCP host sampling is widely supported.
+
+### Recover the May-6 tree
+
+```powershell
+git checkout -b inspect-may6 pre-phase-o-may6-sketch
+# ... explore ...
+git checkout main
+git branch -D inspect-may6
+```
+
+---
+
+## ✅ Done — Phases A through Q (history)
+
+Everything shipped to date, in reverse-chronological order (latest first).
+
+### Phase Q — Auto-update loop validation + AI fill (2026-05-12)
+
+The auto-update loop is **end-to-end validated** on real MAF 1.4 + 1.5 data with GitHub Copilot Coding Agent for AI fill.
+
+| ID | Item |
+|---|---|
+| Q1 | `release.yml` trigger filter accepts both `v*` and `[0-9]*` shapes |
+| Q2 | `maf-release-watcher.yml` direct-to-main commits (replaced PR-based gate) |
+| Q3 | Replaced unlisted `dnx` NuGet with direct `dotnet-inspect` global install |
+| Q4 | `maf-ai-fill-todos.yml` — dispatches GitHub Copilot Coding Agent to fill TODO placeholders |
+| Q5 | GraphQL-based Copilot bot assignment (`addAssigneesToAssignable` with `BOT_kgDOC9w8XQ`) — gh CLI's REST path doesn't work for bots |
+| Q6 | Migration-guide banners (Option A) + cumulative `maf-current-migration-guide.md` (Option C) |
+| Q7 | `TBD` → `N/A` convention for `guide_section` on new-surface entries |
+| Q8 | Compat-matrix backfill for 1.4/1.5: real `Microsoft.Extensions.AI` constraints from NuGet API; documented BYO Azure.AI.OpenAI |
+| Q9 | `.github/skills/maf-release-watcher/SKILL.md` rewritten for 3-stage architecture |
+| Q10 | End-to-end validation: watcher fired against MAF 1.4 + 1.5; Copilot PR #15 (1.4 fills) merged; PR for 1.5 in flight |
+
+### Phase P — May-6 sketch salvage (2026-05-12)
+
+Cherry-picked the May-6 sketch into the current codebase (`MAF-AP-EXEC-001`, `MafCompatibility`, 3 new prompts); preserved the rest at tag `pre-phase-o-may6-sketch`.
+
+### Phase O — UX + product polish (2026-05-12 late evening)
+
+| ID | Item |
+|---|---|
+| O1 | `@maf` primary agent for triage (recommendation only — no autonomous handoff) |
+| O2 | `MafTour` MCP tool + `maf-help` prompt + `maf://help` resource (drift-tested) |
+| O3 | `MafDraftIssue` MCP tool + `maf-issue-reporter` skill (no auto-post) |
+| O4 | Auto-update additivity engraved in code + docs + pinned by 2 new tests |
+| O5 | Release-watcher re-review — caught 2 bugs (indent regression, grep anchor) |
+
+**Bonus from O4:** the additivity test surfaced a real correctness bug — `RegistryExtractCommand.BuildYamlEntry` emitted column-0 entries that would have malformed `registry.yaml` on first real append. Fixed before shipping.
+
+### Phase N — In-depth security review + fixes (2026-05-12)
+
+Three Opus security reviewers covered input attack surface, supply chain + CI/CD, and code generation + parser safety. **1 false positive caught during synthesis** (EscapeForCSharp Unicode-escape — character-replacement ordering proves it safe). **10 confirmed findings fixed**: scaffolder type-expr injection, ReDoS in ExtractCamelCaseIdentifiers, git-option injection via leading-dash, drive-root traversal, container-as-root, size caps on mcp.json + MAF_REGISTRY_PATH, release.yml test-gate gap, SHA-pin Actions + dependabot.yml. **43 security regression tests** added.
+
+### Phase M — Naming alignment audit (2026-05-12)
+
+Renamed `maf-rollback-agent.agent.md` → `maf-rollback.agent.md` (dropped redundant suffix). Codified skill-naming convention in CONTRIBUTING.md. Considered + rejected: mass-rename 6 unprefixed skills (would create double-prefixed URIs); rename `MafNewAgent`/`MafNewExecutor` → `MafScaffold*` (breaking + marginal gain).
+
+### Phase L — Pull-forward from 1.1 backlog (2026-05-12)
+
+POSIX-correct `SourceFileWalker.MakeRelative` + rule-ID cross-reference in `maf://rules`.
+
+### Phase K — Auto-loaded instructions (2026-05-12)
+
+`maf-testing.instructions.md` (auto-loads on `*Tests.cs`) + `maf-deployment.instructions.md` (auto-loads on `Program.cs` / `Startup.cs` / `Hosting/*.cs` / `Infrastructure/*.cs`).
+
+### Phase J — Production-lifecycle agents (2026-05-12)
+
+`maf-incident-responder` (runtime failure → MAF pattern → deterministic fix), `maf-rollback` (surgical 1.3.0 → 1.2.0 retreat), `maf-onboarding` (personalized codebase tour).
+
+### Phase I — Test-coverage deepening (2026-05-12)
+
+5 hermetic, AAA-structured tests covering the top-leverage gaps: `ParseGitDiffOutput` parser tests, `ResolveBuildTarget` path-resolution tests, scaffolder self-consistency, Doctor 4-scanner composition, Explain namespace-qualified type-use.
+
+### Phase H — Third-Opus blocker fixes (2026-05-12)
+
+3 announcement-blocking regressions surfaced + fixed: README inconsistencies (19→17 tools + SARIF twins), `DoctorTool.cs:240` stale tool reference, `AgentTestTemplate` missing usings.
+
+### Phases F + G — Verdict-driven gap closure + tracking (2026-05-12)
+
+F: SARIF twin consolidation, YamlDotNet refactor, compile-validation test pin (caught 2 real bugs). G: CHANGELOG.md, YAML scalar styles, direct MCP tests for NewAgent/NewExecutor, stale-doc-counts sweep + maf-migrate prompt refresh.
+
+### Phase E — Post-Opus polish (2026-05-12 final)
+
+`PathGuard` shared helper applied to 8 tools, `SourceFileWalker` deduplicates 17 file-walk sites, `MafDoctor` aggregates 4 scanners, README reconciled, `maf://rules` resource auto-generated.
+
+### Phases A through D — Pre-1.0 + post-1.0 polish + strategic + distribution
+
+The original phase plan from the start of the multi-Opus sprint. Most items shipped; rest in [Deferred](#deferred--with-rationale) section above. Detail in [`maf-migration-toolkit-plan.md`](./maf-migration-toolkit-plan.md).
+
+### Phase 0 — Foundation
+
+3 agents, 12 skills (now 13), instructions, registry skeleton, 21-section migration guide, compatibility matrix, `.maf-version`, README. MCP server primitives (Tools + Resources + Prompts + `init`). 2026-05-11 sprint adding tests, JSONC parser, inverted-index search, 3 new executable tools, best-practice reviewer agent + `MafScanAntiPatterns`. Magic-path sprint: `MafNewAgent`/`MafNewExecutor` scaffolder, Roslyn analyzer companion, `MafSimulateWorkflow`, `MafExplain`. Detail in plan archive.
