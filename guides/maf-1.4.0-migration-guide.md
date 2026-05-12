@@ -13,18 +13,12 @@
 
 ## Diff Summary (first 120 lines of `dotnet-inspect` output)
 
-```
-diff --package Microsoft.Agents.AI@1.3.0..1.4.0 --oneline    # summary statistics
-hape
-d
-
-### ToolApprovalRequestContentExtensions
-
-- Type 'Microsoft.Agents.AI.ToolApprovalRequestContentExtensions' was added
-rovalAgent' was added
-
-### ToolApprovalAgentBuil
-```
+- **`AgentFileSkillScript.RunAsync`** signature changed: `AIFunctionArguments arguments` → `JsonElement? arguments, IServiceProvider? serviceProvider`
+- **`AgentFileSkillScriptRunner.Invoke`** signature changed: same `AIFunctionArguments` → `JsonElement?` + `IServiceProvider?` insertion
+- **`AgentFileSkillScriptRunner.BeginInvoke`** signature changed: same argument-type replacement with added `IServiceProvider?` parameter
+- **`AgentSkillScript.RunAsync`** signature changed: `AIFunctionArguments arguments` → `JsonElement? arguments, IServiceProvider? serviceProvider`
+- **`ToolApprovalRequestContentExtensions`** type added (new helper for tool-approval flows)
+- **`ToolApprovalAgent`** type added (new agent type for human-in-the-loop approval)
 
 ## Release Notes Extract
 
@@ -46,19 +40,28 @@ rovalAgent' was added
 
 ## Breaking Changes (requires human verification)
 
-<!-- TODO: Review the diff above and list breaking changes here -->
+- `AgentFileSkillScript.RunAsync`: Replace `AIFunctionArguments arguments` with `JsonElement? arguments` and add `IServiceProvider? serviceProvider` parameter. Serialize arguments to JSON before passing.
+- `AgentFileSkillScriptRunner.Invoke`: Replace `AIFunctionArguments arguments` with `JsonElement? arguments` and add `IServiceProvider? serviceProvider` before `cancellationToken`. Serialize arguments to JSON before passing.
+- `AgentFileSkillScriptRunner.BeginInvoke`: Replace `AIFunctionArguments arguments` with `JsonElement? arguments` and add `IServiceProvider? serviceProvider` after arguments. Prefer the async `Invoke` overload over `BeginInvoke` where possible.
+- `AgentSkillScript.RunAsync`: Replace `AIFunctionArguments arguments` with `JsonElement? arguments` and add `IServiceProvider? serviceProvider` parameter. Serialize arguments to JSON before passing.
 
 ## New Patterns
 
-<!-- TODO: Document any new recommended patterns from release notes -->
+- **`ToolApprovalRequestContentExtensions` / `ToolApprovalAgent`**: New types supporting human-in-the-loop tool approval flows. Use `ToolApprovalAgent` to intercept tool calls and request human confirmation before execution.
+- **Durable workflow results from HTTP trigger**: `RunAsync` results from workflow HTTP endpoints are now surfaced back to the caller, enabling synchronous-style durable workflow invocation over HTTP (PR #5321).
+- **`HttpRequestAction` in declarative workflows**: Declarative workflow definitions can now include `HttpRequestAction` steps to call external HTTP endpoints directly from the workflow YAML/JSON definition (PR #5474).
+- **`string[]` arguments for file-based skill scripts**: Skill script `RunAsync` / `Invoke` now accept `JsonElement?` arguments instead of `AIFunctionArguments`, enabling richer JSON payloads including string arrays (PR #5475).
+- **Hosted-agent User-Agent supplement**: Outgoing HTTP requests from hosted agents now include an identifying `User-Agent` supplement, improving observability and service-side diagnostics (PR #5453).
+- **OpenTelemetry packages bumped to 1.15.3**: All OpenTelemetry dependencies updated; no API changes required (PR #5478).
+- **`Microsoft.Agents.AI.Hyperlight` package**: New opt-in package for CodeAct integration (Python code execution within agent workflows) via the Hyperlight sandbox (PR #5329).
 
 ## Obsolete APIs Added
 
-<!-- TODO: Use MafRunCs0618Hunt against a project pinned to 1.4.0 and document findings -->
+<!-- TODO: run `MafRunCs0618Hunt` against a project pinned to 1.4.0 to populate. -->
 
 ## Known Misalignments
 
-<!-- TODO: Document any discrepancies between official docs and assembly behavior -->
+None documented yet.
 
 <!-- AUTO-GENERATED END -->
 

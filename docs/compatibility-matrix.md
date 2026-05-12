@@ -1,6 +1,6 @@
 # MAF Compatibility Matrix
 
-<!-- auto-updated-by: maf-release-watcher | last-updated: 2026-05-04 -->
+<!-- auto-updated-by: maf-release-watcher | last-updated: 2026-05-12 -->
 
 > This file is the single source of truth for MAF version ↔ dependency version compatibility.
 > It is referenced by `maf-autopilot` MCP server tools (`maf_compatibility`) and auto-updated by the `maf-release-watcher` skill and GitHub Actions workflow.
@@ -12,7 +12,7 @@
 | MAF Version | Microsoft.Extensions.AI | .NET | Azure.AI.OpenAI | Generators Package | Notes |
 |-------------|------------------------|------|-----------------|--------------------|-------|
 | **1.5.0** | `>= unknown` | `>= 8.0` | `>= unknown` | `1.5.0` | Auto-detected — verify versions in PR review. |
-| **1.4.0** | `>= unknown` | `>= 8.0` | `>= unknown` | `1.4.0` | Auto-detected — verify versions in PR review. |
+| **1.4.0** | `>= unknown` | `>= 8.0` | `>= unknown` | `1.4.0` | Auto-detected — verify versions in PR review. <!-- TODO: verify from MAF csproj --> |
 | **1.3.0** | `≥ 10.5.0` | `≥ 8.0` | `≥ 2.8.0-beta.1` | `1.3.0` **(required)** | Major breaking release. Generators package mandatory for executors. |
 | 1.2.0 | `≥ 10.3.0` | `≥ 8.0` | `≥ 2.6.0` | N/A | No source generator requirement. |
 | 1.1.0 | `≥ 9.4.0` | `≥ 8.0` | `≥ 2.4.0` | N/A | |
