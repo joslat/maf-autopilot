@@ -1,6 +1,6 @@
 # Next steps
 
-> **Last refreshed:** 2026-05-12 late evening — end of Phase O (UX + product polish + watcher hardening).
+> **Last refreshed:** 2026-05-12 — end of Phase Q (auto-update loop end-to-end-validated on real MAF 1.4 + 1.5 data).
 > **Single source of truth for "what's next."** When this contradicts other docs, this wins.
 > **For history of done work:** see [`maf-migration-toolkit-plan.md`](./maf-migration-toolkit-plan.md).
 
@@ -20,7 +20,30 @@
 
 ## Current state
 
-The toolkit ships **20 MCP tools, 7 agents (including `@maf` primary), 13 skills, 3 always-loaded instructions, 3 Roslyn analyzers (separate NuGet), 5 MCP resources, 7 MCP prompts, multi-arch Docker container, and 5 GitHub Actions workflows**. Test suite: **474 passing** (463 main + 11 analyzer). Plan tracking table: **124 items / 113 done / 5 intentionally deferred / 1 external-gated / 5 strategic-remaining**. Security review complete (Phase N). UX + product polish complete (Phase O). May-6 parallel sketch salvaged + tagged for archive (Phase P). Project is feature-complete for 1.0 — only the external validation gate (A.8) remains.
+The toolkit ships **20 MCP tools, 7 agents (including `@maf` primary), 13 skills, 3 always-loaded instructions, 3 Roslyn analyzers (separate NuGet), 5 MCP resources, 7 MCP prompts, multi-arch Docker container, and 6 GitHub Actions workflows** (including the new `maf-ai-fill-todos.yml`). Test suite: **474 passing** (463 main + 11 analyzer). Plan tracking table: **124 items / 113 done / 5 intentionally deferred / 1 external-gated / 5 strategic-remaining**. Security review complete (Phase N). UX + product polish complete (Phase O). May-6 parallel sketch salvaged + tagged (Phase P). **Auto-update loop end-to-end-validated against real MAF 1.4 + 1.5 data with GitHub Copilot Coding Agent for AI fill (Phase Q).** Project is feature-complete for 1.0 — only the external validation gate (A.8) remains.
+
+### What landed in Phase Q (2026-05-12 — auto-update loop validation + AI fill)
+
+| ID | Item | Status |
+|---|---|---|
+| Q1 | `release.yml` trigger filter: accept both `v*` and `[0-9]*` shapes — alpha-4/5 tags without `v` now auto-fire | ✅ DONE |
+| Q2 | `maf-release-watcher.yml` direct-to-main commits (replaced PR-based gate; user prefers main-trunk workflow for solo project) | ✅ DONE |
+| Q3 | Replaced unlisted `dnx` NuGet with direct `dotnet-inspect` global install — fixed the watcher's cron failure | ✅ DONE |
+| Q4 | `maf-ai-fill-todos.yml` — dispatches GitHub Copilot Coding Agent to fill TODO placeholders post-watcher | ✅ DONE |
+| Q5 | GraphQL-based Copilot bot assignment (`addAssigneesToAssignable` with `BOT_kgDOC9w8XQ`) — gh CLI's REST `--assignee Copilot` doesn't work because bots aren't returned by the user-lookup endpoint | ✅ DONE |
+| Q6 | Migration-guide banners (Option A) + cumulative `maf-current-migration-guide.md` (Option C) — fixes the "1.4/1.5 guides look thin vs 1.3's 2400 lines" mental-model mismatch | ✅ DONE |
+| Q7 | TBD → N/A convention for `guide_section` on new-surface entries (Copilot was instructed "TBD" but it read as procrastination; "N/A" is explicit) | ✅ DONE |
+| Q8 | Compat-matrix backfill for 1.4/1.5: pulled real `Microsoft.Extensions.AI` constraints from NuGet API; documented that MAF doesn't pin `Azure.AI.OpenAI` directly (BYO via IChatClient) | ✅ DONE |
+| Q9 | `.github/skills/maf-release-watcher/SKILL.md` rewritten to document the 3-stage architecture (deterministic data → AI-fill dispatch → Copilot agent) + the Python helpers + the cumulative guide | ✅ DONE |
+| Q10 | End-to-end validation: fired watcher against MAF 1.4 + 1.5; Copilot opened PR #15 with high-quality fills; #15 merged | ✅ DONE |
+
+**The auto-update loop is now demonstrably functional** end-to-end: MAF version ships → watcher commits raw data with TODOs → AI-fill workflow dispatches → Copilot Coding Agent opens a PR with the filled values → human reviews + merges. Future MAF releases require **zero manual baseline-update effort**; the only human input is reviewing Copilot's PR.
+
+### Immediate next moves
+
+1. **Wait for Copilot's PR for MAF 1.5.0** (issue #16 is open and assigned; PR usually lands within ~5 min of issue creation). Review + merge same as #15.
+2. **Triage 12 open Dependabot PRs** (#1–#12). See the triage table at the bottom of this document.
+3. **(Tier 1) Spin up a real MAF 1.4 or 1.5 test project** to verify Copilot's `example_before`/`example_after` snippets actually compile against the live MAF surface. This is the final piece of "auto-update loop validation."
 
 ### What landed in Phase O (2026-05-12 late evening)
 
@@ -165,6 +188,37 @@ git branch -D inspect-may6
 ```
 
 The tag is pushed to origin, so it's recoverable from any clone.
+
+---
+
+## Open Dependabot PRs — triage table (2026-05-12)
+
+| # | Change | Risk | My recommendation | Why |
+|---|---|---|---|---|
+| 1 | `docker dotnet/sdk` 9.0 → 10.0 | **HIGH (incompat)** | **Close** — re-open when bumping TFM | Our solution targets `net9.0`. Bumping the build-stage SDK image to 10.0 could change build defaults; not worth it without a TFM bump. |
+| 2 | `docker dotnet/runtime` 9.0 → 10.0 | **HIGH (incompat)** | **Close** | Same reasoning — our runtime image must match the net9.0 TFM we publish. |
+| 3 | `docker/setup-buildx-action` 3 → 4 | LOW | **Merge** | Docker actions are usually backward-compat. Low blast radius. |
+| 4 | `docker/login-action` 3 → 4 | LOW | **Merge** | Same. |
+| 5 | `actions/upload-artifact` 4 → 7 | MEDIUM | **Verify changelog, then merge** | v5 had a breaking artifact-name change. Check whether v7 has more. Used in release-watcher's diff-artefact upload. |
+| 6 | `softprops/action-gh-release` 2.2.1 → 3.0.0 | MEDIUM | **Verify SHA in PR diff, then merge** | This action is SHA-pinned per Phase N's hardening (commit `c95fe14...`). Dependabot should have updated both the version AND the SHA — verify in the PR diff. |
+| 7 | `actions/checkout` 4 → 6 | MEDIUM | **Verify changelog, then merge** | v5 had a Node.js bump; v6 may have more. Used everywhere — high blast radius if it breaks. |
+| 8 | `coverlet.collector` 6.0.2 → 10.0.0 | MEDIUM | **Verify — run tests** | Major version bump 4 versions apart. Coverage might behave differently. |
+| 9 | grouped `Microsoft.CodeAnalysis.Analyzers` + `CSharp` (Analyzers project) | **HIGH** | **Verify — run all analyzer tests** | The Analyzers project's SDK. Major bumps may break the analyzer or its test harness. |
+| 10 | `Microsoft.CodeAnalysis.CSharp` 4.11.0 → 5.3.0 (Analyzers.Tests) | **HIGH** | **Verify — coordinate with #9** | Companion to #9. Run analyzer tests after merging both. |
+| 11 | `Microsoft.Extensions.Hosting` 9.0.0 → 10.0.7 | **HIGH (incompat)** | **Close** | Forces .NET 10 ecosystem. We target net9.0. Re-open when bumping TFM. |
+| 12 | `Microsoft.NET.Test.Sdk` 17.12.0 → 18.5.1 | MEDIUM | **Verify — run all tests** | Major bump. Usually backward-compat but worth a CI run. |
+
+**Suggested execution order:**
+
+1. **Close #1, #2, #11** (the three .NET-10-only bumps). Comment with "deferred until we bump TFM to net10.0."
+2. **Merge #3, #4** (Docker actions — low risk).
+3. **Open #6's diff** and verify the SHA was updated alongside the version. If yes, merge.
+4. **Open #5's and #7's changelogs**, scan for breaking changes. If clean, merge.
+5. **Merge #9 + #10 together** in a single combined branch. Run all analyzer tests after.
+6. **Merge #12 last**, run all tests.
+7. **Merge #8 last** (coverage infrastructure).
+
+The audit failures on these PRs from May 11 were because the pinned `maf-autopilot` NuGet was `1.3.0-alpha-3` (no `doctor` CLI). With `1.3.0-alpha-5` now published (with the doctor CLI), re-running the audit on each PR should now succeed. To re-trigger: push an empty commit to the PR branch, or use the PR's "Re-run all jobs" button.
 
 ---
 
