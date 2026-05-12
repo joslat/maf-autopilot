@@ -1,187 +1,189 @@
 ---
 name: maf-release-watcher
-description: "Detects new MAF releases, analyzes breaking changes, updates the migration guide and registry, and creates a PR with all changes. Invoke manually when you want to check for MAF updates, or automatically via the GitHub Actions workflow. This skill is the foundation of the self-updating guide system."
+description: "Detects new MAF releases, extracts breaking changes, and keeps the toolkit's registry/matrix/guide current. Three-stage pipeline: (1) deterministic data extraction via GitHub Actions + Python helpers + dotnet-inspect, commits raw data with TODOs directly to main, (2) dispatches a sibling workflow that opens a GitHub issue for GitHub Copilot Coding Agent to fill the TODOs, (3) Copilot opens a PR with the fills. This skill documents the whole loop end-to-end."
 ---
 
 # maf-release-watcher
 
 ## Purpose
 
-When Microsoft ships a new MAF version, this skill automates the update cascade:
-1. Detect new version
-2. Analyze what changed (diff, release notes)
-3. Update registry, compatibility matrix, and guide
-4. Produce a PR for human review
+When Microsoft ships a new MAF version, this pipeline keeps the toolkit's three artefacts current with zero manual baseline-update work:
 
-This keeps the toolkit current across MAF versions without manual guide maintenance.
+- **`.maf-version`** — the tracked-current pointer
+- **`docs/compatibility-matrix.md`** — dependency-version table (new row per release)
+- **`guides/maf-X.Y.Z-migration-guide.md`** — per-version delta with banner pointing back to the chain
+- **`guides/maf-current-migration-guide.md`** — auto-regenerated cumulative reference
+- **`.github/skills/obsolete-api-registry/registry.yaml`** — append-only breaking-change registry
 
----
-
-## When to Use This Skill
-
-- Weekly (via GitHub Actions schedule — `.github/workflows/maf-release-watcher.yml`)
-- Manual invocation: "Check if there's a new MAF version"
-- Before starting any new migration — verify toolkit is current
+Two of those (`compatibility-matrix.md` row contents, per-version guide TODO sections, registry-entry TODO fields) require *judgement* the deterministic pipeline can't fully automate — release notes have to be interpreted, before/after C# examples written, etc. That work is delegated to **GitHub Copilot Coding Agent** via a second workflow (`maf-ai-fill-todos.yml`) that opens an issue with a structured prompt and assigns the bot.
 
 ---
 
-## The Workflow
+## When this skill is "invoked"
 
-### Step 1 — Check for new version
+It isn't, in the Copilot-Chat sense. The work runs in GitHub Actions VMs, not in a Copilot conversation. This skill is the **reference doc** explaining what those workflows do, so a maintainer reading the repo can understand the whole loop without piecing it together from two `.yml` files plus three Python scripts.
 
-```bash
-# Query NuGet API for latest Microsoft.Agents.AI version
-curl -s "https://api.nuget.org/v3-flatcontainer/microsoft.agents.ai/index.json" | \
-  python3 -c "import sys,json; versions=json.load(sys.stdin)['versions']; print(versions[-1])"
-```
+Triggers for the pipeline itself:
 
-Or in PowerShell:
-```powershell
-$response = Invoke-RestMethod "https://api.nuget.org/v3-flatcontainer/microsoft.agents.ai/index.json"
-$latestVersion = $response.versions[-1]
-$currentVersion = Get-Content ".maf-version" -Raw | ForEach-Object { $_.Trim() }
-
-if ($latestVersion -ne $currentVersion) {
-    Write-Host "New version detected: $currentVersion -> $latestVersion"
-} else {
-    Write-Host "No update. Current version $currentVersion is latest."
-    exit 0
-}
-```
-
-### Step 2 — Download and read release notes
-
-```bash
-# GitHub CLI (if MAF is on GitHub)
-gh release view v<new_version> --repo microsoft/agents --json body --jq .body
-
-# Or fetch NuGet package README/release notes via API
-curl -s "https://api.nuget.org/v3/registration5/microsoft.agents.ai/<new_version>.json" | \
-  python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('releaseNotes', 'No release notes'))"
-```
-
-### Step 3 — Run nuget-diff-analyzer
-
-Load `.github/skills/nuget-diff-analyzer/SKILL.md` and run it for the version delta:
-
-```bash
-dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff \
-  --package Microsoft.Agents.AI@<old_version>..<new_version> \
-  --source https://api.nuget.org/v3/index.json
-```
-
-### Step 4 — LLM analysis of release notes
-
-Parse the release notes to extract:
-- Breaking changes (type removals, method renames, interface changes)
-- Newly obsolete APIs (will NOT be in the diff — document separately)
-- New recommended patterns
-- New package requirements
-
-Cross-reference LLM findings against the diff output:
-- "LLM says `Foo` was renamed to `Bar`" → diff should show `- type Foo` and `+ type Bar` ✅
-- "LLM says `Baz` is now obsolete" → diff will NOT show this ⚠️ — add to registry manually
-
-### Step 5 — Update obsolete-api-registry.yaml
-
-For each newly obsolete API found (from release notes or dotnet build output):
-
-Add a new entry to `.github/skills/obsolete-api-registry/registry.yaml` following the schema:
-
-```yaml
-  - id: MAF<version_nodots>-<AREA>-<NNN>
-    package: Microsoft.Agents.AI[.Workflows]
-    version_introduced: "<new_version>"
-    type: <FullyQualifiedTypeName>
-    method: <MethodName>
-    obsolete_signature: "<OldSignature>"
-    replacement_signature: "<NewSignature>"
-    argument_order_change: false
-    fix_description: "<clear description of what to change>"
-    example_before: |
-      <code snippet>
-    example_after: |
-      <code snippet>
-    cs_warning: CS0618
-    guide_section: "<section number in new guide>"
-    dotnet_inspect_detectable: false
-    notes: >
-      <any additional context>
-```
-
-### Step 6 — Update compatibility-matrix.md
-
-Add a new row to `docs/compatibility-matrix.md`:
-
-```markdown
-| **<new_version>** | `≥ <Extensions.AI version>` | `≥ <dotnet version>` | `≥ <Azure.AI.OpenAI version>` | `<Generators version>` | <brief notes> |
-```
-
-Verify dependency versions from:
-1. The NuGet package metadata (dependency graph)
-2. Release notes
-3. `dotnet-inspect depends --package Microsoft.Agents.AI@<new_version>`
-
-### Step 7 — Generate new guide section
-
-Add a new section to `guides/maf-1.3.0-migration-guide.md` (or create a new guide file for major version jumps):
-
-```markdown
-## Section N — Changes in <old_version> → <new_version>
-
-<!-- introduced: <new_version> | applies-to: <old>.x → <new>.x | deprecated-in: none -->
-
-### Breaking changes summary
-[from diff + release notes]
-
-### New patterns
-[from release notes LLM analysis]
-
-### Obsolete APIs added in this version
-[from registry update + cs0618-hunter findings]
-
-### Known misalignments
-[from any docs vs. reality gaps found]
-```
-
-### Step 8 — Update .maf-version
-
-```bash
-echo "<new_version>" > .maf-version
-```
-
-### Step 9 — Create PR
-
-Create a pull request with:
-- Title: `chore: Update for MAF <new_version>`
-- All modified files: `registry.yaml`, `compatibility-matrix.md`, guide, `.maf-version`
-- PR checklist for human reviewer (see PR template in `.github/workflows/maf-release-watcher.yml`)
+- **Weekly cron**: `0 9 * * 1` (Monday 09:00 UTC) — defined in `.github/workflows/maf-release-watcher.yml`
+- **Manual dispatch**: `gh workflow run maf-release-watcher.yml -f maf_version=X.Y.Z`
 
 ---
 
-## Human Review Checklist (for the PR)
+## Architecture — the three stages
 
-- [ ] Verify LLM-extracted breaking changes match dotnet-inspect diff
-- [ ] Verify new registry entries have correct before/after examples
-- [ ] Spot-check compatibility matrix against official NuGet package dependencies
-- [ ] Verify any new guide section is accurate (test patterns against a sample project if possible)
-- [ ] Confirm `.maf-version` is updated to the new version
+```
+TRIGGER (cron or gh workflow run)
+   │
+   ▼
+┌────────────────────────────────────────────────────────────────────┐
+│  STAGE 1 — Deterministic data extraction                           │
+│  .github/workflows/maf-release-watcher.yml                         │
+│  Runs on a fresh Ubuntu VM provisioned by GitHub Actions           │
+│  NO LLM, NO AGENT — just shell + Python + dotnet CLI               │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│  1.1  Check NuGet for latest MAF stable                            │
+│  1.2  Run `dotnet-inspect diff` for Microsoft.Agents.AI[.Workflows]│
+│  1.3  Fetch GitHub release notes from microsoft/agent-framework    │
+│  1.4  Run `python3 .github/scripts/update_compat_matrix.py`        │
+│          → inserts a new row at the top of compatibility-matrix.md │
+│  1.5  Run `python3 .github/scripts/gen_guide_section.py`           │
+│          → writes guides/maf-X.Y.Z-migration-guide.md              │
+│          → ALSO regenerates guides/maf-current-migration-guide.md  │
+│  1.6  Run `maf-autopilot registry-extract` (the dotnet tool CLI)   │
+│          → emits draft registry entries, appended to registry.yaml │
+│  1.7  Update .maf-version                                          │
+│  1.8  Upload diff-core.txt / diff-workflows.txt / release-notes.txt│
+│          as workflow artefacts for reviewer audit                  │
+│  1.9  git commit + git push origin main                            │
+│          (direct-to-main; PR-based gate was removed 2026-05-12     │
+│           per maintainer preference for solo workflow)             │
+│  1.10 gh workflow run maf-ai-fill-todos.yml -f target_version=X.Y.Z│
+│          → dispatches Stage 2, decoupled / async                   │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
+                                  │ async dispatch
+                                  ▼
+┌────────────────────────────────────────────────────────────────────┐
+│  STAGE 2 — AI-fill dispatch                                        │
+│  .github/workflows/maf-ai-fill-todos.yml                           │
+│  Runs on ANOTHER fresh Ubuntu VM                                   │
+│  Still no LLM — just creates an issue + assigns Copilot            │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│  2.1  Ensure `maf-release` and `ai-fill` labels exist (idempotent) │
+│  2.2  Open a GitHub issue:                                         │
+│          - Title: "Fill TODOs for MAF X.Y.Z"                       │
+│          - Body: full filling prompt (the prompt the maintainer    │
+│                  wrote — what to fill, style anchor, constraints)  │
+│          - Labels: maf-release,ai-fill                             │
+│  2.3  Assign Copilot Coding Agent via GraphQL                      │
+│          - bot ID: BOT_kgDOC9w8XQ (stable across all repos)        │
+│          - mutation: addAssigneesToAssignable (additive)           │
+│          (gh CLI's --assignee doesn't work — REST `/users/Copilot` │
+│           doesn't return the bot. GraphQL does.)                   │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
+                                  │ issue assignment
+                                  ▼
+┌────────────────────────────────────────────────────────────────────┐
+│  STAGE 3 — GitHub Copilot Coding Agent                             │
+│  Runs on GitHub's own infrastructure (NOT our workflow VM)         │
+│  THIS is the LLM/agent part                                        │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│  3.1  Reads the issue body (the prompt)                            │
+│  3.2  Reads the repo (registry.yaml, matrix, guide, release notes) │
+│  3.3  Creates a branch (e.g. copilot/fill-todos-for-maf-1-4-0)     │
+│  3.4  Makes file edits — fills the TODOs:                          │
+│          - registry: fix_description, example_before/after,        │
+│            guide_section (N/A if no parallel in 1.3 guide)         │
+│          - compat matrix: real version constraints if release      │
+│            notes mention them, else `unknown` + TODO comment       │
+│          - per-version guide: Breaking Changes, New Patterns,      │
+│            Obsolete APIs, Known Misalignments sections             │
+│          - clean up terminal-escape artefacts in diff summary      │
+│  3.5  Opens a draft PR titled                                      │
+│        "chore: AI-filled TODOs for MAF X.Y.Z"                      │
+│        labelled `maf-release,ai-fill`                              │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## Output Contract
+## The Python helper scripts — what, where, why
 
-After this skill completes:
-1. `registry.yaml` — new entries added for any new CS0618 patterns
-2. `compatibility-matrix.md` — new row added
-3. `guides/maf-1.3.0-migration-guide.md` — new section added (or new guide file created)
-4. `.maf-version` — updated to new version
-5. A PR is created (or a summary of changes for manual PR creation)
+The Python scripts in `.github/scripts/` are **CI-runner code** invoked by the Stage-1 workflow via `run: python3 .github/scripts/<file>.py`. They are NOT skills, NOT MCP tools, NOT Copilot-invoked. They run on the Ubuntu runner's pre-installed Python 3 during workflow execution.
+
+They exist because the data transformation is **deterministic** (parse JSON, insert a row in a Markdown table, write a Markdown stub from a template) — work that doesn't need an LLM and shouldn't pay LLM-token costs.
+
+### `update_compat_matrix.py`
+
+- **Inputs (via env vars)**: `OLD_VERSION`, `NEW_VERSION`
+- **Reads**: `docs/compatibility-matrix.md`
+- **Writes**: same file, with a new row inserted at the top of the data section
+- **Idempotency**: if a row for `NEW_VERSION` already exists, the script no-ops (`exit 0`).
+- **Position-agnostic**: inserts before the FIRST `**X.Y.Z**` row it finds, so the matrix stays ordered newest-first regardless of which version was previously latest.
+
+### `gen_guide_section.py`
+
+- **Inputs (via env vars)**: `OLD_VERSION`, `NEW_VERSION`
+- **Reads**: `diff-core.txt` (output of `dotnet-inspect diff`), `release-notes.txt` (output of `gh release view`)
+- **Writes**:
+  - `guides/maf-<NEW>-migration-guide.md` — per-version delta file
+  - `guides/maf-current-migration-guide.md` — auto-regenerated cumulative concatenation of all per-version files (TOC at top, ascending version order)
+- **Idempotency on the per-version file**: re-runs preserve everything under the `## Human additions` heading; only the `AUTO-GENERATED START / END` block is overwritten.
+- **Banner**: every auto-generated per-version file now opens with a callout that says it's a **delta only** and points readers at the chain or at the cumulative file. This is what makes the per-version files honest about their scope.
 
 ---
 
-## Notes on Automation Limitations
+## Files modified by a successful run
 
-- LLM analysis of release notes is good but imperfect — always human-review before merging
-- `dotnet-inspect diff` (v0.7.8+) surfaces `[Obsolete]` at the overload level, but the compiler is still ground-truth — also run `cs0618-hunter` against the new version (catches transitive / overload-resolution / project-local obsoletions)
-- If no release notes are available (NuGet-only release), rely entirely on the diff output + dotnet build CS0618 check
+After Stage 1, before Stage 3:
+
+| File | Modification |
+|---|---|
+| `.maf-version` | New version |
+| `docs/compatibility-matrix.md` | New row at top of data table (`unknown` cells for some columns) |
+| `guides/maf-X.Y.Z-migration-guide.md` | New per-version file with banner + AUTO-GENERATED stub + Human-additions marker |
+| `guides/maf-current-migration-guide.md` | Regenerated cumulative file |
+| `.github/skills/obsolete-api-registry/registry.yaml` | New entries appended (with TODO placeholders for `fix_description`, `example_before`, `example_after`, `guide_section`) |
+
+After Stage 3 (Copilot's PR):
+
+| File | Modification |
+|---|---|
+| `registry.yaml` | TODO placeholders filled in for that version's entries |
+| `compatibility-matrix.md` | `unknown` cells filled OR explicit `unknown + TODO comment` if the release notes don't reveal them |
+| Per-version guide | `Breaking Changes`, `New Patterns`, `Obsolete APIs`, `Known Misalignments` sections filled; terminal-escape artefacts cleaned |
+
+---
+
+## Human review checklist (when Copilot's PR opens)
+
+- [ ] **Registry entries**: spot-check 1-2 of Copilot's `example_before`/`example_after` snippets against the real MAF surface. Compile if you can.
+- [ ] **Compat matrix**: if cells are still `unknown`, you'll need to look up versions from the MAF csproj on NuGet — Copilot left them when release notes were ambiguous.
+- [ ] **Migration guide "Breaking Changes"**: confirm one bullet per registry entry; no breaking change in the diff is missed.
+- [ ] **Migration guide "New Patterns"**: confirm each PR # mentioned corresponds to a real MAF PR (cross-reference at `https://github.com/microsoft/agent-framework/pull/<N>`).
+- [ ] **`guide_section`**: for entries on a new MAF surface, value should be `N/A` (not `TBD`, not `TODO`). If Copilot used `TBD`, fix to `N/A`.
+- [ ] **`## Human additions` heading**: should be untouched.
+
+---
+
+## Limitations the pipeline can't solve
+
+- **Obsolete-by-attribute APIs not in the diff**: `dotnet-inspect` v0.7.8 surfaces `[Obsolete]` at the type/member level. But the COMPILER is still ground-truth for transitive obsoletions, overload-resolution surprises, and project-local `[Obsolete]` decorations. Run `MafRunCs0618Hunt` against a real project pinned to the new version after the watcher commits to catch these.
+- **Behavioural changes the diff can't see**: a method whose signature is identical but whose runtime semantics changed (e.g. "now returns ValueTask<T> instead of starving silently") is invisible to `dotnet-inspect`. Release-notes interpretation by Copilot in Stage 3 catches some of these but not all.
+- **Whether the new version is actually *good***: the pipeline tells you what changed, not whether you should upgrade. That call is human.
+
+---
+
+## Related artefacts
+
+- **Workflows**: `.github/workflows/maf-release-watcher.yml`, `.github/workflows/maf-ai-fill-todos.yml`
+- **Python helpers**: `.github/scripts/gen_guide_section.py`, `.github/scripts/update_compat_matrix.py`
+- **CLI used by Stage 1**: `maf-autopilot registry-extract` (from the published NuGet tool)
+- **MCP tool for multi-version paths**: `MafMigrationPath(currentVer, targetVer)` — returns the ordered chain of per-version guide sections to read
+- **Resource**: `maf://compatibility` — exposes the matrix to the LLM at chat time
