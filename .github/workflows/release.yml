@@ -4,12 +4,18 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Package version (e.g. 1.3.0-tool.2). Leave blank to use version in csproj.'
+        description: 'Package version (e.g. 1.3.0-alpha-5). Leave blank to use version in csproj.'
         required: false
         default: ''
   push:
     tags:
+      # Match BOTH canonical `v`-prefixed semver tags (`v1.3.0-alpha-5`) AND
+      # tags that start with a digit directly (`1.3.0-alpha-5`). Without the
+      # second pattern, releases tagged via GitHub's UI release-create flow
+      # without a leading `v` silently fail to trigger the workflow — which
+      # is exactly what happened to `1.3.0-alpha-4` and `1.3.0-alpha-5`.
       - 'v*'
+      - '[0-9]*'
 
 jobs:
   release:
@@ -32,8 +38,14 @@ jobs:
             VERSION="${{ github.event.inputs.version }}"
             echo "Using input version: $VERSION"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            # Canonical: tag with `v` prefix (e.g. `v1.3.0-alpha-5`).
             VERSION="${GITHUB_REF#refs/tags/v}"
-            echo "Using tag version: $VERSION"
+            echo "Using tag version (v-prefixed): $VERSION"
+          elif [[ "$GITHUB_REF" == refs/tags/[0-9]* ]]; then
+            # Tolerant: tag starts with a digit (e.g. `1.3.0-alpha-5` — what GitHub
+            # UI release-create defaults to if the author omits the `v`).
+            VERSION="${GITHUB_REF#refs/tags/}"
+            echo "Using tag version (unprefixed): $VERSION"
           else
             VERSION=$(grep -oP '(?<=<Version>)[^<]+' src/maf-autopilot/maf-autopilot.csproj)
             echo "Using csproj version: $VERSION"
@@ -82,7 +94,10 @@ jobs:
             --skip-duplicate
 
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        # Fire for both v-prefixed and unprefixed numeric tags. Skip on workflow_dispatch
+        # (no tag ref) — in that case the user typically created the Release manually
+        # via the GitHub UI before dispatching.
+        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/0') || startsWith(github.ref, 'refs/tags/1') || startsWith(github.ref, 'refs/tags/2') || startsWith(github.ref, 'refs/tags/3') || startsWith(github.ref, 'refs/tags/4') || startsWith(github.ref, 'refs/tags/5') || startsWith(github.ref, 'refs/tags/6') || startsWith(github.ref, 'refs/tags/7') || startsWith(github.ref, 'refs/tags/8') || startsWith(github.ref, 'refs/tags/9')
         # SHA-pinned to softprops/action-gh-release v2.2.1 (2025-01-23) per supply-chain
         # hardening: a major-tag pin would let the maintainer's compromised account push
         # arbitrary code into our release workflow with NUGET_API_KEY in scope.
