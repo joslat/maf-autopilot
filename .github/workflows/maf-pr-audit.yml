@@ -37,10 +37,29 @@ jobs:
         run: |
           # The MCP tool needs the base branch fetched locally as a branch ref.
           git fetch origin "$BASE_REF":"refs/heads/$BASE_REF" --depth=50 || true
-          # Spawn maf-autopilot as MCP server and drive it via a tiny stdio client.
-          # For v1 simplicity we shell to a separate scanner pass via `maf-autopilot doctor`
-          # filtered to changed files. Once the MCP-over-stdio CLI lands we'll switch.
-          maf-autopilot doctor "$GITHUB_WORKSPACE" > pr-audit-full.md
+
+          # Capture stdout AND stderr — older alpha versions of maf-autopilot may not
+          # have the `doctor` CLI subcommand and fall back to MCP-server mode (which
+          # writes its banner to stderr). `|| true` keeps the job alive on any error
+          # so we still post a sticky comment with diagnostic content.
+          maf-autopilot doctor "$GITHUB_WORKSPACE" > pr-audit-full.md 2>&1 || true
+
+          # Defensive fallback: if the doctor invocation produced nothing (empty
+          # file), write an explanatory message. Pre-alpha-4 NuGet builds didn't
+          # have the doctor CLI as a subcommand — `maf-autopilot doctor` falls
+          # into MCP-server-startup mode and exits cleanly with no useful output.
+          # The marocchino sticky-comment action errors with "Either message or
+          # path input is required" if the path resolves to an empty file.
+          if [ ! -s pr-audit-full.md ]; then
+            cat > pr-audit-full.md <<'EOF'
+          ⚠️ **maf-autopilot doctor produced no output.**
+
+          Likely cause: the installed `maf-autopilot` NuGet (current latest prerelease) is older than the `doctor` CLI subcommand. Once `1.3.0-alpha-4` or newer ships, this audit will produce a full report.
+
+          Until then, you can run `maf-autopilot doctor .` locally after `dotnet tool install -g maf-autopilot --prerelease` to see the per-file findings.
+          EOF
+          fi
+
           echo "Full doctor report:"
           cat pr-audit-full.md
 
