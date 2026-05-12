@@ -225,6 +225,7 @@ jobs:
           echo "Updated .maf-version to ${{ needs.check-for-new-maf-release.outputs.new_version }}"
 
       - name: Commit directly to main
+        id: commit_to_main
         # Trade-off (documented 2026-05-12): we previously used
         # `peter-evans/create-pull-request` to land changes via a PR for
         # human-review-gated merge. The maintainer chose direct-to-main commits
@@ -256,6 +257,7 @@ jobs:
           # diff found nothing additive; matrix row already present; etc.).
           if git diff --cached --quiet; then
             echo "ℹ️ No watcher changes to commit — pipeline was a no-op."
+            echo "committed=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
@@ -269,13 +271,38 @@ jobs:
           Old: ${OLD_VERSION} → New: ${NEW_VERSION}
 
           Diff artefacts (diff-core.txt, diff-workflows.txt, release-notes.txt)
-          are uploaded as workflow artefacts on this run. Review the new
-          guides/maf-${NEW_VERSION}-migration-guide.md and compatibility-matrix
-          row — both may contain TODO placeholders requiring human fill-in."
+          are uploaded as workflow artefacts on this run. The TODO placeholders
+          in the new entries will be auto-filled by the
+          `maf-ai-fill-todos.yml` workflow if ANTHROPIC_API_KEY is set."
 
           git commit -m "$MSG"
           git push origin HEAD:main
 
+          echo "committed=true" >> $GITHUB_OUTPUT
           echo "✅ Pushed watcher updates directly to main."
+
+      - name: Trigger AI auto-fill (decoupled workflow)
+        if: ${{ steps.commit_to_main.outputs.committed == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET: ${{ needs.check-for-new-maf-release.outputs.new_version }}
+        run: |
+          # Kick off `maf-ai-fill-todos.yml` to fill the TODO placeholders the
+          # watcher just left behind. The fill workflow runs decoupled (async)
+          # — this step returns immediately; the fill commit lands on main a
+          # minute or two later.
+          #
+          # The fill workflow fails fast if ANTHROPIC_API_KEY is not set, so a
+          # missing-key state surfaces in the Actions UI rather than silently
+          # leaving TODOs. To skip auto-fill entirely, comment this step out
+          # (the watcher commit + TODOs remain on main and can be filled by
+          # hand later via `gh workflow run maf-ai-fill-todos.yml`).
+          if gh workflow run maf-ai-fill-todos.yml -f target_version="$TARGET" 2>&1; then
+            echo "✅ AI auto-fill workflow dispatched for MAF $TARGET."
+          else
+            echo "⚠️ Couldn't dispatch AI auto-fill — workflow may not exist yet on this branch, or token lacks workflow:write."
+            echo "   The watcher commit landed successfully; TODOs can be filled manually via:"
+            echo "   gh workflow run maf-ai-fill-todos.yml -f target_version=$TARGET"
+          fi
 
 

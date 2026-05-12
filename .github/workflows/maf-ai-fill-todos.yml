@@ -1,0 +1,162 @@
+name: MAF AI Auto-Fill TODOs
+
+# Auto-fills TODO placeholders left by `maf-release-watcher.yml` after it
+# auto-extracts breaking-change registry entries from a new MAF release.
+#
+# Reads:
+#   - .github/skills/obsolete-api-registry/registry.yaml (new MAF<NNN>-* entries)
+#   - docs/compatibility-matrix.md (the new version's row with `unknown` cells)
+#   - guides/maf-<NEW>-migration-guide.md (AUTO-GENERATED section TODOs)
+#   - release-notes.txt (re-fetched from microsoft/agent-framework GitHub release)
+#
+# Asks Claude (via the anthropics/claude-code-action) to fill in the TODOs
+# based on the diff + release notes, then commits the result directly to main.
+#
+# Requires the `ANTHROPIC_API_KEY` repo secret. The workflow fails fast with a
+# helpful message if the secret is missing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_version:
+        description: 'MAF version to fill TODOs for (e.g. 1.4.0, 1.5.0)'
+        required: true
+  # Reusable so `maf-release-watcher.yml` can call this workflow at the end
+  # of its own run, passing the just-bumped version.
+  workflow_call:
+    inputs:
+      target_version:
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  fill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so we can push back to main
+
+      - name: Verify ANTHROPIC_API_KEY is set
+        env:
+          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "❌ The ANTHROPIC_API_KEY repository secret is not set."
+            echo "   Add it at: Settings → Secrets and variables → Actions → New repository secret."
+            echo "   The auto-fill workflow needs API access to invoke Claude."
+            exit 1
+          fi
+          echo "✅ ANTHROPIC_API_KEY available."
+
+      - name: Compute helper variables
+        id: vars
+        env:
+          TARGET: ${{ inputs.target_version }}
+        run: |
+          # 1.4.0 → 140 (used as the registry ID prefix: MAF140-*)
+          DIGITS=$(echo "$TARGET" | tr -d '.')
+          echo "version_digits=$DIGITS" >> $GITHUB_OUTPUT
+          # 1.4.0 → 1.4 (used by `gh release view --tag` fallback path)
+          MAJ_MIN=$(echo "$TARGET" | awk -F. '{print $1"."$2}')
+          echo "major_minor=$MAJ_MIN" >> $GITHUB_OUTPUT
+          echo "Target: $TARGET  /  Digits: $DIGITS  /  Major.Minor: $MAJ_MIN"
+
+      - name: Fetch MAF release notes for context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET: ${{ inputs.target_version }}
+        run: |
+          # MAF release tags follow `dotnet-X.Y.Z`. Fall back to `vX.Y.Z` if the
+          # first form misses (matches the pattern in maf-release-watcher.yml).
+          for tag in "dotnet-${TARGET}" "v${TARGET}"; do
+            if gh release view "$tag" --repo microsoft/agent-framework --json body --jq .body > /tmp/release-notes.txt 2>/dev/null; then
+              echo "✅ Fetched release notes from tag $tag"
+              break
+            fi
+          done
+          if [ ! -s /tmp/release-notes.txt ]; then
+            echo "(no release notes available for $TARGET)" > /tmp/release-notes.txt
+          fi
+          # Copy into the workspace so Claude can read it.
+          cp /tmp/release-notes.txt release-notes.txt
+          echo "--- Release notes preview ---"
+          head -30 release-notes.txt
+
+      - name: Run Claude to fill TODOs
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          direct_prompt: |
+            You are auto-filling TODO placeholders in the maf-autopilot toolkit for MAF ${{ inputs.target_version }}.
+
+            The release-watcher just appended new registry entries / a new compatibility-matrix row / a new migration guide stub, with TODO and `unknown` placeholders for fields it couldn't auto-derive. Your job is to fill them based on the release notes + the registry entries' own diff data.
+
+            CONTEXT FILES (read first):
+            - `release-notes.txt` (workspace root) — MAF ${{ inputs.target_version }} release notes from microsoft/agent-framework
+            - `.github/skills/obsolete-api-registry/registry.yaml` — find entries whose id starts with `MAF${{ steps.vars.outputs.version_digits }}-` (e.g. `MAF140-AGENT-001`). Each has a `notes:` field with the raw diff text — use that as the source of truth for what changed.
+            - `docs/compatibility-matrix.md` — find the row containing `**${{ inputs.target_version }}**` at top of the data table. Cells marked `unknown` need real version constraints.
+            - `guides/maf-${{ inputs.target_version }}-migration-guide.md` — sections under AUTO-GENERATED START/END markers say `TODO`. Fill them.
+
+            STYLE REFERENCE:
+            The existing well-filled entries `MAF130-FAN-IN-001`, `MAF130-SESSION-001`, `MAF130-THREAD-001`, `MAF130-EXEC-001` in registry.yaml are the canonical format. Match their tone, length, and YAML structure exactly.
+
+            INSTRUCTIONS:
+
+            For EACH registry entry with id `MAF${{ steps.vars.outputs.version_digits }}-*`:
+            1. `fix_description`: one concise sentence stating the canonical migration. Pattern: "Replace X with Y. Add Z." Keep it actionable.
+            2. `example_before`: minimal C# call site (3-8 lines) that exercises the obsolete signature. Use the actual `obsolete_signature` field as the basis. Use the `|` YAML block-literal style (preserves newlines).
+            3. `example_after`: the canonical ${{ inputs.target_version }} replacement (3-8 lines). `|` block-literal.
+            4. `guide_section`: a section number from the existing 1.3.0 guide if there's a clear parallel pattern (look at `guides/maf-1.3.0-migration-guide.md` headings). If no clear match, leave as `TBD` — do NOT invent section numbers.
+
+            For the compat matrix's `unknown` cells in the ${{ inputs.target_version }} row (`Microsoft.Extensions.AI` and `Azure.AI.OpenAI`):
+            - Search the release notes for dependency bumps. If MAF 1.X release notes mention "Bump Microsoft.Extensions.AI to N.N.N", use that.
+            - If you cannot determine confidently from the release notes, leave the cell as `unknown` and add a `<!-- TODO: verify from MAF csproj -->` HTML comment to the Notes column for that row.
+
+            For the migration guide's TODO sections (under `AUTO-GENERATED START/END`):
+            - **Breaking Changes**: enumerate the breaking changes documented in the registry entries you just filled. One bullet per entry. Format: `- <symbol>: <fix_description>`.
+            - **New Patterns**: from the release notes, highlight new types/features worth knowing (e.g. "ToolApprovalAgent for human-in-the-loop tool approval"). 3-7 bullets.
+            - **Obsolete APIs Added**: leave as a TODO if you can't verify against a real project (the only ground-truth is `dotnet build` on a real project pinned to the new version). Add: `<!-- TODO: run \`MafRunCs0618Hunt\` against a project pinned to ${{ inputs.target_version }} to populate. -->`
+            - **Known Misalignments**: write "None documented yet." unless the release notes explicitly call out doc/assembly mismatches.
+
+            CLEANUP:
+            - The migration guide's "Diff Summary" code block (around the `dotnet-inspect` output) may contain garbled fragments (e.g. literal `hape` or `d` from terminal escape codes). If present, replace the block with a clean human-readable bulleted summary derived from the release notes.
+
+            DO NOT:
+            - Commit your changes. The next workflow step handles commits.
+            - Invent facts when uncertain. Always prefer leaving `TODO` / `unknown` with an explanation.
+            - Modify entries whose id does NOT start `MAF${{ steps.vars.outputs.version_digits }}-`. Earlier-version entries are off-limits.
+            - Touch the `## Human additions` section of any guide file. Humans own that section.
+            - Edit `release-notes.txt` itself — that's just context for you.
+
+            When done, summarize what you changed in your final message (which files, what fields). The workflow's next step will commit and push your edits to main.
+
+      - name: Commit Claude's changes
+        run: |
+          # Don't commit the temp release-notes file.
+          rm -f release-notes.txt
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "ℹ️ Claude made no changes to commit."
+            exit 0
+          fi
+
+          git commit -m "chore: AI-filled TODOs for MAF ${{ inputs.target_version }}
+
+          Auto-generated by Claude via .github/workflows/maf-ai-fill-todos.yml.
+          Triggered after the release-watcher landed initial TODO placeholders.
+
+          Review the diff for accuracy — Claude's output is a suggestion based on
+          the release notes + the registry entries' own diff data. Fields marked
+          'TBD' or 'unknown' indicate Claude couldn't determine confidently and
+          require human verification."
+
+          git push origin HEAD:main
+          echo "✅ AI-filled changes committed and pushed to main."
