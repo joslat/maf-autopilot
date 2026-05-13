@@ -176,7 +176,7 @@ Tool-surface expansion. **W.6 (MafAutoFix) is the biggest leverage** — the mis
 
 | Step | ID | Item | Effort | Depends on | Status |
 |---|---|---|---|---|---|
-| 9 | [**W.6**](#w6--mafautofix-mcp-tool-the-missing-do-half) | `MafAutoFix` MCP tool (THE missing "do" half) | M (1-2 days) | W.1 | 🟡 |
+| 9 | [**W.6**](#w6--mafautofix-mcp-tool-the-missing-do-half) | `MafAutoFix` MCP tool (THE missing "do" half) | M (1-2 days) | W.1 | ✅ DONE 2026-05-13 |
 | 10 | [**W.7**](#w7--mafbeforeafter-mcp-tool) | `MafBeforeAfter(repoPath, ruleIds[])` MCP tool | S (3-4 hrs) | W.6 | 🟡 |
 | 11 | [**W.11**](#w11--mafscoremigrationriskrepopath-mcp-tool) | `MafScoreMigrationRisk(repoPath)` MCP tool | S (4 hrs) | none | 🟡 |
 | 12 | [**W.12**](#w12--mafgenerateregressionplanfrom-to-mcp-tool) | `MafGenerateRegressionPlan(from, to)` MCP tool | M (1 day) | W.1, W.8, W.10 | 🟡 |
