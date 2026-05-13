@@ -1,0 +1,8 @@
+# Expected MafDoctor output for this sample.
+# Pinned so a future toolkit change that regresses detection fails CI BEFORE
+# the regression ships. Update this file in lockstep with intentional sample
+# or toolkit changes. See src/maf-autopilot.Tests/SampleRegressionTests.cs.
+grade: F
+anti_pattern_errors: 10
+anti_pattern_warnings: 3
+silent_starvation_risks: 3

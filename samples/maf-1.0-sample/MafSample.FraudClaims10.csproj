@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>MafSample.FraudClaims</RootNamespace>
+    <AssemblyName>MafSample.FraudClaims10</AssemblyName>
+
+    <!-- Standalone version-parity sample — NOT in maf-autopilot.sln. Pinned to
+         MAF 1.0.0 (the EARLIEST stable release). The anti-patterns mirror the
+         1.3 sample's; the value-add is multi-version coverage going back to
+         the start of MAF's NuGet history. -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS8618;CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- MAF 1.0.0 — earliest stable. Phase W.A finding: 1.0.0's transitive
+         dependency on Microsoft.Extensions.AI is also `>= 10.5.0` (same as
+         1.2/1.3), so the compat-matrix's "MEAI 9.0.0+" minimum for 1.0.0 is
+         wrong. Real minimums (verified via NuGet restore 2026-05-13):
+           Microsoft.Extensions.AI 10.5.0
+           Azure.AI.OpenAI 2.8.0-beta.1 -->
+    <PackageReference Include="Microsoft.Agents.AI" Version="1.0.0" />
+    <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.0.0" />
+
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.5.0" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.5.0" />
+    <PackageReference Include="Azure.AI.OpenAI" Version="2.8.0-beta.1" />
+
+    <PackageReference Include="Azure.Identity" Version="1.13.1" />
+
+    <!-- Security: transitive pin (GHSA-g94r-2vxg-569j). -->
+    <PackageReference Include="OpenTelemetry.Api" Version="1.15.3" />
+  </ItemGroup>
+
+</Project>

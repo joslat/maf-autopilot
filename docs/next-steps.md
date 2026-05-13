@@ -140,16 +140,24 @@ These are items I (Claude Code or a peer like Sonnet 4.6) can deliver **without 
 
 **Reordered for samples-first execution.** The natural execution sequence groups into three sub-phases. Implementation-detail subsections keep their existing W.N IDs for stability — the "Step" column gives the recommended order.
 
-#### Phase W.A — Foundation + samples-all-at-once (4 items, ~1-2 focused days)
+#### Phase W.A — Foundation + samples-all-at-once ✅ DONE 2026-05-13
 
-Do these FIRST. Rationale: the registry foundation (W.1) is needed before MafAutoFix can filter rules by codebase version; the samples (W.8 + W.10) share authoring muscle memory with the existing 1.3 sample and triple the test surface for everything downstream; the CI regression (W.9) locks the workshop's invariants once we have ≥2 samples.
+All 4 items landed. Phase W.A delivered:
+- Typed `applies_to_codebases` field in `RegistryModels.cs` + `GetEntriesForCodebaseVersion` filter helper.
+- 3 version-parity samples in `samples/maf-{1.0,1.2,1.3}-sample/`, each pinned to its MAF version, each builds clean, each `doctor`-grades **F** with 10/3/3 anti-patterns/warnings/silent-starvation risks (identical detection across 1.0 / 1.2 / 1.3).
+- CI regression test (`src/maf-autopilot.Tests/SampleRegressionTests.cs`) + per-sample `.expected-doctor.yaml` files locking the doctor verdicts.
 
 | Step | ID | Item | Effort | Status |
 |---|---|---|---|---|
-| 1 | [**W.1**](#w1--formalise-applies_to_codebases-in-registrymodelscs) | Formalise `applies_to_codebases` in `RegistryModels.cs` | S (1-2 hrs) | ✅ DONE 2026-05-13 |
-| 2 | [**W.8**](#w8--samplesmaf-12-sample) | `samples/maf-1.2-sample/` (1.2 → 1.3 migration fixture) | M (4-8 hrs) | 🟡 |
-| 3 | [**W.10**](#w10--samplesmaf-10-sample) | `samples/maf-1.0-sample/` (oldest migration ladder fixture) | M (4-8 hrs) | 🟡 |
-| 4 | [**W.9**](#w9--ci-regression-on-samples) | CI regression on `samples/*` | S (2-3 hrs) | 🟡 |
+| 1 | [**W.1**](#w1--formalise-applies_to_codebases-in-registrymodelscs) | Formalise `applies_to_codebases` in `RegistryModels.cs` + filter helper | S (1-2 hrs) | ✅ DONE 2026-05-13 |
+| 2 | [**W.8**](#w8--samplesmaf-12-sample) | `samples/maf-1.2-sample/` — MAF 1.2.0 version-parity fixture (doctor: F, 10/3/3) | M | ✅ DONE 2026-05-13 |
+| 3 | [**W.10**](#w10--samplesmaf-10-sample) | `samples/maf-1.0-sample/` — MAF 1.0.0 version-parity fixture (doctor: F, 10/3/3) | M | ✅ DONE 2026-05-13 |
+| 4 | [**W.9**](#w9--ci-regression-on-samples) | CI regression test class + per-sample `.expected-doctor.yaml` — 6 tests × 3 TFMs = 18 new test executions | S | ✅ DONE 2026-05-13 |
+
+**Phase W.A side findings** (worth knowing — full detail in the per-sample READMEs):
+
+- **Registry chronology gap (Phase T.7 candidate):** the registry's "removed in 1.3" labels on `MAF130-THREAD-001`, `MAF130-A2A-001/002`, `MAF130-STREAM-001`, `MAF130-EVENT-001`, `MAF130-ATTR-001/002` are misleading. These types/methods don't appear in **either** `Microsoft.Agents.AI@1.2.0` **or** `@1.0.0`'s public surface. They were removed before 1.0.0 OR lived in the now-removed `Microsoft.Agents.AI.DevUI` / `Microsoft.Agents.AI.Hosting` packages. The samples cannot exercise them; nor would a real customer codebase pinned to 1.0+.
+- **Compat-matrix corrections needed (P1 follow-up):** the compatibility-matrix's minimum-version pins for MAF 1.0.0 and 1.2.0 are stale. Real transitive pins (verified via `dotnet restore`): `Microsoft.Agents.AI 1.0.0` and `1.2.0` both require `Microsoft.Extensions.AI >= 10.5.0` and `Azure.AI.OpenAI 2.8.0-beta.1` (since 2.6.0/2.7.0 stable were never published). Worth a `compatibility-matrix.md` patch.
 
 #### Phase W.B — Workshop polish (4 items, ~½ day)
 
