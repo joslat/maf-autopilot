@@ -31,12 +31,37 @@ After the workshop, the toolkit migrates the sample and the grade should rise to
 | **`maf-autopilot` global tool** (prerelease) | the MCP server itself | `dotnet tool install -g maf-autopilot --prerelease` |
 | _(optional)_ Azure OpenAI deployment | only needed for `--run` mode of the sample; not needed for the workshop | https://portal.azure.com |
 
-Verify the tool is on your PATH after installing:
+Verify the tool is on your PATH — installing only if it's missing.
+
+**bash / zsh:**
 
 ```bash
+if ! command -v maf-autopilot >/dev/null 2>&1; then
+  echo "  maf-autopilot not found on PATH — installing as a global tool..."
+  dotnet tool install -g maf-autopilot --prerelease
+  # If the install succeeds but `command -v` still misses, your shell needs to
+  # pick up ~/.dotnet/tools. Either restart the shell or run:
+  #   export PATH="$HOME/.dotnet/tools:$PATH"
+fi
 maf-autopilot --version
 # → maf-autopilot 1.3.0-alpha-5 (or later)
 ```
+
+**PowerShell (Windows / cross-platform):**
+
+```powershell
+if (-not (Get-Command maf-autopilot -ErrorAction SilentlyContinue)) {
+    Write-Host "  maf-autopilot not found on PATH — installing as a global tool..."
+    dotnet tool install -g maf-autopilot --prerelease
+    # PowerShell picks up new PATH entries on next session; in this session
+    # just run dotnet tool list -g to confirm.
+}
+maf-autopilot --version
+# → maf-autopilot 1.3.0-alpha-5 (or later)
+```
+
+> **Already installed?** Run `dotnet tool update -g maf-autopilot --prerelease` to take the
+> latest 1.3.0-alpha. Stable 1.3.0 publishes the workshop-validated build.
 
 ---
 

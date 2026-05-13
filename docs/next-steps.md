@@ -1,6 +1,6 @@
 # Next steps
 
-> **Last refreshed:** 2026-05-13 — **Phase S + T.1-T.2 landed** (multi-target nupkg + the MAF 1.3 dogfood sample at `samples/maf-1.3-sample/`) + Phase Q (auto-update loop end-to-end validated on real MAF 1.4 + 1.5 data).
+> **Last refreshed:** 2026-05-13 (later) — **Phase S + T.1-T.2.5 + T.6 landed** (multi-target nupkg, MAF 1.3 dogfood sample, workshop guide with tool-installer fence, 3 registry drift fixes); Dependabot #2 closed; **R.3 / S.8 already absorbed by Phase S** (Hosting 10.0.7 pinned centrally) so the original Phase R triage now skips #11 (closed automatically) and #1 (auto-resolved). Phase Q intact.
 > **Single source of truth for "what's next."** When this contradicts other docs, this wins.
 > **For history of done work:** see the **[`Done`](#-done--phases-a-through-q-history) section at the bottom** of this file, plus the full archive in [`maf-migration-toolkit-plan.md`](./maf-migration-toolkit-plan.md).
 
@@ -97,7 +97,7 @@ Currently A.8 says "wait for an external customer migration." That's an indefini
 | T.3 | Run `@maf-auditor` against the sample to generate `samples/maf-1.3-sample/docs/migration-plan.md` (covered by workshop Step 6) | 🟡 Next — YOU run in Copilot Chat |
 | T.4 | Run `@maf-migration` against the plan, task-by-task, with `dotnet build` gates (workshop Step 7) | 🟡 |
 | T.5 | After T.4, sample should reach grade A/B with the deliberate patterns fixed (workshop Step 8) | 🟡 |
-| T.6 | **Already triaged registry drift** (see [`samples/maf-1.3-sample/README.md` § "Phase T registry corrections"](../samples/maf-1.3-sample/README.md)): `MAF130-SESSION-001`, `MAF130-INSTRUCTIONS-001`, `MAF130-MIDDLEWARE-001` all describe pre-1.3 surfaces or wrong `Use()` parameter names. To be reframed in `registry.yaml`. | 🟡 Open findings |
+| T.6 | **Registry drift fixes landed.** `registry.yaml` updated for `MAF130-SESSION-001` (added `applies_to_codebases: pre-1.3.0`, rewrote `fix_description` + `example_before`/`example_after` for the AgentThread→AgentSession reality, expanded `notes` with the Phase T correction), `MAF130-INSTRUCTIONS-001` (same reframing — top-level property is REMOVED on 1.3.0, not silently ignored), `MAF130-MIDDLEWARE-001` (corrected examples to use positional `.Use(<run>, <stream>)` — named params don't match the real `ChatClientBuilder.Use` surface). `cs_warning` + `dotnet_inspect_detectable` fields preserved so the existing `Cs0618HuntTool.MatchToRegistry` tests still pass; all 1422 test executions green. | ✅ |
 | T.7 | **Cut stable `1.3.0` to NuGet** (A.8 unblocked by T) | ⏳ Gated on T.4-T.5 |
 
 **Validation of T.1+T.2 (2026-05-13):** `dotnet run --project src/maf-autopilot --framework net10.0 -- doctor samples/maf-1.3-sample` reports grade **F** with 10 anti-pattern errors + 3 silent-starvation risks correctly detected. The toolkit finds the deliberate-anti-patterns end-to-end. This is the core Phase T proof-of-concept.
@@ -106,24 +106,80 @@ Currently A.8 says "wait for an external customer migration." That's an indefini
 
 #### 🎯 What I recommend next (ordered)
 
-In order of expected payoff, time, and risk-of-blocking the 1.0 cut:
+The previous "(1) fix registry drift" item is **done** — landed in the same session. What remains in the path to 1.0:
 
-1. **(30 min) Fix the 3 registry drift findings (T.6).** Edit `registry.yaml` to reframe `MAF130-SESSION-001`, `MAF130-INSTRUCTIONS-001`, `MAF130-MIDDLEWARE-001` as pre-1.3.0 → 1.3.0 migration patterns (not 1.3.0-surface patterns), and correct `MAF130-MIDDLEWARE-001`'s example to use positional arguments. Add a `applies_to_versions` field (or similar) so the registry can distinguish pre-version patterns from in-version surfaces. **Why first:** during the workshop's `@maf-auditor` step the auditor may surface these entries with bad fix advice. Fixing them BEFORE running the workshop end-to-end prevents misleading recommendations from landing in `migration-plan.md`.
+1. **(50 min — must be human) Run the workshop end-to-end (T.3 → T.4 → T.5).** Follow [`samples/workshop.md`](../samples/workshop.md). This drives `@maf-auditor` → `@maf-migration` via Copilot Chat in VS Code Insiders — the agents themselves are a GitHub Copilot client feature, not something Claude Code can invoke. The migration log + final `MafDoctor` grade A/B IS the A.8 evidence to point at when announcing 1.0.
 
-2. **(50 min) Run the workshop end-to-end (T.3 → T.4 → T.5).** Follow [`samples/workshop.md`](../samples/workshop.md). This is the actual A.8 evidence: the toolkit detects + plans + fixes the sample, the sample reaches grade A or B, `dotnet build` stays green. The workshop output (the migration log + final `MafDoctor` report) is what you'd point at when announcing 1.0.
+2. **(10 min — human-driven publish) Cut stable `1.3.0` (T.7 → A.8 unblocked).** `gh workflow run release.yml -f version=1.3.0`. Publishes the multi-target nupkg (net8/9/10) + analyzer nupkg + Docker image. This is a one-way action — no autonomous launch.
 
-3. **(10 min) Cut stable `1.3.0` (T.7 → A.8 unblocked).** `gh workflow run release.yml -f version=1.3.0`. The release.yml job builds the multi-target nupkg (net8/9/10) + the analyzer nupkg + the Docker image (net8 base), runs the full test suite across all 3 TFMs, and publishes to NuGet.
+3. **(parallel — interleaves anywhere)** **Continue Phase R Dependabot triage** — `#2` already closed (Docker runtime 9→10 forcer). Remaining open PRs as of 2026-05-13:
+   - **Merge** #3 (docker/setup-buildx-action 3→4), #4 (docker/login-action 3→4) — low-risk action bumps.
+   - **Verify+merge** #5 (upload-artifact 4→7 — known v4→v5 breaking on artifact-name defaults), #6 (softprops/action-gh-release 2.2.1→3.0.0 — verify the SHA pin + comment both got updated), #7 (actions/checkout 4→6 — high blast radius, scan v5+v6 changelogs).
+   - **Defer to Phase U** #8 (coverlet.collector 6→10), #17 (grouped Roslyn 4→5 SDK bump).
 
-4. **(parallel — Phase R items, can interleave anywhere)** Triage Dependabot:
-   - Close #1 + #2 (Docker .NET 10 forcers — Dockerfile stays net8 LTS for smallest image).
-   - Merge #11 (`Microsoft.Extensions.Hosting 10.0.7`) — already pinned in `Directory.Packages.props` as of Phase S; this resolves the open Dependabot PR.
-   - Merge low-risk Actions bumps #3, #4 (Docker buildx/login).
-   - Verify + merge #5 (upload-artifact 4→7), #6 (softprops 2→3 — confirm SHA + comment update), #7 (checkout 4→6), #12 (Test.Sdk 17→18).
-   - Defer #8 (coverlet 6→10), #9 + #10 (Roslyn 4→5) to Phase U (after 1.0 ships).
+Wall-clock from here to 1.0 publishable: **~60 min of human work** (steps 1 + 2) plus ~20 min interleaved Dependabot.
 
-Total wall-clock from now to 1.0 publishable: **~90 minutes of focused work** (steps 1 + 2 + 3), plus ~30 minutes interleaved for the Dependabot triage.
+---
 
-After 1.0 ships, the [Phase U section](#phase-u--10-polish-post-a8) holds the polish items (top-level `permissions: {}`, Node 24, the deferred Roslyn 4→5 bump). Phase V (post-1.0 roadmap) would naturally include a second sample (`samples/maf-1.4-sample/` or `samples/maf-1.5-sample/`) for the newer registry entries.
+#### 💡 Creative ideas — where the toolkit could go next (post-1.0, brainstorm)
+
+Things I'd love to see — sorted by leverage / wow-factor / "shows off MCP power":
+
+##### MCP tool surface — new capabilities
+
+- **`MafAutoFix(repoPath, ruleId, file?)`** — the MISSING half. Today the toolkit DETECTS but the AGENT applies fixes. A direct deterministic auto-fixer for the unambiguous rules (`MAF-AP-SEC-001` → `DefaultAzureCredential` → `ManagedIdentityCredential` is a one-line replacement; `MAF-AP-WF-001` → add `sealed` is mechanical; `MAF130-FAN-IN-001` → swap arg order is mechanical). Would let CI bots fix-and-commit without invoking an LLM. **Biggest leverage by far.**
+- **`MafBeforeAfter(repoPath, planPath)`** — produce a single before/after diff for an entire migration plan, so a maintainer can review the change-set in one document before approving.
+- **`MafExplainRule(ruleId)`** — registry-driven deep-dive on any rule with linked guide section + working examples. Already partially supported by `MafExplain`; this would specialise for rule IDs.
+- **`MafScoreMigrationRisk(repoPath)`** — heuristically estimate how risky the migration is (count of silent-runtime failures vs. CS0618 vs. CS0246; coverage of `[Obsolete]` paths; how many fan-out edges; etc.). Produces a "this migration is HARD/MEDIUM/EASY" verdict.
+- **`MafGenerateRegressionPlan(repoPath, fromVersion, toVersion)`** — given the current MAF version pin and target version, walk the version graph and emit a Mermaid step-by-step migration roadmap.
+- **MCP sampling support** — the May-6 sketch had `SamplingTools.*` (full audit, code review). When MCP host sampling becomes widely deployed, plug these in so the toolkit can call back to the host LLM for fuzzy judgements (e.g. "is this prompt likely to refuse?").
+
+##### Workshop — make the demo unforgettable
+
+- **Step 0: animated install demo** — a `cast` recording of `dotnet tool install -g maf-autopilot --prerelease` → `maf-autopilot --version` → `maf-autopilot doctor .`. 30 seconds total. Embed in README.
+- **A "find the bug in 30 seconds" challenge** — show attendees three side-by-side files with one subtle bug planted. Without running the toolkit, see who can spot the silently-ignored `Instructions` or the wrong-order `AddFanInBarrierEdge`. Then run the toolkit — it finds them in seconds. Massive impact.
+- **CI-integration step** — after the migration, drop `.github/workflows/maf-pr-audit.yml` into the sample folder. Show the workflow running against a forked repo. Demonstrates the toolkit's CI surface, not just the chat surface.
+- **Analyzer demo** — install `maf-autopilot.Analyzers` into the sample. Watch the squiggly red lines appear in VS Code on the un-fixed file. That's the "shift-left" angle — the analyzer catches bugs at *write* time, not just at scan time.
+- **Migration retrospective with `@maf-best-practice-reviewer`** — after the migration, ask the second-opinion agent to grade the result. Demonstrates the multi-agent surface.
+- **`MafTour` opener** — start the workshop with `@maf` invoking `MafTour` so attendees see the full toolkit catalogue before any specific tool is run. Sets the "this is a SUITE not a single check" frame.
+- **Reset script** — `samples/workshop-reset.ps1` / `.sh` that `git stash`-es all migration changes so the workshop can be re-run instantly for the next attendee.
+- **A second migration target** — once the 1.3.0 sample is migrated, the workshop's last 10 minutes could re-run the toolkit AGAINST the SAME sample but now targeting MAF 1.4 / 1.5 (after `dotnet add package Microsoft.Agents.AI --version 1.5.0`). Shows the auto-update loop's pay-off in real time.
+
+##### Sample coverage — close the gaps
+
+- **`samples/maf-1.2-sample/`** — covers the 3 registry IDs the 1.3 sample can't (`MAF130-THREAD-001`, `MAF130-A2A-001/002`, `MAF130-STREAM-001`, `MAF130-EVENT-001`, `MAF130-ATTR-001/002`). Pins MAF 1.2.0 + uses the now-removed types. Migration TO 1.3 demonstrates the dropped-surface migrations. **Highest-leverage Phase V item.**
+- **`samples/maf-1.5-sample/`** — opposite end. Pins 1.5.0; gets compared against a hypothetical 1.6 (when it ships). Future regression coverage.
+- **CI test that re-runs the workshop** — `dotnet test` integration: build the sample, run `maf-autopilot doctor`, assert grade F. Then run the canned migration plan, rebuild, assert grade A. Pins the workshop's invariants — if a future toolkit change regresses the doctor verdict, the test fails.
+- **Sample seed templates via `MafNewSample(version, antiPatternIds[])`** — an MCP tool that scaffolds a new sample folder with the requested anti-pattern set. Useful for testing newly-added registry entries.
+
+##### Toolkit improvements
+
+- **`MafHealthBadge`** — emit a `[![MAF Health: A](https://shields.io/...)]` badge URL from the doctor output. README badge for any consumer codebase.
+- **Telemetry that doesn't suck** — anonymous opt-in metrics: which rules fire most often, what migration paths users follow, what the typical doctor-grade distribution looks like. Helps prioritise rule investment without spying.
+- **The `applies_to_codebases` field is a new precedent** — once we've added it to 3 entries (this Phase T pass), it should land in `Data/RegistryModels.cs` formally + flow through `MafCompatibility`. Today it's a free-text marker; making it structured unlocks better filtering.
+
+##### Storytelling / community
+
+- **A 5-minute screencast** — "this is the toolkit fixing 13 anti-patterns in a real codebase, watch." Embed in `README.md` between ASCII art.
+- **A blog post template** — "how we built a self-updating MAF migration toolkit." 1500 words. Drafts already half-written across `docs/maf-migration-toolkit-plan.md` and the next-steps history.
+- **`samples/showcase.md`** — gallery of every rule firing on a real example with the toolkit's verdict next to it. Marketing surface.
+
+---
+
+#### Phase V — post-1.0 roadmap (sequenced by leverage)
+
+| ID | Item | Why it matters | Effort |
+|---|---|---|---|
+| V.1 | `MafAutoFix` MCP tool — deterministic per-rule auto-fixers for the mechanical rules | Decouples detection from remediation; CI bots can auto-fix without an LLM | M (1-2 days) |
+| V.2 | `samples/maf-1.2-sample/` — covers the registry IDs the 1.3 sample can't | Closes registry coverage; tests pre-1.3 migration | M (4-8 hrs) |
+| V.3 | CI regression: `samples/*` tested as part of `dotnet test` | Pins the workshop's invariants | S (2-3 hrs) |
+| V.4 | `applies_to_codebases` field formalised in `RegistryModels.cs` | Lets `MafCompatibility` filter by source-codebase era | S (1-2 hrs) |
+| V.5 | `MafBeforeAfter(planPath)` — single diff for an entire migration plan | Maintainer review surface | S (3-4 hrs) |
+| V.6 | Analyzer NuGet installed into the 1.3 sample for the workshop demo | Demonstrates write-time enforcement | XS (30 min) |
+| V.7 | Migration retrospective integrated into the workshop final step | Demonstrates `@maf-best-practice-reviewer` agent | XS (15 min) |
+| V.8 | Screencast / animated install demo in README | Marketing | M (½ day to record + edit) |
+
+Pick 2-3 from V.1-V.8 to bundle as the 1.1.x release after 1.0 ships.
 
 ### Phase U — 1.0 polish (post-A.8)
 
