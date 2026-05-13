@@ -1,6 +1,6 @@
 # maf-autopilot — Setup Guide
 
-> Last updated: May 5, 2026
+> Last updated: 2026-05-13 — Phase S landed: multi-target nupkg + central package management. The toolkit installs on **.NET 8, .NET 9, OR .NET 10** runtimes (NuGet picks the matching TFM at install time).
 
 This guide explains what you need to do — as a human — to use and maintain `maf-autopilot`. It covers three usage modes, repository setup, the CI workflow, and answers the "Copilot Coding Agent vs. shell scripts" architecture question.
 
@@ -53,7 +53,7 @@ Use the agents, skills, and guide directly in VS Code without running the MCP se
 
 Run the MCP server locally to expose `maf://` resources and `/maf-*` prompts in Copilot Chat.
 
-**Prerequisites:** .NET 9 SDK, VS Code + GitHub Copilot
+**Prerequisites:** any of .NET 8 SDK / .NET 9 SDK / .NET 10 SDK (the solution multi-targets all three; `global.json`'s `rollForward: latestMajor` will pick whichever is installed) — plus VS Code + GitHub Copilot
 
 **Steps:**
 1. Clone this repo
@@ -79,7 +79,7 @@ Run the MCP server locally to expose `maf://` resources and `/maf-*` prompts in 
 
 Install `maf-autopilot` as a global .NET tool so any project can run `maf-autopilot init` and use the MCP server without cloning this repo.
 
-**Prerequisites:** .NET 9 SDK. `maf-autopilot` is published to NuGet as prereleases ([`1.3.0-alpha-3`](https://www.nuget.org/packages/maf-autopilot) latest). Stable 1.3.0 is gated on #50 (see plan tracking table).
+**Prerequisites:** any of .NET 8 / .NET 9 / .NET 10 SDK. `maf-autopilot` is published to NuGet as prereleases ([`1.3.0-alpha-5`](https://www.nuget.org/packages/maf-autopilot) latest at time of writing). Stable 1.3.0 is gated on the Phase T MAF 1.3 sample dogfood (see [next-steps.md](./next-steps.md)).
 
 **Steps:**
 ```bash
@@ -361,8 +361,8 @@ You want: maf_open_feedback_issue tool
 | Component | Runs where | Needs |
 |-----------|-----------|-------|
 | Agents / skills / instructions | VS Code Copilot Chat (host-side) | VS Code + Copilot |
-| MCP server (local dev) | Your machine | .NET 9 SDK |
-| MCP server (global tool) | Your machine | `dotnet tool install -g maf-autopilot --prerelease` (#25) |
+| MCP server (local dev) | Your machine | .NET 8 / 9 / 10 SDK (any one) |
+| MCP server (global tool) | Your machine | .NET 8 / 9 / 10 runtime (any one) + `dotnet tool install -g maf-autopilot --prerelease` |
 | Release watcher workflow | GitHub Actions | GitHub repo |
 | NuGet publish | GitHub Actions | `NUGET_API_KEY` secret |
 | Registry auto-update | GitHub Actions | Copilot Enterprise or LLM API key (#30) |

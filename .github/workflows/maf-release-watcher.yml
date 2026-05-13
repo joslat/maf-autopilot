@@ -96,7 +96,8 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          # Net8 LTS — install-only; we just run the published tool here.
+          dotnet-version: '8.0.x'
 
       - name: Install dotnet-inspect
         run: |

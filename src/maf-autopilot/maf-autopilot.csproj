@@ -2,9 +2,9 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net9.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Multi-target: NuGet picks the best TFM at install time. Matches the
+         AgentEval house style (see docs/architecture.md → "Multi-targeting"). -->
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <RootNamespace>MafAutopilot</RootNamespace>
     <AssemblyName>maf-autopilot</AssemblyName>
 
@@ -34,13 +34,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- MCP server SDK — provides McpServerToolType, McpServerTool, WithStdioServerTransport, etc. -->
-    <!-- Pinned: floating versions made the shipped binary non-reproducible. -->
-    <PackageReference Include="ModelContextProtocol" Version="1.2.0" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
-    <PackageReference Include="YamlDotNet" Version="16.2.1" />
-    <!-- Roslyn syntax-tree only (no Workspaces). Used by FanOutValidatorTool. -->
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
+    <!-- Versions pinned centrally in /Directory.Packages.props (CPM). -->
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="YamlDotNet" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
   </ItemGroup>
 
   <ItemGroup>

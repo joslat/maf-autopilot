@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup>
+    <!--
+      Shared compiler settings for every project in the solution.
+      Per-project csprojs may override (e.g. the analyzer uses
+      LangVersion=latest and TargetFramework=netstandard2.0).
+    -->
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>

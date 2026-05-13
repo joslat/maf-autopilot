@@ -10,18 +10,19 @@ Thanks for considering a contribution. This guide covers the four most common co
 
 ## Setup
 
-- .NET 9 SDK
-- Optional: `dnx` global tool for ad-hoc `dotnet-inspect` invocations (`dotnet tool install -g dnx`)
+- Any one of .NET 8 / .NET 9 / .NET 10 SDK. `global.json` pins `8.0.100` with `rollForward: latestMajor`, so any installed SDK ≥ 8.x will build the solution.
+- For the multi-target test runs, you also need **runtimes for net8.0, net9.0, AND net10.0** installed (otherwise `dotnet test` skips TFMs that lack a runtime).
+- Versions for every NuGet are centrally pinned in `/Directory.Packages.props` — when adding a `<PackageReference>` to any csproj, do NOT include `Version=` inline; add a `<PackageVersion>` to `Directory.Packages.props` instead.
 
 ```bash
 git clone https://github.com/joslat/maf-autopilot
 cd maf-autopilot
 dotnet restore maf-autopilot.sln
-dotnet build maf-autopilot.sln
-dotnet test src/maf-autopilot.Tests/maf-autopilot.Tests.csproj
+dotnet build maf-autopilot.sln           # builds net8.0 + net9.0 + net10.0 + netstandard2.0 (analyzer)
+dotnet test maf-autopilot.sln            # 474 tests × 3 TFMs = 1422 test executions
 ```
 
-All tests must pass. CI will block any PR that breaks them.
+All test executions must pass. CI gates any PR that breaks them.
 
 ## Adding a registry entry (`.github/skills/obsolete-api-registry/registry.yaml`)
 

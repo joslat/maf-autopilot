@@ -27,9 +27,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Compiler / analyzer base. PrivateAssets keep these out of consumer projects. -->
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" PrivateAssets="all" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" PrivateAssets="all" />
+    <!-- Compiler / analyzer base. PrivateAssets keep these out of consumer projects.
+         Versions pinned centrally in /Directory.Packages.props (CPM). -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

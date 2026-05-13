@@ -25,7 +25,8 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          # Net8 LTS — install-only; nupkg multi-targets so any flavor works.
+          dotnet-version: '8.0.x'
 
       - name: Install maf-autopilot (prerelease)
         run: dotnet tool install --global maf-autopilot --prerelease || dotnet tool update --global maf-autopilot --prerelease

@@ -61,6 +61,35 @@ public sealed class CompatibilityTool
     internal static readonly IReadOnlyDictionary<string, string> Matrix =
         new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
+            ["1.5.0"] = """
+                ## MAF 1.5.0 Compatibility
+
+                | Dependency                                | Version          | Notes |
+                |-------------------------------------------|------------------|-------|
+                | .NET runtime                              | `>= 8.0`         | net8.0, net9.0, net10.0 TFMs all supported |
+                | Microsoft.Extensions.AI                   | `>= 10.5.1`      | |
+                | Azure.AI.OpenAI                           | _not pinned by MAF_ | BYO via `IChatClient` — consumer chooses the backing implementation |
+                | Microsoft.Agents.AI.Workflows.Generators  | `1.5.0`          | Source-gen package |
+                | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
+
+                Additive release; new `ToolApprovalAgent` for human-in-the-loop tool approval flows.
+                """,
+
+            ["1.4.0"] = """
+                ## MAF 1.4.0 Compatibility
+
+                | Dependency                                | Version          | Notes |
+                |-------------------------------------------|------------------|-------|
+                | .NET runtime                              | `>= 8.0`         | net8.0, net9.0, net10.0 TFMs all supported |
+                | Microsoft.Extensions.AI                   | `>= 10.5.0`      | |
+                | Azure.AI.OpenAI                           | _not pinned by MAF_ | BYO via `IChatClient` |
+                | Microsoft.Agents.AI.Workflows.Generators  | `1.4.0`          | Source-gen package |
+                | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
+
+                Breaking: `AgentSkillScript.RunAsync` + `AgentFileSkillScriptRunner.Invoke/BeginInvoke` signatures changed —
+                `AIFunctionArguments arguments` → `JsonElement? arguments, IServiceProvider? serviceProvider`.
+                """,
+
             ["1.3.0"] = """
                 ## MAF 1.3.0 Compatibility
 

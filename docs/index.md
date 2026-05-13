@@ -2,7 +2,7 @@
 
 > **Audience:** new contributors orienting on the project, returning maintainers checking "where did we put X?".
 >
-> **Last refreshed:** 2026-05-12 — generated at the end of the Phase N security sprint.
+> **Last refreshed:** 2026-05-13 — Phase S landed: nupkg now multi-targets `net8.0;net9.0;net10.0`; central package management via `Directory.Packages.props` + `Directory.Build.props` + `global.json`. See [`architecture.md` → Multi-targeting](./architecture.md#multi-targeting).
 
 Every document below is canonical for one slice of the project. **One concept, one home.** If you find yourself writing the same explanation in two docs, fix it by linking instead of duplicating.
 
@@ -30,7 +30,7 @@ Every document below is canonical for one slice of the project. **One concept, o
 
 **Purpose.** The single page that tells you what's next. Active work, deferred items (with rationale), pre-1.0 ship gates, post-1.0 roadmap.
 
-**Status.** Current as of 2026-05-12 evening. Re-generate when phases land.
+**Status.** Current as of 2026-05-13. Phase S complete; Phase T (MAF 1.3 sample dogfood — the A.8 unblocker) is the next active phase.
 
 **Audience.** Anyone deciding "what should I work on?" or "is feature X done?".
 
@@ -38,9 +38,9 @@ Every document below is canonical for one slice of the project. **One concept, o
 
 ### 🏛️ [`architecture.md`](./architecture.md)
 
-**Purpose.** Component map. What is `maf-autopilot` vs `maf-autopilot.Analyzers` vs the two test projects? How do they relate? What does each one ship? Plus the rationale for the `/src/` layout and `.github/scripts/` placement (under "Structural decisions — closed").
+**Purpose.** Component map. What is `maf-autopilot` vs `maf-autopilot.Analyzers` vs the two test projects? How do they relate? What does each one ship? Plus the multi-targeting strategy (`net8.0;net9.0;net10.0` nupkg + `Directory.Packages.props` CPM), and the rationale for the `/src/` layout and `.github/scripts/` placement (under "Structural decisions — closed").
 
-**Status.** Current as of 2026-05-12.
+**Status.** Current as of 2026-05-13 (Phase S landed).
 
 **Audience.** New contributors. Maintainers reasoning about packaging / distribution.
 

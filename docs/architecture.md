@@ -1,6 +1,6 @@
 # Architecture
 
-> **Last updated:** 2026-05-12
+> **Last updated:** 2026-05-13 — Phase S landed: multi-target nupkg + central package management.
 
 This document explains what each piece of `maf-autopilot` is, how the pieces fit together, and where the structural choices were deliberate (vs. accidental).
 
@@ -26,15 +26,19 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 ## Component map
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────────┐
 │                          maf-autopilot repo                              │
+│                                                                          │
+│  /Directory.Packages.props  ← central package mgmt (CPM)                │
+│  /Directory.Build.props     ← shared compiler settings                  │
+│  /global.json               ← SDK pin: 8.0.100 + rollForward: latestMajor│
 │                                                                          │
 │  ┌─────────────────────────┐   ┌────────────────────────────────────┐   │
 │  │  /src/maf-autopilot/    │   │  /src/maf-autopilot.Analyzers/    │   │
 │  │  ── MCP server          │   │  ── Roslyn analyzers              │   │
-│  │  ── .NET 9 console      │   │  ── netstandard2.0 (compiler host)│   │
+│  │  ── net8.0;net9.0;net10.0   │   │  ── netstandard2.0 (compiler host)│
 │  │  ── NuGet: maf-autopilot│   │  ── NuGet: maf-autopilot.Analyzers│   │
-│  │  ── Docker: GHCR        │   │  ── 3 rules (MAF001/002/003)      │   │
+│  │  ── Docker: GHCR (net8) │   │  ── 3 rules (MAF001/002/003)      │   │
 │  └────────┬────────────────┘   └────────┬──────────────────────────┘   │
 │           │ ProjectReference (none)     │ ProjectReference (none)        │
 │           │ EmbeddedResource:           │ AdditionalFiles:               │
@@ -44,24 +48,26 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 │           │                                                              │
 │  ┌────────▼────────────────┐   ┌────────▼──────────────────────────┐   │
 │  │  /src/maf-autopilot.Tests│  │ /src/maf-autopilot.Analyzers.Tests│   │
-│  │  ── 415 xUnit tests      │  │ ── 11 xUnit tests                 │   │
+│  │  ── 463 xUnit tests       │  │ ── 11 xUnit tests                │   │
+│  │  ── net8/9/10 (x3 runs)  │  │ ── net8/9/10 (x3 runs)            │   │
 │  │  ── ProjectReference     │  │ ── ProjectReference               │   │
 │  │     maf-autopilot.csproj │  │    maf-autopilot.Analyzers.csproj │   │
 │  └─────────────────────────┘   └────────────────────────────────────┘   │
 │                                                                          │
 │  /.github/                                                               │
-│  ├── agents/        6 agent personas (Copilot Chat loads via @-mention) │
+│  ├── agents/        7 agent personas (Copilot Chat loads via @-mention) │
 │  ├── instructions/  3 auto-loaded instruction files (applyTo: globs)    │
-│  ├── skills/        12 skill docs (SKILL.md per dir)                    │
+│  ├── skills/        13 skill docs (SKILL.md per dir)                    │
 │  ├── scripts/       2 Python CI helpers (called by workflows)           │
-│  ├── workflows/     5 GitHub Actions                                    │
+│  ├── workflows/     6 GitHub Actions                                    │
 │  └── dependabot.yml security: pin SHAs, update weekly                   │
 │                                                                          │
 │  /docs/             this folder — index.md catalogues it                │
-│  /guides/           per-version migration guides (1.3.0, future: 1.4.0) │
-│  /Dockerfile        multi-stage build for the GHCR image                │
+│  /guides/           per-version migration guides (1.3.0, 1.4.0, 1.5.0,  │
+│                     plus auto-generated maf-current-migration-guide.md) │
+│  /Dockerfile        multi-stage build for the GHCR image (net8 LTS base)│
 │  /maf-autopilot.sln solution file referencing all 4 projects            │
-└─────────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -71,9 +77,9 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 ### `maf-autopilot` (the MCP server)
 
 **Path:** `/src/maf-autopilot/`
-**Target framework:** .NET 9
-**Output:** a single executable (`maf-autopilot.dll`) packaged as a dotnet global tool + a Docker image.
-**Dependencies:** `ModelContextProtocol` 1.2.0, `Microsoft.CodeAnalysis.CSharp` 4.11.0, `YamlDotNet` 16.2.1, `Microsoft.Extensions.Hosting` 9.0.
+**Target frameworks:** `net8.0;net9.0;net10.0` (multi-target — NuGet picks the best TFM at install time)
+**Output:** a single executable (`maf-autopilot.dll`) packaged as a dotnet global tool + a Docker image (Dockerfile uses `net8.0` base for smallest container).
+**Dependencies:** `ModelContextProtocol` 1.2.0, `Microsoft.CodeAnalysis.CSharp` 4.11.0, `YamlDotNet` 16.2.1, `Microsoft.Extensions.Hosting` 10.0.7 (the 10.0.x line internally ships net8/net9/net10 TFM assemblies). Versions pinned centrally in `Directory.Packages.props`.
 
 **What it does:**
 - Speaks MCP over stdio (when run as a tool) or stdio-in-container (when run via Docker).
@@ -101,18 +107,18 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 ### `maf-autopilot.Tests`
 
 **Path:** `/src/maf-autopilot.Tests/`
-**Target framework:** .NET 9
+**Target frameworks:** `net8.0;net9.0;net10.0` — each test is exercised 3 times, once per TFM.
 **Output:** an xUnit test assembly (not packed; never published).
-**Dependencies:** `ProjectReference` to `maf-autopilot`; `xunit` 2.9.2; `Microsoft.NET.Test.Sdk` 17.12.0; `Microsoft.CodeAnalysis.CSharp` 4.11.0 (for the compile-validation tests).
+**Dependencies:** `ProjectReference` to `maf-autopilot`; `xunit` 2.9.2; `Microsoft.NET.Test.Sdk` 17.12.0; `Microsoft.CodeAnalysis.CSharp` 4.11.0 (for the compile-validation tests). Versions pinned centrally.
 
-**Current size:** 415 tests as of Phase N. Coverage spans every MCP tool (entry + pure-core), every scaffolder template, security regression pins, and registry haystack search.
+**Current size:** 463 tests as of Phase S. Coverage spans every MCP tool (entry + pure-core), every scaffolder template, security regression pins, registry haystack search, and the auto-update additivity guarantees.
 
 ### `maf-autopilot.Analyzers.Tests`
 
 **Path:** `/src/maf-autopilot.Analyzers.Tests/`
-**Target framework:** .NET 9 (test host can target net9.0 even though the analyzer itself is netstandard2.0).
+**Target frameworks:** `net8.0;net9.0;net10.0` (test host can target any of net8/9/10 even though the analyzer itself is netstandard2.0).
 **Output:** an xUnit test assembly.
-**Dependencies:** `ProjectReference` to `maf-autopilot.Analyzers`; `xunit` 2.9.2; `Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit` 1.1.2.
+**Dependencies:** `ProjectReference` to `maf-autopilot.Analyzers`; `xunit` 2.9.2; `Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit` 1.1.2. Versions pinned centrally.
 
 **Current size:** 11 tests — one happy-path + one negative case per rule, plus rule-metadata validation.
 
@@ -142,7 +148,7 @@ See [`/CONTRIBUTING.md`](../CONTRIBUTING.md) §"Skill naming convention" + "Addi
 ```
 maf-autopilot.sln
     │
-    ├── /src/maf-autopilot                    (.NET 9 console / NuGet tool)
+    ├── /src/maf-autopilot                    (net8.0;net9.0;net10.0 console / NuGet tool)
     │       └── embeds: .github/skills/*.md, .github/instructions/*.md,
     │                   guides/maf-1.3.0-migration-guide.md,
     │                   .github/skills/obsolete-api-registry/registry.yaml
@@ -150,14 +156,40 @@ maf-autopilot.sln
     ├── /src/maf-autopilot.Analyzers          (netstandard2.0 / NuGet)
     │       └── (no project references — fully standalone)
     │
-    ├── /src/maf-autopilot.Tests              (.NET 9 / xUnit)
+    ├── /src/maf-autopilot.Tests              (net8.0;net9.0;net10.0 / xUnit)
     │       └── ProjectReference: maf-autopilot
     │
-    └── /src/maf-autopilot.Analyzers.Tests    (.NET 9 / xUnit)
+    └── /src/maf-autopilot.Analyzers.Tests    (net8.0;net9.0;net10.0 / xUnit)
             └── ProjectReference: maf-autopilot.Analyzers
 ```
 
-`dotnet build maf-autopilot.sln` builds all four. `dotnet test maf-autopilot.sln` runs all 426 tests in both test projects. `release.yml` packs `maf-autopilot` and `maf-autopilot.Analyzers` separately; `docker-publish.yml` packages only the MCP server.
+`dotnet build maf-autopilot.sln` builds all four across all 3 TFMs (the analyzer stays netstandard2.0). `dotnet test maf-autopilot.sln` runs **474 unique tests × 3 TFMs = 1422 test executions** in both test projects. `release.yml` packs `maf-autopilot` and `maf-autopilot.Analyzers` separately; `docker-publish.yml` packages only the MCP server.
+
+---
+
+## Multi-targeting
+
+The MCP server NuGet `maf-autopilot` ships TFM assemblies for **net8.0 + net9.0 + net10.0** inside a single `nupkg`. NuGet's TFM resolution selects the best match at consumer install time:
+
+- A user on the .NET 8 LTS runtime installs the `net8.0` binary.
+- A user on the .NET 9 STS runtime installs the `net9.0` binary.
+- A user on the .NET 10 LTS runtime installs the `net10.0` binary.
+
+This pattern matches the sibling [`AgentEval`](https://github.com/joslat/AgentEval) project (same maintainer, same dependency tree including MAF 1.3.0). Field-tested infrastructure.
+
+**Supporting files at the repo root:**
+
+| File | Purpose |
+|---|---|
+| `Directory.Packages.props` | Central Package Management (CPM). Every `<PackageReference>` in every csproj drops its inline `Version=` — versions pin here. `CentralPackageTransitivePinningEnabled=true` so a security pin (e.g. a CVE patch on a transitive dep) takes effect even on packages we don't reference directly. |
+| `Directory.Build.props` | Shared compiler settings (`LangVersion`, `ImplicitUsings`, `Nullable`). Per-project csprojs may override (the analyzer uses its own `LangVersion=latest` + locked `netstandard2.0`). |
+| `global.json` | Pins `sdk.version=8.0.100` with `rollForward: latestMajor` + `allowPrerelease: true`. Any installed SDK ≥ 8.x can build the solution. |
+
+**The Roslyn analyzer (`maf-autopilot.Analyzers`) is excluded from multi-targeting.** It MUST stay on `netstandard2.0` — analyzers load into the compiler host (csc.exe / VS / OmniSharp), which itself runs on the netstandard2.0 surface. Multi-targeting an analyzer would not change consumer reach (consumer csproj loads the netstandard2.0 DLL regardless of consumer TFM) and would break compatibility with older compiler hosts.
+
+**The Dockerfile is excluded.** Only the multi-target NuGet ships all 3 TFMs; the container can only choose one runtime. Net8 LTS is the smallest, longest-supported runtime image — picked for the smallest container footprint.
+
+**Adding net11 (future):** when .NET 11 ships (Nov 2027), the change is additive: edit `<TargetFrameworks>` in the 3 multi-target csprojs from `net8.0;net9.0;net10.0` to `net8.0;net9.0;net10.0;net11.0`. Drop `net9.0` after its EOL — also additive, non-breaking for net8/10 consumers.
 
 ---
 

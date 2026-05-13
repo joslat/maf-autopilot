@@ -26,10 +26,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
+      - name: Setup .NET (all three runtimes — nupkg multi-targets net8/9/10)
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
 
       - name: Determine version
         id: version

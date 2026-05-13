@@ -1,6 +1,6 @@
 # Next steps
 
-> **Last refreshed:** 2026-05-13 — end of Phase Q (auto-update loop end-to-end validated on real MAF 1.4 + 1.5 data) + corrected TFM strategy after AgentEval cross-check.
+> **Last refreshed:** 2026-05-13 — **Phase S landed** (multi-target nupkg + central package management) + Phase Q (auto-update loop end-to-end validated on real MAF 1.4 + 1.5 data).
 > **Single source of truth for "what's next."** When this contradicts other docs, this wins.
 > **For history of done work:** see the **[`Done`](#-done--phases-a-through-q-history) section at the bottom** of this file, plus the full archive in [`maf-migration-toolkit-plan.md`](./maf-migration-toolkit-plan.md).
 
@@ -36,7 +36,7 @@ The toolkit ships **20 MCP tools, 7 agents (including `@maf` primary), 13 skills
 
 **The auto-update loop is end-to-end validated** against real MAF 1.4 + 1.5 data. PR #15 (1.4 fills by Copilot Coding Agent) merged. PR for 1.5 (issue #16) in flight at time of writing.
 
-**Current TFMs:** `maf-autopilot` + tests on **`net9.0`**. Analyzer on **`netstandard2.0`** (Roslyn requirement — locked).
+**Current TFMs:** `maf-autopilot` + tests **multi-target `net8.0;net9.0;net10.0`** (Phase S, 2026-05-13). Analyzer on **`netstandard2.0`** (Roslyn requirement — locked). Central package management at `/Directory.Packages.props`; SDK pin at `/global.json` (`8.0.100` + `rollForward: latestMajor`).
 
 **Pre-1.0 gate:** A.8 — "one external migration validates the toolkit end-to-end against a real customer codebase." Currently the only thing blocking the stable cut. **Phase T below proposes a way to unblock this without waiting for an external customer.**
 
@@ -67,23 +67,23 @@ The cleanup that's already running or close to running. Should land in the next 
 | R.5 | Verify + merge mid-risk Actions (#5 upload-artifact, #6 softprops, #7 checkout) — see [Dependabot triage](#dependabot-triage) | YOU | M (30 min) | 📋 |
 | R.6 | Merge `Microsoft.NET.Test.Sdk` bump (#12) and re-run test suite | YOU or me | S (15 min) | 📋 |
 
-### Phase S — Multi-target the nupkg (matching AgentEval house style)
+### Phase S — Multi-target the nupkg (matching AgentEval house style) ✅ LANDED 2026-05-13
 
-The right time to do this is **before Phase T** (so the sample project picks up the new TFM convention) and **before cutting 1.0** (so consumers don't have to upgrade through a TFM change later). **Verdict from cross-checking AgentEval (your sibling project):** multi-target `net8.0;net9.0;net10.0`, not single-target. Reasoning in [TFM strategy](#tfm-strategy) below.
+**Verdict from cross-checking AgentEval (your sibling project):** multi-target `net8.0;net9.0;net10.0`, not single-target. Reasoning in [TFM strategy](#tfm-strategy) below.
 
-| ID | Item | Owner | Effort |
-|---|---|---|---|
-| S.1 | Add `Directory.Packages.props` at repo root (mirror AgentEval) with `ManagePackageVersionsCentrally=true` + `CentralPackageTransitivePinningEnabled=true`. Move all `Version=` pins from the 3 csprojs into it. | me | S (15 min) |
-| S.2 | Add `global.json` at repo root with `sdk.version=8.0.100` + `rollForward: latestMajor` + `allowPrerelease: true` (mirror AgentEval). | me | S (5 min) |
-| S.3 | Add `Directory.Build.props` (optional but recommended) with shared compiler settings (`LangVersion`, `ImplicitUsings`, `Nullable`, NuGet metadata). | me | S (10 min) |
-| S.4 | `src/maf-autopilot/maf-autopilot.csproj`: `<TargetFramework>net9.0</TargetFramework>` → `<TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>`. Remove inline `Version=` from package refs (now in Directory.Packages.props). | me | S (5 min) |
-| S.5 | `src/maf-autopilot.Tests/maf-autopilot.Tests.csproj`: same TFM change. | me | S (3 min) |
-| S.6 | `src/maf-autopilot.Analyzers.Tests/maf-autopilot.Analyzers.Tests.csproj`: same TFM change. | me | S (3 min) |
-| S.7 | `src/maf-autopilot.Analyzers/maf-autopilot.Analyzers.csproj`: **no change** — stays `netstandard2.0` (Roslyn requirement, locked). | — | — |
-| S.8 | Bump `Microsoft.Extensions.Hosting` to `10.0.7` (the 10.0.x line packs net8 + net9 + net10 TFMs in one nupkg — same approach AgentEval pins for the abstractions). **Merge Dependabot #11 to do this.** | YOU | S (5 min) |
-| S.9 | Dockerfile: **stays on `net8.0` LTS base** (smallest runtime image — the container ships one TFM regardless of nupkg multi-targeting). Close Dependabot #1 + #2. | me + YOU | S (10 min) |
-| S.10 | Run full test suite locally across all 3 TFMs (`dotnet test --framework net8.0`, `--framework net9.0`, `--framework net10.0`). | me | M (15 min) |
-| S.11 | CI confirms green on all 3 TFMs. Cut `1.3.0-alpha-6` with the new multi-target nupkg. Verify on NuGet that the nupkg's `lib/` contains net8.0, net9.0, and net10.0 folders. | me + YOU | M (30 min) |
+| ID | Item | Status |
+|---|---|---|
+| S.1 | Add `Directory.Packages.props` at repo root (mirror AgentEval) with `ManagePackageVersionsCentrally=true` + `CentralPackageTransitivePinningEnabled=true`. Move all `Version=` pins from the 4 csprojs into it. | ✅ |
+| S.2 | Add `global.json` at repo root with `sdk.version=8.0.100` + `rollForward: latestMajor` + `allowPrerelease: true` (mirror AgentEval). | ✅ |
+| S.3 | Add `Directory.Build.props` with shared compiler settings (`LangVersion=latest`, `ImplicitUsings=enable`, `Nullable=enable`, `TreatWarningsAsErrors=false`). | ✅ |
+| S.4 | `src/maf-autopilot/maf-autopilot.csproj`: `<TargetFramework>net9.0</TargetFramework>` → `<TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>`. Removed inline `Version=` from all package refs. | ✅ |
+| S.5 | `src/maf-autopilot.Tests/maf-autopilot.Tests.csproj`: same TFM change. | ✅ |
+| S.6 | `src/maf-autopilot.Analyzers.Tests/maf-autopilot.Analyzers.Tests.csproj`: same TFM change. | ✅ |
+| S.7 | `src/maf-autopilot.Analyzers/maf-autopilot.Analyzers.csproj`: kept `netstandard2.0` (Roslyn requirement). Removed inline `Version=`. | ✅ |
+| S.8 | Bumped `Microsoft.Extensions.Hosting` from `9.0.0` → `10.0.7` in `Directory.Packages.props`. The 10.0.x line internally ships net8 + net9 + net10 TFMs in one nupkg. (Equivalent to merging Dependabot #11.) | ✅ |
+| S.9 | Dockerfile: **stays on `net9.0` base** for now (still works; smallest LTS bump to `net8.0` recommended in a separate small PR). Dependabot #1 + #2 (Docker 9→10) ready to close. | ⚠️ Partial — Dockerfile bump to `net8.0` deferred to a follow-up |
+| S.10 | Build + test suite run locally across all 3 TFMs: `dotnet build` (3.69 s for 4 projects + 4 TFMs) + `dotnet test` — **463 tests × 3 TFMs = 1389 main-test executions + 11 × 3 = 33 analyzer-test executions, all passing** (one pre-existing `CompatibilityToolTests` failure for missing 1.4/1.5 rows fixed in the same change). | ✅ |
+| S.11 | CI workflow `release.yml` updated to install all 3 runtimes (`dotnet-version: 8.0.x \| 9.0.x \| 10.0.x`). Other install-only workflows (pr-audit, drift-detector, release-watcher) dropped to `8.0.x` LTS. **Next:** cut `1.3.0-alpha-6` and verify the published `nupkg`'s `tools/` folder contains `net8.0`, `net9.0`, `net10.0` subdirectories. | 🟡 Pending alpha-6 release |
 
 ### Phase T — MAF 1.3 sample + migration dogfood (the A.8 unblocker)
 

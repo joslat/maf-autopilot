@@ -1,0 +1,41 @@
+<Project>
+  <PropertyGroup>
+    <!--
+      Central Package Management (CPM) — all <PackageReference> across the
+      solution drop their inline Version= and pin here. Matches the
+      AgentEval sibling project (C:\git\joslat\AgentEval).
+
+      CentralPackageTransitivePinningEnabled: forces transitive packages
+      brought in by direct refs to also resolve to the versions pinned
+      below. Required when a security pin (e.g. for a CVE) needs to apply
+      to a package we don't reference directly.
+    -->
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- MCP server SDK — provides McpServerToolType, McpServerTool, WithStdioServerTransport, etc.
+         Pinned: floating versions made the shipped binary non-reproducible. -->
+    <PackageVersion Include="ModelContextProtocol" Version="1.2.0" />
+
+    <!-- BCL / Hosting. The 10.0.x line ships net8/net9/net10 TFMs in one nupkg,
+         so a single pin covers all three TargetFrameworks. -->
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.7" />
+
+    <!-- YAML parsing — used for registry.yaml and similar. -->
+    <PackageVersion Include="YamlDotNet" Version="16.2.1" />
+
+    <!-- Roslyn syntax-tree only (no Workspaces). Used by anti-pattern scanners,
+         scaffolders, and the FanOutValidator tool. -->
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit" Version="1.1.2" />
+
+    <!-- Test stack. Pinned to specific versions to keep CI deterministic. -->
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageVersion Include="xunit" Version="2.9.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageVersion Include="coverlet.collector" Version="6.0.2" />
+  </ItemGroup>
+</Project>
