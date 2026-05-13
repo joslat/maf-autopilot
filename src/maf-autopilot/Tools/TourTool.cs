@@ -102,6 +102,7 @@ public sealed class TourTool
 
         // — Auto-fix (Phase W.6) —
         new("MafAutoFix", "Auto-fix", "Deterministic per-rule Roslyn rewriter — the \"do\" half of the toolkit. Supports MAF-AP-SEC-001/MAF002 (DefaultAzureCredential), MAF-AP-SEC-003/MAF003 (EnableSensitiveData), MAF-AP-WF-001 (sealed Executor), MAF130-FAN-IN-001 (arg order), MAF-AP-CONC-002 (.Result/.Wait()). `dryRun: true` previews without writing."),
+        new("MafBeforeAfter", "Auto-fix", "Phase W.7 preview tool. Given a comma-separated list of rule IDs, dry-runs each MafAutoFix rewriter across the codebase and renders one consolidated markdown report with `diff --git`-style unified diffs per file. Maintainer reviews ONE document before approving the full change-set."),
 
         // — PR-scoped —
         new("MafAuditPullRequest", "PR-scoped", "Scope every scanner to the `.cs` files changed in this branch vs base. CI-comment-ready markdown."),

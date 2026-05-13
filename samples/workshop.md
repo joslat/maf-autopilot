@@ -188,6 +188,38 @@ Each scanner is independent; you can run any of them at any time on any codebase
 
 ---
 
+## Step 5b — Watch the analyzer fire at write-time
+
+The toolkit ships a SEPARATE NuGet package — `maf-autopilot.Analyzers` — that's the **write-time** counterpart to the doctor's scan-time rules. The sample's csproj already references it:
+
+```xml
+<PackageReference Include="maf-autopilot.Analyzers" Version="1.3.0-alpha-1">
+  <IncludeAssets>analyzers; build</IncludeAssets>
+  <PrivateAssets>all</PrivateAssets>
+</PackageReference>
+```
+
+Build the sample and inspect any executor file in VS Code:
+
+```bash
+dotnet build
+# → 4 Warning(s), 0 Error(s)
+```
+
+The 4 warnings are:
+- 1 × `CS0618` (the deliberate obsolete fan-in overload).
+- 3 × `MAF001` (the 3 fan-out executors returning non-generic `ValueTask` — same finding the doctor surfaced in Step 5, now visible inline).
+
+Open `Executors/OsintInvestigator.cs` in VS Code Insiders. You should see a **squiggly red underline** under the `ValueTask` return type, with a hover that says:
+
+> **MAF001:** Method 'HandleAsync' is decorated with [MessageHandler] but returns 'ValueTask' — this produces no downstream message and silently starves the fan-in barrier. Return Task<T> or ValueTask<T> where T is the downstream message type.
+
+That's the **shift-left** angle. The same rule the doctor runs at scan-time fires at WRITE time inside the editor — before the developer even saves the file.
+
+> **Why does the sample's csproj include a `.editorconfig` demoting MAF001/MAF002/MAF003 from `error` → `warning`?** Because the analyzer's default severity is `error` (so consumer projects fail their CI when they regress). For the sample's purposes — we WANT the bugs visible but the build to succeed — we override to `warning`. A real consumer codebase would leave the default.
+
+---
+
 ## Step 6 — Plan the migration
 
 Ask Copilot to plan the fix-up:
@@ -249,6 +281,42 @@ dotnet build
 dotnet run
 # → still prints a topology summary; the embedded-anti-pattern list should be empty
 ```
+
+---
+
+## Step 9 — Migration retrospective (multi-agent surface demo)
+
+After Step 8 confirms grade A/B, ask the second-opinion agent:
+
+```
+@maf-best-practice-reviewer review the migrated codebase and flag what's still suboptimal
+```
+
+Expected: the reviewer flags `good-but-could-be-better` patterns the registry doesn't cover — e.g. executor IDs that are too generic, agents lacking explicit token caps, OpenTelemetry traces missing custom tags, etc.
+
+This demonstrates the **multi-agent surface**:
+- `@maf-migration` fixed the registry-driven anti-patterns (deterministic; mechanical).
+- `@maf-best-practice-reviewer` catches the next tier of polish (judgement-bound; experiential).
+
+Together they model the "two-pass review" pattern real teams use.
+
+> **Workshop bonus track (5 min):** pick one of the reviewer's findings, then ask `@maf-migration` to apply it. That's a complete "improvement loop" in 5 minutes — and a perfect transition into the closing slide. The toolkit can be invoked iteratively, not just once-and-done.
+
+---
+
+## Step 10 — Use the new `MafAutoFix` deterministic auto-fixer (Phase W.6 — added 2026-05-13)
+
+Now that the manual migration is done, demonstrate the **deterministic** path. Reset the sample (instructions below), then run a single auto-fix instead of the whole `@maf-migration` flow:
+
+```
+ask Copilot: "use MafAutoFix to fix the MAF-AP-SEC-001 finding in this codebase"
+```
+
+The MCP tool dispatches a Roslyn `SyntaxRewriter` and writes the fix directly to disk — no LLM involved in the rewrite itself. Then re-run `@maf doctor` to see the count drop by 1.
+
+**Supported ruleIds** (as of 2026-05-13): `MAF-AP-SEC-001` / `MAF002`, `MAF-AP-SEC-003` / `MAF003`, `MAF-AP-WF-001`, `MAF130-FAN-IN-001`, `MAF-AP-CONC-002`.
+
+The point of demoing this AFTER Step 9: CI bots, pre-commit hooks, and bulk-migration scripts can call `MafAutoFix` without an LLM in the loop. The migration agent (`@maf-migration`) is reserved for the patterns that DO need judgement — anything the registry doesn't have a mechanical fix for.
 
 ---
 

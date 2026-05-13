@@ -49,6 +49,21 @@ public sealed class AutoFixTool
     /// <summary>The set of rule IDs this tool can auto-fix. Read-only.</summary>
     public static IReadOnlyCollection<string> SupportedRuleIds => _factories.Keys.ToList();
 
+    /// <summary>
+    /// Internal helper for sibling tools (e.g. <see cref="BeforeAfterTool"/>)
+    /// to share the rewriter registry without re-declaring it.
+    /// </summary>
+    internal static bool TryCreateRewriter(string ruleId, out IRuleRewriter? rewriter)
+    {
+        if (_factories.TryGetValue(ruleId, out var factory))
+        {
+            rewriter = factory();
+            return true;
+        }
+        rewriter = null;
+        return false;
+    }
+
     [McpServerTool]
     [Description("""
         Deterministically apply the fix for a single registry rule across a codebase.

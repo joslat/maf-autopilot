@@ -1,6 +1,6 @@
 # Next steps
 
-> **Last refreshed:** 2026-05-13 (status check #3 + Phase W.A complete) — **7 phases landed**: ✅ Phase Q (auto-update validated), ✅ Phase S (multi-target nupkg + net8 LTS Dockerfile), ✅ Phase T.1+T.2+T.2.5+T.6 (MAF 1.3 sample + workshop + registry drift fixes), ✅ Phase R Dependabot triage (5 PRs merged), ✅ Phase W.A (W.1 foundation + W.8 1.2 sample + W.10 1.0 sample + W.9 CI regression — 3 samples now lock the toolkit's invariants), ✅ Phase W.A side cleanups (registry chronology gap + compat-matrix stale pins — both fixed and pinned by drift tests). Test surface: **488 unique tests × 3 TFMs = 1464 executions, all green.** Next: 🟡 [Phase X.1+X.2](#phase-x--user-checkpoints) (run workshop, cut 1.3.0 — needs you) in parallel with 🟡 [Phase W.B/W.C](#phase-w--claude-deliverable-post-10-items) (workshop polish + 5 new MCP tools — Claude can do).
+> **Last refreshed:** 2026-05-13 (status check #4 — Phase W mostly done) — **8 phases landed**: ✅ Phase Q (auto-update), ✅ Phase S (multi-target nupkg + net8 Dockerfile), ✅ Phase T (1.3 sample + workshop + registry drift fixes), ✅ Phase R (Dependabot — 5 merged), ✅ Phase W.A (foundation + 3 samples 1.0/1.2/1.3 + CI regression), ✅ Phase W.A cleanups (registry chronology + compat-matrix pins), ✅ Phase W.B (4 workshop-polish items: analyzer in sample + retrospective + find-the-bug + animated cast scripts), ✅ Phase W.C mostly done (W.6 MafAutoFix + W.7 MafBeforeAfter + W.13 MafHealthBadge subcommand + W.14 snupkg+SourceLink). Test surface: **524 unique tests × 3 TFMs = 1572 executions, all green.** Phase W remainders: 🟡 W.11 MafScoreMigrationRisk, 🟡 W.12 MafGenerateRegressionPlan. Path to 1.0: 🟡 [Phase X.1 + X.2](#phase-x--user-checkpoints) (run workshop, cut 1.3.0 — needs you).
 > **Single source of truth for "what's next."** When this contradicts other docs, this wins.
 > **For history of done work:** see the **[`Done`](#-done--phases-a-through-q-history) section at the bottom** of this file, plus the full archive in [`maf-migration-toolkit-plan.md`](./maf-migration-toolkit-plan.md).
 
@@ -159,16 +159,14 @@ All 4 items landed. Phase W.A delivered:
 - ✅ **Registry chronology gap — FIXED.** Verified via `dotnet-inspect` that `AgentThread`, `MapA2A`, `RegisterA2AAgent`, `InProcessExecution`, `AgentRunUpdateEvent`, `[StreamsMessage]`, `[YieldsMessage]` do NOT appear in any public MAF NuGet package (checked 1.0.0/1.1.0/1.2.0/1.3.0 main + `Microsoft.Agents.AI.DevUI`/`.Hosting` preview-channel packages 1.0–1.5). The registry inherited these patterns from pre-public-release / SemanticKernel-Process-era MAF code. **Fix applied:** added `applies_to_codebases: "pre-1.0.0"` markers + Phase W.A correction paragraphs to 7 affected entries (`MAF130-THREAD-001`, `MAF130-A2A-001/002`, `MAF130-STREAM-001`, `MAF130-EVENT-001`, `MAF130-ATTR-001/002`). Entries kept for historical documentation but will not fire on any modern customer codebase pinned to MAF 1.0+.
 - ✅ **Compat-matrix corrections — FIXED.** `docs/compatibility-matrix.md` + `src/maf-autopilot/Tools/CompatibilityTool.cs` (static `Matrix`) both updated in lockstep. MAF 1.0.0 / 1.1.0 / 1.2.0 rows now show their actual transitive minimums: `Microsoft.Extensions.AI 10.5.0` + `Azure.AI.OpenAI 2.8.0-beta.1`. The "Removed Packages by Version" table also corrected — DevUI + Hosting are NOT removed; they're still on NuGet as preview-only channels (latest `1.5.0-preview.260507.1`). 2 drift tests updated to assert the new (corrected) content; all 1464 test executions green.
 
-#### Phase W.B — Workshop polish (4 items, ~½ day)
-
-Land these AFTER the samples exist, so the workshop demos all 3 samples in one polished arc.
+#### Phase W.B — Workshop polish ✅ DONE 2026-05-13
 
 | Step | ID | Item | Effort | Status |
 |---|---|---|---|---|
-| 5 | [**W.2**](#w2--wire-analyzer-nuget-into-the-13-sample) | Wire analyzer NuGet into the 1.3 sample (workshop step 5b) | XS (30 min) | 🟡 |
-| 6 | [**W.3**](#w3--workshop-retrospective-step) | Workshop retrospective step (`@maf-best-practice-reviewer`) | XS (15 min, doc only) | 🟡 |
-| 7 | [**W.5**](#w5--find-the-bug-in-30-seconds-workshop-challenge) | "Find the bug in 30 seconds" workshop challenge | S (2-4 hrs) | 🟡 |
-| 8 | [**W.4**](#w4--animated-install-cast-source-artifacts-only) | Animated install cast — `.tape` + helpers (source artifacts only) | M (4 hrs source) | 🟡 |
+| 5 | [**W.2**](#w2--wire-analyzer-nuget-into-the-13-sample) | Wired `maf-autopilot.Analyzers 1.3.0-alpha-1` into the 1.3 sample csproj + added `.editorconfig` demoting MAF001/2/3 to warnings + workshop Step 5b explains the squigglies | XS | ✅ |
+| 6 | [**W.3**](#w3--workshop-retrospective-step) | Added workshop Step 9 (retrospective via `@maf-best-practice-reviewer`) + Step 10 (MafAutoFix demo) | XS | ✅ |
+| 7 | [**W.5**](#w5--find-the-bug-in-30-seconds-workshop-challenge) | `samples/find-the-bug/` with 3 subtle-bug snippets + `README.md` (facilitator script) + `answer-key.md`. Doctor verified: grade C, 2/3 bugs detected by AST scanners (the FAN-IN bug needs `MafRunCs0618Hunt` against a real csproj, documented in the key). | S | ✅ |
+| 8 | [**W.4**](#w4--animated-install-cast-source-artifacts-only) | `docs/assets/install-cast.tape` (4-beat vhs script) + `scripts/make-cast.{sh,ps1}` wrappers + README embed snippet. Rendering itself is Phase X.3. | M | ✅ (source artifacts) |
 
 #### Phase W.C — New MCP tools (5 items + 1 polish, ~3-4 days)
 
@@ -177,11 +175,11 @@ Tool-surface expansion. **W.6 (MafAutoFix) is the biggest leverage** — the mis
 | Step | ID | Item | Effort | Depends on | Status |
 |---|---|---|---|---|---|
 | 9 | [**W.6**](#w6--mafautofix-mcp-tool-the-missing-do-half) | `MafAutoFix` MCP tool (THE missing "do" half) | M (1-2 days) | W.1 | ✅ DONE 2026-05-13 |
-| 10 | [**W.7**](#w7--mafbeforeafter-mcp-tool) | `MafBeforeAfter(repoPath, ruleIds[])` MCP tool | S (3-4 hrs) | W.6 | 🟡 |
+| 10 | [**W.7**](#w7--mafbeforeafter-mcp-tool) | `MafBeforeAfter(repoPath, ruleIds[])` MCP tool — unified-diff preview of every change a rule-set would make; uses W.6 rewriters in dry-run; 7 tests | S (3-4 hrs) | W.6 | ✅ DONE 2026-05-13 |
 | 11 | [**W.11**](#w11--mafscoremigrationriskrepopath-mcp-tool) | `MafScoreMigrationRisk(repoPath)` MCP tool | S (4 hrs) | none | 🟡 |
 | 12 | [**W.12**](#w12--mafgenerateregressionplanfrom-to-mcp-tool) | `MafGenerateRegressionPlan(from, to)` MCP tool | M (1 day) | W.1, W.8, W.10 | 🟡 |
-| 13 | [**W.13**](#w13--mafhealthbadge-subcommand) | `MafHealthBadge` (subcommand only — hosting is X.4) | XS (1 hr) | none | 🟡 |
-| 14 | **W.14** | NuGet polish — add `IncludeSymbols=true` + `SymbolPackageFormat=snupkg` + SourceLink (AgentEval parity — see [NuGet packaging alignment](#nuget-packaging-alignment-with-agenteval)) | XS (1 hr) | none | 🟡 |
+| 13 | [**W.13**](#w13--mafhealthbadge-subcommand) | `maf-autopilot badge` CLI subcommand emits shields.io endpoint-badge JSON; 11 tests (theory + integration against 1.3 sample) | XS | ✅ DONE 2026-05-13 |
+| 14 | **W.14** | NuGet polish — added `IncludeSymbols=true` + `SymbolPackageFormat=snupkg` + `Microsoft.SourceLink.GitHub` to BOTH the main nupkg and the analyzer nupkg. AgentEval-parity achieved. | XS | ✅ DONE 2026-05-13 |
 
 **Why this order (instead of the original V.x order):**
 
@@ -993,13 +991,54 @@ Items that require you (the maintainer) — Claude cannot do these autonomously.
 
 #### X.1 — Run the workshop end-to-end (the A.8 unblocker)
 
-**What.** Follow [`samples/workshop.md`](../samples/workshop.md). The 8 steps drive the toolkit from install → audit → plan → execute → verify.
+**What.** Follow [`samples/workshop.md`](../samples/workshop.md). The 10 steps drive the toolkit from install → audit → plan → execute → verify → retrospective → auto-fix demo.
 
 **Why you (not Claude).** The `@maf-auditor` and `@maf-migration` agents are GitHub Copilot Chat features, loaded by VS Code from `.github/agents/`. Claude Code can't invoke them. You hold the chat session.
 
-**Expected outcome.** Migration log in `samples/maf-1.3-sample/docs/migration-plan.md` + final `MafDoctor` grade A or B. This pair = the A.8 evidence for 1.0 announcement.
+**Pre-flight checklist (5 min).**
 
-**If something breaks.** File the issue as Phase T.6 expansion (registry drift / scanner gap). Claude can fix the toolkit-side issue then.
+- [ ] **VS Code Insiders installed** (regular VS Code also works, but Insiders has the freshest MCP support).
+- [ ] **GitHub Copilot subscription active** (any tier — needed for `@maf-*` agents).
+- [ ] **.NET 8 SDK or later** on PATH (`dotnet --version`).
+- [ ] **`maf-autopilot` global tool installed** — `dotnet tool install -g maf-autopilot --prerelease` (Step 0 of the workshop now auto-installs if missing).
+- [ ] _(optional)_ Azure OpenAI deployment configured if you want the `--run` mode to actually call the LLM (the workshop doesn't require it — dry-run is the default).
+
+**Exact prompt sequence to use in Copilot Chat.**
+
+The workshop's Steps 4–10 each have one canonical prompt. Copy these verbatim:
+
+| Step | Prompt to send in Copilot Chat |
+|---|---|
+| 4 | `@maf doctor — what's the health grade of this codebase?` |
+| 5 (a) | `show me every anti-pattern in this code` |
+| 5 (b) | `check the fan-out executors for silent-starvation risks` |
+| 5 (c) | `diagram the workflow topology` |
+| 5 (d) | `find any CS0618 warnings the compiler reports` |
+| 5b | _(no prompt — just observe the IDE squigglies after `dotnet build`)_ |
+| 6 | `@maf-auditor scan this codebase and write a migration plan to docs/migration-plan.md` |
+| 7 | `@maf-migration execute the plan in docs/migration-plan.md, with dotnet build gates between each task` |
+| 8 | `@maf doctor — what's the health grade now?` |
+| 9 | `@maf-best-practice-reviewer review the migrated codebase and flag what's still suboptimal` |
+| 10 | `use MafAutoFix to fix the MAF-AP-SEC-001 finding in this codebase` |
+
+**Expected outcome.**
+- `samples/maf-1.3-sample/docs/migration-plan.md` produced by Step 6 — a structured markdown plan with one section per finding.
+- After Step 7, `dotnet build` is green and the deliberate anti-patterns are gone.
+- Step 8's grade is **A** (or **B** if any of the registry-drift "phantom" entries trigger false-positive cleanup advice).
+- The migration log (`samples/maf-1.3-sample/docs/migration-plan.md`) + the final grade pair = the **A.8 evidence** to point at when announcing 1.0.
+
+**Reset between attempts** (e.g. for re-running the workshop or sharing it with a colleague).
+
+```bash
+# From the repo root, NOT from inside the sample
+git restore samples/maf-1.3-sample/
+rm -rf samples/maf-1.3-sample/.vscode
+rm -f  samples/maf-1.3-sample/docs/migration-plan.md
+```
+
+**If something breaks.** File the issue as Phase T.6 expansion (registry drift / scanner gap). Claude can fix the toolkit-side issue then. Most likely failure modes:
+- `@maf-auditor` produces a plan that references a registry entry marked `applies_to_codebases: "pre-1.0.0"` (the Phase W.A phantom entries) — ignore those rows. They won't fire on the actual sample's code; the auditor sometimes surfaces them as "consider these patterns too" guidance.
+- `@maf-migration` makes a rewrite that breaks `dotnet build` — gate is restorative; revert that file with `git checkout HEAD -- <file>` and ask the agent to try a different approach for that finding.
 
 #### X.2 — Cut stable 1.3.0
 
@@ -1015,10 +1054,47 @@ Items that require you (the maintainer) — Claude cannot do these autonomously.
 
 **Why you (not Claude).** One-way publish to a public registry. Once `1.3.0` (no `-alpha-N`) is live, anyone running `dotnet tool install -g maf-autopilot` (no `--prerelease`) gets it. That's the implicit announcement.
 
-**Pre-flight checklist.**
-- ✅ `NUGET_API_KEY` secret set in GitHub repo settings.
-- ✅ X.1 produced grade A/B evidence (the toolkit was validated on a real codebase).
-- ✅ Branch protection on `main` allows the release workflow to push tags.
+**Pre-flight checklist (~5 min — DO ALL BEFORE TRIGGERING).**
+
+- [ ] **`NUGET_API_KEY` secret is present** in GitHub repo settings (`Settings → Secrets and variables → Actions`). Without it, the `dotnet nuget push` step fails with a confusing 403.
+- [ ] **X.1 completed AT LEAST ONCE** and produced grade A/B evidence. This is the A.8 acceptance criterion; cutting 1.0 without it ships unverified code.
+- [ ] **Branch protection on `main`** allows the release workflow to push tags (the workflow needs `contents: write` permission, which is already declared in `release.yml`).
+- [ ] **No uncommitted changes** on `main` — `git status` should be clean. The release pipeline assumes a clean tree.
+- [ ] **`Version` in `src/maf-autopilot/maf-autopilot.csproj`** matches the version you're cutting (e.g. `<Version>1.3.0</Version>`). The release workflow overrides this from `-f version=...` but it's safer to commit the right value first.
+- [ ] **Sanity check the multi-target nupkg shape locally:** `dotnet pack src/maf-autopilot/maf-autopilot.csproj -c Release` — confirm the produced nupkg's `tools/` folder contains `net8.0`, `net9.0`, `net10.0` subdirectories.
+- [ ] **`NUGET_API_KEY` has package-push permission for `maf-autopilot` and `maf-autopilot.Analyzers`** — check at https://www.nuget.org/account/apikeys.
+
+**Exact commands.**
+
+```bash
+# Option A — from local clone (recommended).
+gh workflow run release.yml -f version=1.3.0 --ref main
+
+# Option B — via GitHub UI.
+# Actions → "Release maf-autopilot" → Run workflow → version=1.3.0
+
+# Watch progress (Option A):
+gh run watch
+```
+
+**Post-flight check (~5 min after the workflow completes).**
+
+- [ ] **Package live on nuget.org:** https://www.nuget.org/packages/maf-autopilot/1.3.0 should resolve within ~5 minutes.
+- [ ] **Analyzer package live:** https://www.nuget.org/packages/maf-autopilot.Analyzers/1.3.0.
+- [ ] **GitHub Release page** has been created with auto-generated notes from `softprops/action-gh-release`.
+- [ ] **Docker image** pushed: `docker pull ghcr.io/joslat/maf-autopilot:1.3.0` succeeds.
+- [ ] **A clean install works:** in a fresh shell, `dotnet tool install -g maf-autopilot` (NO `--prerelease`) gets you 1.3.0 stable.
+
+**Rollback (if the publish goes wrong).**
+
+NuGet packages CAN be unlisted (hidden from search but still installable by version pin) — they cannot be deleted. Steps:
+
+```
+# On nuget.org → My Account → Package Manager → maf-autopilot → 1.3.0 → "Unlist"
+# Same for maf-autopilot.Analyzers/1.3.0.
+```
+
+You can then publish `1.3.1` with the fix. Avoid this path by completing the pre-flight checklist.
 
 #### X.3 — Render the animated install cast
 

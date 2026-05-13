@@ -37,5 +37,10 @@
     <PackageVersion Include="xunit" Version="2.9.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageVersion Include="coverlet.collector" Version="6.0.2" />
+
+    <!-- SourceLink (W.14 / AgentEval parity) — embedded source maps so
+         consumers can step into the nupkg's source under the debugger.
+         Pinned to the same version AgentEval pins. -->
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
   </ItemGroup>
 </Project>

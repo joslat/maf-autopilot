@@ -46,6 +46,17 @@
 
     <!-- Security: transitive pin (GHSA-g94r-2vxg-569j) — same pin AgentEval uses. -->
     <PackageReference Include="OpenTelemetry.Api" Version="1.15.3" />
+
+    <!-- Phase W.2: the analyzer NuGet wired in here so workshop step 5b can
+         demonstrate write-time enforcement. Expect MAF001 / MAF002 / MAF003
+         warnings inline in VS Code on each broken file. Marked PrivateAssets
+         so the analyzer doesn't leak to anything that consumes this sample
+         project (it's not consumed by anything — it's a fixture — but
+         setting PrivateAssets is the canonical pattern). -->
+    <PackageReference Include="maf-autopilot.Analyzers" Version="1.3.0-alpha-1">
+      <IncludeAssets>analyzers; build</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
   </ItemGroup>
 
 </Project>

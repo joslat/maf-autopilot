@@ -32,6 +32,17 @@ if (args.Length >= 1 && args[0] == "doctor")
     Environment.Exit(0);
     return;
 }
+if (args.Length >= 1 && args[0] == "badge")
+{
+    // Phase W.13 — emit a shields.io endpoint-badge JSON payload. Consumers
+    // host the JSON output (X.4) and reference it from shields.io URLs like
+    // https://img.shields.io/endpoint?url=<your-hosted-json>.
+    var path = args.Length >= 2 ? args[1] : Directory.GetCurrentDirectory();
+    var badge = MafAutopilot.Commands.BadgeCommand.Build(path);
+    Console.WriteLine(badge);
+    Environment.Exit(0);
+    return;
+}
 if (args.Length >= 1 && args[0] == "registry-extract")
 {
     var exitCode = RegistryExtractCommand.Run(args);

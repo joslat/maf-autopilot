@@ -27,7 +27,19 @@
 
     <!-- Ensure logs go to stderr so stdout stays clean for MCP protocol -->
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+
+    <!-- W.14 — symbol package + SourceLink (AgentEval parity).
+         Lets consumers step into the toolkit's source under the debugger
+         without having to clone this repo locally. -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+  </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="maf-autopilot.Tests" />

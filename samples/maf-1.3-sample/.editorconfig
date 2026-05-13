@@ -1,0 +1,23 @@
+# Per-sample analyzer config — demote MAF001/MAF002/MAF003 from
+# error → warning so the workshop sample still builds. The diagnostics
+# still appear in the IDE (squigglies, problems panel) — they just
+# don't break `dotnet build`.
+#
+# This file applies ONLY to samples/maf-1.3-sample/* because EditorConfig
+# files cascade from the closest one up.
+#
+# Phase W.2 (workshop polish, 2026-05-13). Without this file, wiring
+# the analyzer would break the sample's build, which would in turn break
+# the workshop's Steps 3-5 (`dotnet build` + `dotnet run`).
+
+root = true
+
+[*.cs]
+# Fan-out handler must return Task<T> / ValueTask<T>.
+dotnet_diagnostic.MAF001.severity = warning
+
+# Avoid DefaultAzureCredential in production code.
+dotnet_diagnostic.MAF002.severity = warning
+
+# EnableSensitiveData = true outside development.
+dotnet_diagnostic.MAF003.severity = warning
