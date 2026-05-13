@@ -1,6 +1,6 @@
 # Next steps
 
-> **Last refreshed:** 2026-05-13 — **Phase S landed** (multi-target nupkg + central package management) + Phase Q (auto-update loop end-to-end validated on real MAF 1.4 + 1.5 data).
+> **Last refreshed:** 2026-05-13 — **Phase S + T.1-T.2 landed** (multi-target nupkg + the MAF 1.3 dogfood sample at `samples/maf-1.3-sample/`) + Phase Q (auto-update loop end-to-end validated on real MAF 1.4 + 1.5 data).
 > **Single source of truth for "what's next."** When this contradicts other docs, this wins.
 > **For history of done work:** see the **[`Done`](#-done--phases-a-through-q-history) section at the bottom** of this file, plus the full archive in [`maf-migration-toolkit-plan.md`](./maf-migration-toolkit-plan.md).
 
@@ -91,13 +91,15 @@ Currently A.8 says "wait for an external customer migration." That's an indefini
 
 | ID | Item | Owner | Effort | What it proves |
 |---|---|---|---|---|
-| T.1 | Create `samples/maf-1.3-sample/` — a real .NET project pinned to MAF 1.3.0 | me | S (30 min) | Skeleton |
-| T.2 | Hand-author content that uses **every canonical 1.3 obsolete pattern** — `ReflectingExecutor<T>`, `IMessageHandler<TIn,TOut>`, `[StreamsMessage]`/`[YieldsMessage]`, `AddFanInBarrierEdge(target, sources)`, `GetNewThread()`, `SerializeSession`, `DefaultAzureCredential`, instance state on `AIContextProvider`, top-level `Instructions`, etc. | me | M (1-2 hr) | Coverage — the sample tickles every registry entry |
-| T.3 | Run `@maf-auditor` against the sample to generate `samples/maf-1.3-sample/docs/migration-plan.md` | YOU (assigned to Copilot Chat) | S (10 min interactive) | Plan generation works on a real codebase |
-| T.4 | Run `@maf-migration` against the plan, task-by-task, with `dotnet build` gates | YOU | M (1 hr interactive) | The whole migration loop works |
-| T.5 | After T.4, sample should be at MAF 1.4 then 1.5 baseline — verify all tests still pass | me | S (15 min) | Migration is correct end-to-end |
-| T.6 | File any gaps in the toolkit (missing registry entries, wrong fix descriptions, broken examples) | me | depends | Toolkit hardening from real-world signal |
-| T.7 | **Cut stable `1.3.0` to NuGet** (A.8 unblocked by T) | YOU | S (10 min) | 1.0 ships |
+| T.1 | Create `samples/maf-1.3-sample/MafSample.FraudClaims.csproj` — pinned to MAF 1.3.0, target `net8.0`, builds clean (0 errors, 1 expected CS0618 warning). | ✅ |
+| T.2 | Hand-authored the FraudClaimsTriage workflow (intake → fan-out 3 investigators → fan-in aggregator → decision → notification). **10 anti-pattern errors + 3 warnings + 3 silent-starvation risks** detected by `maf-autopilot doctor`. Validated coverage: `MAF-AP-SEC-001/002/003`, `MAF-AP-OBS-001`, `MAF-AP-CONC-001/002`, `MAF-AP-WF-001`, `MAF130-EXEC-001` / `MAF001` × 3, `MAF130-FAN-IN-001`, `MAF130-MIDDLEWARE-001`. Style inspired by `AgentEval.TravelDemo`. | ✅ |
+| T.3 | Run `@maf-auditor` against the sample to generate `samples/maf-1.3-sample/docs/migration-plan.md` | 🟡 Next — YOU run in Copilot Chat |
+| T.4 | Run `@maf-migration` against the plan, task-by-task, with `dotnet build` gates | 🟡 |
+| T.5 | After T.4, sample should be at MAF 1.4 then 1.5 baseline — verify all tests still pass | 🟡 |
+| T.6 | **Already triaged registry drift** (see [`samples/maf-1.3-sample/README.md` § "Phase T registry corrections"](../samples/maf-1.3-sample/README.md)): `MAF130-SESSION-001`, `MAF130-INSTRUCTIONS-001`, `MAF130-MIDDLEWARE-001` all describe pre-1.3 surfaces or wrong `Use()` parameter names. To be reframed in `registry.yaml`. | 🟡 Open findings |
+| T.7 | **Cut stable `1.3.0` to NuGet** (A.8 unblocked by T) | ⏳ Gated on T.4-T.5 |
+
+**Validation of T.1+T.2 (2026-05-13):** `dotnet run --project src/maf-autopilot --framework net10.0 -- doctor samples/maf-1.3-sample` reports grade **F** with 10 anti-pattern errors + 3 silent-starvation risks correctly detected. The toolkit finds the deliberate-anti-patterns end-to-end. This is the core Phase T proof-of-concept.
 
 ### Phase U — 1.0 polish (post-A.8)
 

@@ -65,8 +65,12 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 │  /docs/             this folder — index.md catalogues it                │
 │  /guides/           per-version migration guides (1.3.0, 1.4.0, 1.5.0,  │
 │                     plus auto-generated maf-current-migration-guide.md) │
+│  /samples/          dogfood fixtures — maf-1.3-sample/ is the A.8       │
+│                     unblocker (Phase T): a deliberate-anti-pattern      │
+│                     MAF 1.3.0 codebase the toolkit is exercised against │
 │  /Dockerfile        multi-stage build for the GHCR image (net8 LTS base)│
-│  /maf-autopilot.sln solution file referencing all 4 projects            │
+│  /maf-autopilot.sln solution file referencing the 4 .NET projects       │
+│                     (the sample is intentionally NOT in the sln)        │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
