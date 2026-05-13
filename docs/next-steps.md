@@ -1,6 +1,6 @@
 # Next steps
 
-> **Last refreshed:** 2026-05-13 (later) — **Phase S + T.1-T.2.5 + T.6 landed** (multi-target nupkg, MAF 1.3 dogfood sample, workshop guide with tool-installer fence, 3 registry drift fixes); Dependabot #2 closed; **R.3 / S.8 already absorbed by Phase S** (Hosting 10.0.7 pinned centrally) so the original Phase R triage now skips #11 (closed automatically) and #1 (auto-resolved). Phase Q intact.
+> **Last refreshed:** 2026-05-13 (status check) — **5 phases landed**: ✅ Phase Q (auto-update validated), ✅ Phase S (multi-target nupkg `net8.0;net9.0;net10.0`), ✅ Phase T.1+T.2+T.2.5+T.6 (MAF 1.3 dogfood sample + workshop + registry drift fixes), ✅ Phase R Dependabot triage (5 PRs merged via Claude Code, 2 deferred to Phase U, 2 auto-closed). **The toolkit is complete and validated**; the only items left for 1.0 are human-driven (run the workshop, cut 1.3.0 — see [Phase X](#phase-x--user-checkpoints)). All Phase V brainstorm items reorganised below as **[Phase W — Claude-deliverable post-1.0 items](#phase-w--claude-deliverable-post-10-items)** with full implementation detail for each (Sonnet 4.6 can pick up any of them).
 > **Single source of truth for "what's next."** When this contradicts other docs, this wins.
 > **For history of done work:** see the **[`Done`](#-done--phases-a-through-q-history) section at the bottom** of this file, plus the full archive in [`maf-migration-toolkit-plan.md`](./maf-migration-toolkit-plan.md).
 
@@ -11,10 +11,12 @@
 1. [Current state](#current-state)
 2. [My recommendations — at a glance](#my-recommendations--at-a-glance)
 3. [Active backlog — phased plan](#active-backlog--phased-plan)
-   - [Phase R — in-flight + finishing touches](#phase-r--in-flight--finishing-touches-this-week)
-   - [Phase S — Multi-target the nupkg](#phase-s--multi-target-the-nupkg-matching-agenteval-house-style)
-   - [Phase T — MAF 1.3 sample + migration dogfood](#phase-t--maf-13-sample--migration-dogfood-the-a8-unblocker)
-   - [Phase U — 1.0 polish (post-A.8)](#phase-u--10-polish-post-a8)
+   - ✅ [Phase R — Dependabot triage + finishing touches](#phase-r--dependabot-triage--finishing-touches--done-2026-05-13)
+   - ✅ [Phase S — Multi-target the nupkg](#phase-s--multi-target-the-nupkg-matching-agenteval-house-style--landed-2026-05-13)
+   - 🟡 [Phase T — MAF 1.3 sample + migration dogfood](#phase-t--maf-13-sample--migration-dogfood-the-a8-unblocker) (T.1-T.2.5+T.6 ✅; T.3-T.5 + T.7 → Phase X)
+   - 🟡 [Phase W — Claude-deliverable post-1.0 items](#phase-w--claude-deliverable-post-10-items) (13 items, full implementation detail)
+   - 🟡 [Phase X — User checkpoints](#phase-x--user-checkpoints) (7 items requiring you)
+   - 🟡 [Phase U — 1.0 polish (post-A.8)](#phase-u--10-polish-post-a8)
 4. [In-depth recommendations (my reasoning)](#in-depth-recommendations-my-reasoning)
    - [TFM strategy](#tfm-strategy)
    - [Dependabot triage](#dependabot-triage)
@@ -54,18 +56,19 @@ Below is the phased plan, then the reasoning behind each call.
 
 ## Active backlog — phased plan
 
-### Phase R — in-flight + finishing touches (this week)
+### Phase R — Dependabot triage + finishing touches ✅ DONE 2026-05-13
 
-The cleanup that's already running or close to running. Should land in the next day or two.
+All 7 dependabot PRs triaged. 5 merged, 2 closed (Docker .NET 10 forcers), 2 deferred to Phase U.
 
-| ID | Item | Owner | Effort | Status |
-|---|---|---|---|---|
-| R.1 | Wait for Copilot's PR for MAF 1.5 (issue #16) and review + merge | YOU | S (5 min) | ⏳ Copilot working |
-| R.2 | Close Dependabot #1 + #2 (Docker .NET 10 forcers — Dockerfile stays net8 LTS) | YOU or me (with consent) | S (5 min) | 📋 |
-| R.3 | **Merge Dependabot #11 (Hosting 10.0.7)** — needed for Phase S multi-target. Was originally "close" — flipped after AgentEval cross-check. | YOU | S (5 min) | 📋 |
-| R.4 | Merge low-risk Action bumps (#3, #4) after a sanity glance at each diff | YOU | S (10 min) | 📋 |
-| R.5 | Verify + merge mid-risk Actions (#5 upload-artifact, #6 softprops, #7 checkout) — see [Dependabot triage](#dependabot-triage) | YOU | M (30 min) | 📋 |
-| R.6 | Merge `Microsoft.NET.Test.Sdk` bump (#12) and re-run test suite | YOU or me | S (15 min) | 📋 |
+| ID | Item | Status |
+|---|---|---|
+| R.1 | Wait for Copilot's PR for MAF 1.5 (issue #16) and review + merge | ⏳ Independent — Copilot working separately |
+| R.2 | Close Dependabot #1 + #2 (Docker .NET 10 forcers — Dockerfile stays net8 LTS) | ✅ Closed by Claude with explanatory comment citing Phase S decision |
+| R.3 | Merge Dependabot #11 (Hosting 10.0.7) | ✅ Auto-resolved — `Microsoft.Extensions.Hosting 10.0.7` was pinned in `Directory.Packages.props` during Phase S |
+| R.4 | Merge low-risk Action bumps #3 (docker/setup-buildx-action 3→4) + #4 (docker/login-action 3→4) | ✅ Both squash-merged by Claude |
+| R.5 | Verify + merge mid-risk Actions: #5 (upload-artifact 4→7), #6 (softprops/action-gh-release 2.2.1→3.0.0), #7 (actions/checkout 4→6) | ✅ All three squash-merged by Claude after diff verification |
+| R.6 | Merge `Microsoft.NET.Test.Sdk` bump | ✅ Auto-resolved — no PR currently open (Test.Sdk is at the intended version in `Directory.Packages.props`) |
+| R.7 | Defer to Phase U: #8 (coverlet 6→10), #17 (Microsoft.CodeAnalysis 4.11→5.3) | 🟡 Comments left on both PRs; tracked in Phase U / Phase X |
 
 ### Phase S — Multi-target the nupkg (matching AgentEval house style) ✅ LANDED 2026-05-13
 
@@ -125,291 +128,903 @@ Wall-clock from here to 1.0 publishable: **~60 min of human work** (steps 1 + 2)
 
 ---
 
-#### 💡 Additional Ideas — post-1.0 backlog (with rich detail)
+### Phase W — Claude-deliverable post-1.0 items
 
-**Summary table** (sorted by potential impact × autonomy I can deliver). The detail subsections below give the full description, keypoints, and risks for each.
+These are items I (Claude Code or a peer like Sonnet 4.6) can deliver **without human intervention**. Sequenced by dependency: **complete W.N before starting W.N+1 where a dependency is listed**. Each section gives goal, files to touch, algorithm, tests, acceptance criteria, and pitfalls — enough detail for any model to pick it up cold.
 
-| Idea | Effort | Issues / risks | Potential impact | Can Claude do it alone? |
-|---|---|---|---|---|
-| V.1 `MafAutoFix` MCP tool | M (1-2 days) | Per-rule fix logic must be byte-perfect; bad fix = silent regression | 🟢🟢🟢🟢🟢 — the missing "do" half | ✅ Yes |
-| V.2a `samples/maf-1.2-sample/` (1.2 → 1.3 migration) | M (4-8 hrs) | MAF 1.2.0 surface differs; need careful API recall vs. dotnet-inspect | 🟢🟢🟢🟢 — closes 5-6 registry-coverage gaps | ✅ Yes |
-| V.2b `samples/maf-1.0-sample/` (1.0 → 1.x migration ladder) | M (4-8 hrs) | MAF 1.0 is older still; fewer real customers but huge migration-ladder demo value | 🟢🟢🟢 — bridges deepest historical gap + best demo | ✅ Yes |
-| V.3 CI regression on `samples/*` | S (2-3 hrs) | Tests run a tool against a project; need careful timing + isolation | 🟢🟢🟢🟢 — workshop invariants pinned forever | ✅ Yes |
-| V.4 "Find the bug in 30 seconds" challenge | S (2-4 hrs) | Picking 3 truly-subtle bugs that aren't obvious to a senior; slide assets | 🟢🟢🟢🟢🟢 — biggest workshop wow moment | ✅ Yes |
-| V.5 Animated install cast (vhs `.tape` + GIF) | M (½ day) | I can write the `.tape` script + helper; recording itself needs vhs installed locally | 🟢🟢🟢🟢 — first-impression upgrade in README | 🟡 Source artifacts yes; rendering needs you (vhs/ffmpeg) |
-| V.6 `applies_to_codebases` formalised in `RegistryModels.cs` | S (1-2 hrs) | Schema change; existing entries need migration; YAML loader must accept missing field | 🟢🟢🟢 — enables filtering by source-version era | ✅ Yes |
-| V.7 `MafBeforeAfter(planPath)` — single diff per plan | S (3-4 hrs) | Plan format parsing; diff rendering | 🟢🟢🟢 — maintainer review UX | ✅ Yes |
-| V.8 `MafHealthBadge` (shields.io output) | XS (1 hr) | Badge URL hosting (shields.io endpoint API) | 🟢🟢🟢 — viral marketing surface | ✅ Yes |
-| V.9 Analyzer NuGet wired into the 1.3 sample (workshop step 5b) | XS (30 min) | Adds a `<PackageReference>` to the sample csproj; restore + rebuild | 🟢🟢 — shift-left demo | ✅ Yes |
-| V.10 Migration retrospective via `@maf-best-practice-reviewer` (workshop step 9) | XS (15 min — doc-only) | Just adds a workshop step + screenshot | 🟢🟢 — multi-agent demo | ✅ Yes (doc only — agent invocation in workshop is yours) |
-| V.11 `MafScoreMigrationRisk(repoPath)` | S (4 hrs) | Heuristic weighting — needs real-world calibration | 🟢🟢🟢 — sets expectations before fixing | ✅ Yes |
-| V.12 `MafGenerateRegressionPlan(from, to)` | M (1 day) | Walks version graph; needs guide-section-link database | 🟢🟢🟢 — multi-version migration is the killer use case | ✅ Yes |
+**Summary table (Phase W, in implementation order):**
 
----
+| ID | Was | Item | Effort | Depends on | Status |
+|---|---|---|---|---|---|
+| **W.1** | V.6 | Formalise `applies_to_codebases` in `RegistryModels.cs` | S (1-2 hrs) | none | 🟡 |
+| **W.2** | V.9 | Wire analyzer NuGet into the 1.3 sample (workshop step 5b) | XS (30 min) | none | 🟡 |
+| **W.3** | V.10 | Workshop retrospective step (`@maf-best-practice-reviewer`) | XS (15 min, doc only) | none | 🟡 |
+| **W.4** | V.5 | Animated install cast — `.tape` + helpers (source artifacts only) | M (4 hrs source) | none | 🟡 |
+| **W.5** | V.4 | "Find the bug in 30 seconds" workshop challenge | S (2-4 hrs) | none | 🟡 |
+| **W.6** | V.1 | `MafAutoFix` MCP tool (THE missing "do" half) | M (1-2 days) | W.1 | 🟡 |
+| **W.7** | V.7 | `MafBeforeAfter(repoPath, ruleIds[])` MCP tool | S (3-4 hrs) | W.6 | 🟡 |
+| **W.8** | V.2a | `samples/maf-1.2-sample/` (1.2 → 1.3 migration fixture) | M (4-8 hrs) | none (W.6 nice-to-have for end-to-end test) | 🟡 |
+| **W.9** | V.3 | CI regression on `samples/*` | S (2-3 hrs) | W.8 (≥2 samples needed) | 🟡 |
+| **W.10** | V.2b | `samples/maf-1.0-sample/` (oldest migration ladder fixture) | M (4-8 hrs) | W.8 (same recipe) | 🟡 |
+| **W.11** | V.11 | `MafScoreMigrationRisk(repoPath)` MCP tool | S (4 hrs) | none | 🟡 |
+| **W.12** | V.12 | `MafGenerateRegressionPlan(from, to)` MCP tool | M (1 day) | W.1, W.8, W.10 | 🟡 |
+| **W.13** | V.8 | `MafHealthBadge` (subcommand only — hosting is X.4) | XS (1 hr) | none | 🟡 |
 
-##### V.1 — `MafAutoFix(repoPath, ruleId, file?)` MCP tool
-
-**Description.** Today the toolkit DETECTS anti-patterns (via `MafScanAntiPatterns`, `MafValidateFanOut`, `MafRunCs0618Hunt`) and the AGENT (e.g. `@maf-migration`) applies the fixes. There's no deterministic, AI-free "fix" half. `MafAutoFix` closes that loop for the mechanical rules:
-
-**Keypoints.**
-- One MCP method per rule family, dispatched off the `ruleId`.
-- Strictly deterministic fixes only — no LLM call, no judgement. Examples:
-  - `MAF-AP-SEC-001` → `new DefaultAzureCredential()` → `new ManagedIdentityCredential()` (1-line replace via Roslyn `SyntaxRewriter`).
-  - `MAF-AP-WF-001` → add `sealed` to executor class declaration (Roslyn `AddModifier`).
-  - `MAF130-FAN-IN-001` → swap `AddFanInBarrierEdge(target, sources)` → `(sources, target)` (Roslyn argument-list rewriter).
-  - `MAF130-EXEC-001` → fan-out `ValueTask` → `ValueTask<T>` (needs the inferred `T` — return-expression analysis).
-  - `MAF-AP-CONC-002` → `.Result` → `await` (with surrounding async-method propagation).
-- Output: a SARIF report of what was fixed + a unified diff for review.
-- CI integration: a bot can run `maf-autopilot autofix --rules MAF-AP-SEC-001,MAF-AP-WF-001 .` on every PR; no human in the loop for the mechanical cases.
-
-**Issues / risks.** Per-rule fix logic must be byte-perfect: a bad rewrite is worse than no rewrite (introduces regressions silently). Mitigation: every fix has a paired unit test asserting before/after pair from the sample. Roslyn `SyntaxRewriter` is the right tool; needs careful trivia handling so we don't strip comments.
-
-**Potential impact.** 🟢🟢🟢🟢🟢. Decouples detection from remediation. CI bots can fix-and-commit without an LLM in scope. Today the toolkit ships half a product; `MafAutoFix` ships the other half.
+**Pick-3 for 1.1.x release:** W.1 + W.6 (MafAutoFix) + W.4 (animated cast). ~2.5 focused days.
 
 ---
 
-##### V.2a — `samples/maf-1.2-sample/` (1.2 → 1.3 migration)
+#### W.1 — Formalise `applies_to_codebases` in `RegistryModels.cs`
 
-**Description.** A second standalone sample pinned to **MAF 1.2.0** so it exercises the registry entries the 1.3-sample can't reach — the ones that describe **REMOVED-in-1.3 surfaces** (`MAF130-THREAD-001`, `MAF130-A2A-001/002`, `MAF130-STREAM-001`, `MAF130-EVENT-001`, `MAF130-ATTR-001/002`).
+**Goal.** Make the YAML field that Phase T introduced (`applies_to_codebases: "pre-1.3.0"` on `MAF130-SESSION-001` and `MAF130-INSTRUCTIONS-001`) into a typed, queryable property on `RegistryEntry`.
 
-**Keypoints.**
-- Same `FraudClaimsTriage` shape (re-uses the conceptual topology) but written against the 1.2-era API:
-  - `agent.GetNewThread()` (the now-removed type).
-  - `[StreamsMessage]` / `[YieldsMessage]` attributes on executors.
-  - `services.AddA2AAgent(agent)` (the AIAgentExtensions surface).
-  - `app.MapA2A("/agent")` (the removed endpoint mapping).
-  - `InProcessExecution.StreamAsync(message)` (the removed streaming entry point).
-  - `AgentRunUpdateEvent` (the renamed event type).
-- Includes its own `MafSample.FraudClaims12.csproj` pinning `Microsoft.Agents.AI 1.2.0` exactly.
-- Workshop bonus track: open the 1.2 sample → run `MafScanAntiPatterns` → see CS0246 entries flagged → migrate to 1.3 via `@maf-migration` → re-run the doctor.
-- The same migration toolchain handles BOTH 1.2→1.3 AND 1.3→1.4 (chained migrations).
+**Dependencies.** None. Foundation for W.6 and W.12.
 
-**Issues / risks.** MAF 1.2.0 NuGet must still be available on nuget.org (it is, as of 2026-05-13). The 1.2 API surface needs `dotnet-inspect` lookups to author authentically — same Phase T discipline as we used for 1.3. Risk: if Microsoft un-publishes 1.2, the sample becomes unbuildable; pin a snapshot if it matters.
+**Effort.** 1-2 hours.
 
-**Potential impact.** 🟢🟢🟢🟢. Closes 5-6 registry-coverage gaps in one stroke. Validates the auto-update pipeline (1.3 ↔ 1.2 ↔ 1.4 chain). Demonstrates the toolkit handles BOTH "older customer codebase" and "younger codebase" migration directions.
+**Files to modify.**
+- `src/maf-autopilot/Data/RegistryModels.cs` — add the new property to the `RegistryEntry` record.
+- `src/maf-autopilot/Data/RegistryService.cs` — extend `BuildHaystack` if you want the field searchable (probably yes); add a helper `GetEntriesForCodebaseVersion(string version)`.
+- `src/maf-autopilot.Tests/RegistryServiceTests.cs` — round-trip + filter tests.
 
----
+**Algorithm.**
 
-##### V.2b — `samples/maf-1.0-sample/` (1.0 → 1.x migration ladder)
+1. In `RegistryEntry`:
+   ```csharp
+   public sealed record RegistryEntry
+   {
+       // ... existing fields ...
+       [YamlMember(Alias = "applies_to_codebases", ApplyNamingConventions = false)]
+       public string? AppliesToCodebases { get; init; }
+   }
+   ```
+2. YamlDotNet deserialisers ignore unknown fields by default — verify with `IgnoreUnmatchedProperties()` is set in `RegistryService`. The 2 existing entries with this field load cleanly.
+3. Add `public IEnumerable<RegistryEntry> GetEntriesForCodebaseVersion(string version)` on `RegistryService`. v1 logic: parse `AppliesToCodebases` as one of `null` / `"pre-X.Y.Z"` / `"X.Y.Z+"` / `"X.Y.Z-only"`. Use `System.Version.Parse` for comparison.
+4. Add a Markdown rendering hook in `RegistryService.FormatEntryAsMarkdown` to surface the field when non-null.
 
-**Description.** The OLDEST sample — pinned to **MAF 1.0.0** (the initial release). Demonstrates a full multi-step migration ladder: 1.0 → 1.1 → 1.2 → 1.3 → 1.4 → 1.5.
+**Tests.**
+- `RegistryEntry_WithAppliesToCodebases_RoundTrips` — write the YAML, parse it back, assert `AppliesToCodebases == "pre-1.3.0"`.
+- `RegistryEntry_WithoutAppliesToCodebases_LoadsAsNull` — backward compat.
+- `RegistryService_GetEntriesForCodebaseVersion_FiltersByPreVersion` — `pre-1.3.0` entries apply to a 1.2.x codebase but NOT a 1.3.x codebase.
+- `RegistryService_GetEntriesForCodebaseVersion_NullAppliesToAny` — entries without the field apply to all versions.
 
-**Keypoints.**
-- The earliest MAF API surface, including `AgentThread`, the pre-`AgentSession` chat-history pattern, the early `[StreamsMessage]` shape, etc.
-- Migrates THROUGH the registry entries that span versions (a single fix path doesn't suffice).
-- Workshop super-stretch demo: "watch the toolkit migrate this codebase across 5 MAF versions in 10 minutes."
-- Even if fewer real customers are on 1.0 today, the migration-ladder visualization is the **most powerful demonstration of the toolkit's reach**.
+**Acceptance.**
+- `dotnet build maf-autopilot.sln -c Release` — 0 errors, 0 warnings.
+- `dotnet test maf-autopilot.sln` — all 1422 existing executions still pass, plus 4 new tests pass on every TFM.
+- The 2 existing `applies_to_codebases: "pre-1.3.0"` entries in `registry.yaml` parse correctly.
 
-**Issues / risks.** MAF 1.0.0 surface is the most distant from current docs — recall is harder. Some 1.0-era APIs may have been removed even from current compat-matrix tracking. Requires careful `dotnet-inspect` recon. Lower customer-realism (most people aren't on 1.0 anymore).
-
-**Potential impact.** 🟢🟢🟢. Killer demo for talks/workshops; less practical day-to-day. Bridges the deepest historical gap.
-
----
-
-##### V.3 — CI regression on `samples/*`
-
-**Description.** Add an integration test (or a dedicated workflow) that runs `MafDoctor` against each `samples/*` folder and asserts the expected grade. Pins the workshop's invariants: if a future toolkit change regresses the detection on the 1.3 sample (e.g. the fan-out validator stops finding `ValueTask` returns), CI fails BEFORE the regression ships.
-
-**Keypoints.**
-- New test project: `src/maf-autopilot.Samples.IntegrationTests/` or just a new `[Fact]` in the existing test suite.
-- Per-sample expectations recorded in YAML: `samples/maf-1.3-sample/.expected-doctor.yaml` with `grade: F`, `anti_pattern_errors: 10`, `fanout_starvation_risks: 3`, etc.
-- Test calls `MafDoctor` programmatically via `Tools.DoctorTool.MafDoctor(sampleRoot)` and asserts each expected metric.
-- Optional second stage: apply the canned migration plan, re-build, re-doctor → assert grade A.
-
-**Issues / risks.** Sample builds need MAF 1.3.0 on the CI runner. `dotnet restore samples/maf-1.3-sample/` adds ~20 seconds to CI. Need to ensure the build cache works across the main solution + the sample (different `Directory.Packages.props` opt-out). Risk: false positives if the toolkit's grading thresholds shift; mitigate by versioning the expectations file alongside the toolkit.
-
-**Potential impact.** 🟢🟢🟢🟢. Permanent regression net. Every future MAF version's sample slots in with its own expectations. Workshop attendees can trust the demo works.
+**Pitfalls.**
+- Don't bake in a strict semver enum; keep it as a typed string for v1, parse on demand. Premature schema rigidity blocks rapid registry iteration.
+- YamlDotNet's case-sensitivity: use `[YamlMember(Alias = "applies_to_codebases")]` explicitly — the camelCase auto-convention will NOT match snake_case YAML keys.
+- The matcher `Cs0618HuntTool.MatchToRegistry` uses `RegistryService.SearchByApiName` which scans haystacks. Decide whether to include `AppliesToCodebases` in the haystack — likely NO (the string "pre-1.3.0" isn't an API name).
 
 ---
 
-##### V.4 — "Find the bug in 30 seconds" challenge
+#### W.2 — Wire analyzer NuGet into the 1.3 sample
 
-**Description.** A workshop teaser BEFORE running the toolkit. Show 3 side-by-side code snippets — each ~20 lines — with one subtle MAF anti-pattern planted in each. Attendees have 30 seconds to spot the bugs. THEN run the toolkit → it finds them all in <1 second.
+**Goal.** Demonstrate write-time enforcement in the workshop. After `dotnet add package maf-autopilot.Analyzers --prerelease`, VS Code shows squiggly red lines on the sample's broken code via `MAF001`/`MAF002`/`MAF003`.
 
-**Keypoints.**
-- New folder: `samples/find-the-bug/`
-  - `snippet-1.cs` — has top-level `Instructions` (pre-1.3 silently-ignored pattern).
-  - `snippet-2.cs` — has fan-out `[MessageHandler]` returning `ValueTask` (not `ValueTask<T>`).
-  - `snippet-3.cs` — has `AddFanInBarrierEdge(target, sources)` wrong-order overload.
-- `samples/find-the-bug/README.md` — challenge framing + the answer key.
-- Workshop slide template (markdown) with 3 columns, code-highlighted.
-- Punchline: "even a senior MAF dev needs 5 minutes per file to spot these. The toolkit found all 3 in 800 ms."
+**Dependencies.** None.
 
-**Issues / risks.** Picking bugs that are TRULY subtle to a senior reviewer — bugs that look right at a glance. The 3 listed above qualify (Instructions silently ignored is famously sneaky; fan-out `ValueTask` looks like normal async code; fan-in arg order looks symmetric). Visual presentation matters — needs syntax-highlighted markdown or screenshot.
+**Effort.** 30 minutes.
 
-**Potential impact.** 🟢🟢🟢🟢🟢. The single biggest "wow" moment in any toolkit demo. Sells the value proposition in 30 seconds.
+**Files to modify.**
+- `samples/maf-1.3-sample/MafSample.FraudClaims.csproj` — add `<PackageReference Include="maf-autopilot.Analyzers" Version="1.3.0-alpha-1">` with `<PrivateAssets>all</PrivateAssets>` and `<IncludeAssets>analyzers; build</IncludeAssets>`.
+- `samples/workshop.md` — insert "Step 5b — Watch write-time enforcement" between Step 5 and Step 6.
+
+**Algorithm.**
+
+1. Update the csproj:
+   ```xml
+   <ItemGroup>
+     <PackageReference Include="maf-autopilot.Analyzers" Version="1.3.0-alpha-1">
+       <IncludeAssets>analyzers; build</IncludeAssets>
+       <PrivateAssets>all</PrivateAssets>
+     </PackageReference>
+   </ItemGroup>
+   ```
+2. Run `dotnet restore` + `dotnet build` from the sample folder; expect `MAF001`/`MAF002`/`MAF003` warnings inline. Confirm they reference the correct files/lines:
+   - `MAF001` — fan-out non-`Task<T>` return — fires on the 3 investigators.
+   - `MAF002` — `DefaultAzureCredential` — fires in `ChatClientFactory.cs`.
+   - `MAF003` — `EnableSensitiveData=true` — fires in `ChatClientFactory.cs`.
+3. Add Step 5b to `samples/workshop.md`:
+   ```markdown
+   ## Step 5b — Watch the analyzer fire at write-time
+
+   Add the analyzer to the project:
+       dotnet add package maf-autopilot.Analyzers --prerelease
+
+   Open Executors/OsintInvestigator.cs in VS Code. You should see a
+   red squiggle under the `ValueTask` return type with a hover
+   message: "MAF001: fan-out handler must return Task<T>".
+
+   That's the shift-left half of the toolkit — the same rules the
+   doctor runs at scan-time fire at WRITE time inside the editor.
+   ```
+
+**Tests.** None added (the sample is itself the fixture).
+
+**Acceptance.**
+- `dotnet build samples/maf-1.3-sample/` reports MAF001 + MAF002 + MAF003 warnings.
+- Sample still compiles (these are warnings, not errors).
+- Workshop Step 5b reads cleanly between Step 5 and Step 6.
+
+**Pitfalls.**
+- The analyzer version pin must match a published prerelease. As of 2026-05-13, `maf-autopilot.Analyzers 1.3.0-alpha-1` is the latest published version. If unreleased, use a `<ProjectReference>` instead (relative path).
+- `<PrivateAssets>all</PrivateAssets>` prevents the analyzer from leaking to downstream consumers — critical for samples that might one day get packaged.
+- VS Code may need a reload for new analyzers to show; the build CLI will surface the warnings either way.
 
 ---
 
-##### V.5 — Animated install cast in README (with detailed HOW)
+#### W.3 — Workshop retrospective step
 
-**Description.** A short animated demo embedded at the top of `README.md` showing `dotnet tool install -g maf-autopilot --prerelease` → `maf-autopilot --version` → `maf-autopilot doctor .` → grade output. ~20-30 seconds. First-impression upgrade.
+**Goal.** Demonstrate the multi-agent surface by having `@maf-best-practice-reviewer` grade the post-migration result.
 
-**The recording toolchain — recommended:**
+**Dependencies.** None (pure doc edit).
 
-| Tool | What it does | Why |
-|---|---|---|
-| **`vhs`** by [Charmbracelet](https://github.com/charmbracelet/vhs) | Declarative terminal recorder. Reads a `.tape` script (your "demo screenplay") and produces a GIF / WebM / MP4 with simulated typing. | Best-in-class for repeatable demos. The `.tape` file goes in git; anyone can re-render. No flaky live recordings. |
-| `asciinema` | Records a real terminal session into a `.cast` file. | Use only if you want to capture an actual interactive session. Less polished than vhs. |
-| `agg` | Converts `.cast` files → GIF. | Companion to asciinema if you go that route. |
-| `svg-term-cli` | Converts `.cast` → animated SVG. | Smaller file size than GIF, but SVG animation support is patchy. |
+**Effort.** 15 minutes.
 
-**My recommendation: vhs.** A 30-line `.tape` file produces a polished GIF that's reproducible and version-controlled.
+**Files to modify.**
+- `samples/workshop.md` — add Step 9 between current Step 8 (verify) and the Cleanup/Reset section.
 
-**Sample `.tape` for our use case** (drop in `docs/assets/install-cast.tape`):
-
-```bash
-# docs/assets/install-cast.tape — render with: `vhs install-cast.tape`
-Output docs/assets/install-cast.gif
-
-Set FontSize 16
-Set Width 1200
-Set Height 700
-Set Theme "Dracula"
-Set Padding 20
-Set TypingSpeed 50ms
-
-Type "# Install maf-autopilot as a global .NET tool"
-Enter
-Sleep 800ms
-
-Type "dotnet tool install -g maf-autopilot --prerelease"
-Sleep 300ms
-Enter
-Sleep 3s
-
-Type "maf-autopilot --version"
-Sleep 200ms
-Enter
-Sleep 1500ms
-
-Type "# Audit any MAF codebase — grade A through F"
-Enter
-Sleep 800ms
-
-Type "cd samples/maf-1.3-sample"
-Sleep 200ms
-Enter
-Sleep 500ms
-
-Type "maf-autopilot doctor ."
-Sleep 200ms
-Enter
-Sleep 4s
-
-Type "# 🔴 grade F — the toolkit found every deliberate anti-pattern."
-Enter
-Sleep 2s
-```
-
-**Steps to render (one-time setup on the recording machine):**
-
-```bash
-# macOS
-brew install vhs ffmpeg ttyd
-
-# Windows (PowerShell)
-winget install charmbracelet.vhs
-
-# Render
-vhs docs/assets/install-cast.tape
-# → outputs docs/assets/install-cast.gif (~500 KB)
-```
-
-**Embed in README**, between the existing ASCII art header:
+**Algorithm.** Insert this Markdown block after Step 8:
 
 ```markdown
-<p align="center">
-  <img src="docs/assets/install-cast.gif" alt="maf-autopilot in 30 seconds" />
-</p>
+## Step 9 — Migration retrospective (multi-agent surface demo)
+
+After Step 8 confirms grade A/B, ask the second-opinion agent:
+
+    @maf-best-practice-reviewer review the migrated codebase and tell me what's still suboptimal
+
+Expected: the reviewer flags `good-but-could-be-better` patterns the
+registry doesn't cover (e.g., executor IDs are too generic, agents
+lack explicit token caps, OpenTelemetry traces missing custom tags).
+This demonstrates the multi-agent surface — the migration agent
+fixed the registry-driven issues; the reviewer catches the next
+tier of polish.
+
+> Workshop bonus: ask the reviewer for THREE concrete improvements,
+> pick one, and have @maf-migration apply it. That's a complete
+> "improvement loop" demonstration in 5 minutes.
 ```
 
-**What Claude Code can deliver autonomously:**
-- ✅ The `.tape` script (committed in git, version-controlled)
-- ✅ The `make-cast.sh` / `make-cast.ps1` wrapper that calls `vhs`
-- ✅ The README embed snippet
-- ✅ The `docs/assets/` folder structure
+**Tests.** None.
 
-**What needs a human (or a CI runner with vhs installed):**
-- 🟡 The actual `vhs install-cast.tape` invocation — needs vhs + ffmpeg + ttyd installed locally
-- 🟡 Any visual touch-ups beyond what `.tape` directives express (cropping, watermark, etc.)
-- 🟡 Audio narration if desired (vhs doesn't do audio; would need post-production)
+**Acceptance.**
+- `samples/workshop.md` now has 9 numbered steps + cleanup.
+- The retrospective wording references the right agent name (`@maf-best-practice-reviewer`).
 
-**Issues / risks.** The recording machine needs to have the dotnet tool pre-installed exactly the way the cast pretends. Embeds in README CI should be deterministic — re-render only when commands change. Animated GIFs can be 2-5 MB; if size matters, switch to WebM (`Output install-cast.webm` in the tape file) for ~10× smaller.
-
-**Potential impact.** 🟢🟢🟢🟢. A 30-second animated demo at the top of README is the difference between "I'll come back to this" and "I'm trying it now."
+**Pitfalls.**
+- Keep this step short — total workshop time is already ~50 minutes; Step 9 should add at most 5 minutes.
+- The `@maf-best-practice-reviewer` agent's persona is in `.github/agents/maf-best-practice-reviewer.agent.md`; verify it routes to the right tool set.
 
 ---
 
-##### V.6 — `applies_to_codebases` formalised in `RegistryModels.cs`
+#### W.4 — Animated install cast (source artifacts only)
 
-**Description.** Phase T introduced a new optional YAML field `applies_to_codebases: "pre-1.3.0"` on 2 registry entries (`MAF130-SESSION-001`, `MAF130-INSTRUCTIONS-001`) to mark them as pre-version migration patterns vs. in-version surface patterns. Today it's free-text. V.6 formalises the field in `Data/RegistryModels.cs` + uses it for filtering.
+**Goal.** Commit a vhs `.tape` script + render helpers so a maintainer (or CI) can produce `docs/assets/install-cast.gif`. The README will embed the GIF between the existing ASCII art header.
 
-**Keypoints.**
-- Add `string? AppliesToCodebases { get; init; }` to `RegistryEntry` record.
-- YAML loader (YamlDotNet binding) ignores unknown fields by default, so this is backward-compat.
-- Optional enum: `"pre-X.Y.Z"`, `"X.Y.Z+"`, `"X.Y.Z-only"`.
-- `MafCompatibility(version)` learns to filter registry entries to those applicable to a codebase pinned at `version`.
-- `MafScanAntiPatterns` can optionally accept `--for-codebase-version 1.3.0` and skip entries whose `applies_to_codebases` excludes that version.
+**Dependencies.** None.
 
-**Issues / risks.** Schema migration: existing 2400-line registry.yaml has 19 entries; only 2 use the new field. Loader must default to "applies to any" when the field is missing. Backwards-compat for older `maf-autopilot` installs that don't know the field.
+**Effort.** 4 hours for source artifacts. Rendering itself is **Phase X.3** (human-driven, needs vhs/ffmpeg/ttyd locally).
 
-**Potential impact.** 🟢🟢🟢. Lets the toolkit cleanly distinguish "pre-migration pattern" from "in-version surface pattern" — exactly the confusion Phase T surfaced.
+**Files to create.**
+- `docs/assets/install-cast.tape` — vhs declarative script.
+- `scripts/make-cast.sh` — bash wrapper around `vhs`.
+- `scripts/make-cast.ps1` — PowerShell equivalent.
+- `docs/assets/.gitkeep` — placeholder so the directory exists pre-render.
+
+**Files to modify.**
+- `README.md` — add `<p align="center"><img src="docs/assets/install-cast.gif"></p>` between the existing ASCII art and the TOC, with a fallback note "GIF not yet rendered; see `scripts/make-cast.sh` to produce it locally."
+- `docs/architecture.md` — note that the cast is rendered from `.tape` + commit pattern.
+
+**Algorithm.**
+
+1. Write `docs/assets/install-cast.tape`:
+   ```
+   Output docs/assets/install-cast.gif
+
+   Set FontSize 16
+   Set Width 1200
+   Set Height 700
+   Set Theme "Dracula"
+   Set Padding 20
+   Set TypingSpeed 50ms
+
+   Type "# Install maf-autopilot — global .NET tool"
+   Enter
+   Sleep 800ms
+
+   Type "dotnet tool install -g maf-autopilot --prerelease"
+   Sleep 300ms; Enter; Sleep 3s
+
+   Type "maf-autopilot --version"
+   Sleep 200ms; Enter; Sleep 1500ms
+
+   Type "# Audit any MAF codebase — grade A through F"
+   Enter; Sleep 800ms
+
+   Type "cd samples/maf-1.3-sample && maf-autopilot doctor ."
+   Sleep 200ms; Enter; Sleep 4s
+
+   Type "# 🔴 Grade F — toolkit found every deliberate anti-pattern"
+   Enter; Sleep 2s
+   ```
+
+2. Write `scripts/make-cast.sh`:
+   ```bash
+   #!/usr/bin/env bash
+   # Render docs/assets/install-cast.gif via vhs.
+   # Requires: vhs (brew install vhs / winget install charmbracelet.vhs)
+   set -euo pipefail
+   if ! command -v vhs >/dev/null 2>&1; then
+     echo "vhs not on PATH. Install via:"
+     echo "  brew install vhs ffmpeg ttyd       # macOS"
+     echo "  winget install charmbracelet.vhs   # Windows"
+     exit 2
+   fi
+   vhs docs/assets/install-cast.tape
+   echo "✓ rendered docs/assets/install-cast.gif"
+   ```
+
+3. `scripts/make-cast.ps1` — same logic in PowerShell with `Get-Command vhs -ErrorAction SilentlyContinue`.
+
+4. README embed snippet (between the existing ASCII art at top of README.md):
+   ```html
+   <p align="center">
+     <img src="docs/assets/install-cast.gif"
+          alt="maf-autopilot — install + audit in 30 seconds" />
+   </p>
+   ```
+
+**Tests.** None.
+
+**Acceptance.**
+- `.tape` file is well-formed (vhs parses it without error — verified locally by anyone with vhs installed).
+- `scripts/make-cast.sh` is executable + has the install-instruction fallback.
+- README has the embed; the missing GIF degrades gracefully (alt text).
+
+**Pitfalls.**
+- The cast's commands must actually work — `samples/maf-1.3-sample/` must exist (it does, ✅ Phase T.1).
+- The output GIF can be 500KB-3MB; for repo size discipline, prefer `Output install-cast.webm` (~10× smaller) and embed via `<video>` instead of `<img>`. README compatibility on GitHub: both work.
+- Don't commit a half-baked GIF. Either Phase X.3 renders it, or it stays missing with the alt text as graceful degradation.
 
 ---
 
-##### V.7 — `MafBeforeAfter(planPath)` — single diff per migration plan
+#### W.5 — "Find the bug in 30 seconds" workshop challenge
 
-**Description.** Given a `migration-plan.md`, produce a single unified diff showing all proposed changes across the whole codebase. Maintainer reviews ONE document and approves/rejects.
+**Goal.** A pre-toolkit teaser that sells the value proposition in 30 seconds. Show 3 side-by-side ~20-line C# snippets, each containing one subtle MAF anti-pattern. Attendees have 30 seconds to spot the bugs. Then the toolkit finds them all in <1 second.
 
-**Keypoints.**
-- Input: path to a `migration-plan.md` written by `@maf-auditor`.
-- Output: a markdown doc with per-file `diff --git` blocks, ordered by file, with each hunk labeled with the registry ID that triggered the change.
-- Optional `--format sarif` for IDE integration.
-- Optional `--apply` mode that uses `MafAutoFix` (V.1) to actually land the changes.
+**Dependencies.** None.
 
-**Issues / risks.** Plan format isn't structured today — it's free-form markdown. V.7 needs a stable plan schema. Could couple with V.1 to share the underlying fix logic.
+**Effort.** 2-4 hours.
 
-**Potential impact.** 🟢🟢🟢. Maintainer review UX. Today the migration plan is read prose; V.7 makes it a single-page diff review.
+**Files to create.**
+- `samples/find-the-bug/README.md` — challenge framing.
+- `samples/find-the-bug/snippet-1.cs` — top-level `Instructions` silently-ignored pattern (with a `ChatClientAgentOptions { Instructions = "..." }` block in a `partial class` so it COMPILES on .NET 8 even without MAF — the file isn't actually built, it's read).
+- `samples/find-the-bug/snippet-2.cs` — fan-out `[MessageHandler]` returning `ValueTask` (not `ValueTask<T>`).
+- `samples/find-the-bug/snippet-3.cs` — `AddFanInBarrierEdge(target, sources)` obsolete arg order.
+- `samples/find-the-bug/answer-key.md` — per-bug explanation + the maf-autopilot rule ID + the verdict the toolkit produces.
+
+**Files to modify.**
+- `samples/workshop.md` — add a "Step 0 — Find the bug (icebreaker)" section before Step 1.
+
+**Algorithm.**
+
+1. Each snippet is a STANDALONE `.cs` file (not part of a project). Self-contained — uses `using` statements + plausibly-named types so the reader sees realistic MAF code.
+2. Bugs to plant:
+   - **Snippet 1 (top-level Instructions):** ~20 lines wrapping a `new ChatClientAgent(client, new ChatClientAgentOptions { Name = "Bot", Instructions = "...", Description = "..." })`. Looks innocuous; the bug is `Instructions` should be nested in `ChatOptions = new() { Instructions = ... }`.
+   - **Snippet 2 (fan-out void):** A `public sealed partial class MyExecutor : Executor` with `[MessageHandler] public async ValueTask HandleAsync(ClaimInput claim, IWorkflowContext ctx, CancellationToken ct) { var f = await ComputeAsync(); }`. Looks fine; bug is `ValueTask` should be `ValueTask<InvestigationFinding>`.
+   - **Snippet 3 (fan-in arg order):** A few lines of `WorkflowBuilder` usage with `builder.AddFanInBarrierEdge(aggregator, new[] { osint, history })`. Looks symmetric; bug is the obsolete overload is being selected.
+3. `samples/find-the-bug/README.md` rules:
+   ```markdown
+   # Find the bug in 30 seconds
+
+   Open each snippet. You have 30 seconds total. No scrolling, no
+   compiling, no Googling. Find the MAF anti-pattern in each file.
+
+   Then run:    maf-autopilot doctor samples/find-the-bug/
+
+   Compare. How many did you catch? How long did the toolkit take?
+   ```
+4. `answer-key.md`:
+   ```markdown
+   # Answers
+
+   - snippet-1.cs:  top-level Instructions (MAF130-INSTRUCTIONS-001 — silently ignored)
+   - snippet-2.cs:  fan-out ValueTask (MAF001 / MAF130-EXEC-001 — silent fan-in starvation)
+   - snippet-3.cs:  obsolete AddFanInBarrierEdge overload (MAF130-FAN-IN-001 — CS0618)
+
+   Toolkit verdict: 3 errors + 2 silent-starvation risks in 850ms.
+   ```
+
+**Tests.** None.
+
+**Acceptance.**
+- 3 snippets each have exactly 1 subtle bug + no other bugs.
+- Each bug fires a known maf-autopilot rule.
+- `samples/find-the-bug/README.md` is workshop-ready.
+
+**Pitfalls.**
+- Don't make the bugs obvious. Add ~15 lines of plausible context around each. Match real MAF idioms.
+- Avoid syntax errors — the snippets must LOOK like valid code at a glance even though they aren't compiled.
+- Avoid bugs that are domain-obvious (e.g., wrong variable names). The bugs should require MAF knowledge to spot.
 
 ---
 
-##### V.8 — `MafHealthBadge` (shields.io endpoint)
+#### W.6 — `MafAutoFix` MCP tool (the missing "do" half)
 
-**Description.** Output a [shields.io](https://shields.io) endpoint URL from the doctor command so consumers can embed `[![MAF Health: A](https://...)]` in their README. Live badge driven by the latest `maf-autopilot doctor` run on `main`.
+**Goal.** A deterministic per-rule auto-fixer. Decouples detection (what the doctor does) from remediation (what the migration agent does today via LLM). Lets CI bots fix-and-commit the mechanical rules without an LLM in scope.
 
-**Keypoints.**
-- `maf-autopilot badge` subcommand emits a JSON payload conforming to shields.io's endpoint badge schema.
-- Hosting: a tiny GitHub Pages or Cloudflare Worker that serves the latest JSON snapshot, refreshed by CI.
-- Or simpler: the workflow uploads the JSON as a Gist that shields.io reads.
+**Dependencies.** **W.1** (for `applies_to_codebases` filtering — recommended but not strictly required).
 
-**Issues / risks.** Hosting infrastructure required (Worker / Gist / Pages). Badge URL stability matters — once embedded by consumers, it can't break.
+**Effort.** 1-2 days.
 
-**Potential impact.** 🟢🟢🟢. Viral marketing surface — every consumer codebase that adopts the toolkit gets a badge that links back. Low absolute traffic but high signaling value.
+**Files to create.**
+- `src/maf-autopilot/Tools/AutoFixTool.cs` — main MCP tool class.
+- `src/maf-autopilot/Tools/Rewriters/IRuleRewriter.cs` — interface.
+- `src/maf-autopilot/Tools/Rewriters/DefaultAzureCredentialRewriter.cs` — for `MAF-AP-SEC-001` / `MAF002`.
+- `src/maf-autopilot/Tools/Rewriters/EnableSensitiveDataRewriter.cs` — for `MAF-AP-SEC-003` / `MAF003`.
+- `src/maf-autopilot/Tools/Rewriters/ExecutorSealedRewriter.cs` — for `MAF-AP-WF-001`.
+- `src/maf-autopilot/Tools/Rewriters/FanInArgOrderRewriter.cs` — for `MAF130-FAN-IN-001`.
+- `src/maf-autopilot/Tools/Rewriters/SyncOverAsyncRewriter.cs` — for `MAF-AP-CONC-002`.
+- `src/maf-autopilot.Tests/AutoFixToolTests.cs` — comprehensive test file (one [Theory] per rewriter + end-to-end).
+
+**Files to modify.**
+- `src/maf-autopilot/Tools/DoctorTool.cs` — at the end of the report, add a line: "Want to auto-fix the mechanical findings? Run `MafAutoFix(repoPath, '<ruleId>')`."
+
+**Algorithm.**
+
+```csharp
+namespace MafAutopilot.Tools;
+
+[McpServerToolType]
+public sealed class AutoFixTool
+{
+    private readonly Dictionary<string, Func<IRuleRewriter>> _factories = new()
+    {
+        ["MAF-AP-SEC-001"]    = () => new DefaultAzureCredentialRewriter(),
+        ["MAF002"]            = () => new DefaultAzureCredentialRewriter(),
+        ["MAF-AP-SEC-003"]    = () => new EnableSensitiveDataRewriter(),
+        ["MAF003"]            = () => new EnableSensitiveDataRewriter(),
+        ["MAF-AP-WF-001"]     = () => new ExecutorSealedRewriter(),
+        ["MAF130-FAN-IN-001"] = () => new FanInArgOrderRewriter(),
+        ["MAF-AP-CONC-002"]   = () => new SyncOverAsyncRewriter(),
+    };
+
+    [McpServerTool]
+    [Description("""
+        Deterministically apply the fix for a single registry rule across a codebase.
+        Returns a JSON summary of files touched + rewrites applied. Set dryRun=true to
+        preview without writing.
+        """)]
+    public string MafAutoFix(
+        [Description("Absolute or relative path to the repo or project to fix.")] string repoPath,
+        [Description("Rule ID, e.g. 'MAF-AP-SEC-001' or 'MAF130-FAN-IN-001'.")] string ruleId,
+        [Description("Optional: limit fixes to a single file.")] string? specificFile = null,
+        [Description("If true, don't write changes — just return what would change.")] bool dryRun = false)
+    {
+        // 1. PathGuard.Validate(repoPath)  — reject empty / drive-root / outside-allowed-roots
+        // 2. if (!_factories.TryGetValue(ruleId, out var factory)) return "{\"error\":\"unknown rule\"}"
+        // 3. var rewriter = factory();
+        // 4. var files = SourceFileWalker.EnumerateCsFiles(repoPath);
+        //    if (specificFile != null) files = files.Where(f => f.EndsWith(specificFile));
+        // 5. var fixedFiles = new List<string>();
+        // 6. foreach (var file in files) {
+        //      var src = File.ReadAllText(file);
+        //      var tree = CSharpSyntaxTree.ParseText(src);
+        //      var newRoot = rewriter.Visit(tree.GetRoot());
+        //      if (newRoot != tree.GetRoot()) {
+        //        if (!dryRun) File.WriteAllText(file, newRoot.ToFullString());
+        //        fixedFiles.Add(file);
+        //      }
+        //    }
+        // 7. return JsonSerializer.Serialize(new { ruleId, dryRun, fixedFiles, count = fixedFiles.Count });
+    }
+}
+
+public interface IRuleRewriter
+{
+    string RuleId { get; }
+    SyntaxNode Visit(SyntaxNode root);
+}
+
+// Example rewriter
+public sealed class DefaultAzureCredentialRewriter : CSharpSyntaxRewriter, IRuleRewriter
+{
+    public string RuleId => "MAF-AP-SEC-001";
+
+    public override SyntaxNode VisitObjectCreationExpression(ObjectCreationExpressionSyntax node)
+    {
+        if (node.Type is IdentifierNameSyntax id && id.Identifier.ValueText == "DefaultAzureCredential")
+        {
+            // Preserve trivia: leading/trailing whitespace + comments above the line
+            var replacement = SyntaxFactory.IdentifierName("ManagedIdentityCredential")
+                .WithLeadingTrivia(id.GetLeadingTrivia())
+                .WithTrailingTrivia(id.GetTrailingTrivia());
+            return node.WithType(replacement);
+        }
+        return base.VisitObjectCreationExpression(node);
+    }
+}
+```
+
+Same pattern for each rewriter:
+- `EnableSensitiveDataRewriter` — find `AssignmentExpressionSyntax` where `.Left.ToString() == "EnableSensitiveData"` and `.Right.ToString() == "true"`. Remove the assignment.
+- `ExecutorSealedRewriter` — find `ClassDeclarationSyntax` deriving from `Executor` (substring match on `.BaseList`) and missing the `sealed` modifier. Add `SyntaxFactory.Token(SyntaxKind.SealedKeyword)` to `.Modifiers`.
+- `FanInArgOrderRewriter` — find `InvocationExpressionSyntax` where `.Expression.ToString().EndsWith(".AddFanInBarrierEdge")`. Check arg count = 2. If `args[0]` is NOT collection-typed (heuristic: not `new[]` / not `IEnumerable<...>` cast — check `args[0].Expression.Kind()`), swap the two arguments.
+- `SyncOverAsyncRewriter` — find `MemberAccessExpressionSyntax` where `.Name.Identifier.ValueText == "Result"` AND parent is invocation result. Replace with `AwaitExpressionSyntax(parent.Expression)`. Also: walk up to the containing method and ensure it has `async` modifier — if not, also add it (return-type rewrite from `T` to `Task<T>` is the cherry on top; for v1 just emit a comment `// TODO: make this method async`).
+
+**Tests.**
+- `AutoFixTool_UnknownRule_ReturnsError` — invalid ruleId → JSON error.
+- `AutoFixTool_PathInjection_RejectedByPathGuard` — `"/"`, `"C:\"`, empty.
+- `DefaultAzureCredentialRewriter_RewritesToManagedIdentity` — input `new DefaultAzureCredential()` → output `new ManagedIdentityCredential()`.
+- `DefaultAzureCredentialRewriter_PreservesComments` — leading `// XXX` comment survives.
+- `EnableSensitiveDataRewriter_DropsAssignment` — input has `EnableSensitiveData = true,` → output doesn't.
+- `ExecutorSealedRewriter_AddsSealedToPartialClass` — input `public partial class X : Executor` → output `public sealed partial class X : Executor`.
+- `ExecutorSealedRewriter_NoOpIfAlreadySealed` — already-sealed class unchanged.
+- `FanInArgOrderRewriter_SwapsArgs` — input `builder.AddFanInBarrierEdge(target, new[]{a,b})` → output `builder.AddFanInBarrierEdge(new[]{a,b}, target)`.
+- `FanInArgOrderRewriter_NoOpIfAlreadyCorrect` — sources-first call unchanged.
+- `SyncOverAsyncRewriter_ReplacesResultWithAwait` — input `var x = Foo().Result` → output `var x = await Foo()`.
+- `EndToEnd_FixSampleAntiPatterns_ProducesValidCsCode` — apply each rewriter to the 1.3 sample, assert the resulting code compiles via `CSharpSyntaxTree.ParseText` + check for `Diagnostic` errors.
+
+**Acceptance.**
+- All 1422 existing test executions pass.
+- 11+ new tests pass on every TFM (so 33+ new executions).
+- Running `MafAutoFix("samples/maf-1.3-sample", "MAF-AP-SEC-001")` rewrites the `ChatClientFactory.cs` line, sample still builds, doctor grade improves by 1 issue.
+
+**Pitfalls.**
+- **Trivia preservation is the #1 trap.** `SyntaxRewriter` strips leading/trailing trivia by default. Always use `.WithLeadingTrivia(originalNode.GetLeadingTrivia())` and `.WithTrailingTrivia(originalNode.GetTrailingTrivia())` when constructing replacements.
+- **Multi-line arg lists** — fan-in calls may span 3+ lines with comments between args. Use `node.WithArgumentList(node.ArgumentList.WithArguments(...))` to preserve formatting.
+- **Aliased types** — `using DefaultAzureCredential = Azure.Identity.DefaultAzureCredential;` defeats name-based detection. Document the limitation; v2 could use symbol resolution via a `CSharpCompilation`.
+- **Atomic writes** — write to `file + ".tmp"` and `File.Move` over the target. Partial writes are evil.
+- **Idempotency** — running the same rewriter twice must produce the same output. The "already correct" branches above pin this.
 
 ---
 
-##### V.9 / V.10 / V.11 / V.12 — short briefs
+#### W.7 — `MafBeforeAfter` MCP tool
 
-- **V.9 (Analyzer NuGet in workshop)** — workshop step 5b: `dotnet add package maf-autopilot.Analyzers --prerelease` inside the sample. Watch squiggly red lines appear in VS Code. Shift-left demo. **30 min, doc + sample csproj edit.**
+**Goal.** Given a list of rule IDs, render a single unified diff showing all proposed changes across the codebase. Lets a maintainer review the whole change-set in one document before approving.
 
-- **V.10 (Migration retrospective)** — workshop step 9: after fix-up, ask `@maf-best-practice-reviewer` to grade the result. Demonstrates the second-opinion agent. **15 min, doc-only.**
+**Dependencies.** **W.6** (shares rewriter logic — call AutoFixTool with `dryRun=true`).
 
-- **V.11 (`MafScoreMigrationRisk`)** — pre-migration risk verdict. Counts silent-runtime failures vs. CS0618 vs. CS0246; weighs fan-out coverage. Outputs HARD/MEDIUM/EASY. **4 hrs.**
+**Effort.** 3-4 hours.
 
-- **V.12 (`MafGenerateRegressionPlan`)** — given `from=1.0` `to=1.5`, produce an ordered Mermaid roadmap of per-version migration steps with linked guide sections. Combines with V.2a/V.2b for the killer multi-step demo. **1 day.**
+**Files to create.**
+- `src/maf-autopilot/Tools/BeforeAfterTool.cs`
+- `src/maf-autopilot.Tests/BeforeAfterToolTests.cs`
+
+**Algorithm.**
+
+```csharp
+[McpServerTool]
+public string MafBeforeAfter(
+    string repoPath,
+    string[] ruleIds)
+{
+    var sb = new StringBuilder();
+    sb.AppendLine("# Migration Diff Report\n");
+
+    foreach (var ruleId in ruleIds)
+    {
+        // 1. Run rewriter in dry-run mode (W.6's AutoFixTool with dryRun=true)
+        //    + capture (file, originalSource, rewrittenSource) tuples.
+        // 2. For each (file, orig, new), generate a git-style unified diff.
+        //    Use a simple line-based diff (no need for DiffPlex): split into
+        //    lines, find the first/last differing line, emit ±lines as
+        //    `+`/`-` prefixes with 3 lines of context.
+        // 3. Render as:
+        //    ## Rule: <ruleId>
+        //    ### File: <relativeFile>
+        //    ```diff
+        //    @@ -L,N +L,N @@
+        //    -old
+        //    +new
+        //    ```
+    }
+
+    return sb.ToString();
+}
+```
+
+For line-based diffs in v1, use this minimal algorithm — no external diff library needed:
+```csharp
+static string SimpleDiff(string orig, string updated, string filePath)
+{
+    var origLines = orig.Split('\n');
+    var newLines = updated.Split('\n');
+    // For v1: just emit a block diff (full -old / +new) if any line differs.
+    // For v2: use System.Text.Json's diff or import DiffPlex.
+}
+```
+
+**Tests.**
+- `BeforeAfter_NoChanges_ReturnsEmptyReport` — codebase with no triggers → empty report header only.
+- `BeforeAfter_OneRule_OneFile_RendersDiff` — known-broken file → diff block with `+` and `-` lines.
+- `BeforeAfter_MultiRule_MultiFile_AllInReport` — apply 3 rules, verify all sections present.
+
+**Acceptance.**
+- All existing tests pass.
+- 3+ new tests pass.
+- Running `MafBeforeAfter("samples/maf-1.3-sample", new[] { "MAF-AP-SEC-001", "MAF-AP-WF-001" })` produces a 2-section report with the expected diff for each.
+
+**Pitfalls.**
+- Don't write anything to disk — this is a preview tool.
+- Diff format must be parseable by IDE diff viewers — use `diff --git` style.
+- Avoid loading entire massive codebases into memory; stream files.
 
 ---
 
-#### Pick-3 recommendation for the 1.1.x release
+#### W.8 — `samples/maf-1.2-sample/`
 
-If I were to pick 3 of these to bundle as the first post-1.0 release:
+**Goal.** A second standalone sample pinned to **MAF 1.2.0** exercising the registry IDs the 1.3 sample can't reach — the `REMOVED-in-1.3` surfaces (`MAF130-THREAD-001`, `MAF130-A2A-001/002`, `MAF130-STREAM-001`, `MAF130-EVENT-001`, `MAF130-ATTR-001/002`).
 
-1. **V.1 (MafAutoFix)** — the missing half of the toolkit. Highest absolute leverage.
-2. **V.2a (`samples/maf-1.2-sample/`)** — closes registry coverage; combined with V.3 + V.4 it powers a polished workshop.
-3. **V.5 (Animated install cast)** — single biggest perception upgrade. Sells the toolkit in 30 seconds.
+**Dependencies.** None. (W.6's `MafAutoFix` is a nice-to-have for end-to-end validation.)
 
-Total ~3-4 days of focused work for a 1.1.x release that materially expands the product.
+**Effort.** 4-8 hours.
+
+**Files to create.** Parallel structure to `samples/maf-1.3-sample/`:
+
+- `samples/maf-1.2-sample/MafSample.FraudClaims12.csproj` — `<PackageReference Include="Microsoft.Agents.AI" Version="1.2.0">` (and matching pins for `Microsoft.Agents.AI.Workflows`, `Microsoft.Extensions.AI 10.3.0`, `Azure.AI.OpenAI 2.6.0`). Target `net8.0`. `ManagePackageVersionsCentrally=false`.
+- `samples/maf-1.2-sample/Program.cs` — entry point with banner.
+- `samples/maf-1.2-sample/Models.cs` — same shape as 1.3 sample.
+- `samples/maf-1.2-sample/Agents/IntakeAgent.cs` — uses top-level `Instructions` (legit pre-1.3 pattern; here it WORKS because 1.2 still has the property).
+- `samples/maf-1.2-sample/Executors/OsintInvestigator.cs` — uses `[StreamsMessage]` and `[YieldsMessage(typeof(...))]` attributes (removed in 1.3).
+- `samples/maf-1.2-sample/Executors/HistoryInvestigator.cs` — same.
+- `samples/maf-1.2-sample/Executors/TransactionInvestigator.cs` — same.
+- `samples/maf-1.2-sample/Workflows/FraudClaimsWorkflow.cs` — uses `InProcessExecution.StreamAsync(message)` (removed in 1.3).
+- `samples/maf-1.2-sample/Sessions/SessionPersister.cs` — uses `agent.GetNewThread()` returning `AgentThread` + sync `agent.SerializeSession(thread)` (both removed in 1.3).
+- `samples/maf-1.2-sample/A2A/A2ARegistration.cs` — uses `services.AddA2AAgent(agent)` + `app.MapA2A("/agent")` (both removed in 1.3).
+- `samples/maf-1.2-sample/README.md` — same ASCII WARNING banner style as 1.3 sample, listing the additional registry coverage.
+
+**Algorithm.**
+
+1. **Surface recon first.** Run `dotnet-inspect type --package Microsoft.Agents.AI@1.2.0` and `dotnet-inspect type --package Microsoft.Agents.AI.Workflows@1.2.0` to confirm which types exist + their signatures. Same discipline as Phase T used for 1.3. Do NOT guess.
+2. **Verify NuGet availability.** `nuget.org/packages/Microsoft.Agents.AI/1.2.0` must still be downloadable. If unpublished, this idea is blocked — abort + escalate.
+3. **Bone-by-bone copy** the 1.3 sample's structure, swapping each file's content for the 1.2-era pattern.
+4. **Build verification.** `dotnet build samples/maf-1.2-sample/` must succeed (modulo expected `[Obsolete]` CS0618 warnings for sync session APIs).
+5. **Doctor verification.** `dotnet run --project src/maf-autopilot --framework net10.0 -- doctor samples/maf-1.2-sample/` should detect the additional registry IDs — at minimum 5-6 new fires.
+6. README with the WARNING banner + table of which anti-patterns this sample covers (focus on the gap vs. the 1.3 sample).
+
+**Tests.** None in the toolkit. (CI regression on this sample is **W.9**.)
+
+**Acceptance.**
+- `dotnet build samples/maf-1.2-sample/` returns 0.
+- `maf-autopilot doctor` finds at least 5 additional registry IDs.
+- The README lists every registry ID this sample exercises.
+
+**Pitfalls.**
+- **MAF 1.2 API surface differs significantly from 1.3** — `dotnet-inspect` recon is mandatory before each file is authored. Don't assume any 1.3 API exists in 1.2.
+- The 1.2 sample lives in its **own folder with its own csproj** — never share state with the 1.3 sample.
+- Some 1.2-era code may emit `[Obsolete]` warnings on 1.2 itself — that's fine; the maf-autopilot CS0618 hunter should find them.
+- Do NOT include the 1.2 sample in the main `.sln`. It's a standalone fixture.
+
+---
+
+#### W.9 — CI regression on `samples/*`
+
+**Goal.** Pin workshop invariants. If a future toolkit change regresses detection on any sample, CI fails BEFORE the regression ships.
+
+**Dependencies.** **W.8** (or any second sample beyond `maf-1.3-sample/`).
+
+**Effort.** 2-3 hours.
+
+**Files to create.**
+- `samples/maf-1.3-sample/.expected-doctor.yaml` — declarative expectations.
+- `samples/maf-1.2-sample/.expected-doctor.yaml` — same.
+- `src/maf-autopilot.Tests/SampleRegressionTests.cs` — new test class.
+
+**Files to modify.**
+- `src/maf-autopilot.Tests/maf-autopilot.Tests.csproj` — add `<Content Include="../../samples/**/*" Link="samples/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />` so the samples are accessible at test runtime.
+
+**Algorithm.**
+
+1. Each sample's `.expected-doctor.yaml`:
+   ```yaml
+   # samples/maf-1.3-sample/.expected-doctor.yaml
+   grade: F
+   anti_pattern_errors: 10
+   anti_pattern_warnings: 3
+   silent_starvation_risks: 3
+   prompt_lint_errors: 0
+   ```
+2. Test code:
+   ```csharp
+   public class SampleRegressionTests
+   {
+       [Theory]
+       [InlineData("samples/maf-1.3-sample")]
+       [InlineData("samples/maf-1.2-sample")]
+       public async Task Doctor_GradesMatch_ExpectedYaml(string samplePath)
+       {
+           // 1. Walk up from AppContext.BaseDirectory to find repo root
+           // 2. Resolve samplePath
+           // 3. Parse .expected-doctor.yaml
+           // 4. Run DoctorTool.MafDoctor(samplePath) — invoke the actual MCP method
+           // 5. Parse the result's markdown for the grade + counters
+           // 6. Assert each expected value
+       }
+   }
+   ```
+3. The test should be tagged `[Trait("Category", "Sample")]` so it can be filtered out for fast CI.
+
+**Tests.**
+- `Doctor_Grade_MatchesExpectedYaml` — theory data per sample.
+- `Sample_HasExpectedYamlFile` — every `samples/*-sample/` folder has `.expected-doctor.yaml`.
+
+**Acceptance.**
+- New tests pass on every TFM (6 + executions for 2 samples × 3 TFMs).
+- CI runs them on every PR.
+- Updating a sample's anti-pattern coverage → update its `.expected-doctor.yaml` in the same PR (locks the expectations in lockstep with the sample).
+
+**Pitfalls.**
+- Sample build at test time can be slow. Use `<Content Include>` to COPY pre-built outputs (or pre-doctor-cached results) rather than rebuilding inside the test.
+- Path resolution: the `Tests/bin/<TFM>/` directory walks up to find the repo root.
+- The doctor's grade calculation can change. When it does, update the YAMLs in the same commit.
+
+---
+
+#### W.10 — `samples/maf-1.0-sample/`
+
+**Goal.** Third sample, oldest. Pinned to **MAF 1.0.0** for the deepest migration ladder demo (1.0 → 1.1 → 1.2 → 1.3 → 1.4 → 1.5).
+
+**Dependencies.** **W.8** (same recipe; do 1.2 first to validate the pattern works).
+
+**Effort.** 4-8 hours.
+
+**Files to create.** Same structure as W.8 but pinned to MAF 1.0.0. Per-file content uses the 1.0-era API surface.
+
+**Algorithm.** Same as W.8:
+1. `dotnet-inspect type --package Microsoft.Agents.AI@1.0.0` — confirm the 1.0 surface.
+2. Author each file targeting 1.0 idioms.
+3. Build + doctor verification.
+
+**Tests.** Add a new `[InlineData("samples/maf-1.0-sample")]` row to W.9's theory.
+
+**Acceptance.** Same as W.8.
+
+**Pitfalls.**
+- MAF 1.0.0 is older still — confirm it's still on nuget.org.
+- Some 1.0-era APIs may have been removed even from `Microsoft.Extensions.AI` (the 9.0.x line). The csproj may need older transitive pins.
+- Some 1.0 anti-patterns may not be in the registry at all — opportunity to ADD entries with appropriate `applies_to_codebases: "pre-1.1.0"`.
+
+---
+
+#### W.11 — `MafScoreMigrationRisk(repoPath)` MCP tool
+
+**Goal.** Pre-migration risk verdict (HARD / MEDIUM / EASY) for any codebase. Sets expectations before a migration starts.
+
+**Dependencies.** None (uses existing scanners).
+
+**Effort.** 4 hours.
+
+**Files to create.**
+- `src/maf-autopilot/Tools/MigrationRiskScoreTool.cs`
+- `src/maf-autopilot.Tests/MigrationRiskScoreToolTests.cs`
+
+**Algorithm.**
+
+```csharp
+[McpServerTool]
+public string MafScoreMigrationRisk(string repoPath)
+{
+    // 1. Run all 4 doctor scanners (anti-pattern, fan-out, prompt-lint, token-cap)
+    // 2. Compute weighted score:
+    //    - silent_starvation × 3
+    //    - cs0246_count       × 2
+    //    - cs0117_count       × 2
+    //    - cs0618_count       × 1
+    //    - anti_pattern_error × 1
+    // 3. Thresholds:
+    //    - score < 5   → EASY    (1-2 hour migration, low risk)
+    //    - 5 ≤ score < 15 → MEDIUM (½ day migration, watch tests)
+    //    - score ≥ 15  → HARD    (1+ day migration, expect rework)
+    // 4. Return JSON: { verdict: "MEDIUM", score: 12, breakdown: {...}, recommendation: "..." }
+}
+```
+
+**Tests.**
+- `RiskScore_EmptyCodebase_ReturnsEasy`
+- `RiskScore_SampleMaf13_ReturnsMediumOrHard` — against the 1.3 sample.
+- `RiskScore_Breakdown_IncludesEveryCategory`
+
+**Acceptance.**
+- Tests pass on every TFM.
+- Running against `samples/maf-1.3-sample/` returns MEDIUM or HARD (10 errors + 3 silent risks → score ~22 → HARD).
+
+**Pitfalls.**
+- The weights need real-world calibration. Pick conservative initial values; document the formula in the tool's `[Description]`.
+- Don't double-count — a single anti-pattern shouldn't fire multiple categories.
+
+---
+
+#### W.12 — `MafGenerateRegressionPlan(from, to)` MCP tool
+
+**Goal.** Given (fromVersion, toVersion), produce an ordered Mermaid migration roadmap covering every intermediate version's registry entries.
+
+**Dependencies.** **W.1** (uses `applies_to_codebases` for filtering) + **W.8** + **W.10** (samples to test against).
+
+**Effort.** 1 day.
+
+**Files to create.**
+- `src/maf-autopilot/Tools/RegressionPlanTool.cs`
+- `src/maf-autopilot.Tests/RegressionPlanToolTests.cs`
+
+**Algorithm.**
+
+```csharp
+[McpServerTool]
+public string MafGenerateRegressionPlan(string fromVersion, string toVersion)
+{
+    // 1. Validate fromVersion < toVersion (SemVer comparison via System.Version)
+    // 2. Walk the compatibility matrix to find every minor version between
+    //    from and to (inclusive of `to`, exclusive of `from`).
+    // 3. For each intermediate version, collect:
+    //    - Registry entries with version_introduced == that version
+    //    - Registry entries with applies_to_codebases applicable here
+    // 4. Emit Mermaid diagram with one node per version step:
+    //    flowchart LR
+    //      v10[1.0.0] --> v11[1.1.0]
+    //      v11 --> v12[1.2.0]
+    //      v12 --> v13[1.3.0]
+    //      click v13 callback "12 changes — see guides/maf-1.3.0-migration-guide.md"
+    // 5. Below the diagram, a per-step markdown summary table.
+    // 6. Return: markdown string.
+}
+```
+
+**Tests.**
+- `RegressionPlan_OneStep_OneVersion`
+- `RegressionPlan_FullLadder_AllVersionsPresent` — from 1.0 to 1.5 → 5 nodes.
+- `RegressionPlan_FromEqualsTo_ReturnsEmptyPlan`
+
+**Acceptance.**
+- Tests pass.
+- Running `MafGenerateRegressionPlan("1.0", "1.5")` produces 5 nodes + click callbacks referencing the per-version guide files in `/guides/`.
+
+**Pitfalls.**
+- Version comparison: use `System.Version.Parse` not `string.Compare`. Otherwise `"1.10.0"` < `"1.2.0"` falsely.
+- `applies_to_codebases` may use formats like `"pre-1.3.0"` or `"1.4.0+"` — parse correctly.
+- Some intermediate versions may have no registry entries — show as "0 changes" in the Mermaid.
+
+---
+
+#### W.13 — `MafHealthBadge` (subcommand)
+
+**Goal.** A `maf-autopilot badge` subcommand emits shields.io-endpoint JSON. Consumers embed `[![MAF Health: A](https://img.shields.io/endpoint?url=...)]` in their README.
+
+**Dependencies.** None for the subcommand. (Hosting infra is **X.4**.)
+
+**Effort.** 1 hour.
+
+**Files to create.**
+- `src/maf-autopilot/Commands/BadgeCommand.cs` — new CLI subcommand.
+- `src/maf-autopilot.Tests/BadgeCommandTests.cs`
+
+**Files to modify.**
+- `src/maf-autopilot/Program.cs` — register the new subcommand.
+
+**Algorithm.**
+
+```csharp
+public sealed class BadgeCommand
+{
+    public string Execute(string repoPath)
+    {
+        // 1. Run DoctorTool.MafDoctor(repoPath) to get the grade
+        // 2. Build shields.io endpoint payload:
+        //    {
+        //      "schemaVersion": 1,
+        //      "label": "MAF Health",
+        //      "message": "A",
+        //      "color": "brightgreen"  // map: A→brightgreen, B→green, C→yellow, D→orange, F→red
+        //    }
+        // 3. Print JSON to stdout
+    }
+}
+```
+
+**Tests.**
+- `Badge_GradeA_EmitsBrightgreen`
+- `Badge_GradeF_EmitsRed`
+- `Badge_OutputIsValidJson`
+
+**Acceptance.** Tests pass.
+
+**Pitfalls.**
+- shields.io endpoint schema is well-defined — follow it exactly.
+- Hosting the JSON (so shields.io can fetch it on demand) is **Phase X.4** — out of scope here. The subcommand just emits the JSON to stdout.
+
+---
+
+### Phase X — User checkpoints
+
+Items that require you (the maintainer) — Claude cannot do these autonomously.
+
+| ID | Item | When needed | Effort |
+|---|---|---|---|
+| **X.1** | **Run the workshop end-to-end (T.3 → T.4 → T.5)** — drives `@maf-auditor` + `@maf-migration` in Copilot Chat | **Critical — A.8 evidence** | ~50 min |
+| **X.2** | **Cut stable `1.3.0` via `gh workflow run release.yml -f version=1.3.0`** — one-way publish to nuget.org + GHCR | **Critical — 1.0 publication** | ~10 min |
+| **X.3** | Run vhs locally to render `docs/assets/install-cast.gif` from the `.tape` script W.4 commits | Optional but nice | ~10 min |
+| **X.4** | If pursuing W.13 (`MafHealthBadge`): set up the hosting infra (Cloudflare Worker / Gist) that serves the badge JSON | Optional | ~30 min |
+| **X.5** | Phase U sweep — revisit deferred Dependabot PRs #8 (coverlet 6→10) + #17 (Microsoft.CodeAnalysis 4.11→5.3) after 1.0 ships and workshop runs green | Optional, post-1.0 | ~30 min |
+| **X.6** | Announce 1.0 — GitHub discussions post / blog / social. (Implicit: the nuget.org publish in X.2 IS the announcement; X.6 is optional explicit promotion.) | Optional | ~30 min |
+| **X.7** | If a registry entry needs surgical content change that exceeds Claude's scope (e.g. legal / branding review), make the change | As-needed | varies |
+
+#### X.1 — Run the workshop end-to-end (the A.8 unblocker)
+
+**What.** Follow [`samples/workshop.md`](../samples/workshop.md). The 8 steps drive the toolkit from install → audit → plan → execute → verify.
+
+**Why you (not Claude).** The `@maf-auditor` and `@maf-migration` agents are GitHub Copilot Chat features, loaded by VS Code from `.github/agents/`. Claude Code can't invoke them. You hold the chat session.
+
+**Expected outcome.** Migration log in `samples/maf-1.3-sample/docs/migration-plan.md` + final `MafDoctor` grade A or B. This pair = the A.8 evidence for 1.0 announcement.
+
+**If something breaks.** File the issue as Phase T.6 expansion (registry drift / scanner gap). Claude can fix the toolkit-side issue then.
+
+#### X.2 — Cut stable 1.3.0
+
+**What.** `gh workflow run release.yml -f version=1.3.0` from the repo root.
+
+**What that triggers.**
+1. `dotnet test maf-autopilot.sln` across all 3 TFMs (1422 executions).
+2. `dotnet pack src/maf-autopilot/maf-autopilot.csproj` — produces a single multi-TFM nupkg.
+3. `dotnet pack src/maf-autopilot.Analyzers/maf-autopilot.Analyzers.csproj` — produces the analyzer nupkg.
+4. `dotnet nuget push *.nupkg --api-key $NUGET_API_KEY --source https://api.nuget.org/v3/index.json --skip-duplicate`.
+5. Docker multi-arch image built + pushed to `ghcr.io/joslat/maf-autopilot:1.3.0` + `:latest`.
+6. `softprops/action-gh-release` creates a tagged GitHub Release with auto-generated notes.
+
+**Why you (not Claude).** One-way publish to a public registry. Once `1.3.0` (no `-alpha-N`) is live, anyone running `dotnet tool install -g maf-autopilot` (no `--prerelease`) gets it. That's the implicit announcement.
+
+**Pre-flight checklist.**
+- ✅ `NUGET_API_KEY` secret set in GitHub repo settings.
+- ✅ X.1 produced grade A/B evidence (the toolkit was validated on a real codebase).
+- ✅ Branch protection on `main` allows the release workflow to push tags.
+
+#### X.3 — Render the animated install cast
+
+**What.** On a machine with `vhs` + `ffmpeg` + `ttyd` installed:
+
+```bash
+brew install vhs ffmpeg ttyd           # macOS
+# OR
+winget install charmbracelet.vhs       # Windows
+
+bash scripts/make-cast.sh              # produces docs/assets/install-cast.gif
+git add docs/assets/install-cast.gif
+git commit -m "docs(readme): render animated install cast"
+```
+
+**Why you (not Claude).** I can write the `.tape` script (W.4 delivers it) but I can't run vhs in this environment. The actual GIF rendering needs the toolchain locally.
+
+#### X.4 — MafHealthBadge hosting
+
+**What.** Set up a Cloudflare Worker / GitHub Gist / GitHub Pages endpoint that serves the JSON output of `maf-autopilot badge` (W.13). The shield URL would look like:
+```
+https://img.shields.io/endpoint?url=https://<your-hosting>/maf-autopilot/health.json
+```
+
+**Why you (not Claude).** Needs your account on Cloudflare / GitHub Gist / etc. The hosting choice is yours.
+
+#### X.5 — Phase U Dependabot sweep
+
+**What.** Revisit the 2 PRs deferred in Phase R after 1.0 ships:
+- **#8** `coverlet.collector 6.0.2 → 10.0.0` — 4 majors. Verify coverage still works post-merge.
+- **#17** `Microsoft.CodeAnalysis.* 4.11.0 → 5.3.0` (grouped) — Roslyn SDK major. Verify both the analyzer and its tests still build + pass. May need code changes for renamed Roslyn APIs.
+
+**Why you (not Claude).** Could be done by Claude after the workshop runs green, but the timing is a judgement call you should make.
+
+#### X.6 — 1.0 announcement (optional explicit)
+
+**What.** Write a discussions post / blog / social media announcement citing:
+- The toolkit's reach (20 MCP tools, 7 agents, 13 skills, 6 workflows).
+- The A.8 evidence (workshop migration log + grade A/B).
+- The registry coverage (13 entries spanning fan-in, sessions, executors, attributes, A2A, middleware).
+- The Phase Q auto-update validation (MAF 1.4 + 1.5).
+- A pointer to `samples/workshop.md` for hands-on adoption.
+
+**Why you (not Claude).** Voice + audience are yours.
+
+---
 
 ### Phase U — 1.0 polish (post-A.8)
 
