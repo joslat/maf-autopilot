@@ -21,7 +21,7 @@
 # documents are embedded into the .dll at build time (no extra COPY needed).
 
 # ---------- Stage 1 — build ----------
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
 # Copy only the files needed to restore — better layer caching.
@@ -46,7 +46,7 @@ RUN dotnet publish src/maf-autopilot/maf-autopilot.csproj \
 
 # ---------- Stage 2 — runtime ----------
 # The runtime image is much smaller than the SDK image (~125 MB vs ~860 MB).
-FROM mcr.microsoft.com/dotnet/runtime:9.0
+FROM mcr.microsoft.com/dotnet/runtime:8.0
 WORKDIR /app
 
 # Copy build output. Embedded resources (registry.yaml, constraints.md,

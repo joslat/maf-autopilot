@@ -1,6 +1,6 @@
 # Next steps
 
-> **Last refreshed:** 2026-05-13 (status check) — **5 phases landed**: ✅ Phase Q (auto-update validated), ✅ Phase S (multi-target nupkg `net8.0;net9.0;net10.0`), ✅ Phase T.1+T.2+T.2.5+T.6 (MAF 1.3 dogfood sample + workshop + registry drift fixes), ✅ Phase R Dependabot triage (5 PRs merged via Claude Code, 2 deferred to Phase U, 2 auto-closed). **The toolkit is complete and validated**; the only items left for 1.0 are human-driven (run the workshop, cut 1.3.0 — see [Phase X](#phase-x--user-checkpoints)). All Phase V brainstorm items reorganised below as **[Phase W — Claude-deliverable post-1.0 items](#phase-w--claude-deliverable-post-10-items)** with full implementation detail for each (Sonnet 4.6 can pick up any of them).
+> **Last refreshed:** 2026-05-13 (status check #2) — **6 phases landed**: ✅ Phase Q (auto-update validated), ✅ Phase S (multi-target nupkg `net8.0;net9.0;net10.0` + Dockerfile bumped to net8.0 LTS — S.9 closed), ✅ Phase T.1+T.2+T.2.5+T.6 (MAF 1.3 dogfood sample + workshop + registry drift fixes), ✅ Phase R Dependabot triage (5 PRs merged via Claude Code, 2 deferred to Phase U, 2 auto-closed). **NuGet packaging now mirrors AgentEval's house style** (multi-target, central package management, Directory.Build.props, global.json) — see [NuGet packaging alignment](#nuget-packaging-alignment-with-agenteval). **The toolkit is complete and validated**; remaining work splits into 🟡 [Phase X — User checkpoints](#phase-x--user-checkpoints) (run workshop, cut 1.3.0) and 🟡 [Phase W — Claude-deliverable post-1.0 items](#phase-w--claude-deliverable-post-10-items) (13 items, **reordered to do samples first**).
 > **Single source of truth for "what's next."** When this contradicts other docs, this wins.
 > **For history of done work:** see the **[`Done`](#-done--phases-a-through-q-history) section at the bottom** of this file, plus the full archive in [`maf-migration-toolkit-plan.md`](./maf-migration-toolkit-plan.md).
 
@@ -46,11 +46,17 @@ The toolkit ships **20 MCP tools, 7 agents (including `@maf` primary), 13 skills
 
 ## My recommendations — at a glance
 
-1. **Multi-target the nupkg `net8.0;net9.0;net10.0` matching AgentEval's house style.** Adopt `Directory.Packages.props` (central package management) + `global.json` (SDK roll-forward) as the supporting infra. The Roslyn analyzer stays `netstandard2.0` (Roslyn requirement, locked). The **Dockerfile stays net8.0 LTS** (smallest runtime image — only the container needs to pick one). Consumers on net8/net9/net10 all install the matching TFM via NuGet's TFM resolution. ([Why this, not single-target net8 — corrected below](#tfm-strategy).)
-2. **Build a MAF 1.3 sample inside `samples/maf-1.3-test-project/`** and dogfood the migration end-to-end (`@maf-auditor` → `@maf-migration` → `MafDoctor`). This **is** the A.8 unblocker — a synthetic-but-real validation we control, ready in 1-2 days instead of waiting for an external customer.
-3. **Triage Dependabot PRs surgically.** Close 2 (Docker .NET 10 forcers — Dockerfile stays net8 LTS), **merge** the Hosting 10.0.7 bump (#11 is now wanted — 10.0.x line packs net8/9/10 TFMs in one nupkg), verify-and-merge 6 (low-risk Actions + Test.Sdk), pair-and-defer 2 (Roslyn 4→5 SDK bump — wait until after Phase T to bump anything that could break the analyzer).
+The original 3 recommendations are all **done** ✅:
 
-Below is the phased plan, then the reasoning behind each call.
+1. ✅ **Multi-target the nupkg `net8.0;net9.0;net10.0` matching AgentEval's house style** — landed in Phase S (Directory.Packages.props + Directory.Build.props + global.json all in place; Dockerfile now on net8.0 LTS too). See [NuGet packaging alignment](#nuget-packaging-alignment-with-agenteval).
+2. ✅ **Build a MAF 1.3 sample inside `samples/maf-1.3-sample/`** — landed in Phase T.1+T.2 (10 anti-pattern errors + 3 silent-starvation risks correctly detected by the toolkit). Workshop authored in T.2.5.
+3. ✅ **Triage Dependabot PRs surgically** — landed in Phase R (5 PRs merged, 2 deferred, 2 closed).
+
+**Current recommendations going forward:**
+
+1. 🟡 **Run the workshop end-to-end ([X.1](#x1--run-the-workshop-end-to-end-the-a8-unblocker))** — drives `@maf-auditor` + `@maf-migration` in Copilot Chat. Produces the A.8 evidence. Needs you (~50 min).
+2. 🟡 **Cut stable 1.3.0 ([X.2](#x2--cut-stable-130))** — one-way publish to NuGet + GHCR. Needs you (~10 min).
+3. 🟡 **Phase W A — Samples-first execution** — do W.1 (foundation) → W.2 (1.2 sample) → W.3 (1.0 sample) → W.4 (CI regression) **together as one focused batch**. Can be done by Claude autonomously (~1-2 days). See [Phase W execution order](#phase-w--claude-deliverable-post-10-items).
 
 ---
 
@@ -84,7 +90,7 @@ All 7 dependabot PRs triaged. 5 merged, 2 closed (Docker .NET 10 forcers), 2 def
 | S.6 | `src/maf-autopilot.Analyzers.Tests/maf-autopilot.Analyzers.Tests.csproj`: same TFM change. | ✅ |
 | S.7 | `src/maf-autopilot.Analyzers/maf-autopilot.Analyzers.csproj`: kept `netstandard2.0` (Roslyn requirement). Removed inline `Version=`. | ✅ |
 | S.8 | Bumped `Microsoft.Extensions.Hosting` from `9.0.0` → `10.0.7` in `Directory.Packages.props`. The 10.0.x line internally ships net8 + net9 + net10 TFMs in one nupkg. (Equivalent to merging Dependabot #11.) | ✅ |
-| S.9 | Dockerfile: **stays on `net9.0` base** for now (still works; smallest LTS bump to `net8.0` recommended in a separate small PR). Dependabot #1 + #2 (Docker 9→10) ready to close. | ⚠️ Partial — Dockerfile bump to `net8.0` deferred to a follow-up |
+| S.9 | Dockerfile bumped to `mcr.microsoft.com/dotnet/sdk:8.0` + `runtime:8.0` (net8.0 LTS — smallest LTS image, longest support window, matches the lowest TFM the nupkg supports). Container ships one TFM regardless of the multi-target nupkg, and net8 is the right choice. | ✅ DONE 2026-05-13 (status check #2) |
 | S.10 | Build + test suite run locally across all 3 TFMs: `dotnet build` (3.69 s for 4 projects + 4 TFMs) + `dotnet test` — **463 tests × 3 TFMs = 1389 main-test executions + 11 × 3 = 33 analyzer-test executions, all passing** (one pre-existing `CompatibilityToolTests` failure for missing 1.4/1.5 rows fixed in the same change). | ✅ |
 | S.11 | CI workflow `release.yml` updated to install all 3 runtimes (`dotnet-version: 8.0.x \| 9.0.x \| 10.0.x`). Other install-only workflows (pr-audit, drift-detector, release-watcher) dropped to `8.0.x` LTS. **Next:** cut `1.3.0-alpha-6` and verify the published `nupkg`'s `tools/` folder contains `net8.0`, `net9.0`, `net10.0` subdirectories. | 🟡 Pending alpha-6 release |
 
@@ -130,27 +136,53 @@ Wall-clock from here to 1.0 publishable: **~60 min of human work** (steps 1 + 2)
 
 ### Phase W — Claude-deliverable post-1.0 items
 
-These are items I (Claude Code or a peer like Sonnet 4.6) can deliver **without human intervention**. Sequenced by dependency: **complete W.N before starting W.N+1 where a dependency is listed**. Each section gives goal, files to touch, algorithm, tests, acceptance criteria, and pitfalls — enough detail for any model to pick it up cold.
+These are items I (Claude Code or a peer like Sonnet 4.6) can deliver **without human intervention**. Each item below has a self-contained implementation subsection with goal, files to touch, algorithm, tests, acceptance criteria, and pitfalls.
 
-**Summary table (Phase W, in implementation order):**
+**Reordered for samples-first execution.** The natural execution sequence groups into three sub-phases. Implementation-detail subsections keep their existing W.N IDs for stability — the "Step" column gives the recommended order.
 
-| ID | Was | Item | Effort | Depends on | Status |
+#### Phase W.A — Foundation + samples-all-at-once (4 items, ~1-2 focused days)
+
+Do these FIRST. Rationale: the registry foundation (W.1) is needed before MafAutoFix can filter rules by codebase version; the samples (W.8 + W.10) share authoring muscle memory with the existing 1.3 sample and triple the test surface for everything downstream; the CI regression (W.9) locks the workshop's invariants once we have ≥2 samples.
+
+| Step | ID | Item | Effort | Status |
+|---|---|---|---|---|
+| 1 | [**W.1**](#w1--formalise-applies_to_codebases-in-registrymodelscs) | Formalise `applies_to_codebases` in `RegistryModels.cs` | S (1-2 hrs) | 🟡 |
+| 2 | [**W.8**](#w8--samplesmaf-12-sample) | `samples/maf-1.2-sample/` (1.2 → 1.3 migration fixture) | M (4-8 hrs) | 🟡 |
+| 3 | [**W.10**](#w10--samplesmaf-10-sample) | `samples/maf-1.0-sample/` (oldest migration ladder fixture) | M (4-8 hrs) | 🟡 |
+| 4 | [**W.9**](#w9--ci-regression-on-samples) | CI regression on `samples/*` | S (2-3 hrs) | 🟡 |
+
+#### Phase W.B — Workshop polish (4 items, ~½ day)
+
+Land these AFTER the samples exist, so the workshop demos all 3 samples in one polished arc.
+
+| Step | ID | Item | Effort | Status |
+|---|---|---|---|---|
+| 5 | [**W.2**](#w2--wire-analyzer-nuget-into-the-13-sample) | Wire analyzer NuGet into the 1.3 sample (workshop step 5b) | XS (30 min) | 🟡 |
+| 6 | [**W.3**](#w3--workshop-retrospective-step) | Workshop retrospective step (`@maf-best-practice-reviewer`) | XS (15 min, doc only) | 🟡 |
+| 7 | [**W.5**](#w5--find-the-bug-in-30-seconds-workshop-challenge) | "Find the bug in 30 seconds" workshop challenge | S (2-4 hrs) | 🟡 |
+| 8 | [**W.4**](#w4--animated-install-cast-source-artifacts-only) | Animated install cast — `.tape` + helpers (source artifacts only) | M (4 hrs source) | 🟡 |
+
+#### Phase W.C — New MCP tools (5 items + 1 polish, ~3-4 days)
+
+Tool-surface expansion. **W.6 (MafAutoFix) is the biggest leverage** — the missing "do" half of the toolkit.
+
+| Step | ID | Item | Effort | Depends on | Status |
 |---|---|---|---|---|---|
-| **W.1** | V.6 | Formalise `applies_to_codebases` in `RegistryModels.cs` | S (1-2 hrs) | none | 🟡 |
-| **W.2** | V.9 | Wire analyzer NuGet into the 1.3 sample (workshop step 5b) | XS (30 min) | none | 🟡 |
-| **W.3** | V.10 | Workshop retrospective step (`@maf-best-practice-reviewer`) | XS (15 min, doc only) | none | 🟡 |
-| **W.4** | V.5 | Animated install cast — `.tape` + helpers (source artifacts only) | M (4 hrs source) | none | 🟡 |
-| **W.5** | V.4 | "Find the bug in 30 seconds" workshop challenge | S (2-4 hrs) | none | 🟡 |
-| **W.6** | V.1 | `MafAutoFix` MCP tool (THE missing "do" half) | M (1-2 days) | W.1 | 🟡 |
-| **W.7** | V.7 | `MafBeforeAfter(repoPath, ruleIds[])` MCP tool | S (3-4 hrs) | W.6 | 🟡 |
-| **W.8** | V.2a | `samples/maf-1.2-sample/` (1.2 → 1.3 migration fixture) | M (4-8 hrs) | none (W.6 nice-to-have for end-to-end test) | 🟡 |
-| **W.9** | V.3 | CI regression on `samples/*` | S (2-3 hrs) | W.8 (≥2 samples needed) | 🟡 |
-| **W.10** | V.2b | `samples/maf-1.0-sample/` (oldest migration ladder fixture) | M (4-8 hrs) | W.8 (same recipe) | 🟡 |
-| **W.11** | V.11 | `MafScoreMigrationRisk(repoPath)` MCP tool | S (4 hrs) | none | 🟡 |
-| **W.12** | V.12 | `MafGenerateRegressionPlan(from, to)` MCP tool | M (1 day) | W.1, W.8, W.10 | 🟡 |
-| **W.13** | V.8 | `MafHealthBadge` (subcommand only — hosting is X.4) | XS (1 hr) | none | 🟡 |
+| 9 | [**W.6**](#w6--mafautofix-mcp-tool-the-missing-do-half) | `MafAutoFix` MCP tool (THE missing "do" half) | M (1-2 days) | W.1 | 🟡 |
+| 10 | [**W.7**](#w7--mafbeforeafter-mcp-tool) | `MafBeforeAfter(repoPath, ruleIds[])` MCP tool | S (3-4 hrs) | W.6 | 🟡 |
+| 11 | [**W.11**](#w11--mafscoremigrationriskrepopath-mcp-tool) | `MafScoreMigrationRisk(repoPath)` MCP tool | S (4 hrs) | none | 🟡 |
+| 12 | [**W.12**](#w12--mafgenerateregressionplanfrom-to-mcp-tool) | `MafGenerateRegressionPlan(from, to)` MCP tool | M (1 day) | W.1, W.8, W.10 | 🟡 |
+| 13 | [**W.13**](#w13--mafhealthbadge-subcommand) | `MafHealthBadge` (subcommand only — hosting is X.4) | XS (1 hr) | none | 🟡 |
+| 14 | **W.14** | NuGet polish — add `IncludeSymbols=true` + `SymbolPackageFormat=snupkg` + SourceLink (AgentEval parity — see [NuGet packaging alignment](#nuget-packaging-alignment-with-agenteval)) | XS (1 hr) | none | 🟡 |
 
-**Pick-3 for 1.1.x release:** W.1 + W.6 (MafAutoFix) + W.4 (animated cast). ~2.5 focused days.
+**Why this order (instead of the original V.x order):**
+
+- **W.A samples first** triples MafAutoFix's test surface — when W.6 lands, it has 3 samples to validate against instead of 1.
+- **W.4 (CI regression) lands inside W.A** because once we have ≥2 samples, the regression test is meaningful. Doing it later wastes the early signal.
+- **Workshop polish (W.B) is mostly doc + small csproj edits** — perfect quick wins between heavyweight sample work and the MCP tool buildout.
+- **MCP tools (W.C) come last** because they're the largest individual lift; doing them with a polished workshop + 3 samples behind them means every new tool can be demoed against multiple real codebases on day 1.
+
+**Pick-4 for 1.1.x release (recommended bundle):** W.1 + W.8 + W.10 + W.9 (Phase W.A end-to-end) — about 2 days, leaves the toolkit with full multi-version sample coverage + CI regression net. Then ship 1.1, queue W.B for 1.1.1 and W.C for 1.2.
 
 ---
 
@@ -1042,9 +1074,39 @@ After A.8 ships, the toolkit's stable. These are nice-to-haves for 1.0.x patches
 
 ## In-depth recommendations (my reasoning)
 
+### NuGet packaging alignment with AgentEval
+
+The maf-autopilot nupkg's packaging now mirrors the sibling **`C:\git\joslat\AgentEval`** project's house style. This is what's the same, and what's intentionally different:
+
+#### Substantive parallels (✅ all in place)
+
+| Element | maf-autopilot | AgentEval | Same? |
+|---|---|---|---|
+| TargetFrameworks | `net8.0;net9.0;net10.0` | `net8.0;net9.0;net10.0` | ✅ |
+| Central Package Management (CPM) | `/Directory.Packages.props` with `ManagePackageVersionsCentrally=true` + `CentralPackageTransitivePinningEnabled=true` | same | ✅ |
+| Shared compiler settings | `/Directory.Build.props` with `LangVersion=latest`, `ImplicitUsings=enable`, `Nullable=enable`, `TreatWarningsAsErrors=false` | same set | ✅ |
+| SDK roll-forward | `/global.json` with `sdk.version=8.0.100` + `rollForward: latestMajor` + `allowPrerelease: true` | identical | ✅ |
+| Analyzer carve-out | `maf-autopilot.Analyzers.csproj` stays on `netstandard2.0` (Roslyn host requirement, locked) | AgentEval has no analyzer in this project — N/A | ✅ (locked) |
+| `<PackageId>`, `<Authors>`, `<RepositoryUrl>`, `<PackageReadmeFile>`, `<PackageLicenseExpression>` | inline in `maf-autopilot.csproj` | mostly in `Directory.Build.props` | ✅ functionally; different placement |
+| Container image TFM | `mcr.microsoft.com/dotnet/sdk:8.0` + `runtime:8.0` (net8.0 LTS — smallest LTS image) | AgentEval has no Docker target | N/A |
+
+#### Stylistic differences (NOT applied to maf-autopilot, but could be later)
+
+| Feature | Why AgentEval has it | maf-autopilot status | Recommended? |
+|---|---|---|---|
+| `<IncludeSymbols>true</IncludeSymbols>` + `<SymbolPackageFormat>snupkg</SymbolPackageFormat>` | Publishes a `.snupkg` alongside the `.nupkg` so consumers can step into source while debugging. | Not yet | Yes — small win for tool-debugger UX. **W-candidate**. |
+| `<PublishRepositoryUrl>true</PublishRepositoryUrl>` + `<EmbedUntrackedSources>true</EmbedUntrackedSources>` + `<PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />` | SourceLink integration — debugger can jump to the exact commit's source on GitHub. | Not yet | Yes — same UX benefit. **W-candidate**. |
+| `IncludeSubProjectDlls` MSBuild target | AgentEval bundles 6 sub-projects' DLLs INTO the single `AgentEval` nupkg (they're internal, not separately published). | N/A — maf-autopilot is a single-project nupkg | Not applicable. |
+| Package metadata in `Directory.Build.props` | DRY across multiple shippable nupkgs in one solution. | maf-autopilot ships TWO nupkgs (server + analyzer); could centralise common fields. | Optional — minor maintenance win. |
+
+**Verdict:** the **substantive** refactor (multi-target + CPM + Directory.Build.props + global.json) is **done**, and that's what makes the project follow the AgentEval pattern. The two stylistic additions (`snupkg` symbols + SourceLink) are easy follow-ups — added as candidate **W.14** below.
+
+---
+
 ### TFM strategy
 
-**Current:** `net9.0` everywhere (except the analyzer on `netstandard2.0`).
+**Previous state:** `net9.0` everywhere (except the analyzer on `netstandard2.0`).
+**Current state (post-Phase S):** `net8.0;net9.0;net10.0` multi-target; analyzer stays `netstandard2.0`; Dockerfile on `net8.0` LTS base.
 
 **Why we shouldn't stay on `net9.0`:** .NET 9 is an STS (Standard Term Support) release with **18 months of support — ending ~Nov 2026**. We're in May 2026. `net9.0` is roughly six months from EOL. Any consumer installing `maf-autopilot` next year needs to be on a runtime that's about to lose security patches.
 
