@@ -328,4 +328,123 @@ public class AutoFixToolTests
         Assert.Contains("MAF-AP-SEC-003", AutoFixTool.SupportedRuleIds);
         Assert.Contains("MAF003", AutoFixTool.SupportedRuleIds);
     }
+
+    // -------------------------------------------------------------------------
+    // MafAutoFixAll — the "fix everything fixable" batch command
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void AutoFixAll_EmptyPath_ReturnsErrorJson()
+    {
+        var tool = new AutoFixTool();
+        var result = tool.MafAutoFixAll("");
+        Assert.Contains("error", result);
+    }
+
+    [Fact]
+    public void AutoFixAll_AppliesAllRulesInOrder()
+    {
+        // Arrange — temp dir with files triggering multiple rules at once.
+        var tempRoot = Path.Combine(Path.GetTempPath(), "maf-autofix-all-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        File.WriteAllText(Path.Combine(tempRoot, "Sec.cs"),
+            "class C { object F() => new DefaultAzureCredential(); }");
+        File.WriteAllText(Path.Combine(tempRoot, "Sensitive.cs"),
+            "class C { object F() => new ChatOptions { EnableSensitiveData = true, Temperature = 0.5 }; }");
+
+        try
+        {
+            // Act.
+            var tool = new AutoFixTool();
+            var resultJson = tool.MafAutoFixAll(tempRoot);
+            var result = JsonSerializer.Deserialize<JsonDocument>(resultJson)!;
+
+            // Assert — 2 distinct files changed across the rule set.
+            Assert.Equal(2, result.RootElement.GetProperty("totalDistinctFilesChanged").GetInt32());
+
+            // The per-rule breakdown should show the SEC-001 + SEC-003 entries.
+            var perRule = result.RootElement.GetProperty("perRule");
+            Assert.Equal(1, perRule.GetProperty("MAF-AP-SEC-001").GetProperty("filesChanged").GetInt32());
+            Assert.Equal(1, perRule.GetProperty("MAF-AP-SEC-003").GetProperty("filesChanged").GetInt32());
+
+            // Disk state confirms the rewrites.
+            Assert.Contains("ManagedIdentityCredential", File.ReadAllText(Path.Combine(tempRoot, "Sec.cs")));
+            Assert.DoesNotContain("EnableSensitiveData", File.ReadAllText(Path.Combine(tempRoot, "Sensitive.cs")));
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AutoFixAll_DryRun_DoesNotWriteFiles()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "maf-autofix-all-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        var path = Path.Combine(tempRoot, "Bad.cs");
+        var original = "class C { object F() => new DefaultAzureCredential(); }";
+        File.WriteAllText(path, original);
+
+        try
+        {
+            var tool = new AutoFixTool();
+            var resultJson = tool.MafAutoFixAll(tempRoot, dryRun: true);
+            var result = JsonSerializer.Deserialize<JsonDocument>(resultJson)!;
+
+            // Dry-run reports 1 file would change AND leaves the disk content untouched.
+            Assert.Equal(1, result.RootElement.GetProperty("totalDistinctFilesChanged").GetInt32());
+            Assert.True(result.RootElement.GetProperty("dryRun").GetBoolean());
+            Assert.Equal(original, File.ReadAllText(path));
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AutoFixAll_OrderOfExecution_PutsSealedBeforeFanIn()
+    {
+        // Critical invariant: the dependency-safe order is documented in the
+        // tool's docstring AND in the returned `orderOfExecution` field. This
+        // test pins the order so future refactors don't silently break it.
+        var tempRoot = Path.GetTempPath();
+        var tool = new AutoFixTool();
+        var resultJson = tool.MafAutoFixAll(tempRoot, dryRun: true);
+        var result = JsonSerializer.Deserialize<JsonDocument>(resultJson)!;
+
+        var order = result.RootElement.GetProperty("orderOfExecution")
+            .EnumerateArray()
+            .Select(e => e.GetString()!)
+            .ToList();
+
+        var sealedIdx = order.IndexOf("MAF-AP-WF-001");
+        var fanInIdx = order.IndexOf("MAF130-FAN-IN-001");
+        var syncIdx = order.IndexOf("MAF-AP-CONC-002");
+
+        Assert.True(sealedIdx >= 0 && fanInIdx >= 0 && syncIdx >= 0);
+        Assert.True(sealedIdx < fanInIdx, "ExecutorSealed must run before FanInArgOrder");
+        Assert.True(fanInIdx < syncIdx,   "FanInArgOrder must run before SyncOverAsync");
+    }
+
+    [Fact]
+    public void AutoFixAll_NoOpRepo_ReportsZeroChanges()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "maf-autofix-all-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        File.WriteAllText(Path.Combine(tempRoot, "Clean.cs"), "class C { int X() => 1; }");
+
+        try
+        {
+            var tool = new AutoFixTool();
+            var resultJson = tool.MafAutoFixAll(tempRoot);
+            var result = JsonSerializer.Deserialize<JsonDocument>(resultJson)!;
+            Assert.Equal(0, result.RootElement.GetProperty("totalDistinctFilesChanged").GetInt32());
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
 }

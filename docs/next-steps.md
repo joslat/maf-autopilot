@@ -1210,6 +1210,215 @@ If we shipped these as **maf-autopilot 1.1.0** they'd materially differentiate t
 
 Total: ~2-2.5 focused weeks. Would 5x the toolkit's surface visibility.
 
+---
+
+### 🚀 Top-5 Must-Do-Now — Implementation Blueprints (2026-05-13)
+
+Per the maintainer's "examine how to implement them in the best possible way" prompt, here's the per-idea blueprint with cost, deployment impact, and a **can-do-RIGHT-NOW** verdict. Sorted by "ship-now feasibility" rather than score.
+
+#### #3 — `MafAutoFix --all` ✅ DONE 2026-05-13
+
+**Verdict.** ✅ **ALREADY LANDED.** Zero new deployment, ~2 hours of work. The single fastest win in this list.
+
+**Why it was the only one doable right-now.**
+- Pure extension of existing `AutoFixTool` — same MCP surface, same nupkg, same CLI.
+- No new dependencies, no new APIs to learn.
+- Test surface grows but no test infra changes.
+
+**Implementation that shipped.**
+- Refactored `AutoFixTool.MafAutoFix`'s inner loop into a private `ApplyRewriterToRepo(rewriter, repoPath, specificFile, dryRun)` helper returning a `RewriterRunResult` record. Shared between `MafAutoFix` and `MafAutoFixAll`.
+- New `[McpServerTool] MafAutoFixAll(repoPath, specificFile?, dryRun?)` method. Iterates over a hard-coded `orderedRules` array (NOT all keys of `_factories` — that array deliberately omits the alias IDs `MAF002` / `MAF003` so each rewriter runs ONCE per pass).
+- Dependency-safe order encoded with inline rationale comments:
+  1. `MAF-AP-WF-001` (sealed) — purely additive; never affects others.
+  2. `MAF-AP-SEC-003` (EnableSensitiveData) — removes an initializer entry.
+  3. `MAF-AP-SEC-001` (DefaultAzureCredential) — type-name swap.
+  4. `MAF130-FAN-IN-001` — argument-position swap; runs AFTER 1-3.
+  5. `MAF-AP-CONC-002` (.Result/.Wait()) — runs LAST in case any prior rule altered the wrapped invocation.
+- Aggregate JSON: `dryRun`, `orderOfExecution`, `totalDistinctFilesChanged` (set-union across rules), `affectedFiles` (sorted), `perRule` breakdown.
+- 5 new tests added: empty path, all-rules-applied, dry-run-leaves-disk, order-of-execution invariant pinned (sealed-before-fan-in-before-sync), no-op repo.
+- TourTool catalogue extended with `MafAutoFixAll` entry.
+
+**Cost.** ~2 hours actual; estimated 4. Build time impact: negligible (~+10 KB to the nupkg).
+
+---
+
+#### #4 — GitHub bot (`@maf-autopilot` in PR/issue comments) ❌ NEEDS NEW INFRA
+
+**Verdict.** ❌ **Defer until 1.1.x infra session.** ~2-3 days of work, but the blocker is hosting + GitHub App registration.
+
+**What it would look like.**
+
+```
+Bob:  Can someone @maf-autopilot doctor this branch?
+Bot:  🔴 MAF health grade F. 7 anti-pattern errors + 2 silent-starvation
+      risks. Top fixes:
+      1. HandleAsync at OsintInvestigator.cs:19 returns ValueTask...
+      Want me to apply MafAutoFix --all? Reply with `@maf-autopilot fix`.
+
+Bob:  @maf-autopilot fix
+Bot:  ✅ Applied 5 rules across 8 files. Grade now: A.
+      [opened PR #42 against the branch]
+```
+
+**Implementation breakdown.**
+
+| Component | Stack | Cost |
+|---|---|---|
+| GitHub App registration | github.com/settings/apps — 10 min UI work | 10 min |
+| Webhook handler | Cloudflare Worker / Azure Function / AWS Lambda — JS or .NET | 1 day |
+| Auth: GitHub App private key + installation tokens | `Octokit.Net` — well-trodden | 2 hrs |
+| Runner: spawn `maf-autopilot` as subprocess OR pre-install into the Worker | Both work; subprocess is simpler | 4 hrs |
+| Comment parsing: detect `@maf-autopilot <verb>` mentions | Regex on `issue_comment.created` payload | 2 hrs |
+| Cloning the branch into a workspace for the doctor to read | `git clone --depth 1` in the Worker | 2 hrs |
+| Idempotency / replay protection | Use webhook `delivery-id` as a cache key | 2 hrs |
+| Posting the reply | `POST /repos/<owner>/<repo>/issues/<n>/comments` | 1 hr |
+
+**Hosting decision matters.** Cheapest: Cloudflare Workers (free tier covers small audiences; need ~256 MB to clone+scan a small MAF repo so might need a Durable Object). Easiest for .NET-native: Azure Functions (consumption plan; we already use Azure ecosystem). Open question for the maintainer.
+
+**Recommended next move.** Spike a 1-day proof-of-concept on Cloudflare Workers: webhook → simple `gh pr diff` → reply "Hello world, I'd audit this if I knew how." Once green, build out.
+
+---
+
+#### #5 — AI-powered registry auto-mining 🟡 PARTIALLY DOABLE NOW
+
+**Verdict.** 🟡 **Basic version doable today (1-2 days) — full version is the bigger lift.**
+
+**What "AI-powered registry auto-mining" actually means.**
+
+Today's workflow (`.github/workflows/maf-release-watcher.yml`):
+1. Cron: weekly, checks NuGet for new MAF stable.
+2. Runs `dotnet-inspect diff Microsoft.Agents.AI@old..new`.
+3. Captures the raw diff (structural — types added/removed, method signatures changed).
+4. Runs `python3 .github/scripts/gen_guide_section.py` to write a per-version migration guide stub.
+5. Runs `maf-autopilot registry-extract` to emit DRAFT registry entries (with TODO placeholders for the `fix_description`, `example_before`, `example_after` fields).
+6. Dispatches `maf-ai-fill-todos.yml` which opens a GitHub issue assigned to Copilot Coding Agent. Copilot fills the TODOs.
+7. Copilot opens a PR. Maintainer reviews and merges.
+
+The toolkit ALREADY has a primitive auto-mining loop. The gap is **how well** Copilot fills the TODOs. Reading the existing PRs (e.g. #15 in this repo's history), the fill quality is good but inconsistent — Copilot sometimes confuses behavioural changes with type-renames, etc.
+
+**"AI-powered" improvement (basic — DOABLE TODAY).**
+
+1. **Refine the Copilot prompt** in `maf-ai-fill-todos.yml`. Add stricter rubric: "For each draft entry, identify exactly ONE breaking change category: TYPE-REMOVED, METHOD-RENAMED, SIGNATURE-CHANGED, BEHAVIOR-CHANGED, OR ATTRIBUTE-REMOVED. Use the matching template." Inline templates in the prompt.
+
+2. **Enrich the diff context.** Currently we pass `dotnet-inspect diff` output (structural). Add: the release notes from GitHub (we already fetch them in `release-notes.txt`), plus a snippet of the MAF source PR description if `gh pr view` finds one for the bumped version.
+
+3. **Add a self-verification step.** After Copilot fills the TODOs, run `MafExplain` against each `example_before` + `example_after` snippet. If MafExplain returns ERROR (e.g. the example doesn't parse), reject the PR and ask Copilot to re-do.
+
+Cost for the basic version: ~1-2 days. Same CI workflow, same Copilot Coding Agent, just better prompt + a verification gate.
+
+**"AI-powered" improvement (advanced — week-long lift).**
+
+1. **Mine MAF source repo PRs directly.** GitHub API: fetch every PR merged between two MAF tags, summarise each via an LLM call with the prompt "Did this PR break customer code? If yes, what's the migration?". Aggregate findings into proposed registry entries.
+
+2. **Cross-reference with `dotnet-inspect`.** A PR that removes a type AND ships in the same release as a `[Obsolete]` warning is a high-confidence registry entry. A PR that's behavioural-only (e.g. "default value changed from X to Y") is detectable ONLY this way — `dotnet-inspect` won't catch it.
+
+3. **Score each candidate entry by confidence.** "This PR changed `AddFanInBarrierEdge` and the docstring uses the phrase 'breaking change' → confidence 0.95" vs. "This PR has a vague title and unclear scope → confidence 0.4". Below a threshold, skip.
+
+Cost for the advanced version: ~1 week. Needs a one-time API key for the LLM (Anthropic or OpenAI), a new Python script in `.github/scripts/`, and additional secrets in the GitHub repo.
+
+---
+
+#### #1 — VS Code "X-ray mode" ❌ DIFFERENT LANGUAGE + DEPLOY TARGET
+
+**Verdict.** ❌ **~1 week of focused work. New TypeScript project. New Marketplace publish.** High-leverage but not a "right now" item.
+
+**What it would look like.** Open the workshop sample in VS Code. Every executor file has red squigglies under every fan-out `ValueTask`. Hover → tooltip shows the full registry entry's `fix_description` + the link to the migration guide. Cmd+. opens a lightbulb menu with "Apply MafAutoFix: rename to ValueTask<T>". Click → file rewritten + diff shown in a side panel.
+
+**Implementation.**
+
+| Component | Stack | Cost |
+|---|---|---|
+| VS Code extension scaffold | `yo code` | 1 hr |
+| MCP client wrapper (talks to `maf-autopilot` over stdio) | TypeScript — use the official `@modelcontextprotocol/sdk` | 1 day |
+| Code Fix provider per analyzer rule (MAF001/2/3) | VS Code `CodeActionProvider` API | 1 day |
+| Hover provider for analyzer diagnostics | `HoverProvider` API; pull text from `MafRegistryLookup` MCP tool | ½ day |
+| Webview panel for the doctor verdict | VS Code Webview API + simple HTML | ½ day |
+| Marketplace metadata + first publish | `vsce publish` | 1 day |
+
+Total: ~1 week. Then ongoing minor maintenance.
+
+**Bridge alternative (DOABLE NOW, partial benefit).** The analyzer we shipped in W.2 already produces squigglies via MAF001/2/3. What's MISSING is: (a) the rich hover with the registry entry, and (b) the lightbulb Code Fix. We could add Code Fix providers TO THE ANALYZER itself (it's already loaded in the IDE) without writing a separate VS Code extension. That's ~2 days of work and would deliver 70% of the X-ray benefit.
+
+---
+
+#### #8 — Migration time-lapse video 🟡 ½-DAY EXTENSION DOABLE NOW
+
+**Verdict.** 🟡 **Half-day. Extends the existing `install-cast.tape` from W.4.** Rendering still needs vhs locally.
+
+**Implementation.**
+
+1. New `.tape` script `docs/assets/migration-cast.tape` (alongside the existing install-cast.tape). Beats:
+   - Beat 1: clone the sample (`git clone... && cd ...`)
+   - Beat 2: build (`dotnet build` → show CS0618 warning)
+   - Beat 3: doctor (`maf-autopilot doctor .` → 🔴 F)
+   - Beat 4: auto-fix (`maf-autopilot autofix-all .` — once we expose the CLI subcommand, see below)
+   - Beat 5: re-doctor (🟢 A)
+   - Beat 6: build (`dotnet build` → 0 warnings 0 errors)
+
+2. To make `maf-autopilot autofix-all .` a real CLI command (not just an MCP tool), add the subcommand to `Program.cs` parallel to `doctor` / `badge`. ~30 min.
+
+3. Render `migration-cast.gif`, embed in README as a SECOND animated demo.
+
+**Caveat.** The full `@maf-migration` agent flow (the ChatGPT/Copilot session) cannot be vhs'd — it requires a live Copilot session. The migration-cast covers the deterministic auto-fix flow only.
+
+---
+
+#### #15 — A2A maf-autopilot (the crazy bet) 🔮 ~1 WEEK
+
+**Verdict.** 🔮 **The riskiest + highest-ceiling pick.** Doable but not "right now".
+
+**What it means concretely.**
+
+Today, `maf-autopilot` runs OUTSIDE MAF. It's a `dotnet tool` you invoke from your shell, or an MCP server VS Code talks to. The tools are reachable only from those entry points.
+
+In an A2A world, `maf-autopilot` becomes a MAF agent ITSELF — a `ChatClientAgent` with the toolkit's MCP tools wired as MAF function-call tools. Then ANY MAF workflow can include the autopilot agent as a node:
+
+```csharp
+var autopilotAgent = MafAutopilotAgent.Create(chatClient);
+// = ChatClientAgent { Name = "maf-autopilot",
+//                     ChatOptions.Tools = [MafApiSafety, MafDoctor, MafAutoFix, ...] }
+
+var workflow = new WorkflowBuilder(myDevAgent)
+    .AddEdge(myDevAgent, autopilotAgent)    // dev agent emits code → autopilot audits it
+    .AddEdge(autopilotAgent, deployAgent)   // only deploy if autopilot grades A/B
+    .Build();
+```
+
+**Why this is "wow".** Three reasons:
+
+1. **The toolkit auditing the toolkit.** Recursive self-validation. Demo-able by spawning two maf-autopilot agents and having them review each other's output.
+2. **Lives in the workflow that needs it.** Today a customer pipes their code OUT to the toolkit. In A2A, the toolkit is just another agent in their existing workflow.
+3. **Opens "AI auditing AI" framing.** The single most ChatGPT-able sentence in this whole brainstorm: "My AI agent has a code-quality AI agent reviewing its output before commit." That's a tweet you write.
+
+**Implementation breakdown.**
+
+| Component | Stack | Cost |
+|---|---|---|
+| New NuGet: `Microsoft.Agents.AI.AutopilotAgent` (or similar) | New csproj in `src/`, multi-targets like the main nupkg | ½ day |
+| MCP-tool-to-MAF-function-tool adapter | `Microsoft.Extensions.AI.AIFunctionFactory.Create(method)` per MCP tool | 1 day |
+| `MafAutopilotAgent.Create(chatClient)` factory | Returns a `ChatClientAgent` with all the tools wired | ½ day |
+| Integration test: spin up the agent in an in-process workflow, audit the 1.3 sample via the agent path | New xUnit project or extension to existing | 1 day |
+| Sample: `samples/a2a-demo/` showing two agents (dev + autopilot) in a real workflow | Cloned from 1.3 sample, swap topology | 1 day |
+| Docs: new page `docs/a2a-mode.md` explaining the use case | Markdown | ½ day |
+
+Total: ~5 days realistic + a stretch day for polish. Risk: the function-call adapter might need MAF-version-specific tweaks (e.g. if MAF 1.5's tool-call schema differs from 1.3).
+
+---
+
+### Recommended order of execution (if greenlit beyond this session)
+
+```
+DAY 0  (today)         ✅ #3 MafAutoFix --all — DONE (already in this session)
+DAY 1                  #8 Time-lapse extension (½ day) + autofix-all CLI command (¼ day)
+DAY 2-3                #5 AI registry auto-mining BASIC version (refined prompt + verification gate)
+DAY 4-5                #4 GitHub bot PoC (Cloudflare Worker spike, hello-world → audit-and-reply)
+DAY 6-10               #1 VS Code X-ray mode (BRIDGE version — Code Fix providers on existing analyzer)
+DAY 11-15              #15 A2A maf-autopilot (the crazy bet)
+DAY 16+                #5 AI registry auto-mining ADVANCED (PR mining)
+```
+
+Total: ~3 focused weeks for the full top-5 + the crazy bet, shipped as `maf-autopilot 1.1.0` → `1.2.0` → `1.3.0`.
+
 ### My "if I had to pick ONE crazy bet" pick
 
 **#15 — A2A maf-autopilot**. Reasoning: the toolkit currently sits OUTSIDE the MAF runtime, auditing code at rest. Spawning it as a MAF agent that lives INSIDE the workflow inverts that — every other agent gets a self-audit channel. "AI auditing AI" is the most ChatGPT-able framing in this whole list, and it lands directly on the framework's strengths. Risky (~1 week), niche (utility score 5), but the wow + cool ceiling are 10s.

@@ -100,7 +100,106 @@ public sealed class AutoFixTool
                 error = $"Unknown ruleId '{ruleId}'. Supported: {string.Join(", ", SupportedRuleIds)}",
             });
 
-        var rewriter = factory();
+        var result = ApplyRewriterToRepo(factory(), repoPath, specificFile, dryRun);
+        return JsonSerializer.Serialize(new
+        {
+            ruleId,
+            dryRun,
+            filesChanged = result.ChangedFiles.Count,
+            changedFiles = result.ChangedFiles,
+            errors = result.Errors,
+        }, new JsonSerializerOptions { WriteIndented = true });
+    }
+
+    [McpServerTool]
+    [Description("""
+        Apply EVERY supported rewriter across the codebase in dependency-safe
+        order — the "fix everything fixable" command. Use this when running
+        a clean migration pass instead of cherry-picking individual rules.
+
+        Order of execution (each runs over the output of the previous):
+          1. MAF-AP-WF-001       — add `sealed` modifier (purely additive)
+          2. MAF-AP-SEC-003      — drop EnableSensitiveData = true
+          3. MAF-AP-SEC-001      — DefaultAzureCredential → ManagedIdentityCredential
+          4. MAF130-FAN-IN-001   — swap fan-in arg order
+          5. MAF-AP-CONC-002     — .Result / .Wait() → await
+
+        Input:
+          - repoPath: absolute path to the repo or project to fix.
+          - specificFile: optional, relative path to limit fixes to a single file.
+          - dryRun: if true, no files are written — just returns the JSON
+            summary of what WOULD change. Default false.
+
+        Returns aggregate JSON with the ordered rule list + total distinct files
+        changed (union across all rules) + per-rule breakdown.
+        """)]
+    public string MafAutoFixAll(
+        [Description("Absolute path to the repo or project to fix.")] string repoPath,
+        [Description("Optional: relative path to limit fixes to a single file.")] string? specificFile = null,
+        [Description("If true, no files written — just preview.")] bool dryRun = false)
+    {
+        if (PathGuard.ValidateRepoPath(repoPath) is { } err)
+            return JsonSerializer.Serialize(new { error = err });
+
+        // **Dependency-safe execution order.** Rationale per rule:
+        //   1. ExecutorSealedRewriter      — purely additive modifier; never affects other rewrites.
+        //   2. EnableSensitiveDataRewriter — removes an initializer-list entry; doesn't affect rules 3-5.
+        //   3. DefaultAzureCredentialRewriter — type-name swap; independent of other rules.
+        //   4. FanInArgOrderRewriter       — argument-position swap on a specific invocation; runs
+        //      AFTER 1-3 in case any of them happen to alter the surrounding context.
+        //   5. SyncOverAsyncRewriter       — wraps an invocation in await; runs LAST in case rules
+        //      3-4 changed the invocation's identity (they don't today, but order-safety > order-speed).
+        //
+        // Aliases (MAF002 / MAF003) deliberately NOT in this list — we want each rewriter to run
+        // EXACTLY ONCE per pass. The aliased IDs route to the same factory.
+        var orderedRules = new[]
+        {
+            "MAF-AP-WF-001",
+            "MAF-AP-SEC-003",
+            "MAF-AP-SEC-001",
+            "MAF130-FAN-IN-001",
+            "MAF-AP-CONC-002",
+        };
+
+        var perRule = new Dictionary<string, object>();
+        var allChangedFiles = new SortedSet<string>(StringComparer.Ordinal);
+
+        foreach (var ruleId in orderedRules)
+        {
+            if (!_factories.TryGetValue(ruleId, out var factory)) continue;
+            var result = ApplyRewriterToRepo(factory(), repoPath, specificFile, dryRun);
+            perRule[ruleId] = new
+            {
+                filesChanged = result.ChangedFiles.Count,
+                changedFiles = result.ChangedFiles,
+            };
+            foreach (var f in result.ChangedFiles) allChangedFiles.Add(f);
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            dryRun,
+            orderOfExecution = orderedRules,
+            totalDistinctFilesChanged = allChangedFiles.Count,
+            affectedFiles = allChangedFiles.ToList(),
+            perRule,
+        }, new JsonSerializerOptions { WriteIndented = true });
+    }
+
+    /// <summary>
+    /// Per-rule run result. Returned by <see cref="ApplyRewriterToRepo"/> and
+    /// shared between <see cref="MafAutoFix"/> and <see cref="MafAutoFixAll"/>.
+    /// </summary>
+    private sealed record RewriterRunResult(IReadOnlyList<string> ChangedFiles, IReadOnlyList<object> Errors);
+
+    /// <summary>
+    /// Walks every .cs file (or just one), applies the rewriter, and writes
+    /// changed files atomically. Pure helper — no JSON, no PathGuard (caller
+    /// has already validated).
+    /// </summary>
+    private static RewriterRunResult ApplyRewriterToRepo(
+        IRuleRewriter rewriter, string repoPath, string? specificFile, bool dryRun)
+    {
         var changedFiles = new List<string>();
         var errors = new List<object>();
 
@@ -129,15 +228,7 @@ public sealed class AutoFixTool
                 });
             }
         }
-
-        return JsonSerializer.Serialize(new
-        {
-            ruleId,
-            dryRun,
-            filesChanged = changedFiles.Count,
-            changedFiles,
-            errors,
-        }, new JsonSerializerOptions { WriteIndented = true });
+        return new RewriterRunResult(changedFiles, errors);
     }
 
     /// <summary>
