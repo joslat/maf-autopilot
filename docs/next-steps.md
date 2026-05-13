@@ -1,6 +1,6 @@
 # Next steps
 
-> **Last refreshed:** 2026-05-12 — end of Phase Q (auto-update loop end-to-end validated on real MAF 1.4 + 1.5 data).
+> **Last refreshed:** 2026-05-13 — end of Phase Q (auto-update loop end-to-end validated on real MAF 1.4 + 1.5 data) + corrected TFM strategy after AgentEval cross-check.
 > **Single source of truth for "what's next."** When this contradicts other docs, this wins.
 > **For history of done work:** see the **[`Done`](#-done--phases-a-through-q-history) section at the bottom** of this file, plus the full archive in [`maf-migration-toolkit-plan.md`](./maf-migration-toolkit-plan.md).
 
@@ -12,7 +12,7 @@
 2. [My recommendations — at a glance](#my-recommendations--at-a-glance)
 3. [Active backlog — phased plan](#active-backlog--phased-plan)
    - [Phase R — in-flight + finishing touches](#phase-r--in-flight--finishing-touches-this-week)
-   - [Phase S — TFM decision](#phase-s--tfm-decision-the-non-obvious-call)
+   - [Phase S — Multi-target the nupkg](#phase-s--multi-target-the-nupkg-matching-agenteval-house-style)
    - [Phase T — MAF 1.3 sample + migration dogfood](#phase-t--maf-13-sample--migration-dogfood-the-a8-unblocker)
    - [Phase U — 1.0 polish (post-A.8)](#phase-u--10-polish-post-a8)
 4. [In-depth recommendations (my reasoning)](#in-depth-recommendations-my-reasoning)
@@ -44,9 +44,9 @@ The toolkit ships **20 MCP tools, 7 agents (including `@maf` primary), 13 skills
 
 ## My recommendations — at a glance
 
-1. **Drop TFM from `net9.0` → `net8.0` LTS.** The simplest, broadest, future-proof move. Skips the dying `net9.0` (STS, EOL ~Nov 2026) without paying the multi-target build-time cost. Lets you close 3 Dependabot PRs immediately (#1, #2, #11 — all of which forced .NET 10 ecosystem on us).
+1. **Multi-target the nupkg `net8.0;net9.0;net10.0` matching AgentEval's house style.** Adopt `Directory.Packages.props` (central package management) + `global.json` (SDK roll-forward) as the supporting infra. The Roslyn analyzer stays `netstandard2.0` (Roslyn requirement, locked). The **Dockerfile stays net8.0 LTS** (smallest runtime image — only the container needs to pick one). Consumers on net8/net9/net10 all install the matching TFM via NuGet's TFM resolution. ([Why this, not single-target net8 — corrected below](#tfm-strategy).)
 2. **Build a MAF 1.3 sample inside `samples/maf-1.3-test-project/`** and dogfood the migration end-to-end (`@maf-auditor` → `@maf-migration` → `MafDoctor`). This **is** the A.8 unblocker — a synthetic-but-real validation we control, ready in 1-2 days instead of waiting for an external customer.
-3. **Triage Dependabot PRs surgically.** Close 3 (the .NET 10 forcers), verify-and-merge 6 (low-risk Actions + Test.Sdk), pair-and-defer 2 (Roslyn 4→5 SDK bump — wait until after Phase T to bump anything that could break the analyzer).
+3. **Triage Dependabot PRs surgically.** Close 2 (Docker .NET 10 forcers — Dockerfile stays net8 LTS), **merge** the Hosting 10.0.7 bump (#11 is now wanted — 10.0.x line packs net8/9/10 TFMs in one nupkg), verify-and-merge 6 (low-risk Actions + Test.Sdk), pair-and-defer 2 (Roslyn 4→5 SDK bump — wait until after Phase T to bump anything that could break the analyzer).
 
 Below is the phased plan, then the reasoning behind each call.
 
@@ -61,24 +61,29 @@ The cleanup that's already running or close to running. Should land in the next 
 | ID | Item | Owner | Effort | Status |
 |---|---|---|---|---|
 | R.1 | Wait for Copilot's PR for MAF 1.5 (issue #16) and review + merge | YOU | S (5 min) | ⏳ Copilot working |
-| R.2 | Close Dependabot PRs #1, #2, #11 (.NET 10 forcers) — they'll be re-openable after Phase S | YOU or me (with consent) | S (5 min) | 📋 |
-| R.3 | Merge low-risk Action bumps (#3, #4) after a sanity glance at each diff | YOU | S (10 min) | 📋 |
-| R.4 | Verify + merge mid-risk Actions (#5 upload-artifact, #6 softprops, #7 checkout) — see [Dependabot triage](#dependabot-triage) | YOU | M (30 min) | 📋 |
-| R.5 | Merge `Microsoft.NET.Test.Sdk` bump (#12) and re-run test suite | YOU or me | S (15 min) | 📋 |
+| R.2 | Close Dependabot #1 + #2 (Docker .NET 10 forcers — Dockerfile stays net8 LTS) | YOU or me (with consent) | S (5 min) | 📋 |
+| R.3 | **Merge Dependabot #11 (Hosting 10.0.7)** — needed for Phase S multi-target. Was originally "close" — flipped after AgentEval cross-check. | YOU | S (5 min) | 📋 |
+| R.4 | Merge low-risk Action bumps (#3, #4) after a sanity glance at each diff | YOU | S (10 min) | 📋 |
+| R.5 | Verify + merge mid-risk Actions (#5 upload-artifact, #6 softprops, #7 checkout) — see [Dependabot triage](#dependabot-triage) | YOU | M (30 min) | 📋 |
+| R.6 | Merge `Microsoft.NET.Test.Sdk` bump (#12) and re-run test suite | YOU or me | S (15 min) | 📋 |
 
-### Phase S — TFM decision (the non-obvious call)
+### Phase S — Multi-target the nupkg (matching AgentEval house style)
 
-The right time to make this is **before Phase T** (so the sample project picks up the new TFM) and **before cutting 1.0** (so consumers don't have to upgrade through a TFM change later).
+The right time to do this is **before Phase T** (so the sample project picks up the new TFM convention) and **before cutting 1.0** (so consumers don't have to upgrade through a TFM change later). **Verdict from cross-checking AgentEval (your sibling project):** multi-target `net8.0;net9.0;net10.0`, not single-target. Reasoning in [TFM strategy](#tfm-strategy) below.
 
-| ID | Item | Owner | Effort | Decision needed |
-|---|---|---|---|---|
-| S.0 | **Decide:** single-target `net8.0`, or multi-target `net8.0;net10.0`, or stay `net9.0` | YOU | — | See [TFM strategy](#tfm-strategy) below |
-| S.1 | Bump `src/maf-autopilot/maf-autopilot.csproj` TFM | me | S (5 min) | Depends on S.0 |
-| S.2 | Bump test csproj TFMs to match | me | S (5 min) | Same |
-| S.3 | Bump `Microsoft.Extensions.Hosting` package version to LTS line (`8.0.x`) | me | S (5 min) | |
-| S.4 | Update Dockerfile base images (`mcr.microsoft.com/dotnet/sdk:<NEW>` + `runtime:<NEW>`) | me | S (5 min) | |
-| S.5 | Run full test suite locally; CI confirms; cut `1.3.0-alpha-6` with new TFM | me + YOU | M (30 min) | |
-| S.6 | After S.5, **re-open and merge** Dependabot #11 (Hosting bump) if you went multi-target with net10; otherwise leave closed | YOU | — | |
+| ID | Item | Owner | Effort |
+|---|---|---|---|
+| S.1 | Add `Directory.Packages.props` at repo root (mirror AgentEval) with `ManagePackageVersionsCentrally=true` + `CentralPackageTransitivePinningEnabled=true`. Move all `Version=` pins from the 3 csprojs into it. | me | S (15 min) |
+| S.2 | Add `global.json` at repo root with `sdk.version=8.0.100` + `rollForward: latestMajor` + `allowPrerelease: true` (mirror AgentEval). | me | S (5 min) |
+| S.3 | Add `Directory.Build.props` (optional but recommended) with shared compiler settings (`LangVersion`, `ImplicitUsings`, `Nullable`, NuGet metadata). | me | S (10 min) |
+| S.4 | `src/maf-autopilot/maf-autopilot.csproj`: `<TargetFramework>net9.0</TargetFramework>` → `<TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>`. Remove inline `Version=` from package refs (now in Directory.Packages.props). | me | S (5 min) |
+| S.5 | `src/maf-autopilot.Tests/maf-autopilot.Tests.csproj`: same TFM change. | me | S (3 min) |
+| S.6 | `src/maf-autopilot.Analyzers.Tests/maf-autopilot.Analyzers.Tests.csproj`: same TFM change. | me | S (3 min) |
+| S.7 | `src/maf-autopilot.Analyzers/maf-autopilot.Analyzers.csproj`: **no change** — stays `netstandard2.0` (Roslyn requirement, locked). | — | — |
+| S.8 | Bump `Microsoft.Extensions.Hosting` to `10.0.7` (the 10.0.x line packs net8 + net9 + net10 TFMs in one nupkg — same approach AgentEval pins for the abstractions). **Merge Dependabot #11 to do this.** | YOU | S (5 min) |
+| S.9 | Dockerfile: **stays on `net8.0` LTS base** (smallest runtime image — the container ships one TFM regardless of nupkg multi-targeting). Close Dependabot #1 + #2. | me + YOU | S (10 min) |
+| S.10 | Run full test suite locally across all 3 TFMs (`dotnet test --framework net8.0`, `--framework net9.0`, `--framework net10.0`). | me | M (15 min) |
+| S.11 | CI confirms green on all 3 TFMs. Cut `1.3.0-alpha-6` with the new multi-target nupkg. Verify on NuGet that the nupkg's `lib/` contains net8.0, net9.0, and net10.0 folders. | me + YOU | M (30 min) |
 
 ### Phase T — MAF 1.3 sample + migration dogfood (the A.8 unblocker)
 
@@ -116,36 +121,65 @@ After A.8 ships, the toolkit's stable. These are nice-to-haves for 1.0.x patches
 
 **Why we shouldn't stay on `net9.0`:** .NET 9 is an STS (Standard Term Support) release with **18 months of support — ending ~Nov 2026**. We're in May 2026. `net9.0` is roughly six months from EOL. Any consumer installing `maf-autopilot` next year needs to be on a runtime that's about to lose security patches.
 
-**Three options:**
+**The corrected recommendation (after cross-checking AgentEval).** My first pass recommended single-target `net8.0`. After auditing AgentEval (your sibling project, same maintainer) I'm revising to **multi-target `net8.0;net9.0;net10.0`**. AgentEval already does this end-to-end and the patterns are proven. Here's the comparison:
 
-| Option | TFM change | Pros | Cons | My take |
+| Option | TFM change | Pros | Cons | Verdict |
 |---|---|---|---|---|
-| **A. Drop to `net8.0`** (single target, LTS) | `net9.0 → net8.0` | Broadest consumer reach. `net8.0` LTS until Nov 2026 (matches `net9.0`'s actual EOL — same support window) but `net8.0` continues with extended support whereas `net9.0` is hard EOL. Net8 widely deployed already (the LTS line installed on most build machines). Simple — no multi-target complexity. | "Downgrading" feels backwards. A few .NET 9 APIs would need a `#if NET9_0_OR_GREATER` removal — but we don't use any net9-specific APIs (we checked: just `IHostedService`, `Host.CreateDefaultBuilder`, both stable since net6). | **My recommendation.** Cleanest. |
-| **B. Multi-target `net8.0;net10.0`** | `net9.0 → net8.0;net10.0` | Max reach across LTS-to-LTS. Forward-compatible. Lets net10-only consumers pick the net10 flavor. | Build time roughly 3x. Occasional `#if` for divergent APIs. Adds complexity to release.yml's pack step. | Right call **if** you expect non-trivial net10-only consumer base. For a tool, probably overkill. |
-| **C. Bump to `net10.0`** (single target, upcoming LTS) | `net9.0 → net10.0` | Newest LTS, supported until Nov 2028. Lets us close fewer Dependabot PRs. | Loses net8 / net9 / et al users. Consumers must have net10 SDK installed. .NET 10 is brand-new — possible early-life bugs. | Premature. Net10 has only been GA a few months. |
+| **A. Single-target `net8.0` LTS** (my original pick) | `net9.0 → net8.0` | Simple. Broadest minimum-version compat. Smallest container. | Forces net10 consumers to run net8 binaries (missing JIT improvements, missing net9/net10 BCL features). Diverges from AgentEval house style. | ❌ Rejected. |
+| **B. Multi-target `net8.0;net9.0;net10.0`** | `net9.0 → net8.0;net9.0;net10.0` | **NuGet picks best TFM at install time** — net8 consumers get net8 binaries, net10 consumers get net10. **Matches AgentEval house style** (proven, validated). When net9 EOLs, drop the middle target — additive, non-breaking. Future-proof. | ~3x build time (~5s → ~15s — negligible). Requires `Directory.Packages.props` (one-time setup). | ✅ **Pick this.** |
+| **C. Multi-target `net8.0;net10.0`** (skip net9) | `net9.0 → net8.0;net10.0` | Drops the dying STS preemptively. Still future-proof. | Forces today's net9 users to install net8 runtime to use the tool. AgentEval keeps net9 in the matrix — match that. | Plausible, but unnecessarily divergent. |
+| **D. Single-target `net10.0`** | `net9.0 → net10.0` | Newest LTS. Smallest matrix. | Loses every net8/net9 user. .NET 10 is brand-new (~6 months GA). | Premature + restrictive. |
 
-**Recommendation: Option A — drop to `net8.0`.**
+**Recommendation: Option B — multi-target `net8.0;net9.0;net10.0`.**
 
-After this:
-- **Close** Dependabot #1 (`docker/sdk 9→10`), #2 (`docker/runtime 9→10`), #11 (`Hosting 9→10`). They're all forcing the .NET 10 ecosystem.
-- **`Microsoft.Extensions.Hosting`** stays on `8.0.x` (LTS line). Dependabot will start tracking that line.
-- **Dockerfile** changes to `mcr.microsoft.com/dotnet/sdk:8.0` + `runtime:8.0`.
+#### Precedent from AgentEval
 
-If, post-1.0, the project gets traction and you want multi-target, that's a clean follow-up. The change `net8.0 → net8.0;net10.0` is additive.
+The pattern is already field-tested in `C:\git\joslat\AgentEval`:
+
+```xml
+<!-- Every csproj — main package, sub-projects, CLI, tests -->
+<PropertyGroup>
+  <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+</PropertyGroup>
+```
+
+Supporting infrastructure (which is what makes multi-target painless):
+
+- **`global.json`** at repo root with `sdk.version=8.0.100` + `rollForward: latestMajor` + `allowPrerelease: true`. Any installed SDK ≥ 8.x builds the project.
+- **`Directory.Build.props`** at repo root for shared compiler settings (`LangVersion=preview`, `ImplicitUsings=enable`, `Nullable=enable`, NuGet metadata, repository URL).
+- **`Directory.Packages.props`** at repo root with `<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>` + `<CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>`. **Every `<PackageReference>` in every csproj drops its `Version=`** — versions pin in this one file.
+- **Per-TFM conditional references** when a sub-project or package is TFM-locked. AgentEval's `AgentEval.MissionControl` is net10-only (uses Hot Chocolate 16 + `MapStaticAssets`). The CLI references it inside `<ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">` only, and the `mc serve` subcommand prints "requires .NET 10" + exits 2 on net8/net9 builds. Same pattern for `Microsoft.AspNetCore.Mvc.Testing` 10.0 in tests.
+- **Hosting package lives on the 10.0.x line** — pinned through `Microsoft.Extensions.Hosting.Abstractions 10.0.3` per AgentEval's Directory.Packages.props, with the comment *"Abstractions packages target netstandard2.0/net8.0 — safe for net8/9/10 TFMs."* The 10.0.x nupkg internally ships all three TFMs.
+
+#### What's the same for maf-autopilot
+
+- Roslyn analyzer **stays `netstandard2.0`** — Roslyn requirement, locked. Multi-target doesn't touch it.
+- Dockerfile **stays on net8.0 LTS** base images — only the container picks one TFM, and net8 is the smallest LTS image. NuGet consumers still get net8/net9/net10 from the multi-target nupkg.
+- All current packages (`ModelContextProtocol 1.2.0`, `YamlDotNet 16.x`, `Microsoft.CodeAnalysis.CSharp 4.11.0`) ship multi-TFM nupkgs that work across net8/9/10. Only the Hosting reference needs the version bump (Dependabot #11).
+
+#### Knock-on Dependabot changes
+
+- **#11 (`Microsoft.Extensions.Hosting 9.0.0 → 10.0.7`)** — was "close" under single-target net8. **Now: MERGE.** The 10.0.x line is exactly what multi-target needs (one nupkg, all 3 TFMs).
+- **#1 (`docker dotnet/sdk 9 → 10`)** + **#2 (`docker dotnet/runtime 9 → 10`)** — Dockerfile stays net8 LTS, so these still close. (Alternative posture: bump Dockerfile to net10 to match AgentEval more closely; trade-off is larger container.)
 
 ### Dependabot triage
 
-The 12 open Dependabot PRs split into three buckets:
+The 12 open Dependabot PRs split into four buckets:
 
-**Bucket 1 — Close right now** (`.NET 10` ecosystem forcers, incompatible with net8/net9):
+**Bucket 1 — Close** (Dockerfile stays net8 LTS post-Phase-S):
 
 | # | What | Why close |
 |---|---|---|
-| 1 | `docker dotnet/sdk` 9.0 → 10.0 | We'll target net8 (Phase S). Re-openable when bumping TFM if we ever go to .NET 10. |
+| 1 | `docker dotnet/sdk` 9.0 → 10.0 | Dockerfile stays on net8 LTS (smallest runtime image). Container only picks one TFM. |
 | 2 | `docker dotnet/runtime` 9.0 → 10.0 | Same. |
-| 11 | `Microsoft.Extensions.Hosting` 9.0.0 → 10.0.7 | Same. After Phase S we'll be on Hosting 8.0.x. |
 
-**Bucket 2 — Verify + merge** (low/medium risk, no incompat):
+**Bucket 2 — MERGE** (multi-target needs the 10.0.x Hosting line):
+
+| # | What | Why merge |
+|---|---|---|
+| 11 | `Microsoft.Extensions.Hosting` 9.0.0 → 10.0.7 | The 10.0.x line packs net8 + net9 + net10 TFMs in one nupkg. Exactly what Phase S's multi-targeting needs. AgentEval pins the abstractions on the same 10.0.x line. Note: was "close" in my first pass, **now flipped to merge** after AgentEval cross-check. |
+
+**Bucket 3 — Verify + merge** (low/medium risk, no incompat):
 
 | # | What | Verification |
 |---|---|---|
@@ -156,7 +190,7 @@ The 12 open Dependabot PRs split into three buckets:
 | 7 | `actions/checkout` 4 → 6 | Scan v5+v6 changelogs. Used in every workflow. High blast radius if it breaks. |
 | 12 | `Microsoft.NET.Test.Sdk` 17.12.0 → 18.5.1 | Major bump. Usually backward-compat for xUnit + standard test discovery. Run full test suite after merge. |
 
-**Bucket 3 — Defer to Phase U** (test infra major bumps, risky during validation):
+**Bucket 4 — Defer to Phase U** (test infra major bumps, risky during validation):
 
 | # | What | Why defer |
 |---|---|---|
