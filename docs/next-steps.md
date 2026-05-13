@@ -975,19 +975,25 @@ public sealed class BadgeCommand
 
 ---
 
-### Phase X — User checkpoints
+### Phase X — Things only YOU can do (follow-along guide)
 
-Items that require you (the maintainer) — Claude cannot do these autonomously.
+> ✋ **This is the consolidated human-intervention checklist.** Every step is detailed enough to follow verbatim. The workshop itself lives in [`samples/workshop.md`](../samples/workshop.md) — this section points to it but doesn't duplicate the 10-step playbook.
 
-| ID | Item | When needed | Effort |
-|---|---|---|---|
-| **X.1** | **Run the workshop end-to-end (T.3 → T.4 → T.5)** — drives `@maf-auditor` + `@maf-migration` in Copilot Chat | **Critical — A.8 evidence** | ~50 min |
-| **X.2** | **Cut stable `1.3.0` via `gh workflow run release.yml -f version=1.3.0`** — one-way publish to nuget.org + GHCR | **Critical — 1.0 publication** | ~10 min |
-| **X.3** | Run vhs locally to render `docs/assets/install-cast.gif` from the `.tape` script W.4 commits | Optional but nice | ~10 min |
-| **X.4** | If pursuing W.13 (`MafHealthBadge`): set up the hosting infra (Cloudflare Worker / Gist) that serves the badge JSON | Optional | ~30 min |
-| **X.5** | Phase U sweep — revisit deferred Dependabot PRs #8 (coverlet 6→10) + #17 (Microsoft.CodeAnalysis 4.11→5.3) after 1.0 ships and workshop runs green | Optional, post-1.0 | ~30 min |
-| **X.6** | Announce 1.0 — GitHub discussions post / blog / social. (Implicit: the nuget.org publish in X.2 IS the announcement; X.6 is optional explicit promotion.) | Optional | ~30 min |
-| **X.7** | If a registry entry needs surgical content change that exceeds Claude's scope (e.g. legal / branding review), make the change | As-needed | varies |
+#### 📋 Quick reference card
+
+| When | Item | Status | Time | Sub-section |
+|---|---|---|---|---|
+| **Critical** — before 1.0 announce | **X.1** Run the workshop end-to-end | 🔴 must-do | ~50 min | [X.1 below](#x1--run-the-workshop-end-to-end-the-a8-unblocker) |
+| **Critical** — depends on X.1 | **X.2** Cut stable 1.3.0 (nuget.org + GHCR publish) | 🔴 must-do | ~10 min | [X.2 below](#x2--cut-stable-130) |
+| **Polish** — recommended before X.2 | **X.3** Render the README animated casts (install + migration) | 🟡 recommended | ~15 min | [X.3 below](#x3--render-the-readme-animated-casts-both-install-cast--migration-cast) |
+| Post-1.0, optional | **X.4** MafHealthBadge hosting infra | 🟢 optional | ~30 min | [X.4 below](#x4--mafhealthbadge-hosting) |
+| Post-1.0, optional | **X.5** Phase U Dependabot sweep (#8 + #17) | 🟢 optional | ~30 min | [X.5 below](#x5--phase-u-dependabot-sweep) |
+| Post-1.0, optional | **X.6** 1.0 announcement post (blog / discussions / social) | 🟢 optional | ~30 min | [X.6 below](#x6--10-announcement-optional-explicit) |
+| As-needed | **X.7** Surgical registry edits (escalations) | ⚪ rare | varies | [X.7 below](#x7--surgical-registry-edits-as-needed) |
+
+**Total time to ship 1.0** = ~75 minutes of your time across X.1 + X.2 + X.3.
+
+**Suggested order:** X.1 → X.3 (render casts so the README looks great on launch) → X.2 (cut). Then post-launch: any of X.4 / X.5 / X.6 / X.7 whenever you feel like them.
 
 #### X.1 — Run the workshop end-to-end (the A.8 unblocker)
 
@@ -1096,30 +1102,140 @@ NuGet packages CAN be unlisted (hidden from search but still installable by vers
 
 You can then publish `1.3.1` with the fix. Avoid this path by completing the pre-flight checklist.
 
-#### X.3 — Render the animated install cast
+#### X.3 — Render the README animated casts (both install-cast + migration-cast)
 
-**What.** On a machine with `vhs` + `ffmpeg` + `ttyd` installed:
+**What.** The repo ships **two** `.tape` source scripts. The actual animated GIFs are rendered locally (vhs needs a real terminal) and committed once. After X.3, the README's two top images come to life.
 
+**Why before X.2 (recommended).** The 1.0 announcement (X.2's implicit publish + X.6's optional explicit post) is when the README gets the most eyeballs. Ship the casts BEFORE that. ~15 min of your time.
+
+**Why you (not Claude).** I can write the `.tape` scripts (W.4 + #8 source artifacts already shipped) and the wrapper scripts but I can't run vhs in this environment. The actual GIF rendering needs the toolchain locally.
+
+**The two casts.**
+
+| File | What it shows | Source |
+|---|---|---|
+| `docs/assets/install-cast.gif` | 30s: install + audit demo → grade F | `docs/assets/install-cast.tape` (W.4) |
+| `docs/assets/migration-cast.gif` | 30s: auto-fix loop → grade A | `docs/assets/migration-cast.tape` (#8) |
+
+##### Step 1 — Install vhs + companion tools (one-time setup, ~5 min)
+
+**macOS:**
 ```bash
-brew install vhs ffmpeg ttyd           # macOS
-# OR
-winget install charmbracelet.vhs       # Windows
-
-bash scripts/make-cast.sh              # produces docs/assets/install-cast.gif
-git add docs/assets/install-cast.gif
-git commit -m "docs(readme): render animated install cast"
+brew install vhs ffmpeg ttyd
 ```
 
-**Why you (not Claude).** I can write the `.tape` script (W.4 delivers it) but I can't run vhs in this environment. The actual GIF rendering needs the toolchain locally.
+**Windows (PowerShell):**
+```powershell
+winget install charmbracelet.vhs
+# ffmpeg + ttyd ship inside the vhs install on Windows
+```
+
+**Linux:** see [vhs installation docs](https://github.com/charmbracelet/vhs#installation). Typically:
+```bash
+# Debian/Ubuntu
+sudo apt install ffmpeg ttyd
+# Then download vhs from the GitHub releases page
+```
+
+**Verify install:**
+```bash
+vhs --version           # should print a version
+ffmpeg -version | head -1
+ttyd --version
+```
+
+##### Step 2 — Render both casts (~5 min)
+
+The repo ships a wrapper script that renders both:
+
+**bash / zsh / WSL:**
+```bash
+bash scripts/make-cast.sh           # render BOTH (default)
+# OR render individually:
+bash scripts/make-cast.sh install
+bash scripts/make-cast.sh migration
+```
+
+**PowerShell:**
+```powershell
+pwsh scripts/make-cast.ps1          # render BOTH (default)
+pwsh scripts/make-cast.ps1 install
+pwsh scripts/make-cast.ps1 migration
+```
+
+**Expected output:**
+```
+✓ Rendered both casts:
+    docs/assets/install-cast.gif
+    docs/assets/migration-cast.gif
+
+Commit with: git add docs/assets/*.gif && git commit
+```
+
+Each rendering takes ~30 seconds. The wrapper script complains loudly if vhs isn't on PATH.
+
+##### Step 3 — Verify the casts look right (~3 min)
+
+Open each GIF in a viewer (or right-click → "Open with browser" works fine):
+
+- **install-cast.gif** — should show the install + audit demo finishing with a 🔴 grade F summary.
+- **migration-cast.gif** — should show the auto-fix loop finishing with a 🟢 grade A summary.
+
+If the timing feels off or commands look truncated, edit the corresponding `.tape` file (`docs/assets/{install,migration}-cast.tape`) and re-render. The `.tape` scripts are heavily commented and use named beats.
+
+##### Step 4 — Commit (~2 min)
+
+```bash
+git add docs/assets/install-cast.gif docs/assets/migration-cast.gif
+git commit -m "docs(readme): render animated install + migration casts"
+git push origin main
+```
+
+After push, refresh the README on GitHub. The two `<img>` blocks at the top should now show the live animations.
+
+##### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `vhs: command not found` | Re-run the Step 1 install for your OS. On Windows, `winget` adds vhs to PATH on next-shell-restart. |
+| The cast renders but text is cut off | Adjust `Set Width` / `Set Height` in the `.tape` file. Current setting: 1200×720 (install) and 1280×800 (migration). |
+| The cast renders but a command in the script doesn't actually exist (e.g. `maf-autopilot autofix-all` fails) | You need `maf-autopilot 1.3.0-alpha-6+` installed locally (`dotnet tool install -g maf-autopilot --prerelease`). The cast assumes the tool is on PATH. |
+| GIF size is too big for GitHub (≥ 25 MB) | Switch `Output ... .gif` to `Output ... .webm` in the `.tape` file; smaller + GitHub renders WebM via `<video>`. |
 
 #### X.4 — MafHealthBadge hosting
 
-**What.** Set up a Cloudflare Worker / GitHub Gist / GitHub Pages endpoint that serves the JSON output of `maf-autopilot badge` (W.13). The shield URL would look like:
-```
-https://img.shields.io/endpoint?url=https://<your-hosting>/maf-autopilot/health.json
+**What.** The toolkit ships a `maf-autopilot badge` CLI subcommand (W.13) that emits shields.io-endpoint-badge JSON. To turn that into a live `[![MAF Health: A](...)]` badge in your README, **the JSON needs to be hosted at a stable URL** that shields.io can fetch on demand.
+
+**Why you (not Claude).** Needs your account on Cloudflare / GitHub Gist / etc. Hosting choice is yours; ~30 min once you pick.
+
+##### Recommended option — GitHub Gist (~10 min, free, no infra)
+
+1. Run `maf-autopilot badge .` against your repo. Copy the JSON output (~6 lines).
+2. Create a new **public gist** at https://gist.github.com — filename `maf-autopilot-health.json`, paste the JSON.
+3. Hit "Create public gist." Note the gist's raw URL (looks like `https://gist.githubusercontent.com/<user>/<gist-id>/raw/maf-autopilot-health.json`).
+4. The shield URL becomes:
+   ```
+   https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2F<user>%2F<gist-id>%2Fraw%2Fmaf-autopilot-health.json
+   ```
+5. Add `[![MAF Health](https://img.shields.io/endpoint?url=...)](https://github.com/joslat/maf-autopilot)` to your README.
+6. **Wire CI to refresh the gist** — add a step to `.github/workflows/maf-drift-detector.yml` (or release.yml) that updates the gist via `gh gist edit` after each release.
+
+##### Alternative — Cloudflare Worker (~30 min, free tier, more flexible)
+
+1. Sign up at https://workers.cloudflare.com if you don't have an account.
+2. Create a Worker with the source from this gist template: https://gist.github.com/jose/maf-autopilot-worker-template _(template not yet published; see [W.13 detail](#w13--mafhealthbadge-subcommand) for the JSON schema)_.
+3. The Worker reads from a Worker KV store (or just returns a static value); CI updates the KV value via the Cloudflare API token.
+4. The shield URL becomes: `https://img.shields.io/endpoint?url=https://<your-worker>.workers.dev/maf-autopilot/health.json`.
+
+##### Sanity check after setup
+
+```bash
+curl https://<your-hosting>/maf-autopilot/health.json
+# Expected output:
+# {"schemaVersion":1,"label":"MAF Health","message":"A","color":"brightgreen"}
 ```
 
-**Why you (not Claude).** Needs your account on Cloudflare / GitHub Gist / etc. The hosting choice is yours.
+If shields.io shows "endpoint not found" or "invalid JSON," double-check the URL-encoding in the `?url=` query parameter — special characters need percent-encoding.
 
 #### X.5 — Phase U Dependabot sweep
 
@@ -1129,16 +1245,86 @@ https://img.shields.io/endpoint?url=https://<your-hosting>/maf-autopilot/health.
 
 **Why you (not Claude).** Could be done by Claude after the workshop runs green, but the timing is a judgement call you should make.
 
+##### Step-by-step for each PR
+
+For **#8 (coverlet)**:
+```bash
+gh pr checkout 8
+dotnet test maf-autopilot.sln -c Release --collect:"XPlat Code Coverage"
+# Verify the coverage XML output is non-empty and parseable.
+# If green: gh pr merge 8 --squash --delete-branch
+# If broken: file an issue with the breakage detail; ask Claude to fix
+```
+
+For **#17 (Roslyn SDK)**:
+```bash
+gh pr checkout 17
+dotnet build maf-autopilot.sln -c Release
+# The analyzer + analyzer.Tests projects both depend on Microsoft.CodeAnalysis.*
+# If build fails: read the error; Roslyn API renames between major versions are
+# common (e.g. some Workspace methods got new overloads). Document the breaks.
+# If green:
+dotnet test maf-autopilot.sln -c Release
+# If both green: gh pr merge 17 --squash --delete-branch
+```
+
+##### If both succeed, you're done with Phase U. If either breaks
+
+File the failure detail as a follow-up issue. Claude can fix the toolkit-side compatibility issues (W.14-style refactor for renamed APIs) in a separate session.
+
 #### X.6 — 1.0 announcement (optional explicit)
 
-**What.** Write a discussions post / blog / social media announcement citing:
-- The toolkit's reach (20 MCP tools, 7 agents, 13 skills, 6 workflows).
-- The A.8 evidence (workshop migration log + grade A/B).
-- The registry coverage (13 entries spanning fan-in, sessions, executors, attributes, A2A, middleware).
-- The Phase Q auto-update validation (MAF 1.4 + 1.5).
-- A pointer to `samples/workshop.md` for hands-on adoption.
+**What.** Write a discussions post / blog / social media announcement.
 
 **Why you (not Claude).** Voice + audience are yours.
+
+##### Suggested talking points (refresh against current counts before posting)
+
+- The toolkit's reach: **22 MCP tools, 7 agents, 13 skills, 7 GitHub Actions workflows, 3 Roslyn analyzers, 3 multi-version samples (1.0/1.2/1.3)**.
+- **1734 test executions** (578 unique × 3 TFMs) pinning every detection rule + every auto-fix rewriter + the live registry's integrity.
+- The A.8 evidence (workshop migration log from X.1 + final grade A/B).
+- The registry coverage (~17 entries spanning fan-in, sessions, executors, attributes, A2A, middleware — with 7 entries explicitly marked pre-1.0.0 documentation after the Phase W.A chronology audit).
+- The Phase Q auto-update validation (MAF 1.4 + 1.5 surfaces ingested without manual help).
+- A pointer to [`samples/workshop.md`](../samples/workshop.md) for hands-on adoption.
+- A pointer to the [Top-5 must-do-now blueprints](#-top-5-must-do-now--implementation-blueprints-2026-05-13) so readers know what's coming in 1.1.x.
+
+##### Suggested channels (any subset)
+
+- **GitHub Discussions** on `joslat/maf-autopilot` — long-form, evergreen, indexable.
+- **A Medium / dev.to blog post** — for narrative + screenshots of the casts (X.3 produces them).
+- **Twitter/X thread** — 5-tweet outline: install → audit → grade F → auto-fix → grade A. The cast GIFs from X.3 are tweet-shaped.
+- **LinkedIn post** — tag Microsoft Agent Framework team for visibility.
+- **Reddit r/dotnet** — short post linking to the README.
+
+##### Template opening lines (steal these)
+
+> "Just shipped maf-autopilot 1.0 — an MCP toolkit that turns GitHub Copilot Chat into a permanent Microsoft Agent Framework expert. Audits your MAF code for the silent fan-out/fan-in bugs that compile clean but break at runtime, plus a deterministic auto-fixer (no LLM) that closes the detection→remediation loop. Install: `dotnet tool install -g maf-autopilot`. Try it: `maf-autopilot doctor .`."
+
+---
+
+#### X.7 — Surgical registry edits (as-needed)
+
+**What.** Rare cases where a registry entry's content exceeds Claude's scope:
+- Legal / branding review of a `fix_description` string.
+- Customer-specific guidance (e.g. "your team's pattern is X; the registry says Y; resolve").
+- Coordinated edits across registry + guides + workflow YAML that need a single human owner.
+
+**Why you (not Claude).** Judgement call territory.
+
+##### When this fires
+
+Typically: a customer files a `maf-release` PR that the AI-fill verifier (X.3) flags as borderline, OR a registry entry's `notes:` field needs a Phase T-correction-style update after upstream MAF behaviour changes.
+
+##### How to make the edit safely
+
+1. Edit `.github/skills/obsolete-api-registry/registry.yaml` directly on a branch.
+2. Run `maf-autopilot verify-registry` locally — fails if your edit broke the structural invariants.
+3. Run `dotnet test maf-autopilot.sln --filter "FullyQualifiedName~Registry"` — passes if the matcher / drift tests still work.
+4. PR with hand-written description (NOT `ai-fill` label — that triggers the bot verification path).
+
+##### When to escalate to Claude
+
+If the registry edit touches MORE than `notes:` field (e.g. needs new `example_before`/`example_after` snippets, or new entries), ask Claude — it has the toolkit's full context + can author the Roslyn-validated examples.
 
 ---
 
