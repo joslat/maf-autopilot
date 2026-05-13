@@ -1,9 +1,31 @@
 # MAF 1.3.0 FraudClaimsTriage Sample
 
+```
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║   ⚠️   WARNING — INTENTIONAL ANTI-PATTERN FIXTURE   ⚠️                       ║
+║                                                                              ║
+║   This codebase is a DELIBERATE collection of MAF 1.3 anti-patterns.         ║
+║   Every "broken" pattern here is on purpose. Do NOT copy any of this code    ║
+║   into a real project — it's bait for the maf-autopilot toolkit to find      ║
+║   and fix. The toolkit's job is to detect, plan, and remediate every one     ║
+║   of the anti-patterns embedded below.                                       ║
+║                                                                              ║
+║   If you are migrating a real MAF codebase, see /guides/ for the canonical   ║
+║   per-version migration guides, NOT this sample.                             ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+```
+
 A small but realistic multi-agent **Microsoft Agent Framework 1.3.0** codebase
 that deliberately embeds anti-patterns the `maf-autopilot` toolkit was built to
 find. Used as **Phase T — the A.8 migration-dogfood unblocker** in
 [`docs/next-steps.md`](../../docs/next-steps.md).
+
+**Want a guided run?** See [`samples/workshop.md`](../workshop.md) — a ~50-minute
+hands-on walkthrough that opens this sample standalone in VS Code Insiders,
+wires up the `maf-autopilot` MCP server, and exercises the toolkit
+end-to-end.
 
 This sample:
 

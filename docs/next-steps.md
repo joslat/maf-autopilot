@@ -93,13 +93,37 @@ Currently A.8 says "wait for an external customer migration." That's an indefini
 |---|---|---|---|---|
 | T.1 | Create `samples/maf-1.3-sample/MafSample.FraudClaims.csproj` — pinned to MAF 1.3.0, target `net8.0`, builds clean (0 errors, 1 expected CS0618 warning). | ✅ |
 | T.2 | Hand-authored the FraudClaimsTriage workflow (intake → fan-out 3 investigators → fan-in aggregator → decision → notification). **10 anti-pattern errors + 3 warnings + 3 silent-starvation risks** detected by `maf-autopilot doctor`. Validated coverage: `MAF-AP-SEC-001/002/003`, `MAF-AP-OBS-001`, `MAF-AP-CONC-001/002`, `MAF-AP-WF-001`, `MAF130-EXEC-001` / `MAF001` × 3, `MAF130-FAN-IN-001`, `MAF130-MIDDLEWARE-001`. Style inspired by `AgentEval.TravelDemo`. | ✅ |
-| T.3 | Run `@maf-auditor` against the sample to generate `samples/maf-1.3-sample/docs/migration-plan.md` | 🟡 Next — YOU run in Copilot Chat |
-| T.4 | Run `@maf-migration` against the plan, task-by-task, with `dotnet build` gates | 🟡 |
-| T.5 | After T.4, sample should be at MAF 1.4 then 1.5 baseline — verify all tests still pass | 🟡 |
+| T.2.5 | Authored [`samples/workshop.md`](../samples/workshop.md) — a ~50-min hands-on walkthrough: open the sample standalone in VS Code Insiders, wire `.vscode/mcp.json` to the global `maf-autopilot` tool, ask Copilot Chat to drive `MafDoctor` → `MafScanAntiPatterns` → `MafValidateFanOut` → `MafSimulateWorkflow` → `MafRunCs0618Hunt`, then `@maf-auditor` → `@maf-migration` → verify. Updated the sample README with an ASCII WARNING banner: **intentional anti-pattern fixture**. | ✅ |
+| T.3 | Run `@maf-auditor` against the sample to generate `samples/maf-1.3-sample/docs/migration-plan.md` (covered by workshop Step 6) | 🟡 Next — YOU run in Copilot Chat |
+| T.4 | Run `@maf-migration` against the plan, task-by-task, with `dotnet build` gates (workshop Step 7) | 🟡 |
+| T.5 | After T.4, sample should reach grade A/B with the deliberate patterns fixed (workshop Step 8) | 🟡 |
 | T.6 | **Already triaged registry drift** (see [`samples/maf-1.3-sample/README.md` § "Phase T registry corrections"](../samples/maf-1.3-sample/README.md)): `MAF130-SESSION-001`, `MAF130-INSTRUCTIONS-001`, `MAF130-MIDDLEWARE-001` all describe pre-1.3 surfaces or wrong `Use()` parameter names. To be reframed in `registry.yaml`. | 🟡 Open findings |
 | T.7 | **Cut stable `1.3.0` to NuGet** (A.8 unblocked by T) | ⏳ Gated on T.4-T.5 |
 
 **Validation of T.1+T.2 (2026-05-13):** `dotnet run --project src/maf-autopilot --framework net10.0 -- doctor samples/maf-1.3-sample` reports grade **F** with 10 anti-pattern errors + 3 silent-starvation risks correctly detected. The toolkit finds the deliberate-anti-patterns end-to-end. This is the core Phase T proof-of-concept.
+
+---
+
+#### 🎯 What I recommend next (ordered)
+
+In order of expected payoff, time, and risk-of-blocking the 1.0 cut:
+
+1. **(30 min) Fix the 3 registry drift findings (T.6).** Edit `registry.yaml` to reframe `MAF130-SESSION-001`, `MAF130-INSTRUCTIONS-001`, `MAF130-MIDDLEWARE-001` as pre-1.3.0 → 1.3.0 migration patterns (not 1.3.0-surface patterns), and correct `MAF130-MIDDLEWARE-001`'s example to use positional arguments. Add a `applies_to_versions` field (or similar) so the registry can distinguish pre-version patterns from in-version surfaces. **Why first:** during the workshop's `@maf-auditor` step the auditor may surface these entries with bad fix advice. Fixing them BEFORE running the workshop end-to-end prevents misleading recommendations from landing in `migration-plan.md`.
+
+2. **(50 min) Run the workshop end-to-end (T.3 → T.4 → T.5).** Follow [`samples/workshop.md`](../samples/workshop.md). This is the actual A.8 evidence: the toolkit detects + plans + fixes the sample, the sample reaches grade A or B, `dotnet build` stays green. The workshop output (the migration log + final `MafDoctor` report) is what you'd point at when announcing 1.0.
+
+3. **(10 min) Cut stable `1.3.0` (T.7 → A.8 unblocked).** `gh workflow run release.yml -f version=1.3.0`. The release.yml job builds the multi-target nupkg (net8/9/10) + the analyzer nupkg + the Docker image (net8 base), runs the full test suite across all 3 TFMs, and publishes to NuGet.
+
+4. **(parallel — Phase R items, can interleave anywhere)** Triage Dependabot:
+   - Close #1 + #2 (Docker .NET 10 forcers — Dockerfile stays net8 LTS for smallest image).
+   - Merge #11 (`Microsoft.Extensions.Hosting 10.0.7`) — already pinned in `Directory.Packages.props` as of Phase S; this resolves the open Dependabot PR.
+   - Merge low-risk Actions bumps #3, #4 (Docker buildx/login).
+   - Verify + merge #5 (upload-artifact 4→7), #6 (softprops 2→3 — confirm SHA + comment update), #7 (checkout 4→6), #12 (Test.Sdk 17→18).
+   - Defer #8 (coverlet 6→10), #9 + #10 (Roslyn 4→5) to Phase U (after 1.0 ships).
+
+Total wall-clock from now to 1.0 publishable: **~90 minutes of focused work** (steps 1 + 2 + 3), plus ~30 minutes interleaved for the Dependabot triage.
+
+After 1.0 ships, the [Phase U section](#phase-u--10-polish-post-a8) holds the polish items (top-level `permissions: {}`, Node 24, the deferred Roslyn 4→5 bump). Phase V (post-1.0 roadmap) would naturally include a second sample (`samples/maf-1.4-sample/` or `samples/maf-1.5-sample/`) for the newer registry entries.
 
 ### Phase U — 1.0 polish (post-A.8)
 
