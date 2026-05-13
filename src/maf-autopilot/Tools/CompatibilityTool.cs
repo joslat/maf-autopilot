@@ -101,43 +101,43 @@ public sealed class CompatibilityTool
                 | Microsoft.Agents.AI.Workflows.Generators  | `1.3.0` (required) | Source-gen package — executor partial classes need it |
                 | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
 
-                **Removed in 1.3.0** — guard with `#if DEVUI_ENABLED`:
-                - `Microsoft.Agents.AI.DevUI`
-                - `Microsoft.Agents.AI.Hosting`
+                **Note on optional packages**: `Microsoft.Agents.AI.DevUI` and
+                `Microsoft.Agents.AI.Hosting` remain on NuGet as preview-only
+                channels (latest `1.5.0-preview.260507.1`). The earlier claim
+                "Removed in 1.3.0" was incorrect.
                 """,
 
             ["1.2.0"] = """
                 ## MAF 1.2.0 Compatibility
 
-                | Dependency                | Version      | Notes |
-                |---------------------------|--------------|-------|
-                | .NET runtime              | `>= 8.0`     | |
-                | Microsoft.Extensions.AI   | `>= 10.3.0`  | |
-                | Azure.AI.OpenAI           | `>= 2.6.0`   | |
-                | Generators package        | N/A          | Source gen optional in 1.2.0 (executor pattern still used `ReflectingExecutor<T>`) |
+                | Dependency                | Version          | Notes |
+                |---------------------------|------------------|-------|
+                | .NET runtime              | `>= 8.0`         | |
+                | Microsoft.Extensions.AI   | `>= 10.5.0`      | _Pins corrected 2026-05-13 from earlier stale "≥ 10.3.0" claim — see [Phase W.A finding](../../samples/maf-1.2-sample/README.md)._ |
+                | Azure.AI.OpenAI           | `>= 2.8.0-beta.1`| 2.6.0/2.7.0 stable were never published. |
+                | Generators package        | N/A              | Not required at this version. |
                 """,
 
             ["1.1.0"] = """
                 ## MAF 1.1.0 Compatibility
 
-                | Dependency                | Version      | Notes |
-                |---------------------------|--------------|-------|
-                | .NET runtime              | `>= 8.0`     | net9.0 not officially supported |
-                | Microsoft.Extensions.AI   | `>= 9.4.0`   | |
-                | Azure.AI.OpenAI           | `>= 2.4.0`   | |
-                | Executor pattern          | Pre-1.3.0    | `ReflectingExecutor<T>` + `IMessageHandler<TIn,TOut>` |
+                | Dependency                | Version          | Notes |
+                |---------------------------|------------------|-------|
+                | .NET runtime              | `>= 8.0`         | |
+                | Microsoft.Extensions.AI   | `>= 10.5.0`      | Same transitive pin as 1.2.0 (pins corrected 2026-05-13). |
+                | Azure.AI.OpenAI           | `>= 2.8.0-beta.1`| |
+                | Generators package        | N/A              | Not required at this version. |
                 """,
 
             ["1.0.0"] = """
                 ## MAF 1.0.0 Compatibility
 
-                | Dependency                | Version      | Notes |
-                |---------------------------|--------------|-------|
-                | .NET runtime              | `>= 8.0`     | |
-                | Microsoft.Extensions.AI   | `>= 9.0.0`   | |
-                | Azure.AI.OpenAI           | `>= 2.0.0`   | |
-                | Executor pattern          | Pre-1.3.0    | `ReflectingExecutor<T>` + `IMessageHandler<TIn,TOut>` |
-                | Sessions                  | `AgentThread`| Pre-`AgentSession` API (`GetNewThread()`) |
+                | Dependency                | Version          | Notes |
+                |---------------------------|------------------|-------|
+                | .NET runtime              | `>= 8.0`         | |
+                | Microsoft.Extensions.AI   | `>= 10.5.0`      | Same transitive pin as 1.2.0 (pins corrected 2026-05-13). |
+                | Azure.AI.OpenAI           | `>= 2.8.0-beta.1`| |
+                | Sessions                  | `AgentSession` (`ChatClientAgentSession`) | Public surface confirms `AgentThread` was **never** in the 1.0.0 public NuGet — see Phase W.A registry chronology finding. |
                 """,
         };
 }

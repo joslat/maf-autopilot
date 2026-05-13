@@ -24,9 +24,9 @@
 | **1.5.0** | `≥ 10.5.1` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.5.0` | Additive release; new `ToolApprovalAgent`. |
 | **1.4.0** | `≥ 10.5.0` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.4.0` | `AgentSkillScript` surface changed: `AIFunctionArguments` → `JsonElement?` + `IServiceProvider?`. |
 | **1.3.0** | `≥ 10.5.0` | `≥ 8.0` | `≥ 2.8.0-beta.1` | `1.3.0` **(required)** | Major breaking release. Generators package mandatory for executors. |
-| 1.2.0 | `≥ 10.3.0` | `≥ 8.0` | `≥ 2.6.0` | N/A | No source generator requirement. |
-| 1.1.0 | `≥ 9.4.0` | `≥ 8.0` | `≥ 2.4.0` | N/A | |
-| 1.0.0 | `≥ 9.0.0` | `≥ 8.0` | `≥ 2.0.0` | N/A | Initial release. |
+| 1.2.0 | `≥ 10.5.0` | `≥ 8.0` | `≥ 2.8.0-beta.1` | N/A | No source generator requirement. _Pins corrected 2026-05-13 from earlier stale "≥ 10.3.0 / ≥ 2.6.0" claim — see [Phase W.A finding](../samples/maf-1.2-sample/README.md#phase-wa-finding--maf-1213-public-surface-is-essentially-the-same)._ |
+| 1.1.0 | `≥ 10.5.0` | `≥ 8.0` | `≥ 2.8.0-beta.1` | N/A | Same transitive pins as 1.2.0. _Pins corrected 2026-05-13 from earlier stale "≥ 9.4.0 / ≥ 2.4.0" claim._ |
+| 1.0.0 | `≥ 10.5.0` | `≥ 8.0` | `≥ 2.8.0-beta.1` | N/A | Initial release. Same transitive pins as 1.2.0 (verified via `dotnet restore` against `Microsoft.Agents.AI 1.0.0`). _Pins corrected 2026-05-13 from earlier stale "≥ 9.0.0 / ≥ 2.0.0" claim._ |
 
 ---
 
@@ -34,8 +34,16 @@
 
 | Package | Removed In | Replacement |
 |---------|-----------|-------------|
-| `Microsoft.Agents.AI.DevUI` | 1.3.0 | None — guard with `#if DEVUI_ENABLED` |
-| `Microsoft.Agents.AI.Hosting` | 1.3.0 | None — guard with `#if DEVUI_ENABLED` |
+| `Microsoft.Agents.AI.DevUI` | _NOT removed — see correction below_ | _(see note)_ |
+| `Microsoft.Agents.AI.Hosting` | _NOT removed — see correction below_ | _(see note)_ |
+
+> **Correction (2026-05-13):** the original "Removed in 1.3.0" claim was wrong.
+> Both packages are still on nuget.org and continue to publish previews tracking
+> the main MAF release stream (latest at time of correction:
+> `1.5.0-preview.260507.1` for both). They're preview-only — not promoted to a
+> stable release alongside the main `Microsoft.Agents.AI` package — but they
+> have NEVER been removed. Customers who relied on these in earlier previews
+> should continue using preview-channel versions.
 
 ---
 

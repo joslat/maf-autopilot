@@ -83,9 +83,21 @@ entries:
     cs_warning: CS0246
     guide_section: "6"
     dotnet_inspect_detectable: true
+    applies_to_codebases: "pre-1.0.0"   # Phase W.A correction (2026-05-13)
     notes: >
       AgentThread type is fully removed (CS0246, not CS0618). GetNewThread() is gone.
       Variable type must also change from AgentThread to AgentSession throughout.
+
+      **Phase W.A correction (2026-05-13):** verified via dotnet-inspect that
+      `AgentThread` does NOT appear in any public MAF NuGet package (checked
+      against `Microsoft.Agents.AI@1.0.0`, `@1.1.0`, `@1.2.0`, `@1.3.0`, and
+      the `Microsoft.Agents.AI.DevUI` / `.Hosting` preview-channel packages).
+      `AgentSession` / `ChatClientAgentSession` is the only session type in
+      every public release. `AgentThread` likely existed in pre-public-release
+      / Semantic Kernel Process-era MAF code that was renamed before the
+      first published 1.0.0. Entry kept for historical documentation but
+      marked `applies_to_codebases: "pre-1.0.0"` — will not fire on any
+      modern customer codebase pinned to MAF 1.0+.
 
   - id: MAF130-EXEC-001
     package: Microsoft.Agents.AI.Workflows
@@ -146,9 +158,15 @@ entries:
     cs_warning: CS0246
     guide_section: "5"
     dotnet_inspect_detectable: true
+    applies_to_codebases: "pre-1.0.0"   # Phase W.A correction (2026-05-13)
     notes: >
       AIAgentExtensions is removed (CS0246, not just obsolete). The entire A2A DI registration
       pattern changed. MapA2A endpoint registration also changed — see MAF130-A2A-002.
+
+      **Phase W.A correction (2026-05-13):** verified via dotnet-inspect that
+      `RegisterA2AAgent`/`AddA2AAgent` do NOT appear in any public MAF NuGet
+      package (1.0.0 through 1.3.0 main + DevUI/Hosting previews). Likely
+      pre-public-release pattern. Marked `applies_to_codebases: "pre-1.0.0"`.
 
   - id: MAF130-A2A-002
     package: Microsoft.Agents.AI
@@ -168,9 +186,14 @@ entries:
     cs_warning: CS0246
     guide_section: "5"
     dotnet_inspect_detectable: true
+    applies_to_codebases: "pre-1.0.0"   # Phase W.A correction (2026-05-13)
     notes: >
       MapA2A is removed entirely. Choose MapA2AHttpJson for HTTP+JSON transport or
       MapA2AJsonRpc for JSON-RPC. Most migrations use MapA2AHttpJson.
+
+      **Phase W.A correction (2026-05-13):** `MapA2A` doesn't exist in any
+      public MAF NuGet package — pre-1.0.0 pattern. See MAF130-A2A-001 for
+      the same finding.
 
   - id: MAF130-STREAM-001
     package: Microsoft.Agents.AI
@@ -196,10 +219,14 @@ entries:
     cs_warning: CS0246
     guide_section: "17"
     dotnet_inspect_detectable: true
+    applies_to_codebases: "pre-1.0.0"   # Phase W.A correction (2026-05-13)
     notes: >
       InProcessExecution type is removed. StreamAsync is gone. The streaming API moved to
       agent.RunStreamingAsync(). This also requires migrating the session from AgentThread
       to AgentSession (see MAF130-THREAD-001).
+
+      **Phase W.A correction (2026-05-13):** `InProcessExecution` doesn't exist
+      in any public MAF NuGet package. Pre-1.0.0 pattern.
 
   - id: MAF130-EVENT-001
     package: Microsoft.Agents.AI
@@ -217,9 +244,14 @@ entries:
     cs_warning: CS0246
     guide_section: "18"
     dotnet_inspect_detectable: true
+    applies_to_codebases: "pre-1.0.0"   # Phase W.A correction (2026-05-13)
     notes: >
       Pure rename. Find-and-replace: AgentRunUpdateEvent -> AgentResponseUpdateEvent.
       No behavioral change.
+
+      **Phase W.A correction (2026-05-13):** `AgentRunUpdateEvent` doesn't
+      exist in any public MAF NuGet package — only `AgentResponseUpdate`
+      ever shipped. Pre-1.0.0 pattern.
 
   - id: MAF130-ATTR-001
     package: Microsoft.Agents.AI.Workflows
@@ -238,9 +270,13 @@ entries:
     cs_warning: CS0246
     guide_section: "16"
     dotnet_inspect_detectable: true
+    applies_to_codebases: "pre-1.0.0"   # Phase W.A correction (2026-05-13)
     notes: >
       StreamsMessageAttribute is completely removed (CS0246). Simply delete the attribute.
       Same applies to [YieldsMessage] — see MAF130-ATTR-002.
+
+      **Phase W.A correction (2026-05-13):** `[StreamsMessage]` doesn't exist
+      in any public MAF NuGet package. Pre-1.0.0 pattern.
 
   - id: MAF130-ATTR-002
     package: Microsoft.Agents.AI.Workflows
@@ -259,9 +295,13 @@ entries:
     cs_warning: CS0246
     guide_section: "16"
     dotnet_inspect_detectable: true
+    applies_to_codebases: "pre-1.0.0"   # Phase W.A correction (2026-05-13)
     notes: >
       YieldsMessageAttribute is completely removed (CS0246). Simply delete the attribute.
       Same applies to [StreamsMessage] — see MAF130-ATTR-001.
+
+      **Phase W.A correction (2026-05-13):** `[YieldsMessage]` doesn't exist
+      in any public MAF NuGet package. Pre-1.0.0 pattern.
 
   - id: MAF130-INSTRUCTIONS-001
     package: Microsoft.Agents.AI

@@ -50,15 +50,18 @@ public sealed class CompatibilityToolTests
     }
 
     [Fact]
-    public void MafCompatibility_1_3_0_FlagsRemovedPackages()
+    public void MafCompatibility_1_3_0_MentionsDevUiHostingPreviewStatus()
     {
         // Arrange / Act
         var result = _tool.MafCompatibility("1.3.0");
 
-        // Assert — the 1.3.0 row must mention the DevUI / Hosting removals (high-impact regression risk).
+        // Assert — Phase W.A correction (2026-05-13): the original "Removed in
+        // 1.3.0" claim was wrong; DevUI + Hosting are still on NuGet as
+        // preview-only channels. The 1.3.0 row now explicitly says so to
+        // prevent the "they were removed" misinformation from propagating.
         Assert.Contains("Microsoft.Agents.AI.DevUI", result);
         Assert.Contains("Microsoft.Agents.AI.Hosting", result);
-        Assert.Contains("DEVUI_ENABLED", result);
+        Assert.Contains("preview", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -77,16 +80,22 @@ public sealed class CompatibilityToolTests
     [Theory]
     [InlineData("1.0.0")]
     [InlineData("1.1.0")]
-    public void MafCompatibility_PreRelease_FlagsLegacyExecutorPattern(string version)
+    [InlineData("1.2.0")]
+    public void MafCompatibility_PreThirteen_PinsCorrectedToReality(string version)
     {
         // Arrange / Act
         var result = _tool.MafCompatibility(version);
 
-        // Assert — pre-1.3.0 rows must mention the legacy executor surface
-        // (`ReflectingExecutor<T>` + `IMessageHandler<TIn,TOut>`) so a user
-        // migrating FROM that version knows what's about to break.
-        Assert.Contains("ReflectingExecutor", result);
-        Assert.Contains("IMessageHandler", result);
+        // Assert — Phase W.A correction (2026-05-13): for MAF 1.0.0/1.1.0/1.2.0,
+        // the compat-matrix's original "MEAI ≥ 9.0.0/9.4.0/10.3.0" + "Azure ≥
+        // 2.0.0/2.4.0/2.6.0" minimums were stale (those Azure stable versions
+        // were never published). All three versions actually transitively
+        // require MEAI 10.5.0 + Azure.AI.OpenAI 2.8.0-beta.1. Every row must
+        // reflect this. Also: pre-1.3 rows must explicitly cite "Phase W.A"
+        // or "corrected 2026-05-13" so a future reader sees the lineage.
+        Assert.Contains("10.5.0", result);
+        Assert.Contains("2.8.0-beta.1", result);
+        Assert.Contains("corrected", result, StringComparison.OrdinalIgnoreCase);
     }
 
     // -------------------------------------------------------------------------
