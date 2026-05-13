@@ -1142,6 +1142,99 @@ https://img.shields.io/endpoint?url=https://<your-hosting>/maf-autopilot/health.
 
 ---
 
+## 💡 Lateral Thinking & Wow Ideas (post-1.0 brainstorm — added 2026-05-13)
+
+> **Why this section exists.** Phase W landed 13/13 items. The toolkit is structurally complete for migration assistance. But: "structurally complete" ≠ "no more value to mine." This section is the **structured ideation backlog** — applied with five different thinking patterns — so the next maintainer (Claude or human) doesn't have to re-invent it. Pick a row from the table, build it, ship it.
+
+### How these were generated — five thinking patterns
+
+1. **Incremental** — _What if we 10x an existing feature?_ (e.g. `MafAutoFix` works on one file → run it on every file in CI with dependency-aware ordering.)
+2. **Optimization** — _What's slow, lossy, redundant, or could be cached?_ (e.g. doctor rescans whole repos every time; could be incremental.)
+3. **Adversarial** — _What could break us; what classes of bug aren't we catching?_ (e.g. security findings beyond DefaultAzureCredential; performance anti-patterns; conflicting agent instructions.)
+4. **Wow-factor** — _What makes an audience visibly react?_ (e.g. browser playground, GitHub bot replies, X-ray mode in VS Code.)
+5. **Lateral** — _What's the COMPLETELY different angle?_ (e.g. tool that translates SemanticKernel → MAF; toolkit-as-a-MAF-agent; auto-CHANGELOG generator for MAF itself.)
+
+### Scoring rubric
+
+Each idea gets four 1-10 scores + a final score (visual `🟢×N + ⚪×(10−N)`).
+
+| Score column | Meaning | Higher = better? |
+|---|---|---|
+| **Difficulty** | 1 = an afternoon's work; 10 = a month's work for a senior | ⬇ inverted in final |
+| **Coolness** | 1 = boring CI plumbing; 10 = "no one else has this" | ⬆ |
+| **Wow on demo** | 1 = audience checks phone; 10 = audible gasp | ⬆ |
+| **Usefulness** | 1 = nice-to-have polish; 10 = customers would pay for it | ⬆ |
+| **FINAL** | `round( (Cool + Wow + Useful) / 3 − 0.3 × Difficulty )`, clamped 1-10 | ⬆ |
+
+---
+
+### Idea table (sorted by FINAL score, descending)
+
+| # | Idea | Category | Description (1-2 sentences) | Diff | Cool | Wow | Useful | FINAL |
+|---|---|---|---|---|---|---|---|---|
+| **1** | **VS Code "X-ray mode"** | Wow | Squiggly underline + hover tooltip + lightbulb code-fix for every analyzer rule, with the registry entry surfaced inline. Today the analyzer ships diagnostics; we'd ship a real VS Code extension wrapping them with rich UI (snippets, before/after preview, click-to-apply MafAutoFix). | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ (6) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢⚪ (9) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢🟢 (10) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢⚪ (9) | 🟢🟢🟢🟢🟢🟢🟢🟢⚪⚪ **8** |
+| **2** | **Browser playground (WASM)** | Wow | Web app: paste MAF code, hit Audit, see grade + findings live. The analyzer compiles to WASM, runs entirely in the browser; no server, no install. Try-before-clone hook. | 🟢🟢🟢🟢🟢🟢🟢🟢⚪⚪ (8) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢🟢 (10) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢🟢 (10) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ **7** |
+| **3** | **`MafAutoFix --all` (dependency-aware batch fix)** | Incremental | Single command that applies every applicable rule in the right topological order (e.g. `sealed` modifier BEFORE fan-in arg swap, because the latter binds against the former). Plus `--dry-run` for the full preview. Closes the last bit of friction between detection and remediation. | 🟢🟢🟢⚪⚪⚪⚪⚪⚪⚪ (3) | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ (6) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢🟢 (10) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ **7** |
+| **4** | **GitHub bot — `@maf-autopilot doctor`** | Wow | Mention the bot in any issue or PR comment, get an audit reply within 30 seconds. Bot runs the doctor on the head commit + posts the markdown verdict + offers AutoFix follow-up. Distributes the tool to anyone who Cmd-clicks a GitHub mention. | 🟢🟢🟢🟢🟢⚪⚪⚪⚪⚪ (5) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢⚪ (9) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢⚪ (9) | 🟢🟢🟢🟢🟢🟢🟢🟢⚪⚪ (8) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ **7** |
+| **5** | **AI-powered registry auto-mining** | Lateral | Feed MAF source-code diffs (between two NuGet versions) through an LLM to auto-propose new registry entries with `fix_description` + `example_before`/`example_after`. Reduces the maintainer burden of keeping the registry current as MAF evolves. Pairs with the existing `maf-release-watcher`. | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢⚪ (9) | 🟢🟢🟢🟢🟢🟢🟢🟢⚪⚪ (8) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢⚪ (9) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ **7** |
+| **6** | **Security-anti-pattern bundle** | Adversarial | Expand the security scanners beyond `DefaultAzureCredential`. Add detectors for: secrets logged via `Console.WriteLine`, JWT-token persistence in chat history, prompt-injection from untrusted inputs, missing token caps on streaming calls, AKS-friendly identity patterns. Currently a thin slice; this is where customers actually get burned. | 🟢🟢🟢🟢🟢⚪⚪⚪⚪⚪ (5) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢🟢 (10) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ **7** |
+| **7** | **`MafSecondPass` — conflicting agent instructions** | Adversarial | When a workflow has multiple agents whose `Instructions` literals contradict each other (e.g. one says "always confirm before action," another says "act decisively without confirmation"), flag the conflict. Cross-prompt analysis nobody else does. | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ (6) | 🟢🟢🟢🟢🟢🟢🟢🟢⚪⚪ (8) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢⚪ (9) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ **7** |
+| **8** | **Migration time-lapse video** | Wow | Automated vhs recording of the workshop's full migration flow: doctor → plan → execute → final grade A. Posted as an animated GIF in the README + as a 2-min video on social. Zero attendees attended; everyone sees the demo. | 🟢🟢🟢🟢⚪⚪⚪⚪⚪⚪ (4) | 🟢🟢🟢🟢🟢🟢🟢🟢⚪⚪ (8) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢⚪ (9) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ **7** |
+| **9** | **MAF certification badge** | Wow | Shields.io badge on consumer READMEs: "MAF-verified by maf-autopilot v1.3.0 / Grade A / 2026-05-13". Builds on the W.13 `MafHealthBadge` subcommand we already have; needs X.4 hosting infra. Viral marketing surface — every adopting repo backlinks to us. | 🟢🟢🟢🟢⚪⚪⚪⚪⚪⚪ (4) | 🟢🟢🟢🟢🟢🟢🟢🟢⚪⚪ (8) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢🟢🟢🟢⚪⚪ (8) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ **7** |
+| **10** | **VS Code Code Fix provider** | Incremental | Surface each `MafAutoFix` rewriter as a VS Code lightbulb action. Today: user has to invoke MCP via chat; ideal: hover the squiggle, hit Cmd+. → "Apply MafAutoFix: rename DefaultAzureCredential → ManagedIdentityCredential". Native IDE UX. | 🟢🟢🟢🟢🟢⚪⚪⚪⚪⚪ (5) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢⚪ (9) | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ **6** |
+| **11** | **Cross-framework migrator: SK → MAF** | Lateral | A SemanticKernel codebase passes through a translator that emits MAF code with the canonical 1.5.0 patterns. Same Roslyn machinery, different rewriters. Opens a huge market segment that doesn't even know MAF yet. | 🟢🟢🟢🟢🟢🟢🟢🟢⚪⚪ (8) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢⚪ (9) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢⚪ (9) | 🟢🟢🟢🟢🟢🟢🟢🟢⚪⚪ (8) | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ **6** |
+| **12** | **Performance anti-pattern bundle** | Adversarial | Detect heavy LLM calls inside loops, missing streaming on long-running invocations, missing token caps already detected partially. Cost-aware analyzer. Customers care MORE about this than about credentials hygiene. | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ (6) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ (6) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢⚪ (9) | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ **6** |
+| **13** | **Incremental scanning (cache by file hash)** | Optimization | Doctor today rescans the whole repo every call. Add a `.maf-cache/findings.json` per-file-hash cache so re-runs after a small edit are <100 ms instead of ~1 s. Big repos win disproportionately. | 🟢🟢🟢🟢⚪⚪⚪⚪⚪⚪ (4) | 🟢🟢🟢🟢🟢⚪⚪⚪⚪⚪ (5) | 🟢🟢🟢🟢⚪⚪⚪⚪⚪⚪ (4) | 🟢🟢🟢🟢🟢🟢🟢🟢⚪⚪ (8) | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ **6** |
+| **14** | **`maf-autopilot scaffold-new` — full project starter** | Lateral | `dotnet new maf-app --topic 'fraud-claims'` emits a complete MAF project with samples, CI, telemetry, README, the analyzer wired in, agents pre-scaffolded. The toolkit's first impression is the BIRTH of a project, not the rescue of a broken one. | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ (6) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢🟢🟢🟢⚪⚪ (8) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ **6** |
+| **15** | **A2A maf-autopilot — toolkit AS a MAF agent** | Lateral | Spawn the toolkit as a hosted MAF agent itself. Other agents in a workflow can call `@maf-autopilot` to audit a code snippet they're about to compile. Self-hosting: the toolkit audits the toolkit. Meta-cool. | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢🟢 (10) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢⚪ (9) | 🟢🟢🟢🟢🟢⚪⚪⚪⚪⚪ (5) | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ **6** |
+| **16** | **`MafFuzzScanner` — adversarial input testing** | Adversarial | Generate ~1000 randomly mutated `.cs` inputs + run them through every scanner. Expect: no crashes, no infinite loops, no memory blowups. Find the inputs that produce false positives. Surface them as test fixtures. Hardens the toolkit against real-world weird code. | 🟢🟢🟢🟢🟢⚪⚪⚪⚪⚪ (5) | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ (6) | 🟢🟢🟢🟢⚪⚪⚪⚪⚪⚪ (4) | 🟢🟢🟢🟢🟢🟢🟢🟢⚪⚪ (8) | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ **6** |
+| **17** | **Real-time status-bar grade (VS Code)** | Incremental | Persistent status-bar item: `🟢 MAF: A · 0 errors` updated on every save. Goes red the moment a regression is introduced. Continuous awareness rather than periodic check. | 🟢🟢🟢🟢🟢⚪⚪⚪⚪⚪ (5) | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ (6) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ **6** |
+| **18** | **`samples/find-the-bug/` browser game version** | Wow | The find-the-bug-30s challenge as an interactive web game. Audience scans QR code, plays on their phone, leaderboard shows top scorer per snippet. Workshop-killer. | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢⚪ (9) | 🟢🟢🟢🟢🟢🟢🟢🟢🟢🟢 (10) | 🟢🟢🟢🟢⚪⚪⚪⚪⚪⚪ (4) | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ **6** |
+| **19** | **Parallel rewriter execution** | Optimization | `MafAutoFix --all` runs rewriters serially today. Make file rewrites concurrent (`Task.WhenAll` across files) so big repos finish in <1s instead of ~10s. Mostly mechanical. | 🟢🟢🟢⚪⚪⚪⚪⚪⚪⚪ (3) | 🟢🟢🟢🟢⚪⚪⚪⚪⚪⚪ (4) | 🟢🟢🟢⚪⚪⚪⚪⚪⚪⚪ (3) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢⚪⚪⚪⚪⚪ **5** |
+| **20** | **Skill marketplace** | Lateral | Third parties contribute custom anti-pattern rules + registry entries via a simple `.maf-skill/manifest.yaml`. The toolkit auto-loads installed skills. Network-effects: community-driven coverage. | 🟢🟢🟢🟢🟢🟢🟢🟢⚪⚪ (8) | 🟢🟢🟢🟢🟢🟢🟢🟢⚪⚪ (8) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢🟢🟢🟢⚪⚪ (8) | 🟢🟢🟢🟢🟢⚪⚪⚪⚪⚪ **5** |
+| **21** | **Auto-CHANGELOG from doctor diffs** | Lateral | Run the doctor on `main` HEAD vs the previous tag. Diff the findings. Auto-generate a customer-facing CHANGELOG entry describing what improved between releases. Customers love this; competitors don't ship it. | 🟢🟢🟢🟢🟢⚪⚪⚪⚪⚪ (5) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ (6) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢🟢🟢⚪⚪⚪⚪⚪ **5** |
+| **22** | **Pre-commit hook with `MafAutoFix --all --dry-run`** | Incremental | Drop a pre-commit hook + `.husky/maf-precheck.sh` into any consumer repo via `maf-autopilot init --hooks`. Catches regressions before they leave the developer's laptop. | 🟢🟢🟢⚪⚪⚪⚪⚪⚪⚪ (3) | 🟢🟢🟢🟢🟢⚪⚪⚪⚪⚪ (5) | 🟢🟢🟢🟢🟢⚪⚪⚪⚪⚪ (5) | 🟢🟢🟢🟢🟢🟢🟢🟢⚪⚪ (8) | 🟢🟢🟢🟢🟢⚪⚪⚪⚪⚪ **5** |
+| **23** | **Telemetry-free benchmarks** | Optimization | Built-in `--bench` that runs the doctor + autofix against the 3 samples N times, reports p50/p99 wall-clock. Lets us advertise "audits a 100-file MAF codebase in 850 ms" with evidence. Self-marketing. | 🟢🟢🟢⚪⚪⚪⚪⚪⚪⚪ (3) | 🟢🟢🟢🟢🟢⚪⚪⚪⚪⚪ (5) | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ (6) | 🟢🟢🟢🟢🟢⚪⚪⚪⚪⚪ (5) | 🟢🟢🟢🟢🟢⚪⚪⚪⚪⚪ **5** |
+| **24** | **Signed registry.yaml + supply-chain hardening** | Adversarial | Sign `registry.yaml` with a maintainer key. The toolkit verifies the signature on load + refuses to run if mismatched. Prevents a compromised dependency from poisoning the auto-fix flow. | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ (6) | 🟢🟢🟢🟢⚪⚪⚪⚪⚪⚪ (4) | 🟢🟢🟢⚪⚪⚪⚪⚪⚪⚪ (3) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢⚪⚪⚪⚪⚪⚪⚪ **3** |
+| **25** | **"MAF detective" terminal game** | Lateral | ncurses-style interactive puzzle: 10 levels, each presents broken MAF code, player has 60s to spot the bug. Teaches the anti-patterns by play. Workshop-replacement for self-paced learning. | 🟢🟢🟢🟢🟢🟢⚪⚪⚪⚪ (6) | 🟢🟢🟢🟢🟢🟢🟢🟢⚪⚪ (8) | 🟢🟢🟢🟢🟢🟢🟢⚪⚪⚪ (7) | 🟢🟢🟢⚪⚪⚪⚪⚪⚪⚪ (3) | 🟢🟢🟢⚪⚪⚪⚪⚪⚪⚪ **3** |
+
+### My top 5 picks (highest leverage × shippable in 1-2 weeks)
+
+If we shipped these as **maf-autopilot 1.1.0** they'd materially differentiate the toolkit:
+
+1. **#3 — `MafAutoFix --all`** (the "fix everything fixable" command). 1 day. The natural sequel to W.6.
+2. **#4 — GitHub bot** (`@maf-autopilot` mentions in PRs/issues). 2-3 days. Single biggest distribution win.
+3. **#1 — VS Code "X-ray mode"** with rich Code Fix UI. 1 week. The bridge from "tool you invoke" → "tool that lives where you code."
+4. **#5 — AI registry auto-mining**. 3-5 days. Solves the registry-maintenance bottleneck as MAF evolves.
+5. **#8 — Migration time-lapse video**. ½ day. Pure marketing win; rides on existing infra.
+
+Total: ~2-2.5 focused weeks. Would 5x the toolkit's surface visibility.
+
+### My "if I had to pick ONE crazy bet" pick
+
+**#15 — A2A maf-autopilot**. Reasoning: the toolkit currently sits OUTSIDE the MAF runtime, auditing code at rest. Spawning it as a MAF agent that lives INSIDE the workflow inverts that — every other agent gets a self-audit channel. "AI auditing AI" is the most ChatGPT-able framing in this whole list, and it lands directly on the framework's strengths. Risky (~1 week), niche (utility score 5), but the wow + cool ceiling are 10s.
+
+### Adversarial section — things we are NOT doing (deliberately surfaced)
+
+Per the user's "what aren't we doing?" prompt — here's the explicit list of GAPS, separate from the wishlist above:
+
+- ❌ **No runtime instrumentation.** The toolkit reads source. It doesn't ATTACH to a running workflow to catch live silent-starvation. We tell customers "this looks like a fan-in barrier risk" — we don't tell them "this barrier just received 2/3 expected messages."
+- ❌ **No localization.** All output is English. A Japanese / German / Spanish maintainer reads the same text. Low priority but invisible until someone asks.
+- ❌ **No measurement of saved developer-time.** We have no telemetry, intentionally — but we also have no anecdotal "X customers saved Y hours" stat for marketing.
+- ❌ **No "explain like a senior / junior" mode.** Every finding gets one description, regardless of who's reading. A junior might want "what's a fan-in barrier?"; a senior might want "give me the line, I'll handle it."
+- ❌ **No conflict detection between agents** (covered as #7 above — not yet done).
+- ❌ **No security findings beyond `DefaultAzureCredential` + `EnableSensitiveData`** (covered as #6).
+- ❌ **No performance findings beyond token-cap** (covered as #12).
+- ❌ **No fuzz testing** of the parsers against weird inputs (covered as #16).
+- ❌ **No way for customers to extend the registry** without forking us (covered as #20 — skill marketplace).
+- ❌ **No replay / time-travel debugging.** "Show me what this file looked like at MAF 1.2 vs now" isn't a thing we offer.
+- ❌ **No what-if migration planning** for unreleased MAF versions (could pair with the watcher).
+- ❌ **No analyzer false-positive sweep** against `dotnet/runtime` / `dotnet/aspnetcore` — we've never run our analyzer against large non-MAF codebases to see how it behaves.
+
+Most of these are TODOs the brainstorm table above proposes solutions for. The remaining ones (localization, time-travel debugging) are deliberate non-goals for now.
+
+---
+
 ### Phase U — 1.0 polish (post-A.8)
 
 After A.8 ships, the toolkit's stable. These are nice-to-haves for 1.0.x patches.
