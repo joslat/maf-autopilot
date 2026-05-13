@@ -45,7 +45,7 @@ jobs:
   open-issue-for-copilot:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Compute helper variables
         id: vars
