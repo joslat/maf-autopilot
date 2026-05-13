@@ -176,7 +176,7 @@ Tool-surface expansion. **W.6 (MafAutoFix) is the biggest leverage** — the mis
 |---|---|---|---|---|---|
 | 9 | [**W.6**](#w6--mafautofix-mcp-tool-the-missing-do-half) | `MafAutoFix` MCP tool (THE missing "do" half) | M (1-2 days) | W.1 | ✅ DONE 2026-05-13 |
 | 10 | [**W.7**](#w7--mafbeforeafter-mcp-tool) | `MafBeforeAfter(repoPath, ruleIds[])` MCP tool — unified-diff preview of every change a rule-set would make; uses W.6 rewriters in dry-run; 7 tests | S (3-4 hrs) | W.6 | ✅ DONE 2026-05-13 |
-| 11 | [**W.11**](#w11--mafscoremigrationriskrepopath-mcp-tool) | `MafScoreMigrationRisk(repoPath)` MCP tool | S (4 hrs) | none | 🟡 |
+| 11 | [**W.11**](#w11--mafscoremigrationriskrepopath-mcp-tool) | `MafScoreMigrationRisk(repoPath)` MCP tool — weighted-score → HARD/MEDIUM/EASY verdict + per-category breakdown + recommended approach; 6 tests | S | ✅ DONE 2026-05-13 |
 | 12 | [**W.12**](#w12--mafgenerateregressionplanfrom-to-mcp-tool) | `MafGenerateRegressionPlan(from, to)` MCP tool | M (1 day) | W.1, W.8, W.10 | 🟡 |
 | 13 | [**W.13**](#w13--mafhealthbadge-subcommand) | `maf-autopilot badge` CLI subcommand emits shields.io endpoint-badge JSON; 11 tests (theory + integration against 1.3 sample) | XS | ✅ DONE 2026-05-13 |
 | 14 | **W.14** | NuGet polish — added `IncludeSymbols=true` + `SymbolPackageFormat=snupkg` + `Microsoft.SourceLink.GitHub` to BOTH the main nupkg and the analyzer nupkg. AgentEval-parity achieved. | XS | ✅ DONE 2026-05-13 |

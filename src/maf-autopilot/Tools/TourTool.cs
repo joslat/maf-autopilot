@@ -100,9 +100,10 @@ public sealed class TourTool
         new("MafNewAgent", "Scaffolder", "Generate a clean `ChatClientAgent`-based class + hermetic xUnit test. Anti-pattern-clean by construction."),
         new("MafNewExecutor", "Scaffolder", "Generate a fan-out-safe `[MessageHandler]` executor with `Task<T>` return + reflection-based shape test."),
 
-        // — Auto-fix (Phase W.6) —
+        // — Auto-fix (Phase W.6/W.7/W.11) —
         new("MafAutoFix", "Auto-fix", "Deterministic per-rule Roslyn rewriter — the \"do\" half of the toolkit. Supports MAF-AP-SEC-001/MAF002 (DefaultAzureCredential), MAF-AP-SEC-003/MAF003 (EnableSensitiveData), MAF-AP-WF-001 (sealed Executor), MAF130-FAN-IN-001 (arg order), MAF-AP-CONC-002 (.Result/.Wait()). `dryRun: true` previews without writing."),
         new("MafBeforeAfter", "Auto-fix", "Phase W.7 preview tool. Given a comma-separated list of rule IDs, dry-runs each MafAutoFix rewriter across the codebase and renders one consolidated markdown report with `diff --git`-style unified diffs per file. Maintainer reviews ONE document before approving the full change-set."),
+        new("MafScoreMigrationRisk", "Risk verdict", "Phase W.11 pre-migration risk score. Weighted sum of detected anti-patterns + silent-starvation risks + CS0246/0117/0618 source-text matches → HARD / MEDIUM / EASY verdict with per-category breakdown + recommended migration approach. Run BEFORE starting a migration to set expectations."),
 
         // — PR-scoped —
         new("MafAuditPullRequest", "PR-scoped", "Scope every scanner to the `.cs` files changed in this branch vs base. CI-comment-ready markdown."),
