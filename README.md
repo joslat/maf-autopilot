@@ -3,17 +3,26 @@
 > Not just a migration tool — your permanent AI co-pilot for MAF. Migrate to 1.3.0, verify your code follows best practices, catch obsolete APIs before they bite you, and stay current automatically as MAF evolves.
 
 <!--
-  Animated install + audit cast (~30 s). Rendered from
-  docs/assets/install-cast.tape via vhs. To re-render after editing
-  the .tape file, run scripts/make-cast.sh (or .ps1 on Windows).
+  Two animated casts (each ~30 s). Rendered from docs/assets/*.tape via vhs.
+  Re-render after editing the .tape files: bash scripts/make-cast.sh (or .ps1).
 
-  If the GIF below appears broken/missing, the renderer hasn't run yet —
+  If a GIF appears broken/missing, the renderer hasn't run yet —
   see scripts/make-cast.sh for the install + render instructions.
 -->
 <p align="center">
   <img src="docs/assets/install-cast.gif"
        alt="maf-autopilot — install + audit any MAF codebase in 30 seconds"
        width="900" />
+  <br/>
+  <em>Install + audit a real MAF codebase. Doctor returns grade F + the top fixes.</em>
+</p>
+
+<p align="center">
+  <img src="docs/assets/migration-cast.gif"
+       alt="maf-autopilot — auto-fix the broken codebase to grade A in ~30 seconds"
+       width="900" />
+  <br/>
+  <em>One <code>autofix-all</code> command. Every mechanical rule. Grade F → A, deterministic.</em>
 </p>
 
 **maf-autopilot** is an MCP server that turns GitHub Copilot into a MAF expert for the lifetime of your project. One install, one `init`, and Copilot gains live access to the full knowledge base — API signatures, breaking change rules, a 13-entry machine-readable fix registry, and 12 specialised skills — wired up as **17 executable MCP tools** + 3 Roslyn analyzers for write-time enforcement. Copilot invokes them automatically while auditing, migrating, reviewing, and maintaining your agents and workflows.

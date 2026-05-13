@@ -106,24 +106,55 @@ jobs:
           The existing well-filled entries are the canonical format. Match their
           tone, length, and YAML structure exactly:
 
-          - \`MAF130-FAN-IN-001\`
-          - \`MAF130-SESSION-001\`
-          - \`MAF130-THREAD-001\`
-          - \`MAF130-EXEC-001\`
+          - \`MAF130-FAN-IN-001\` — SIGNATURE-CHANGED template
+          - \`MAF130-SESSION-001\` — also see the **Phase T correction** note
+            for the format of corrections (use that template if your filling
+            reveals the registry's diff doesn't match the public surface).
+          - \`MAF130-THREAD-001\` — TYPE-REMOVED template
+          - \`MAF130-EXEC-001\` — BEHAVIOR-CHANGED template
 
-          ## What to fill — per registry entry
+          ## Step 1 — CATEGORISE FIRST (do this before filling anything)
 
-          For each entry with \`id: MAF${DIGITS}-*\`:
+          For EACH entry with \`id: MAF${DIGITS}-*\`, pick **exactly ONE** of
+          these change categories and use the matching template below. Don't
+          guess; if the structural diff is ambiguous, default to BEHAVIOR-CHANGED
+          and explain your reasoning in \`notes:\`.
 
-          1. **\`fix_description\`** — one concise sentence. Pattern: "Replace X
-             with Y. Add Z." Keep it actionable.
+          | Category | When | What the example pair should show |
+          |---|---|---|
+          | **TYPE-REMOVED** | The diff shows a type going away entirely. cs_warning = CS0246. | example_before uses old type; example_after uses the new one. |
+          | **METHOD-RENAMED** | Same type, member renamed (no signature change beyond the name). | example_before/after differ only on the call-site name. |
+          | **SIGNATURE-CHANGED** | Same method name, different param list or return type. cs_warning = CS0618 (if [Obsolete] kept) or CS1503/CS0019. | Show OLD arg list / return → NEW arg list / return. |
+          | **BEHAVIOR-CHANGED** | Method compiles fine but does something different at runtime. cs_warning = RUNTIME_SILENT. | example_before is "looks fine, broken at runtime"; example_after is the safe alternative. |
+          | **ATTRIBUTE-REMOVED** | A [SomeAttribute] decorator no longer exists. cs_warning = CS0246. | example_before has the attribute; example_after just deletes it. |
+
+          ## Step 2 — Per-entry fill
+
+          For each entry, fill these fields (only — touch nothing else):
+
+          1. **\`fix_description\`** — one concise sentence (≥ 20 chars).
+             Pattern depends on category:
+             - TYPE-REMOVED: "Replace \`OldType\` with \`NewType\`."
+             - METHOD-RENAMED: "Rename \`X.OldName\` to \`X.NewName\`."
+             - SIGNATURE-CHANGED: "Change \`X.Y(<old>)\` to \`X.Y(<new>)\`."
+             - BEHAVIOR-CHANGED: "Replace <silent-broken pattern> with <correct pattern>."
+             - ATTRIBUTE-REMOVED: "Delete \`[OldAttribute]\` — gone in $TARGET; no replacement."
 
           2. **\`example_before\`** — minimal C# call site (3-8 lines) showing
              the obsolete signature being used. Use the \`obsolete_signature\`
              field as the basis. Use YAML block-literal style (\`|\`).
 
+             **Self-check before submitting**: parse this fragment in your head
+             — does it have balanced \`{}\` and \`()\`, valid statement
+             terminators, and at least one identifier from the entry's \`type\`
+             field?
+
           3. **\`example_after\`** — corrected $TARGET replacement (3-8 lines),
              also \`|\` block-literal.
+
+             **Self-check**: must be DIFFERENT from example_before (an identical
+             pair is a non-migration); must NOT use any identifier that the
+             diff says was removed.
 
           4. **\`guide_section\`** — section number from the existing 1.3.0
              guide if there's a clear parallel pattern (look at the headings of
@@ -131,6 +162,33 @@ jobs:
              section (because the change touches a surface that didn't exist
              in 1.3.0), use **\`N/A\`** — not \`TBD\`, not \`TODO\`. Never
              invent section numbers.
+
+          5. **\`applies_to_codebases\`** _(optional, Phase W.A field)_ — only
+             add this if the diff's API surface DOES NOT EXIST on a public MAF
+             NuGet you can verify (run \`dotnet-inspect type --package
+             Microsoft.Agents.AI@<version>\` for each version 1.0.0 / 1.1.0 /
+             1.2.0 / 1.3.0 if uncertain). Set to \`"pre-1.0.0"\` and add a
+             Phase W.A correction paragraph to \`notes:\` documenting what you
+             verified. Most entries WON'T need this field.
+
+          ## Step 3 — Self-verification checklist (do before opening PR)
+
+          Run through this checklist on every entry you filled:
+
+          - [ ] Every required field filled (no remaining \`TODO\`).
+          - [ ] \`example_before\` ≠ \`example_after\` (a non-noop migration).
+          - [ ] \`example_before\` doesn't reference a type the diff said was
+            removed — only the example_after should.
+          - [ ] Every \`example_*\` has balanced \`{}\` and \`()\`.
+          - [ ] Every \`fix_description\` is at least 20 characters.
+          - [ ] No invented section numbers in \`guide_section\` — only existing
+            section IDs from the guide, OR the literal string \`N/A\`.
+
+          The PR will be automatically checked against
+          \`maf-autopilot verify-registry\` by the
+          \`.github/workflows/maf-ai-fill-verify.yml\` workflow. The check
+          enforces the same items above. If any fail, the check fails and the
+          PR is blocked from auto-merge.
 
           ## What to fill — compatibility matrix
 

@@ -37,6 +37,9 @@ public sealed class RegistryService
     public IReadOnlyList<string> AllIds =>
         _registry.Entries.Select(e => e.Id).OrderBy(id => id).ToList();
 
+    /// <summary>Every entry in the registry (in YAML declaration order). Read-only.</summary>
+    public IReadOnlyList<RegistryEntry> AllEntries => _registry.Entries;
+
     /// <summary>MAF version this registry targets (e.g. "1.3.0").</summary>
     public string TargetVersion => _registry.TargetMafVersion;
 

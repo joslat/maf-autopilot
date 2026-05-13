@@ -1,0 +1,110 @@
+name: MAF AI-Fill PR Verify
+
+# #5 polish (2026-05-13) — runs the verification gate against AI-filled
+# registry PRs. Triggers on `pull_request` events that modify registry.yaml
+# AND carry the `ai-fill` label.
+#
+# Why this exists: GitHub Copilot Coding Agent fills the TODO placeholders
+# left by `maf-release-watcher`. Quality is good but inconsistent. Common
+# failure modes we've seen:
+#   - example_before == example_after (a non-migration)
+#   - fix_description is "TODO" or empty
+#   - examples have unbalanced braces (Copilot left a half-snippet)
+#   - guide_section is "TBD" / "TODO" instead of the literal "N/A"
+#
+# This workflow runs `maf-autopilot verify-registry` against the PR's HEAD
+# commit. If verification fails, the workflow exits non-zero, which blocks
+# the PR's auto-merge (if branch protection / required-status-checks is
+# configured for this check).
+#
+# The maintainer can still manually merge the PR if the verification gate
+# is being overly strict — the gate is advisory, not mandatory.
+
+on:
+  pull_request:
+    types: [opened, synchronize, labeled]
+    paths:
+      - '.github/skills/obsolete-api-registry/registry.yaml'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  verify:
+    # Only fire on PRs labelled `ai-fill`. Hand-written registry PRs from
+    # the maintainer skip this check (the maintainer has already eye-balled
+    # their own work).
+    if: contains(github.event.pull_request.labels.*.name, 'ai-fill')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          # Net8 LTS — install-only; nupkg multi-targets so any flavor works.
+          dotnet-version: '8.0.x'
+
+      - name: Install maf-autopilot (prerelease)
+        run: |
+          dotnet tool install --global maf-autopilot --prerelease \
+            || dotnet tool update --global maf-autopilot --prerelease
+
+      - name: Run verify-registry
+        id: verify
+        continue-on-error: true
+        run: |
+          set +e
+          OUTPUT=$(maf-autopilot verify-registry 2>&1)
+          EXIT=$?
+          echo "$OUTPUT"
+          {
+            echo "output<<EOF"
+            echo "$OUTPUT"
+            echo "EOF"
+            echo "exit_code=$EXIT"
+          } >> $GITHUB_OUTPUT
+          exit $EXIT
+
+      - name: Comment on PR if verification failed
+        if: steps.verify.outputs.exit_code != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BODY=$(cat <<EOF
+          ## ❌ AI-fill verification failed
+
+          \`maf-autopilot verify-registry\` flagged issues in this PR's
+          \`registry.yaml\` changes. Detail below — fix locally and push:
+
+          \`\`\`
+          ${{ steps.verify.outputs.output }}
+          \`\`\`
+
+          **Common fixes:**
+          - "example_before == example_after" → these must differ; the
+            example shows a migration, not a noop.
+          - "fix_description is too short" → write a real sentence; the
+            verifier rejects ≤ 20-char descriptions and "TODO"/"TBD".
+          - "unbalanced braces" → Copilot probably truncated a code block.
+          - "guide_section is a placeholder" → use the literal string
+            \`N/A\` if there's no parallel guide section.
+
+          See \`.github/workflows/maf-ai-fill-todos.yml\` for the full
+          filling rubric. Re-run \`verify-registry\` locally after fixing:
+
+          \`\`\`bash
+          maf-autopilot verify-registry
+          \`\`\`
+          EOF
+          )
+          gh pr comment "${{ github.event.pull_request.number }}" --body "$BODY"
+
+      - name: Final status (re-fail if verify failed)
+        if: steps.verify.outputs.exit_code != '0'
+        run: |
+          echo "Registry verification failed — see PR comment for detail."
+          exit 1
