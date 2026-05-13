@@ -65,9 +65,83 @@ public sealed class RegistryService
     }
 
     /// <summary>
+    /// Return entries whose <see cref="RegistryEntry.AppliesToCodebases"/> marker
+    /// is satisfied by the given codebase version. Entries with a null/empty
+    /// marker are always returned (default = "applies to any").
+    ///
+    /// Marker grammar:
+    ///   - <c>"pre-X.Y.Z"</c>  → entry applies when <paramref name="codebaseVersion"/> &lt; X.Y.Z.
+    ///   - <c>"X.Y.Z+"</c>     → entry applies when <paramref name="codebaseVersion"/> &gt;= X.Y.Z.
+    ///   - <c>"X.Y.Z"</c>      → entry applies when <paramref name="codebaseVersion"/> == X.Y.Z.
+    ///   - anything else       → defensively treated as "applies to any" (logs a warning in v2).
+    ///
+    /// Version comparison uses <see cref="Version"/> semantics (build-revision-aware,
+    /// so "1.10.0" sorts AFTER "1.9.0" correctly). Prerelease tags (-alpha, -beta) are stripped
+    /// before parsing — close enough for v1; sufficient for SemVer-ish MAF versions.
+    /// </summary>
+    public IReadOnlyList<RegistryEntry> GetEntriesForCodebaseVersion(string codebaseVersion)
+    {
+        if (!TryParseVersion(codebaseVersion, out var queryVersion))
+            return _registry.Entries.ToList(); // bad input → return all, don't filter
+
+        return _registry.Entries
+            .Where(e => AppliesTo(e, queryVersion))
+            .ToList();
+    }
+
+    private static bool AppliesTo(RegistryEntry e, Version queryVersion)
+    {
+        var marker = e.AppliesToCodebases?.Trim();
+        if (string.IsNullOrEmpty(marker))
+            return true; // no marker → applies to any version
+
+        // "pre-X.Y.Z" — applies when query < X.Y.Z.
+        if (marker.StartsWith("pre-", StringComparison.OrdinalIgnoreCase))
+        {
+            var verPart = marker.Substring(4);
+            return TryParseVersion(verPart, out var threshold) && queryVersion < threshold;
+        }
+
+        // "X.Y.Z+" — applies when query >= X.Y.Z.
+        if (marker.EndsWith('+'))
+        {
+            var verPart = marker.Substring(0, marker.Length - 1);
+            return TryParseVersion(verPart, out var threshold) && queryVersion >= threshold;
+        }
+
+        // Exact "X.Y.Z" — applies only at that version.
+        if (TryParseVersion(marker, out var exact))
+            return queryVersion == exact;
+
+        // Unknown marker shape — defensively include the entry.
+        return true;
+    }
+
+    /// <summary>
+    /// Parses a SemVer-ish string into <see cref="Version"/>. Strips any prerelease
+    /// suffix (`-alpha`, `-beta`, `-rc`, `-preview`) before parsing so "1.3.0-alpha-5" → 1.3.0.
+    /// </summary>
+    private static bool TryParseVersion(string raw, out Version version)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            version = new Version(0, 0);
+            return false;
+        }
+
+        var dashIdx = raw.IndexOf('-');
+        var core = dashIdx > 0 ? raw.Substring(0, dashIdx) : raw;
+        return Version.TryParse(core, out version!);
+    }
+
+    /// <summary>
     /// Concatenates every searchable string field on a registry entry into a single
     /// lowercase blob. **This is the canonical "what is searchable" definition** — add
     /// new fields here and only here.
+    ///
+    /// Note: <see cref="RegistryEntry.AppliesToCodebases"/> is intentionally EXCLUDED —
+    /// it's a structural marker, not API content, and including it would confuse the
+    /// CS0618 hunter's symbol-based matching.
     /// </summary>
     private static string BuildHaystack(RegistryEntry e) =>
         string.Join(

@@ -76,4 +76,18 @@ public sealed class RegistryEntry
     // breaks. Right for free-prose `notes` fields — keeps diffs readable.
     [YamlMember(Alias = "notes", ScalarStyle = ScalarStyle.Folded)]
     public string Notes { get; set; } = "";
+
+    /// <summary>
+    /// Optional. Marks the entry as applicable to a specific codebase-version era:
+    ///   - <c>null</c> or empty → applies to any codebase version (default).
+    ///   - <c>"pre-X.Y.Z"</c>   → applies only against codebases pinned BELOW X.Y.Z (migration entry).
+    ///   - <c>"X.Y.Z+"</c>       → applies against codebases pinned AT OR ABOVE X.Y.Z.
+    ///   - <c>"X.Y.Z"</c>        → applies against codebases pinned at that exact version.
+    ///
+    /// Introduced in Phase T (2026-05-13) to disambiguate entries that document
+    /// pre-migration patterns vs. in-version surface patterns. See
+    /// <see cref="RegistryService.GetEntriesForCodebaseVersion"/> for the filter.
+    /// </summary>
+    [YamlMember(Alias = "applies_to_codebases")]
+    public string? AppliesToCodebases { get; set; }
 }

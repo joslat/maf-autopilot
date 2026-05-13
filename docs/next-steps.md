@@ -146,7 +146,7 @@ Do these FIRST. Rationale: the registry foundation (W.1) is needed before MafAut
 
 | Step | ID | Item | Effort | Status |
 |---|---|---|---|---|
-| 1 | [**W.1**](#w1--formalise-applies_to_codebases-in-registrymodelscs) | Formalise `applies_to_codebases` in `RegistryModels.cs` | S (1-2 hrs) | 🟡 |
+| 1 | [**W.1**](#w1--formalise-applies_to_codebases-in-registrymodelscs) | Formalise `applies_to_codebases` in `RegistryModels.cs` | S (1-2 hrs) | ✅ DONE 2026-05-13 |
 | 2 | [**W.8**](#w8--samplesmaf-12-sample) | `samples/maf-1.2-sample/` (1.2 → 1.3 migration fixture) | M (4-8 hrs) | 🟡 |
 | 3 | [**W.10**](#w10--samplesmaf-10-sample) | `samples/maf-1.0-sample/` (oldest migration ladder fixture) | M (4-8 hrs) | 🟡 |
 | 4 | [**W.9**](#w9--ci-regression-on-samples) | CI regression on `samples/*` | S (2-3 hrs) | 🟡 |

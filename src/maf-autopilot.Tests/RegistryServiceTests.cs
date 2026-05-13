@@ -162,4 +162,99 @@ public class RegistryServiceTests
         var matches = _registry.SearchByApiName(warning);
         Assert.NotEmpty(matches);
     }
+
+    // -------------------------------------------------------------------------
+    // AppliesToCodebases — Phase W.1 / Phase T marker field
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// The Phase T corrections marked 2 entries as `applies_to_codebases: "pre-1.3.0"`.
+    /// Verify the YAML loader picks up the field and round-trips it as a typed property.
+    /// </summary>
+    [Theory]
+    [InlineData("MAF130-SESSION-001")]
+    [InlineData("MAF130-INSTRUCTIONS-001")]
+    public void AppliesToCodebases_PhaseTEntries_LoadAsPre130(string id)
+    {
+        var entry = _registry.FindById(id);
+        Assert.NotNull(entry);
+        Assert.Equal("pre-1.3.0", entry!.AppliesToCodebases);
+    }
+
+    /// <summary>
+    /// Entries without the field should load as null (default), preserving
+    /// backward compat with the existing 17 unmarked entries.
+    /// </summary>
+    [Theory]
+    [InlineData("MAF130-FAN-IN-001")]   // has no applies_to_codebases
+    [InlineData("MAF130-EXEC-001")]
+    public void AppliesToCodebases_UnmarkedEntries_LoadAsNull(string id)
+    {
+        var entry = _registry.FindById(id);
+        Assert.NotNull(entry);
+        Assert.True(string.IsNullOrEmpty(entry!.AppliesToCodebases));
+    }
+
+    /// <summary>
+    /// "pre-1.3.0"-marked entries apply against a pre-1.3 codebase (e.g. 1.2.5)
+    /// AND DON'T apply against a 1.3.0+ codebase.
+    /// </summary>
+    [Theory]
+    [InlineData("1.2.0", true)]   // pre-1.3 → marker applies
+    [InlineData("1.2.5", true)]
+    [InlineData("1.0.0", true)]
+    [InlineData("1.3.0", false)]  // not pre-1.3 → marker excludes
+    [InlineData("1.3.5", false)]
+    [InlineData("1.4.0", false)]
+    public void GetEntriesForCodebaseVersion_Pre130Marker_FiltersCorrectly(string queryVersion, bool shouldInclude)
+    {
+        var entries = _registry.GetEntriesForCodebaseVersion(queryVersion);
+        var sessionEntry = entries.FirstOrDefault(e => e.Id == "MAF130-SESSION-001");
+
+        if (shouldInclude)
+            Assert.NotNull(sessionEntry);
+        else
+            Assert.Null(sessionEntry);
+    }
+
+    /// <summary>
+    /// Entries without the marker apply to EVERY codebase version
+    /// (default = "applies to any").
+    /// </summary>
+    [Theory]
+    [InlineData("1.0.0")]
+    [InlineData("1.3.0")]
+    [InlineData("1.5.0")]
+    [InlineData("2.0.0-beta")]
+    public void GetEntriesForCodebaseVersion_UnmarkedEntries_AlwaysIncluded(string queryVersion)
+    {
+        var entries = _registry.GetEntriesForCodebaseVersion(queryVersion);
+        var fanInEntry = entries.FirstOrDefault(e => e.Id == "MAF130-FAN-IN-001");
+        Assert.NotNull(fanInEntry);
+    }
+
+    /// <summary>
+    /// Invalid version inputs should not throw — defensively return all entries.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("not-a-version")]
+    [InlineData("abc")]
+    public void GetEntriesForCodebaseVersion_InvalidInput_ReturnsAll(string queryVersion)
+    {
+        var entries = _registry.GetEntriesForCodebaseVersion(queryVersion);
+        Assert.Equal(_registry.AllIds.Count, entries.Count);
+    }
+
+    /// <summary>
+    /// Prerelease tags should be stripped before comparison so "1.3.0-alpha-5"
+    /// compares as 1.3.0 (excluding pre-1.3 entries).
+    /// </summary>
+    [Fact]
+    public void GetEntriesForCodebaseVersion_PrereleaseTag_StrippedCorrectly()
+    {
+        var entries = _registry.GetEntriesForCodebaseVersion("1.3.0-alpha-5");
+        var sessionEntry = entries.FirstOrDefault(e => e.Id == "MAF130-SESSION-001");
+        Assert.Null(sessionEntry); // 1.3.0-alpha-5 → 1.3.0, NOT pre-1.3
+    }
 }
