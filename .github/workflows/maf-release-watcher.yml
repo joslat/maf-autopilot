@@ -20,7 +20,7 @@ jobs:
       has_update: ${{ steps.version-check.outputs.has_update }}
       is_major: ${{ steps.version-check.outputs.is_major }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Check NuGet for new MAF version
         id: version-check
@@ -91,7 +91,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
