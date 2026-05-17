@@ -80,19 +80,24 @@ leMessageInjection' was added
 
 ## Breaking Changes (requires human verification)
 
-<!-- TODO: Review the diff above and list breaking changes here -->
+- `WorkflowEvaluationExtensions.EvaluateAsync` signature changed: `expectedOutput` was inserted before `cancellationToken`. Update call sites to pass `expectedOutput` explicitly (or use named `cancellationToken`) so token arguments do not bind to the new string slot.
+- `OpenTelemetryAgent` now auto-wires the chat client with `OpenTelemetryChatClient` (release-note breaking change in PR #5750). Remove duplicate manual wrapping if you already instrumented the same client in composition.
 
 ## New Patterns
 
-<!-- TODO: Document any new recommended patterns from release notes -->
+- **Workflow evals with explicit ground truth**: Use the new `expectedOutput` argument in `EvaluateAsync` to compare run output against known expected results (PR #5755).
+- **Function-loop message injection**: Use `IChatMessageInjector` via `ChatClientBuilderExtensions.UseMessageInjection(...)` when you need to inject policy/system messages during tool/function loops (PR #5679).
+- **OpenTelemetry by default in `OpenTelemetryAgent`**: Prefer agent-level telemetry composition and avoid double-wrapping chat clients (PR #5750).
+- **A2A input-request content for HITL**: Use new input-request content types to model human-in-the-loop approval/response flows in A2A exchanges (PR #5743).
 
 ## Obsolete APIs Added
 
-<!-- TODO: Use MafRunCs0618Hunt against a project pinned to 1.6.1 and document findings -->
+- `WorkflowEvaluationExtensions.EvaluateAsync(..., splitter, cancellationToken)` now has a replacement signature with `expectedOutput` inserted before `cancellationToken` (`MAF161-EXTENSIO-001`).
+- No additional 1.6.1 obsolete entries were detected by the watcher diff in this repo beyond `MAF161-EXTENSIO-001`; run `MafRunCs0618Hunt` on customer code for compiler-ground-truth coverage.
 
 ## Known Misalignments
 
-<!-- TODO: Document any discrepancies between official docs and assembly behavior -->
+- The release note for eval enhancements reads as additive, but positional `EvaluateAsync` calls that passed `cancellationToken` as the final argument require edits because `expectedOutput` now precedes the token.
 
 <!-- AUTO-GENERATED END -->
 
