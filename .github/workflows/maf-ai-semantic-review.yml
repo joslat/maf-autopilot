@@ -76,11 +76,33 @@ jobs:
           echo "head=$HEAD" >> $GITHUB_OUTPUT
           echo "Resolved: PR #$PR_NUM (base=$BASE head=$HEAD)"
 
-      - name: Checkout (full history so we can git-show the base)
+      - name: Checkout main (so the scripts are present)
         uses: actions/checkout@v6
         with:
-          ref: ${{ steps.pr.outputs.head }}
+          # Deliberately NOT checking out the PR head — the PR branch (created
+          # by the filler bot) doesn't contain the rung-2 review scripts. We
+          # need this workflow's scripts from main, then we git-fetch the PR
+          # refs separately so `git show $SHA:registry.yaml` works.
           fetch-depth: 0
+
+      - name: Fetch PR head + base refs
+        env:
+          PR_NUM: ${{ steps.pr.outputs.pr_number }}
+          BASE_SHA: ${{ steps.pr.outputs.base }}
+          HEAD_SHA: ${{ steps.pr.outputs.head }}
+        run: |
+          # Fetching the PR head ref makes HEAD_SHA reachable. BASE_SHA is
+          # usually on main already (fetched by the previous checkout with
+          # depth=0), but we force-fetch it too for safety.
+          git fetch origin "pull/$PR_NUM/head" --depth=20
+          # Sanity-check that both SHAs are now reachable.
+          for SHA in "$BASE_SHA" "$HEAD_SHA"; do
+            if ! git cat-file -e "$SHA" 2>/dev/null; then
+              echo "::error::SHA $SHA not reachable after fetching pull/$PR_NUM/head."
+              exit 1
+            fi
+            echo "$SHA reachable."
+          done
 
       - uses: actions/setup-python@v5
         with:
