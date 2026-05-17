@@ -5,6 +5,8 @@
 .github/scripts
 .vscode
 docs
+!docs/steering
+!docs/steering/**
 guides
 !guides
 src/maf-autopilot.Tests

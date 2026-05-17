@@ -41,8 +41,12 @@ COPY Directory.Build.props Directory.Packages.props global.json ./
 COPY src/maf-autopilot/ src/maf-autopilot/
 
 # Embedded resources required for `<EmbeddedResource>` in the csproj.
+# The csproj embeds 4 files from docs/steering/ (init drops them into user repos);
+# .dockerignore explicitly un-excludes that subfolder. Plus .github/skills,
+# .github/instructions, guides/, and root README.md.
 COPY .github/ .github/
 COPY guides/ guides/
+COPY docs/steering/ docs/steering/
 COPY README.md ./
 
 # Publish a single TFM (net10.0 — matches the runtime image below). Required
