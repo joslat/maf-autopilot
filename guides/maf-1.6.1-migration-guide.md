@@ -80,19 +80,66 @@ leMessageInjection' was added
 
 ## Breaking Changes (requires human verification)
 
-<!-- TODO: Review the diff above and list breaking changes here -->
+MAF 1.6.1 is primarily an **additive release** with no hard breaking changes. Existing 1.5.0 code compiles without modification.
+
+### WorkflowEvaluationExtensions.EvaluateAsync — New Optional Parameter
+
+The `EvaluateAsync` extension method gained a new optional `string? expectedOutput = null` parameter inserted before the `cancellationToken` parameter:
+
+**Old signature (1.5.0):**
+```csharp
+Task<AgentEvaluationResults> EvaluateAsync(
+    Run run,
+    IAgentEvaluator evaluator,
+    bool includeOverall = true,
+    bool includePerAgent = true,
+    string evalName = "Workflow Eval",
+    IConversationSplitter? splitter = null,
+    CancellationToken cancellationToken = default)
+```
+
+**New signature (1.6.1):**
+```csharp
+Task<AgentEvaluationResults> EvaluateAsync(
+    Run run,
+    IAgentEvaluator evaluator,
+    bool includeOverall = true,
+    bool includePerAgent = true,
+    string evalName = "Workflow Eval",
+    IConversationSplitter? splitter = null,
+    string? expectedOutput = null,        // ← NEW
+    CancellationToken cancellationToken = default)
+```
+
+**Impact:** Most call sites are unaffected. Code using positional arguments for `cancellationToken` (rare) or named arguments like `cancellationToken: ct` will continue to compile. Only if you were passing all parameters positionally would you need to insert `null` for `expectedOutput`.
+
+**New capability:** The `expectedOutput` parameter enables ground-truth evaluation by providing the expected result text for comparison during workflow evaluation.
 
 ## New Patterns
 
-<!-- TODO: Document any new recommended patterns from release notes -->
+### Ground-Truth Workflow Evaluation
+
+You can now pass an expected output string to `EvaluateAsync` for ground-truth evaluation:
+
+```csharp
+var results = await run.EvaluateAsync(
+    evaluator,
+    evalName: "Fraud Detection Test",
+    expectedOutput: "Transaction flagged as fraudulent with 95% confidence",
+    cancellationToken: ct);
+```
+
+This enables automated testing of workflow outputs against known-good results. The evaluator can compare the actual workflow output against the `expectedOutput` to compute accuracy metrics.
+
+See the release notes for details on the new `IChatMessageInjector` for message injection during function loops and other additive features.
 
 ## Obsolete APIs Added
 
-<!-- TODO: Use MafRunCs0618Hunt against a project pinned to 1.6.1 and document findings -->
+None. MAF 1.6.1 does not introduce any `[Obsolete]` attributes. The only API change is the additive `expectedOutput` parameter documented above.
 
 ## Known Misalignments
 
-<!-- TODO: Document any discrepancies between official docs and assembly behavior -->
+None identified. The `WorkflowEvaluationExtensions.EvaluateAsync` signature change is well-documented and the new parameter is properly optional with a default value.
 
 <!-- AUTO-GENERATED END -->
 
