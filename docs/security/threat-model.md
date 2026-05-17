@@ -79,20 +79,35 @@ These will be addressed in 1.1 / 1.2 alongside the Magentic orchestrator work (w
 
 We run **two complementary vendor-backed scanners** for each release. The April 2026 [AppSec Santa MCP audit](https://appsecsanta.com/research/mcp-server-security-audit-2026) established this pair as the canonical baseline.
 
+### Note: these are CLI tools, not VS Code extensions
+
+Both primary scanners are Python command-line tools installed via `pipx` or `uv`. They are NOT in the VS Code extension marketplace. Looking for them there will find nothing — install via Python tooling as documented below.
+
 ### Primary scanners (run both)
 
-**1. [Cisco mcp-scanner](https://github.com/cisco-ai-defense/mcp-scanner)** — YARA-based pattern matching for known threat patterns (prompt injection, tool poisoning, credential harvesting, code execution). **Maintained by Cisco AI Defense.**
+**1. [Cisco mcp-scanner](https://github.com/cisco-ai-defense/mcp-scanner)** — YARA-based pattern matching for known threat patterns (prompt injection, tool poisoning, credential harvesting, code execution). **Maintained by Cisco AI Defense** (Apache-2.0, 926+ stars, v4.6.0 April 2026). PyPI package: `cisco-ai-mcp-scanner`.
 
 ```bash
-pipx install mcp-scanner
-mcp-scanner scan --target stdio --command "dotnet run --project src/maf-autopilot"
+# Install (requires Python 3.10+ and pipx)
+python -m pip install --user pipx
+python -m pipx ensurepath
+pipx install cisco-ai-mcp-scanner
+
+# Scan our server (yara analyzer is free; api/llm need keys)
+mcp-scanner --analyzers yara --format summary --hide-safe \
+  stdio --stdio-command=dotnet \
+  --stdio-arg=run --stdio-arg=--project --stdio-arg=src/maf-autopilot \
+  --stdio-arg=--framework --stdio-arg=net10.0 --stdio-arg=--no-build \
+  --stderr-file=/tmp/maf-server.log
 ```
 
-**2. [Invariant Labs mcp-scan](https://github.com/invariantlabs-ai/mcp-scan)** — configuration-level issue detection. Catches what YARA misses (auth gaps, deployment misconfigurations, transport-level issues). **Maintained by Invariant Labs.**
+**2. [Snyk agent-scan](https://github.com/invariantlabs-ai/mcp-scan)** (originally Invariant Labs' mcp-scan; now maintained by Snyk) — configuration-level issue detection. Catches what YARA misses (auth gaps, deployment misconfigurations, transport-level issues). **Maintained by Snyk** (Apache-2.0, 2.4k+ stars, v0.5.3 May 2026). PyPI package: `snyk-agent-scan`.
 
 ```bash
-pipx install mcp-scan
-mcp-scan inspect .vscode/mcp.json
+# Requires a free Snyk token
+export SNYK_TOKEN=your-snyk-api-token
+uvx snyk-agent-scan@latest
+# (sandbox the run if scanning untrusted configs)
 ```
 
 ### Optional third scanner (CSA-backed audit-side tool)
@@ -110,14 +125,26 @@ mcp-scan inspect .vscode/mcp.json
 
 ### Last scan results
 
-Last scan: PENDING (run before 1.0.0 tag).
-Triage notes: TBD.
+**Last scan: 2026-05-17 — Cisco mcp-scanner v4.6.0 (yara analyzer)**
+
+```
+=== Scan Statistics ===
+Total tools: 25
+Safe tools: 25
+Unsafe tools: 0
+Severity breakdown: HIGH: 0, UNKNOWN: 0, MEDIUM: 0, LOW: 0, SAFE: 25
+Analyzer stats: yara_analyzer: 25/25 scanned, 0 findings
+```
+
+**Triage notes:** zero findings. All 25 MCP tools enumerated cleanly via stdio. No prompt injection / tool poisoning / credential harvesting patterns matched.
+
+**Snyk agent-scan run: PENDING** (requires Snyk token; deferred to first post-1.0.0 maintenance cycle).
 
 ### Why two vendor-backed scanners (not more, not less)?
 
 Each scanner has a distinct angle:
-- **Cisco mcp-scanner** — tool description / schema content (semantic patterns)
-- **Invariant mcp-scan** — configuration / deployment shape
+- **Cisco mcp-scanner** — tool description / schema content (semantic patterns via YARA)
+- **Snyk agent-scan** — configuration / deployment shape, multi-platform agent surface
 
 Running both takes ~5 minutes total and provides orthogonal coverage. The April 2026 AppSec Santa survey found 82% of MCP implementations have path-traversal vulnerabilities — these two scanners reliably catch them.
 
@@ -125,3 +152,4 @@ Running both takes ~5 minutes total and provides orthogonal coverage. The April 
 
 - **kapilduraphe/mcp-watch** — single-maintainer hobby project. Quality may be fine, but a security tool from an unvetted source is itself a supply-chain risk.
 - Commercial-only scanners (Pangea, Enkrypt AI, AQtive Guard) — fine if your org has a license, but we don't gate the open-source release on them.
+- "MCP Scanner" or "mcp-scan" VS Code extensions in the marketplace — none of the established scanners ship VS Code extensions. If you see one, verify the publisher carefully before installing.

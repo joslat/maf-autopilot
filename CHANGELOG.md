@@ -17,16 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.0.0] — 2026-05-XX
+## [1.0.0] — 2026-05-17
 
 First stable release. Public API committed. **MAF Doctor** brand introduced.
 
 ### Highlights
 
-- **25 curated MCP tools** for diagnosing, fixing, and migrating Microsoft Agent Framework code
+- **25 curated MCP tools** for diagnosing, fixing, and migrating Microsoft Agent Framework code, **all annotated with MCP behavior hints** (`readOnlyHint` / `destructiveHint` / `idempotentHint` / `openWorldHint`) so well-behaved clients can auto-classify them
 - **Curated obsolete-API registry** with `applies_to_codebases` markers — version-aware migration paths for MAF 1.0 / 1.2 / 1.3
 - **Deterministic Roslyn rewriters** with `--dry-run` and `--all` orchestration modes
-- **`MafDoctor`** — A-F holistic health verdict in one call
+- **`MafDoctor`** — A-F holistic health verdict in one call; supports `format=markdown` (default) and `format=json` (7 discrete fields for CI/dashboards)
 - **`MafAutoFixAll`** — dependency-ordered fix-everything pass
 - **`MafRunCs0618Hunt`** — compiler ground truth + registry join
 - **Roslyn analyzer NuGet** (`MAF001` / `002` / `003`) for write-time enforcement
@@ -34,7 +34,9 @@ First stable release. Public API committed. **MAF Doctor** brand introduced.
 - **Multi-version sample regression CI** — proves fixes don't break older codebases
 - **12 skills + 7 specialist agents** for GitHub Copilot Coding Agent
 - **7 MCP prompts** + **6 MCP resources** (constraints, registry, guide, rules, help, skills)
+- **Plugin packaging via `maf-autopilot init`** — drops `.vscode/mcp.json` + 3 steering snippets (`.github/copilot-instructions.md`, `CLAUDE.md`, `AGENTS.md`) with merge-not-overwrite semantics; optional `--with-cursor` for `.cursorrules`
 - Built on **dotnet-inspect v0.7.8** (which surfaces `[Obsolete]` natively); we add MAF-specific curated fix recipes + version-aware filtering on top
+- **Security model documented** in `docs/security/threat-model.md` including the canonical scanner pair (Cisco `cisco-ai-mcp-scanner` + Snyk `snyk-agent-scan`)
 
 ### Versioning note for alpha users
 
