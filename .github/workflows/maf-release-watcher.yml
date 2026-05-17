@@ -274,7 +274,7 @@ jobs:
           Diff artefacts (diff-core.txt, diff-workflows.txt, release-notes.txt)
           are uploaded as workflow artefacts on this run. The TODO placeholders
           in the new entries will be auto-filled by the
-          `maf-ai-fill-todos.yml` workflow if ANTHROPIC_API_KEY is set."
+          maf-ai-fill-todos.yml workflow if ANTHROPIC_API_KEY is set."
 
           git commit -m "$MSG"
           git push origin HEAD:main
