@@ -32,10 +32,16 @@ permissions:
 
 jobs:
   verify:
-    # Only fire on PRs labelled `ai-fill`. Hand-written registry PRs from
-    # the maintainer skip this check (the maintainer has already eye-balled
-    # their own work).
-    if: contains(github.event.pull_request.labels.*.name, 'ai-fill')
+    # Only fire on PRs that look like bot-generated ai-fill output: either
+    # the `ai-fill` label OR a head branch from one of the Coding Agent
+    # bots. Hand-written registry PRs from the maintainer skip this check.
+    # (Pattern matches maf-ai-semantic-review.yml — keeps both rung-1 and
+    # rung-2 checks consistent.)
+    if: >
+      contains(github.event.pull_request.labels.*.name, 'ai-fill') ||
+      startsWith(github.head_ref, 'claude/') ||
+      startsWith(github.head_ref, 'copilot/') ||
+      startsWith(github.head_ref, 'codex/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
