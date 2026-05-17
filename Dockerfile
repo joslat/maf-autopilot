@@ -33,14 +33,12 @@ WORKDIR /src
 # items do not have a version specified"). global.json pins the SDK band.
 COPY Directory.Build.props Directory.Packages.props global.json ./
 
-# Copy only the files needed to restore — better layer caching.
-COPY src/maf-autopilot/maf-autopilot.csproj src/maf-autopilot/
-COPY src/maf-autopilot/*.cs src/maf-autopilot/
-COPY src/maf-autopilot/Tools/ src/maf-autopilot/Tools/
-COPY src/maf-autopilot/Prompts/ src/maf-autopilot/Prompts/
-COPY src/maf-autopilot/Resources/ src/maf-autopilot/Resources/
-COPY src/maf-autopilot/Data/ src/maf-autopilot/Data/
-COPY src/maf-autopilot/Scaffolding/ src/maf-autopilot/Scaffolding/
+# Copy the whole MCP server project in one shot — `.dockerignore` already
+# excludes bin/obj/test-projects so this stays lean. Switched from per-folder
+# COPYs after the docker-publish v1.0.0 run failed because the Commands/
+# folder wasn't enumerated. Folder-by-folder COPYs are fragile — any new
+# subfolder silently breaks the image build. Single COPY is robust.
+COPY src/maf-autopilot/ src/maf-autopilot/
 
 # Embedded resources required for `<EmbeddedResource>` in the csproj.
 COPY .github/ .github/
