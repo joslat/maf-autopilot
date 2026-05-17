@@ -27,6 +27,12 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
+# Repo-root build-influencing files. CRITICAL: csproj uses Central Package
+# Management (CPM) — package versions live in Directory.Packages.props, NOT
+# in the csproj. Without these COPYs, restore fails NU1015 ("PackageReference
+# items do not have a version specified"). global.json pins the SDK band.
+COPY Directory.Build.props Directory.Packages.props global.json ./
+
 # Copy only the files needed to restore — better layer caching.
 COPY src/maf-autopilot/maf-autopilot.csproj src/maf-autopilot/
 COPY src/maf-autopilot/*.cs src/maf-autopilot/
