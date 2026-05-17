@@ -36,7 +36,7 @@ public sealed class DraftIssueTool
         _registry = registry;
     }
 
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
         Assemble a `microsoft/agent-framework` GitHub-issue-ready markdown body
         for something that looks like a MAF bug. Inspects the user's repo to
@@ -140,7 +140,7 @@ public sealed class DraftIssueTool
         else
         {
             sb.AppendLine("- No registry entries matched the symptom or snippet.");
-            sb.AppendLine("- This appears to be a **novel** pattern. After upstream triage, please consider opening a follow-up so we can add a registry entry — that's the `migration-retrospective` skill's job.");
+            sb.AppendLine("- This appears to be a **novel** pattern. After upstream triage, please consider opening a follow-up so we can add a registry entry — that's the `maf-migration-retrospective` skill's job.");
         }
         sb.AppendLine();
 

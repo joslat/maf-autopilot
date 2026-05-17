@@ -136,7 +136,7 @@ Top fixes (ordered by impact):
 ## Phase T registry corrections (real findings from this dogfood)
 
 Building this sample surfaced **three drift points between the
-`obsolete-api-registry/registry.yaml` and the real MAF 1.3.0 surface**.
+`maf-obsolete-api-registry/registry.yaml` and the real MAF 1.3.0 surface**.
 These are exactly the kind of corrections Phase T was supposed to produce.
 
 ### 1. `MAF130-SESSION-001` references `AgentThread`, which is REMOVED

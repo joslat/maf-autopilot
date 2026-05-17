@@ -181,7 +181,7 @@ jobs:
           dotnet tool install --global maf-autopilot --prerelease \
             || dotnet tool update --global maf-autopilot --prerelease
 
-          REGISTRY=".github/skills/obsolete-api-registry/registry.yaml"
+          REGISTRY=".github/skills/maf-obsolete-api-registry/registry.yaml"
           TMP_ENTRIES="/tmp/draft-registry-entries.yaml"
 
           # Run extractor for each MAF package — append concatenated output.
@@ -252,7 +252,7 @@ jobs:
           git add .maf-version \
                   docs/compatibility-matrix.md \
                   guides/*.md \
-                  .github/skills/obsolete-api-registry/registry.yaml
+                  .github/skills/maf-obsolete-api-registry/registry.yaml
 
           # Bail cleanly if every preceding step was a no-op (e.g. dotnet-inspect
           # diff found nothing additive; matrix row already present; etc.).

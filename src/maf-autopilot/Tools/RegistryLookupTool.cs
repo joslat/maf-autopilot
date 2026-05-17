@@ -21,21 +21,20 @@ public sealed class RegistryLookupTool
         _registry = registry;
     }
 
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
-        Retrieve the full details for a specific MAF obsolete-API registry entry by its ID.
+        Retrieve the full details for a specific MAF obsolete-API registry entry by ID.
+
+        Use this when you know the registry entry ID (e.g., MAF130-FAN-IN-001) and want
+        the full fix recipe. For symbol-name lookup (you have the API name, not the ID),
+        use MafApiSafety. To list all entry IDs, use MafRegistryList.
 
         Entry IDs follow the pattern: MAF{version}-{AREA}-{NNN}
         Examples: MAF130-FAN-IN-001, MAF130-SESSION-001, MAF130-THREAD-001
 
-        Returns the full entry including:
-          - Obsolete and replacement signatures
-          - Before/after code examples
-          - Fix description
-          - CS warning code (CS0618 / CS0246 / RUNTIME_SILENT)
-          - Guide section reference
-          - Whether dotnet-inspect can detect it (usually: No)
-          - Notes from real migrations
+        Returns the full entry including: obsolete/replacement signatures, before/after
+        code examples, fix description, CS warning code, guide section reference, and
+        migration notes.
         """)]
     public string MafRegistryLookup(
         [Description("Registry entry ID, e.g. MAF130-FAN-IN-001. Case-insensitive.")] string entryId)
@@ -60,12 +59,16 @@ public sealed class RegistryLookupTool
         return RegistryService.FormatEntry(entry);
     }
 
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
-        List all entry IDs in the MAF obsolete-API registry.
+        List all entry IDs in the MAF obsolete-API registry with a one-line summary each.
 
         Use this to discover what's in the registry before calling MafRegistryLookup,
-        or to verify that a specific pattern is covered.
+        or to verify a specific pattern is covered. For symbol-based search (you have
+        the API name), use MafApiSafety. For a full entry, use MafRegistryLookup.
+
+        Returns markdown with entry ID, type, CS warning code, and one-line description
+        for each registry entry.
         """)]
     public string MafRegistryList()
     {

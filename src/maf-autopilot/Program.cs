@@ -14,7 +14,7 @@ using ModelContextProtocol.Server;
 //   maf-autopilot doctor [path]              — one-command repo health report (A/B/C/F grade)
 if (args.Length > 0 && args[0] == "init")
 {
-    var exitCode = await InitCommand.RunAsync();
+    var exitCode = await InitCommand.RunAsync(args);
     Environment.Exit(exitCode);
     return; // unreachable; satisfies compiler
 }

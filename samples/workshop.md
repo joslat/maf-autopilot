@@ -1,15 +1,32 @@
 # maf-autopilot Workshop — From Zero to Migrated Codebase
 
-> **Three audiences, one document:**
+> **Four entry points:**
 >
 > | Audience | What to read | Time |
 > |---|---|---|
 > | "I have 30 seconds, what is this?" | The animated GIFs at the top of `/README.md` | 30 sec |
+> | "Give me a 2-minute live teaser" | [Find the Bug](#find-the-bug-2-minute-audience-teaser) below | 2 min |
 > | "Show me the wow in 5-10 minutes" | [⚡ Quick Speedrun](#-quick-speedrun--5-10-minutes-of-wow) below | 5-10 min |
 > | "I want the full hands-on tour" | [Full workshop](#full-workshop-50-minutes) below | ~50 min |
 > | "I'm going to demo or record this" | [Recording / Demo Guide](#recording--demo-guide) at the end | reference |
 >
 > **Total document length:** long — but you only ever need ONE section based on your audience.
+
+---
+
+## Find the Bug — 2-minute audience teaser
+
+> **Use this** before the full speedrun to give the audience a visceral sense of what "invisible bugs" means. See [`samples/find-the-bug/`](./find-the-bug/) for the full facilitator script, snippets, and answer key.
+
+Three 20-line C# snippets. Each has ONE subtle MAF anti-pattern. You have 30 seconds to spot all three — no compiling, no looking things up. Then run the toolkit:
+
+```bash
+maf-autopilot doctor samples/find-the-bug/
+```
+
+It finds them in ~850 ms. See the [answer key](./find-the-bug/answer-key.md) for what each bug is and how the toolkit catches it.
+
+**Facilitator note:** This is the fastest way to land the core value proposition — "even senior MAF developers miss these; the toolkit doesn't."
 
 ---
 
@@ -42,7 +59,7 @@ You need exactly two things:
 dotnet --version          # should print 8.x, 9.x, or 10.x
 
 # 2. The maf-autopilot global tool:
-dotnet tool install -g maf-autopilot --prerelease
+dotnet tool install -g maf-autopilot
 
 # Verify:
 maf-autopilot --version
@@ -104,7 +121,7 @@ git restore samples/maf-1.3-sample/
 | **VS Code Insiders** (or stable) | MCP server + Copilot Chat client | https://code.visualstudio.com/insiders/ |
 | **GitHub Copilot subscription** | needed to use `@maf-*` agents and `/maf-*` prompts | any Copilot tier |
 | **.NET 8 SDK or later** | builds the sample (sample targets `net8.0`) | https://dotnet.microsoft.com/download |
-| **`maf-autopilot` global tool** (prerelease) | the MCP server itself | `dotnet tool install -g maf-autopilot --prerelease` |
+| **`maf-autopilot` global tool** | the MCP server itself | `dotnet tool install -g maf-autopilot` |
 | _(optional)_ Azure OpenAI deployment | only needed for `--run` mode of the sample; not needed for the workshop | https://portal.azure.com |
 
 Verify the tool is on PATH — install only if missing:
@@ -113,23 +130,23 @@ Verify the tool is on PATH — install only if missing:
 
 ```bash
 if ! command -v maf-autopilot >/dev/null 2>&1; then
-  dotnet tool install -g maf-autopilot --prerelease
+  dotnet tool install -g maf-autopilot
   # If PATH still misses after install: export PATH="$HOME/.dotnet/tools:$PATH"
 fi
 maf-autopilot --version
-# → maf-autopilot 1.3.0-alpha-6 (or later)
+# → maf-autopilot 1.0.0 (or later)
 ```
 
 **PowerShell:**
 
 ```powershell
 if (-not (Get-Command maf-autopilot -ErrorAction SilentlyContinue)) {
-    dotnet tool install -g maf-autopilot --prerelease
+    dotnet tool install -g maf-autopilot
 }
 maf-autopilot --version
 ```
 
-> **Already installed?** `dotnet tool update -g maf-autopilot --prerelease` for the latest alpha.
+> **Already installed?** `dotnet tool update -g maf-autopilot` for the latest alpha.
 
 ### Where the workshop fits in the docs
 
@@ -205,7 +222,7 @@ VS Code Insiders auto-detects this file. After saving, open Copilot Chat and ver
 - The `/maf-audit`, `/maf-migrate`, `/maf-cs0618-hunt` slash commands appear in `/`-completions.
 - `maf://constraints`, `maf://guide`, `maf://registry`, `maf://rules`, `maf://skills?name=…` are referenceable as resources.
 
-> **Troubleshooting:** if no MCP is detected, check `View → Output → MCP` for the server log. Most commonly: `maf-autopilot` is not on PATH — re-run `dotnet tool install -g maf-autopilot --prerelease` and reopen VS Code.
+> **Troubleshooting:** if no MCP is detected, check `View → Output → MCP` for the server log. Most commonly: `maf-autopilot` is not on PATH — re-run `dotnet tool install -g maf-autopilot` and reopen VS Code.
 
 ---
 
@@ -277,7 +294,7 @@ Each row below is one Copilot Chat prompt. Run them sequentially — each surfac
 The toolkit ships TWO products: the MCP server (scan-time) and a separate **`maf-autopilot.Analyzers` NuGet** (write-time). The sample's csproj already references it:
 
 ```xml
-<PackageReference Include="maf-autopilot.Analyzers" Version="1.3.0-alpha-1">
+<PackageReference Include="maf-autopilot.Analyzers" Version="1.0.0">
   <IncludeAssets>analyzers; build</IncludeAssets>
   <PrivateAssets>all</PrivateAssets>
 </PackageReference>
@@ -524,7 +541,7 @@ rm -f samples/maf-1.3-sample/docs/migration-plan.md
 ### Where to go next
 
 - **Fork the sample.** Add your own anti-patterns + re-run the workshop to test new toolkit rules.
-- **Try the analyzer NuGet** in your own project: `dotnet add package maf-autopilot.Analyzers --prerelease`.
+- **Try the analyzer NuGet** in your own project: `dotnet add package maf-autopilot.Analyzers`.
 - **Read the MAF migration guides** in [`/guides/`](../guides/) — `maf-1.3.0`, `maf-1.4.0`, `maf-1.5.0`, plus `maf-current-migration-guide.md` (auto-regenerated).
 - **Browse the 7 Copilot Chat agents:** `@maf`, `@maf-auditor`, `@maf-migration`, `@maf-best-practice-reviewer`, `@maf-incident-responder`, `@maf-rollback`, `@maf-onboarding`.
 - **See [`/docs/next-steps.md` Phase X](../docs/next-steps.md#phase-x--things-only-you-can-do-follow-along-guide)** for the 1.0 launch checklist + post-1.0 roadmap.

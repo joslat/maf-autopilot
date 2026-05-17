@@ -43,7 +43,7 @@ public sealed class RegressionPlanTool
 
     public RegressionPlanTool() : this(new RegistryService()) { }
 
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
         Generate an ordered Mermaid migration roadmap from `fromVersion` to
         `toVersion`. Walks every intermediate version, lists the registry

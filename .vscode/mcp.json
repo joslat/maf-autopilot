@@ -23,7 +23,7 @@
         "--"
       ],
       "env": {
-        "MAF_REGISTRY_PATH": "${workspaceFolder}/.github/skills/obsolete-api-registry/registry.yaml"
+        "MAF_REGISTRY_PATH": "${workspaceFolder}/.github/skills/maf-obsolete-api-registry/registry.yaml"
       }
     }
   }

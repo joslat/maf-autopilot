@@ -20,7 +20,7 @@ namespace MafAutopilot.Tools;
 [McpServerToolType]
 public sealed class AntiPatternScannerTool
 {
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
         Scan a MAF 1.3.0 codebase for known anti-patterns (security, concurrency,
         observability, identity, topology). Distinct from migration tooling —

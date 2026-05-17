@@ -18,18 +18,17 @@ namespace MafAutopilot.Tools;
 [McpServerToolType]
 public sealed class TourTool
 {
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
-        Return a structured catalogue of every maf-autopilot capability — MCP tools,
-        agents, resources, prompts — with a one-line "when to use" each. Designed
-        for new users asking "what can this thing do?". Output is markdown suitable
-        for direct display in chat.
+        List every maf-autopilot capability — MCP tools, agents, resources, prompts —
+        with a one-line "when to use" each. Use this when a new user asks "what can
+        this thing do?". For the same content as a static resource, read maf://help.
 
         Input:
           - section: optional filter — "tools" | "agents" | "resources" | "prompts" | "all"
                      (default: "all").
 
-        Returns a markdown report.
+        Returns markdown grouped by section with one-line "when to use" per item.
         """)]
     public string MafTour(
         [Description("Filter: \"tools\" | \"agents\" | \"resources\" | \"prompts\" | \"all\" (default: all).")]

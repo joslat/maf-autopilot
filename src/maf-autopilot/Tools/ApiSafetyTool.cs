@@ -26,12 +26,15 @@ public sealed class ApiSafetyTool
         _registry = registry;
     }
 
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
-        Check whether a MAF API is safe to use in MAF 1.3.0.
+        Check whether a single MAF API symbol is safe to use — returns SAFE or UNSAFE
+        with the exact fix recipe from the curated registry.
 
-        Searches the obsolete-API registry for known CS0618 warnings, silent runtime failures,
-        and removed types (CS0246) matching the given API name.
+        Use this tool when you have ONE symbol name (method, type, or partial call) and want
+        to know if it's known-broken. For full-project compiler-driven scanning, use
+        MafRunCs0618Hunt. For looking up a known registry entry by ID (e.g.,
+        MAF130-FAN-IN-001), use MafRegistryLookup.
 
         Input can be:
           - A method name:              "AddFanInBarrierEdge"
@@ -39,10 +42,9 @@ public sealed class ApiSafetyTool
           - A partial call expression:  "agent.SerializeSession"
           - A full class.method:        "WorkflowBuilder.AddFanInBarrierEdge"
 
-        Returns SAFE (no known issues) or UNSAFE (with the registry entry, fix, and guide section).
-
-        IMPORTANT: This tool only covers *known* issues in the registry. For a complete check,
-        also run: dotnet build 2>&1 | Select-String "warning CS0618|error CS0246"
+        Returns SAFE (no known registry issues) or UNSAFE (with entry ID, fix description,
+        before/after code, and guide section). Only covers known registry entries — also
+        run the compiler for a complete check.
         """)]
     public string MafApiSafety(
         [Description("API name to check — method name, type name, or partial call expression.")] string apiName)

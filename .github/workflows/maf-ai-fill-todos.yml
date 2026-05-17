@@ -87,7 +87,7 @@ jobs:
 
           The watcher just committed an auto-generated update with:
 
-          - **\`.github/skills/obsolete-api-registry/registry.yaml\`** — new entries
+          - **\`.github/skills/maf-obsolete-api-registry/registry.yaml\`** — new entries
             whose \`id\` starts with **\`MAF${DIGITS}-\`** (e.g. \`MAF${DIGITS}-AGENT-001\`).
             Each entry has TODO fields: \`fix_description\`, \`example_before\`,
             \`example_after\`, \`guide_section\`. Each entry's \`notes:\` field

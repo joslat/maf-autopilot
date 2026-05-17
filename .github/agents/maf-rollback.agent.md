@@ -27,8 +27,8 @@ If any prerequisite fails, **stop and surface the gap to the user**. Do not impr
 
 ```
 maf://guide                                       — the 1.3.0 migration guide; reverse every "after" → "before"
-.github/skills/obsolete-api-registry/SKILL.md     — registry entries map 1.3.0 → 1.2.0 directionally
-.github/skills/migration-plan-creator/SKILL.md    — tracking-table template (you'll mirror it)
+.github/skills/maf-obsolete-api-registry/SKILL.md     — registry entries map 1.3.0 → 1.2.0 directionally
+.github/skills/maf-migration-plan-creator/SKILL.md    — tracking-table template (you'll mirror it)
 ```
 
 ## Rollback Workflow

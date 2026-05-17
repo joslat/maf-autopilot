@@ -24,7 +24,7 @@ on:
   pull_request:
     types: [opened, synchronize, labeled]
     paths:
-      - '.github/skills/obsolete-api-registry/registry.yaml'
+      - '.github/skills/maf-obsolete-api-registry/registry.yaml'
 
 permissions:
   contents: read

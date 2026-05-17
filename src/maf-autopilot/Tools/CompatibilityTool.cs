@@ -17,18 +17,20 @@ namespace MafAutopilot.Tools;
 [McpServerToolType]
 public sealed class CompatibilityTool
 {
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
-        Return compatibility information for a specific MAF version. Shows which
-        .NET runtime, Azure SDK, `Microsoft.Extensions.AI`, and Generators-package
-        versions are required or compatible.
+        Look up compatibility requirements for a specific MAF version: required .NET
+        runtime, Azure SDK, Microsoft.Extensions.AI, and Generators-package versions.
+
+        Use this BEFORE bumping MAF in your csproj to confirm your runtime/SDK can host
+        the target version. For migration steps between versions, use MafMigrationPath.
 
         Input:
           - mafVersion: SemVer string, e.g. "1.3.0" / "1.2.0" / "1.1.0" / "1.0.0".
 
-        Returns a structured markdown summary. If the version isn't known, returns
-        the list of known versions + a pointer to `docs/compatibility-matrix.md`
-        and `maf-release-watcher.yml` (which auto-adds rows as new MAF ships).
+        Returns markdown with: .NET runtime, Azure SDK, Extensions.AI, and Generators
+        package version requirements. If the version isn't known, returns the list of
+        known versions + a pointer to docs/compatibility-matrix.md.
         """)]
     public string MafCompatibility(
         [Description("MAF version to query, e.g. '1.3.0'.")] string mafVersion)

@@ -74,7 +74,7 @@ When a new MAF version ships:
 1. `maf-release-watcher` GitHub Actions workflow detects the new version (weekly schedule or manual dispatch)
 2. Runs `nuget-diff-analyzer` skill for the version delta
 3. Updates this file with a new row
-4. Updates `obsolete-api-registry/registry.yaml` with new CS0618 entries
+4. Updates `maf-obsolete-api-registry/registry.yaml` with new CS0618 entries
 5. Adds a new section to `guides/maf-1.3.0-migration-guide.md` (or creates a new guide for the new version)
 6. Creates a PR for human review
 

@@ -1,6 +1,6 @@
 ---
 name: maf-anti-pattern-scanner
-description: "Scans a MAF 1.3.0 codebase for known anti-patterns AFTER migration is complete. Detects insecure credential usage (DefaultAzureCredential, hard-coded keys), unsafe defaults (EnableSensitiveData=true in non-dev), thread-unsafe state in AIContextProvider, missing observability (UseOpenTelemetry not wired), and missing identity (ManagedIdentityCredential preferred over secret-based auth). Counterpart to migration tooling: this is steady-state best-practice review."
+description: "Scans a MAF 1.3.0 codebase for known anti-patterns AFTER migration is complete. Prefer the MCP tool MafScanAntiPatterns for one-shot scans; this skill is for understanding the rule taxonomy or contributing new anti-pattern rules. Detects insecure credential usage (DefaultAzureCredential, hard-coded keys), unsafe defaults (EnableSensitiveData=true in non-dev), thread-unsafe state in AIContextProvider, missing observability (UseOpenTelemetry not wired), and missing identity (ManagedIdentityCredential preferred over secret-based auth). Counterpart to migration tooling: this is steady-state best-practice review."
 ---
 
 # maf-anti-pattern-scanner
@@ -15,8 +15,8 @@ The migration tooling answers "is this code on MAF 1.3.0?" This skill answers a 
 
 ## When NOT to use
 
-- For migration discovery — that's `obsolete-api-registry` + `cs0618-hunter`. This skill assumes you're already on 1.3.0.
-- For runtime correctness checks — that's `fan-out-validator` / `fan-in-static-analyzer`. This skill checks *idiom and configuration*, not topology correctness.
+- For migration discovery — that's `maf-obsolete-api-registry` + `cs0618-hunter`. This skill assumes you're already on 1.3.0.
+- For runtime correctness checks — that's `maf-fan-out-validator`. This skill checks *idiom and configuration*, not topology correctness.
 
 ## Anti-patterns covered
 

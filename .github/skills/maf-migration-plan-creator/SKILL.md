@@ -1,6 +1,6 @@
 ---
-name: migration-plan-creator
-description: "Generates a complete, ready-to-execute MAF migration plan (migration-plan.md) for any .NET codebase. Use this skill when no migration plan exists yet, or when the existing plan needs to be regenerated after a codebase audit. Provides the canonical template, task ID conventions, and the process for populating each task row from an audit scan."
+name: maf-migration-plan-creator
+description: "Generates a complete, ready-to-execute MAF migration plan (migration-plan.md) for any .NET codebase. Used by @maf-auditor (which calls this skill after scanning to produce the plan). Use this skill directly when no migration plan exists yet, or when the existing plan needs to be regenerated after a codebase audit. Provides the canonical template, task ID conventions, and the process for populating each task row from an audit scan."
 ---
 
 # migration-plan-creator
@@ -22,8 +22,8 @@ Before filling the template, you need:
 1. **Package inventory** — current versions from all `.csproj` files
 2. **Source pattern scan results** — from `maf-auditor` Phase C (what old patterns exist, which files, how many occurrences)
 3. **API diff output** — from `dotnet-inspect diff` (Phase B)
-4. **CS0618 pre-check results** — from `obsolete-api-registry` cross-reference (Phase D)
-5. **Fan-out topology** — from `fan-out-validator` pre-check (Phase E)
+4. **CS0618 pre-check results** — from `maf-obsolete-api-registry` cross-reference (Phase D)
+5. **Fan-out topology** — from `maf-fan-out-validator` pre-check (Phase E)
 
 ### Step 2 — Assign Task IDs
 

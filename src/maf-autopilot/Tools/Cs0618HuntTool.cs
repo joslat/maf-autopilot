@@ -30,7 +30,7 @@ public sealed class Cs0618HuntTool
         _registry = registry;
     }
 
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false)]
     [Description("""
         Run a CS0618 / CS0246 hunt against a .NET project.
 
@@ -248,7 +248,7 @@ public sealed class Cs0618HuntTool
             }
             else
             {
-                sb.AppendLine("_No registry match — escalate via `migration-retrospective` skill so a new entry can be added._");
+                sb.AppendLine("_No registry match — escalate via `maf-migration-retrospective` skill so a new entry can be added._");
             }
             sb.AppendLine();
         }

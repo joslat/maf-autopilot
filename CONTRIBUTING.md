@@ -1,10 +1,12 @@
-# Contributing to maf-autopilot
+# Contributing to maf-autopilot (MAF Doctor)
 
 Thanks for considering a contribution. This guide covers the four most common contribution shapes — a registry entry, a skill, an agent change, and an MCP server tool — plus the project-wide conventions that keep them coherent.
 
+See [`AGENTS.md`](./AGENTS.md) for the full repo layout and location of every source area.
+
 ## Before you start
 
-1. Read **[`docs/maf-migration-toolkit-plan.md`](docs/maf-migration-toolkit-plan.md)** — the 74-row tracking table is the single source of truth for what is done, in progress, and pending. Find your work there or add a new row.
+1. Read **[`AGENTS.md`](./AGENTS.md)** — repo layout: where tools, skills, agents, workflows, registry, and samples all live.
 2. Read **[`docs/project-status-and-vision.md`](docs/project-status-and-vision.md)** — stage assessment + broader vision. New work should advance the prioritised plan, not start a parallel track.
 3. **Check upstream before designing workarounds.** The single biggest project lesson (2026-05-11): `dotnet-inspect`'s `[Obsolete]`-overload limitation — the gap this toolkit was originally built to work around — was closed in upstream v0.7.8, and we kept pinning v0.7.6 for months. **Always check the upstream tool's release notes before designing a skill around a limitation.**
 
@@ -24,7 +26,7 @@ dotnet test maf-autopilot.sln            # 474 tests × 3 TFMs = 1422 test execu
 
 All test executions must pass. CI gates any PR that breaks them.
 
-## Adding a registry entry (`.github/skills/obsolete-api-registry/registry.yaml`)
+## Adding a registry entry (`.github/skills/maf-obsolete-api-registry/registry.yaml`)
 
 Each entry maps a real CS0618 / CS0246 / silent-runtime-failure pattern to a deterministic fix. The schema is enforced at runtime by `Data/RegistryModels.cs`.
 
@@ -40,19 +42,19 @@ Skills are markdown files Copilot Chat loads into the agent's context. Conventio
 
 1. **Frontmatter is mandatory:** `name`, `description`, optionally `version`. Description should be ≤ 2 sentences and start with a verb ("Detects…", "Validates…", "Generates…").
 2. **Lead with a Quick Decision Tree.** Tell Copilot when to use this skill vs another. Examples: `dotnet-inspect/SKILL.md` decision tree.
-3. **Cross-reference, don't duplicate.** If your skill depends on the registry, link to `obsolete-api-registry`; don't restate the entries.
+3. **Cross-reference, don't duplicate.** If your skill depends on the registry, link to `maf-obsolete-api-registry`; don't restate the entries.
 4. **Embed in the MCP server.** Add an `<EmbeddedResource ... LogicalName="skills/<name>.md" />` line to `src/maf-autopilot/maf-autopilot.csproj`, add `<name>` to `AllowedSkillNames` in `Resources/MafResources.cs`, and add a test row to `MafResourcesTests.GetSkill_AllAllowlistedNames_Resolve`.
 5. **The agents reference skills explicitly.** Add a row to the "Skill Selection Guide" table in `.github/agents/maf-migration.agent.md` (and `maf-auditor.agent.md` if pre-migration).
 
 ### Skill naming convention
 
-The skill directory namespace is already MAF-scoped: it lives under `.github/skills/` AND is served via the `maf://skills?name=...` URI. **Do not double-prefix** with `maf-` when the topic is unambiguous in that namespace.
+The skill directory namespace is MAF-scoped: it lives under `.github/skills/` AND is served via the `maf://skills?name=...` URI.
 
-- **No prefix** when the skill is about a **complementary tool** applied to MAF (e.g., `dotnet-inspect`, `nuget-diff-analyzer`, `cs0618-hunter`). The unprefixed name is honest about the subject.
-- **No prefix** when the skill name is **only meaningful inside the MAF context** in this repo (e.g., `obsolete-api-registry`, `migration-plan-creator`, `migration-retrospective`). There is no other obsolete-API registry / migration plan / retrospective in this namespace — the prefix would be redundant.
-- **Prefix with `maf-`** when the skill is intrinsically about MAF surface or behaviour and the unprefixed name would read as a general-CS term (e.g., `maf-anti-pattern-scanner`, `maf-migration-guide`, `maf-release-watcher`). The prefix prevents misreading as a generic linter / guide / watcher.
+- **No prefix** when the skill is about a **complementary external tool** applied to MAF (e.g., `dotnet-inspect`, `nuget-diff-analyzer`, `cs0618-hunter`). The unprefixed name is honest about the subject and matches the tool's own name.
+- **Prefix with `maf-`** when the skill is about MAF-specific concepts, workflows, or registries (e.g., `maf-fan-out-validator`, `maf-migration-plan-creator`, `maf-migration-retrospective`, `maf-obsolete-api-registry`, `maf-workflow-smoke-tester`). This clarifies the skill is MAF-domain knowledge, not a general CS concept.
+- **Already prefixed:** `maf-anti-pattern-scanner`, `maf-migration-guide`, `maf-release-watcher`, `maf-issue-reporter`.
 
-The convention is **not** "every MAF-related skill gets `maf-`". It's "prefix when the unprefixed name is ambiguous outside this namespace; otherwise don't." Apply the same logic when adding new skills.
+When adding new skills: if the skill wraps an external tool by its own name → no prefix. If the skill is about MAF workflows, patterns, registries, or domain knowledge → use `maf-` prefix.
 
 ## Adding an agent (`.github/agents/<name>.agent.md`)
 
@@ -70,7 +72,12 @@ Agents are GitHub Copilot Chat agents (Markdown + YAML frontmatter). The three e
 
 1. Decorate with `[McpServerToolType]` on the class and `[McpServerTool]` on the method.
 2. **Inject `RegistryService` via constructor** — it's a DI singleton.
-3. **Description block is contract.** The `[Description("""...""")]` is what the model sees; write it like a function docstring for a foreign reader. Include input format, output format, and a "when to call this" sentence.
+3. **Description block is contract.** The `[Description("""...""")]` is what the model sees; write it like a function docstring for a foreign reader. Score at least 4/5 on this rubric:
+   1. **Verb-first opening** — "Scan", "Apply", "Find", "Validate", "Run" (NOT "Returns...", "Provides...")
+   2. **When-to-use clarity** — what's the user intent that should pick THIS tool over its neighbors?
+   3. **80-char strong opening** — many MCP clients truncate; the first sentence must stand alone
+   4. **Disambiguated from neighbors** — if `MafFoo` and `MafBar` overlap, say which goes first when
+   5. **Machine-routable returns** — "Returns markdown with: file, line, severity, fix" (not "Returns a report")
 4. **Tool name convention.** The SDK emits PascalCase from the C# method name (`MafApiSafety` → exposed as `MafApiSafety`). Use PascalCase in docs.
 5. **Tests.** Add `<ToolName>Tests.cs` in `src/maf-autopilot.Tests/`. Cover: empty input → friendly error; happy path; the regression case that motivated the tool.
 

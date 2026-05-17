@@ -15,8 +15,8 @@ namespace MafAutopilot.Resources;
 ///   maf://guide        — full MAF 1.3.0 migration guide
 ///
 /// Template resource (one per skill):
-///   maf://skills?name=&lt;skillName&gt;  — any of the 13 skill SKILL.md files
-/// </summary>
+///   maf://skills?name=&lt;skillName&gt;  — any of the 12 skill SKILL.md files
+///</summary>
 [McpServerResourceType]
 public static class MafResources
 {
@@ -120,10 +120,11 @@ public static class MafResources
         Title = "MAF Skill Document")]
     [Description(
         "A specific MAF skill document. Pass name= one of: " +
-        "cs0618-hunter, dotnet-inspect, fan-in-static-analyzer, fan-out-validator, " +
-        "maf-anti-pattern-scanner, maf-issue-reporter, maf-migration-guide, " +
-        "maf-release-watcher, migration-plan-creator, migration-retrospective, " +
-        "nuget-diff-analyzer, obsolete-api-registry, workflow-smoke-tester")]
+        "cs0618-hunter, dotnet-inspect, maf-anti-pattern-scanner, " +
+        "maf-fan-out-validator, maf-issue-reporter, maf-migration-guide, " +
+        "maf-migration-plan-creator, maf-migration-retrospective, " +
+        "maf-obsolete-api-registry, maf-release-watcher, " +
+        "maf-workflow-smoke-tester, nuget-diff-analyzer")]
     public static string GetSkill(string name)
     {
         if (!AllowedSkillNames.TryGetValue(name ?? string.Empty, out var canonical))
@@ -144,17 +145,16 @@ public static class MafResources
         {
             "cs0618-hunter",
             "dotnet-inspect",
-            "fan-in-static-analyzer",
-            "fan-out-validator",
             "maf-anti-pattern-scanner",
+            "maf-fan-out-validator",
             "maf-issue-reporter",
             "maf-migration-guide",
+            "maf-migration-plan-creator",
+            "maf-migration-retrospective",
+            "maf-obsolete-api-registry",
             "maf-release-watcher",
-            "migration-plan-creator",
-            "migration-retrospective",
+            "maf-workflow-smoke-tester",
             "nuget-diff-analyzer",
-            "obsolete-api-registry",
-            "workflow-smoke-tester",
         };
 
     private static string ReadEmbedded(string logicalName)

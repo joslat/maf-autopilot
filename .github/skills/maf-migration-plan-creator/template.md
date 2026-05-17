@@ -274,7 +274,7 @@ dotnet build 2>&1 | Select-String "warning CS0618"
 
 | Risk | Severity | Mitigation |
 |------|----------|-----------|
-| Fan-out handler returns void — fan-in starves silently | High | `fan-out-validator` skill mandatory in Phase 3 |
+| Fan-out handler returns void — fan-in starves silently | High | `maf-fan-out-validator` skill mandatory in Phase 3 |
 | Wrong `AddFanInBarrierEdge` overload — topology reversed | High | `cs0618-hunter` mandatory in Phase 3 |
 | DevUI removed in 1.3.0 — unguarded references break build | Medium | T9.x tasks guard with `#if DEVUI_ENABLED` |
 | Source generator not installed — executor class doesn't compile | Medium | T1.2 adds Generators package |

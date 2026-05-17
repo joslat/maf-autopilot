@@ -21,8 +21,8 @@ You map the symptom to the *minimal* MAF pattern responsible, propose the fix, a
 ```
 maf://constraints                              — hard rules; check every fix against these
 .github/skills/maf-anti-pattern-scanner/SKILL.md  — rule list cross-reference
-.github/skills/fan-out-validator/SKILL.md         — silent-starvation diagnostic flow
-.github/skills/obsolete-api-registry/SKILL.md     — search procedure for the registry
+.github/skills/maf-fan-out-validator/SKILL.md         — silent-starvation diagnostic flow
+.github/skills/maf-obsolete-api-registry/SKILL.md     — search procedure for the registry
 ```
 
 ## Response Workflow
@@ -56,7 +56,7 @@ A "fix" from this agent has three parts:
 2. **Why it failed in prod but compiled clean** — one or two sentences. Crucial for incident retrospectives.
 3. **The verification step** — the exact tool call the user can run to confirm the fix landed (e.g., `MafValidateFanOut` after a fan-out handler return-type change).
 
-If the registry has no entry for the pattern, call **`MafApiSafety(<symbol>)`** to confirm it's not just a registry gap, then escalate via `migration-retrospective` skill so a new entry can be added. This is the canonical "feedback loop" path — the next user with the same incident gets a deterministic match.
+If the registry has no entry for the pattern, call **`MafApiSafety(<symbol>)`** to confirm it's not just a registry gap, then escalate via `maf-migration-retrospective` skill so a new entry can be added. This is the canonical "feedback loop" path — the next user with the same incident gets a deterministic match.
 
 ### Phase D — Post-mortem prompt
 

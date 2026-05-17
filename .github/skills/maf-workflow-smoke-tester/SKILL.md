@@ -1,5 +1,5 @@
 ---
-name: workflow-smoke-tester
+name: maf-workflow-smoke-tester
 description: "Generates structural smoke tests for MAF 1.3.0 workflow patterns. Five categories: fan-out/fan-in completeness, session round-trip, streaming, structured output, tool invocation. Catches the silent runtime failures static analysis cannot."
 ---
 

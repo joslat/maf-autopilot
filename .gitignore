@@ -67,3 +67,10 @@ desktop.ini
 /types.txt
 *.scratch.md
 *.scratch.txt
+
+# --- local-only research and scratch notes ---
+# Findings, competitor analysis, exploration notes that aren't part of the
+# shipped product. Kept out of git deliberately so this stays a personal
+# scratchpad.
+private/
+

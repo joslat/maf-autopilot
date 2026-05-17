@@ -22,7 +22,7 @@ namespace MafAutopilot.Tools;
 [McpServerToolType]
 public sealed class SimulateWorkflowTool
 {
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
         Statically analyze a MAF 1.3.0 workflow's topology — proves whether it
         can complete without silent fan-in starvation. Walks WorkflowBuilder

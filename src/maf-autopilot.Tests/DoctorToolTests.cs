@@ -1,3 +1,4 @@
+using System.Text.Json;
 using MafAutopilot.Tools;
 using Xunit;
 
@@ -185,5 +186,98 @@ public class DoctorToolTests
         // Assert
         Assert.Equal('A', summary.Grade);
         Assert.Empty(summary.TopFixes);
+    }
+
+    // -------------------------------------------------------------------------
+    // JSON output format (format: "json")
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MafDoctor_JsonFormat_ReturnsValidJson()
+    {
+        var tool = new DoctorTool();
+        // Use a path that exists but has no MAF .cs files — should return grade A with valid JSON.
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-json-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var output = tool.MafDoctor(tempDir, format: "json");
+
+            // Must parse as valid JSON
+            using var doc = JsonDocument.Parse(output);
+            var root = doc.RootElement;
+
+            // Required fields
+            Assert.Equal("1", root.GetProperty("schema_version").GetString());
+            var verdict = root.GetProperty("verdict").GetString();
+            Assert.Contains(verdict, new[] { "A", "B", "C", "F" });
+            Assert.True(root.TryGetProperty("errors_count", out _));
+            Assert.True(root.TryGetProperty("warnings_count", out _));
+            Assert.True(root.TryGetProperty("silent_starvation_risks", out _));
+            Assert.True(root.TryGetProperty("top_fixes", out _));
+            Assert.True(root.TryGetProperty("summary_md", out _));
+
+            // Grade A for empty dir
+            Assert.Equal("A", verdict);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void MafDoctor_JsonFormat_DefaultIsMarkdown()
+    {
+        var tool = new DoctorTool();
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-md-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            // Default call (no format param) should return markdown, not JSON
+            var output = tool.MafDoctor(tempDir);
+            Assert.Contains("MAF health grade", output, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("\"schema_version\"", output);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void MafDoctor_JsonFormat_TopFixesHasDiscreteFields()
+    {
+        // Arrange a source that trips MAF-AP-SEC-001
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-fields-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            File.WriteAllText(Path.Combine(tempDir, "Bad.cs"), """
+                using Azure.Identity;
+                public class Bad
+                {
+                    public Bad() { var c = new DefaultAzureCredential(); }
+                }
+                """);
+            var tool = new DoctorTool();
+            var output = tool.MafDoctor(tempDir, format: "json");
+
+            using var doc = JsonDocument.Parse(output);
+            var fixes = doc.RootElement.GetProperty("top_fixes");
+            Assert.True(fixes.GetArrayLength() > 0, "Expected at least one top_fix");
+            var fix = fixes[0];
+
+            Assert.Equal("MAF-AP-SEC-001", fix.GetProperty("rule_id").GetString());
+            Assert.Contains("Bad.cs", fix.GetProperty("file").GetString() ?? "");
+            Assert.True(fix.GetProperty("line").GetInt32() > 0);
+            Assert.False(string.IsNullOrEmpty(fix.GetProperty("issue").GetString()));
+            Assert.False(string.IsNullOrEmpty(fix.GetProperty("fix_description").GetString()));
+            Assert.True(fix.GetProperty("auto_fixable").GetBoolean());
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
     }
 }

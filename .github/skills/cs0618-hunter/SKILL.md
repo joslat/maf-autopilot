@@ -27,7 +27,7 @@ dotnet build 2>&1 | Select-String "warning CS0618"
 
 # Step 2: for each warning, look up the canonical fix in the registry
 # (the LLM should call MafRegistryLookup with the matching entry ID,
-#  or open .github/skills/obsolete-api-registry/registry.yaml)
+#  or open .github/skills/maf-obsolete-api-registry/registry.yaml)
 
 # Step 3: apply the fix; re-run the build; confirm the warning is gone
 

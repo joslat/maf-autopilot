@@ -30,7 +30,7 @@ public sealed class PromptLintTool
     /// <summary>Minimum length above which the refusal-pattern check applies.</summary>
     public const int RefusalCheckMinLength = 500;
 
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
         Scan every agent `Instructions` string in the repo for prompt-quality
         issues. Surfaces: empty prompts, token bloat (> ~2000 tokens of system

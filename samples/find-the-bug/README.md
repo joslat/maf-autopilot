@@ -41,7 +41,7 @@ Then run the toolkit. It finds all 3 in under a second.
   ~20 lines.
 - [`snippet-3.cs`](./snippet-3.cs) — workflow wiring. ~20 lines.
 
-The bugs are real anti-patterns from `.github/skills/obsolete-api-registry/registry.yaml`
+The bugs are real anti-patterns from `.github/skills/maf-obsolete-api-registry/registry.yaml`
 and `src/maf-autopilot/Tools/AntiPatternScannerTool.cs`. Don't read the
 [answer key](./answer-key.md) before the audience does the exercise.
 

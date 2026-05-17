@@ -9,7 +9,7 @@ namespace MafAutopilot.Data;
 /// Load order:
 ///   1. MAF_REGISTRY_PATH environment variable — for local dev override or custom registries.
 ///   2. Embedded resource — bundled at build time from
-///      .github/skills/obsolete-api-registry/registry.yaml.
+///      .github/skills/maf-obsolete-api-registry/registry.yaml.
 ///      This ensures the tool works standalone as a NuGet global tool without external file access.
 /// </summary>
 public sealed class RegistryService

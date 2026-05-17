@@ -22,7 +22,7 @@
 Fan-out executor handlers MUST return ValueTask<T> where T is the message type.
 A void or non-generic ValueTask return produces NO output message.
 The fan-in barrier then starves silently — the workflow exits cleanly but incompletely.
-This is NOT a build error. The only detection is runtime or fan-out-validator skill.
+This is NOT a build error. The only detection is runtime or maf-fan-out-validator skill.
 ```
 
 ```

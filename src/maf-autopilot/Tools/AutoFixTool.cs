@@ -64,7 +64,7 @@ public sealed class AutoFixTool
         return false;
     }
 
-    [McpServerTool]
+    [McpServerTool(Destructive = true, OpenWorld = false)]
     [Description("""
         Deterministically apply the fix for a single registry rule across a codebase.
 
@@ -111,7 +111,7 @@ public sealed class AutoFixTool
         }, new JsonSerializerOptions { WriteIndented = true });
     }
 
-    [McpServerTool]
+    [McpServerTool(Destructive = true, OpenWorld = false)]
     [Description("""
         Apply EVERY supported rewriter across the codebase in dependency-safe
         order — the "fix everything fixable" command. Use this when running

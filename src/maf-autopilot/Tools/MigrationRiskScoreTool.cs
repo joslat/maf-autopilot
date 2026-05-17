@@ -43,7 +43,7 @@ public sealed class MigrationRiskScoreTool
     /// <summary>The score at which a codebase becomes HARD.</summary>
     internal const int HardThreshold = 15;
 
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
         Score the migration-risk of a codebase BEFORE migration starts.
         Returns HARD / MEDIUM / EASY plus the per-category breakdown that

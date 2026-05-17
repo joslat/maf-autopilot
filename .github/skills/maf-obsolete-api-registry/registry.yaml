@@ -2,7 +2,7 @@
 # Machine-readable source of truth for all known CS0618 warnings.
 # Update this file whenever a new CS0618 warning is encountered in any MAF migration.
 #
-# Format: see .github/skills/obsolete-api-registry/SKILL.md
+# Format: see .github/skills/maf-obsolete-api-registry/SKILL.md
 
 schema_version: "1.0"
 target_maf_version: "1.3.0"
@@ -130,7 +130,7 @@ entries:
     dotnet_inspect_detectable: false
     notes: >
       This is not a CS0618 warning — it is a design contract enforced at runtime, not compile time.
-      The only detection method is static analysis (fan-out-validator skill) or runtime testing.
+      The only detection method is static analysis (maf-fan-out-validator skill) or runtime testing.
       This entry is included in the registry because it follows the same detection/fix pattern
       and was discovered during the maf-claims-fraud-guardian migration.
 

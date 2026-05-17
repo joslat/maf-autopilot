@@ -18,7 +18,7 @@ namespace MafAutopilot.Tools;
 [McpServerToolType]
 public sealed class MigrationPathTool
 {
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
         Build an ordered, version-keyed migration plan for a specific version range.
 

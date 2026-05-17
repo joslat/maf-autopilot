@@ -12,12 +12,13 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>maf-autopilot</ToolCommandName>
     <PackageId>maf-autopilot</PackageId>
-    <!-- Version policy: csproj <Version> = latest version on nuget.org.
-         When cutting a new alpha, bump this AND push the workflow_dispatch
+    <!-- Version policy: decoupled from MAF's version progression.
+         1.0.0 = first stable release; supports MAF 1.0 / 1.2 / 1.3 simultaneously.
+         When cutting a new release, bump this AND push the workflow_dispatch
          on `release.yml`. Don't bump locally without pushing — the README
          documents the NuGet version, so any drift confuses users.
-         (See plan #A.7 — version-drift fix landed 2026-05-12.) -->
-    <Version>1.3.0-alpha-3</Version>
+         (See CHANGELOG.md — "Versioning note for alpha users".) -->
+    <Version>1.0.0</Version>
     <Authors>joslat</Authors>
     <Description>MAF autopilot MCP server — Tools + Resources + Prompts + Sampling for MAF 1.3.0 migrations. Answers "is this API safe?", exposes migration guide as resources, and uses sampling for multi-step agentic analysis.</Description>
     <PackageTags>maf;migration;mcp;dotnet;agents</PackageTags>
@@ -60,7 +61,17 @@
       then falls back to this embedded resource.
     -->    <!-- README for NuGet package page -->
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
-    <EmbeddedResource Include="..\..\.github\skills\obsolete-api-registry\registry.yaml"
+
+    <!-- Steering snippets — dropped by `maf-autopilot init` into user repos -->
+    <EmbeddedResource Include="..\..\docs\steering\copilot-instructions.md"
+                      LogicalName="steering/copilot-instructions.md" />
+    <EmbeddedResource Include="..\..\docs\steering\claude-instructions.md"
+                      LogicalName="steering/claude-instructions.md" />
+    <EmbeddedResource Include="..\..\docs\steering\agents.md"
+                      LogicalName="steering/agents.md" />
+    <EmbeddedResource Include="..\..\docs\steering\cursor-rules.md"
+                      LogicalName="steering/cursor-rules.md" />
+    <EmbeddedResource Include="..\..\.github\skills\maf-obsolete-api-registry\registry.yaml"
                       LogicalName="registry.yaml" />
 
     <!-- MAF hard constraints — the non-negotiable rules, served at maf://constraints -->
@@ -76,26 +87,24 @@
                       LogicalName="skills/cs0618-hunter.md" />
     <EmbeddedResource Include="..\..\.github\skills\dotnet-inspect\SKILL.md"
                       LogicalName="skills/dotnet-inspect.md" />
-    <EmbeddedResource Include="..\..\.github\skills\fan-in-static-analyzer\SKILL.md"
-                      LogicalName="skills/fan-in-static-analyzer.md" />
-    <EmbeddedResource Include="..\..\.github\skills\fan-out-validator\SKILL.md"
-                      LogicalName="skills/fan-out-validator.md" />
+    <EmbeddedResource Include="..\..\.github\skills\maf-fan-out-validator\SKILL.md"
+                      LogicalName="skills/maf-fan-out-validator.md" />
     <EmbeddedResource Include="..\..\.github\skills\maf-anti-pattern-scanner\SKILL.md"
                       LogicalName="skills/maf-anti-pattern-scanner.md" />
     <EmbeddedResource Include="..\..\.github\skills\maf-migration-guide\SKILL.md"
                       LogicalName="skills/maf-migration-guide.md" />
     <EmbeddedResource Include="..\..\.github\skills\maf-release-watcher\SKILL.md"
                       LogicalName="skills/maf-release-watcher.md" />
-    <EmbeddedResource Include="..\..\.github\skills\migration-plan-creator\SKILL.md"
-                      LogicalName="skills/migration-plan-creator.md" />
-    <EmbeddedResource Include="..\..\.github\skills\migration-retrospective\SKILL.md"
-                      LogicalName="skills/migration-retrospective.md" />
+    <EmbeddedResource Include="..\..\.github\skills\maf-migration-plan-creator\SKILL.md"
+                      LogicalName="skills/maf-migration-plan-creator.md" />
+    <EmbeddedResource Include="..\..\.github\skills\maf-migration-retrospective\SKILL.md"
+                      LogicalName="skills/maf-migration-retrospective.md" />
     <EmbeddedResource Include="..\..\.github\skills\nuget-diff-analyzer\SKILL.md"
                       LogicalName="skills/nuget-diff-analyzer.md" />
-    <EmbeddedResource Include="..\..\.github\skills\obsolete-api-registry\SKILL.md"
-                      LogicalName="skills/obsolete-api-registry.md" />
-    <EmbeddedResource Include="..\..\.github\skills\workflow-smoke-tester\SKILL.md"
-                      LogicalName="skills/workflow-smoke-tester.md" />
+    <EmbeddedResource Include="..\..\.github\skills\maf-obsolete-api-registry\SKILL.md"
+                      LogicalName="skills/maf-obsolete-api-registry.md" />
+    <EmbeddedResource Include="..\..\.github\skills\maf-workflow-smoke-tester\SKILL.md"
+                      LogicalName="skills/maf-workflow-smoke-tester.md" />
     <EmbeddedResource Include="..\..\.github\skills\maf-issue-reporter\SKILL.md"
                       LogicalName="skills/maf-issue-reporter.md" />
   </ItemGroup>
