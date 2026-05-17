@@ -94,6 +94,10 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install Python deps for cross-file check
+        if: steps.scope.outputs.in_scope == 'true'
+        run: pip install pyyaml
+
       - name: Run verify-registry (rung-1 mechanical)
         id: verify
         if: steps.scope.outputs.in_scope == 'true'
