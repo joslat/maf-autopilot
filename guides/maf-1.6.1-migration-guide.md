@@ -80,19 +80,35 @@ leMessageInjection' was added
 
 ## Breaking Changes (requires human verification)
 
-<!-- TODO: Review the diff above and list breaking changes here -->
+- `WorkflowEvaluationExtensions.EvaluateAsync` signature changed: a new optional
+  `string? expectedOutput = null` parameter was inserted before `cancellationToken`.
+  Positional call sites that previously passed a trailing cancellation token now
+  require an explicit `expectedOutput` argument (or named `cancellationToken:`) to compile.
+- `OpenTelemetryAgent` now auto-wires `OpenTelemetryChatClient` around the supplied
+  chat client (release note marked this as breaking). Review custom chat-client
+  pipelines to avoid duplicate telemetry wrapping.
 
 ## New Patterns
 
-<!-- TODO: Document any new recommended patterns from release notes -->
+- For workflow evaluation scenarios, pass `expectedOutput` when validating
+  generated output against a known target (for example in eval or benchmark harnesses).
+- Prefer named arguments for optional trailing parameters in extension methods
+  that may evolve across releases (`cancellationToken:` is the key one here).
+- When using `OpenTelemetryAgent`, treat telemetry wiring as built-in and remove
+  redundant manual OpenTelemetry wrappers unless you intentionally need both layers.
 
 ## Obsolete APIs Added
 
-<!-- TODO: Use MafRunCs0618Hunt against a project pinned to 1.6.1 and document findings -->
+- No new `[Obsolete]` APIs were identified in the auto-generated diff for 1.6.1.
+- The migration-relevant API delta currently tracked in the registry is a
+  signature change (`MAF161-EXTENSIO-001`) rather than an obsolete overload.
 
 ## Known Misalignments
 
-<!-- TODO: Document any discrepancies between official docs and assembly behavior -->
+- `dotnet-inspect` reported the `EvaluateAsync` signature delta, but auto-generated
+  registry drafts classify signature changes under a CS0618 placeholder by default.
+  In practice, affected call sites more commonly fail with argument-binding compile
+  errors (for example CS1503) when positional arguments are used.
 
 <!-- AUTO-GENERATED END -->
 
