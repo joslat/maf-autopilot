@@ -295,6 +295,11 @@ jobs:
           # Best-effort: assign via the additive GraphQL mutation. Uses
           # `addAssigneesToAssignable` (not `replaceActorsForAssignable`) so
           # we never accidentally remove human assignees who were added later.
+          #
+          # Capture the actual GraphQL error to a temp file (don't suppress with
+          # >/dev/null 2>&1 — that hid the real "Bot does not have access" error
+          # for days during the v1.0 release. Discovered 2026-05-17.)
+          GRAPHQL_ERR=$(mktemp)
           if gh api graphql \
               -f query='mutation($assignable: ID!, $actor: ID!) {
                 addAssigneesToAssignable(input: { assignableId: $assignable, assigneeIds: [$actor] }) {
@@ -305,23 +310,39 @@ jobs:
               }' \
               -f "assignable=$ISSUE_NODE_ID" \
               -f "actor=$COPILOT_BOT_ID" \
-              >/dev/null 2>&1; then
+              >/dev/null 2>"$GRAPHQL_ERR"; then
             echo "✅ Assigned to Copilot Coding Agent — work should start within minutes."
           else
             echo ""
             echo "⚠️  Could NOT auto-assign Copilot Coding Agent via GraphQL."
-            echo "    Most likely cause: the Coding Agent isn't enabled on this repo."
-            echo "    Error usually reads: 'Bot does not have access to the repository'."
+            echo ""
+            echo "    Actual GraphQL error from the API:"
+            sed 's/^/      /' "$GRAPHQL_ERR" | head -5
+            echo ""
+            echo "    Most likely cause: the Coding Agent isn't enabled on this repo,"
+            echo "    OR the bot app isn't installed at the org level."
+            echo "    Common error text: 'Bot does not have access to the repository'."
             echo ""
             echo "    To enable (one-time per repo):"
             echo "      1. https://github.com/${GITHUB_REPOSITORY}/settings/copilot"
             echo "      2. Look for 'Coding Agent' → Enable for this repository."
+            echo "         (Or scroll up to find a master 'Enable Copilot cloud agent'"
+            echo "         toggle above 'Policies' if you don't see Coding Agent.)"
+            echo "      3. Verify https://github.com/apps/copilot-swe-agent is installed"
+            echo "         on this repository (not just the org).      "
             echo "      Requires Copilot Pro+ / Business / Enterprise subscription."
             echo ""
             echo "    To proceed manually THIS run:"
             echo "      Open $ISSUE_URL → Assignees → select 'Copilot'."
             echo ""
-            echo "    Reference (when this was last verified):"
+            echo "    Reference (when this was last verified, 2026-05-17):"
             echo "      Copilot bot global node ID: $COPILOT_BOT_ID"
+            echo "      Bot login resolved via GraphQL: copilot-swe-agent (databaseId 198982749)"
             echo "      Mutation: addAssigneesToAssignable"
+            echo ""
+            # Emit a GitHub-Actions-UI-level annotation so this shows on the run summary,
+            # not just in the log. The workflow itself stays successful (the issue WAS
+            # created — only the assignment failed); the annotation makes the gap loud.
+            echo "::warning title=Copilot Coding Agent not assigned::Issue $ISSUE_URL created but Copilot was not auto-assigned. See log for actual GraphQL error + remediation steps."
           fi
+          rm -f "$GRAPHQL_ERR"

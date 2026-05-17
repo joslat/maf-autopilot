@@ -88,8 +88,12 @@ jobs:
     if: needs.check-for-new-maf-release.outputs.has_update == 'true'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
+      contents: write           # commit the watcher's auto-generated registry/guide updates
+      pull-requests: write      # (reserved for future PR-based flow)
+      actions: write            # required for `gh workflow run maf-ai-fill-todos.yml` —
+                                # without this the cross-workflow dispatch fails with
+                                # HTTP 403 "Resource not accessible by integration".
+                                # Discovered 2026-05-17 during live-fire test of MAF 1.6.1.
     steps:
       - uses: actions/checkout@v6
 
