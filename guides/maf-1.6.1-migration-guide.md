@@ -80,19 +80,24 @@ leMessageInjection' was added
 
 ## Breaking Changes (requires human verification)
 
-<!-- TODO: Review the diff above and list breaking changes here -->
+- `WorkflowEvaluationExtensions.EvaluateAsync` signature changed by adding `string? expectedOutput = null` before `CancellationToken`. Positional call sites that passed `cancellationToken` as the 7th argument must now pass `expectedOutput` first (or switch to named arguments).
+- `OpenTelemetryAgent` now auto-wires `OpenTelemetryChatClient` (release notes mark this as breaking). If your host already wraps the same client with OpenTelemetry, remove duplicate wrapping to avoid double instrumentation.
 
 ## New Patterns
 
-<!-- TODO: Document any new recommended patterns from release notes -->
+- **Workflow evaluation with explicit expected output**: when calling `EvaluateAsync`, provide `expectedOutput` to compare generated output against a known target in eval scenarios.
+- **Message injection in function loops**: `ChatClientBuilderExtensions.UseMessageInjection` and `IChatMessageInjector` enable deterministic message injection during tool/function loops.
+- **OpenTelemetry-first agent wiring**: `OpenTelemetryAgent` now handles chat-client telemetry wrapping automatically; prefer that built-in path instead of ad-hoc wrapper stacking.
 
 ## Obsolete APIs Added
 
-<!-- TODO: Use MafRunCs0618Hunt against a project pinned to 1.6.1 and document findings -->
+- Registry entry: `MAF161-EXTENSIO-001` (`WorkflowEvaluationExtensions.EvaluateAsync` signature change, CS0618).
+- Migration action: update positional `EvaluateAsync` call sites to include `expectedOutput` before `cancellationToken`, or use named arguments to avoid positional drift.
 
 ## Known Misalignments
 
-<!-- TODO: Document any discrepancies between official docs and assembly behavior -->
+- `dotnet-inspect diff` reports the `EvaluateAsync` signature change, but the break only manifests for positional argument call sites that supplied `cancellationToken`; named-argument call sites can compile unchanged.
+- Release notes classify `OpenTelemetryAgent` auto-wiring as a breaking change, while the API diff is additive. Treat this as runtime-behavior drift (instrumentation topology change), not a compile-time signature break.
 
 <!-- AUTO-GENERATED END -->
 

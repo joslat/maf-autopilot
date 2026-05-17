@@ -13,6 +13,7 @@ public sealed class CompatibilityToolTests
     private readonly CompatibilityTool _tool = new();
 
     [Theory]
+    [InlineData("1.6.1")]
     [InlineData("1.3.0")]
     [InlineData("1.2.0")]
     [InlineData("1.1.0")]
