@@ -21,9 +21,16 @@ name: MAF AI Auto-Fill TODOs
 #   4. You review the PR and merge (or set up auto-merge on the label).
 #
 # Requires:
-# - The repository has GitHub Copilot Coding Agent enabled (default on for
-#   repos owned by a Copilot Pro/Business/Enterprise account).
-# - No additional secrets.
+# - The repository has GitHub Copilot Coding Agent (or Claude/Codex Coding
+#   Agent) enabled. Toggle at https://github.com/<owner>/<repo>/settings/copilot
+#   (one of "Allow Copilot/Claude/Codex coding agent" must be ON).
+# - Secret COPILOT_ASSIGN_PAT: fine-grained PAT owned by a Copilot-enabled user,
+#   with Issues R/W + Contents R/W + PRs R/W + Actions R/W on this repo only.
+#   This is REQUIRED for auto-assignment — see the long comment block on the
+#   "Open issue assigned to Copilot Coding Agent" step below for why
+#   GITHUB_TOKEN is unusable here. If the secret is missing the workflow still
+#   runs (the issue gets created), only auto-assignment is skipped with a
+#   loud annotation explaining the gap.
 
 on:
   workflow_dispatch:
@@ -75,188 +82,27 @@ jobs:
 
       - name: Open issue assigned to Copilot Coding Agent
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # COPILOT_ASSIGN_PAT is a fine-grained PAT owned by a Copilot-enabled
+          # user. It's REQUIRED for auto-assigning the Coding Agent bot:
+          # `addAssigneesToAssignable` categorically rejects GITHUB_TOKEN and
+          # every other GitHub App installation token, because Copilot bills
+          # agent runs against a human Copilot subscription. (Confirmed
+          # 2026-05-17 by upstream gh-aw issue #19765 + Copilot maintainer
+          # statement: "Copilot does not support bot accounts for issue
+          # assignment".) If the secret isn't set, fall back to GITHUB_TOKEN
+          # so the issue still gets created — only the auto-assignment fails,
+          # with a loud annotation pointing at the missing secret.
+          GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN_KIND: ${{ secrets.COPILOT_ASSIGN_PAT && 'pat' || 'github-token' }}
           TARGET: ${{ inputs.target_version }}
           DIGITS: ${{ steps.vars.outputs.version_digits }}
         run: |
-          ISSUE_BODY=$(cat <<EOF
-          @copilot — please fill in the TODO placeholders the release-watcher
-          left for **MAF $TARGET**.
-
-          ## Context
-
-          The watcher just committed an auto-generated update with:
-
-          - **\`.github/skills/maf-obsolete-api-registry/registry.yaml\`** — new entries
-            whose \`id\` starts with **\`MAF${DIGITS}-\`** (e.g. \`MAF${DIGITS}-AGENT-001\`).
-            Each entry has TODO fields: \`fix_description\`, \`example_before\`,
-            \`example_after\`, \`guide_section\`. Each entry's \`notes:\` field
-            already contains the raw \`dotnet-inspect\` diff text — use that as
-            the source of truth for what changed.
-
-          - **\`docs/compatibility-matrix.md\`** — find the row containing
-            \`**$TARGET**\` at the top of the data table. Cells marked
-            \`unknown\` need real version constraints.
-
-          - **\`guides/maf-$TARGET-migration-guide.md\`** — sections under the
-            \`AUTO-GENERATED START / END\` markers say \`TODO\`. Fill them.
-
-          ## Style anchor
-
-          The existing well-filled entries are the canonical format. Match their
-          tone, length, and YAML structure exactly:
-
-          - \`MAF130-FAN-IN-001\` — SIGNATURE-CHANGED template
-          - \`MAF130-SESSION-001\` — also see the **Phase T correction** note
-            for the format of corrections (use that template if your filling
-            reveals the registry's diff doesn't match the public surface).
-          - \`MAF130-THREAD-001\` — TYPE-REMOVED template
-          - \`MAF130-EXEC-001\` — BEHAVIOR-CHANGED template
-
-          ## Step 1 — CATEGORISE FIRST (do this before filling anything)
-
-          For EACH entry with \`id: MAF${DIGITS}-*\`, pick **exactly ONE** of
-          these change categories and use the matching template below. Don't
-          guess; if the structural diff is ambiguous, default to BEHAVIOR-CHANGED
-          and explain your reasoning in \`notes:\`.
-
-          | Category | When | What the example pair should show |
-          |---|---|---|
-          | **TYPE-REMOVED** | The diff shows a type going away entirely. cs_warning = CS0246. | example_before uses old type; example_after uses the new one. |
-          | **METHOD-RENAMED** | Same type, member renamed (no signature change beyond the name). | example_before/after differ only on the call-site name. |
-          | **SIGNATURE-CHANGED** | Same method name, different param list or return type. cs_warning = CS0618 (if [Obsolete] kept) or CS1503/CS0019. | Show OLD arg list / return → NEW arg list / return. |
-          | **BEHAVIOR-CHANGED** | Method compiles fine but does something different at runtime. cs_warning = RUNTIME_SILENT. | example_before is "looks fine, broken at runtime"; example_after is the safe alternative. |
-          | **ATTRIBUTE-REMOVED** | A [SomeAttribute] decorator no longer exists. cs_warning = CS0246. | example_before has the attribute; example_after just deletes it. |
-
-          ## Step 2 — Per-entry fill
-
-          For each entry, fill these fields (only — touch nothing else):
-
-          1. **\`fix_description\`** — one concise sentence (≥ 20 chars).
-             Pattern depends on category:
-             - TYPE-REMOVED: "Replace \`OldType\` with \`NewType\`."
-             - METHOD-RENAMED: "Rename \`X.OldName\` to \`X.NewName\`."
-             - SIGNATURE-CHANGED: "Change \`X.Y(<old>)\` to \`X.Y(<new>)\`."
-             - BEHAVIOR-CHANGED: "Replace <silent-broken pattern> with <correct pattern>."
-             - ATTRIBUTE-REMOVED: "Delete \`[OldAttribute]\` — gone in $TARGET; no replacement."
-
-          2. **\`example_before\`** — minimal C# call site (3-8 lines) showing
-             the obsolete signature being used. Use the \`obsolete_signature\`
-             field as the basis. Use YAML block-literal style (\`|\`).
-
-             **Self-check before submitting**: parse this fragment in your head
-             — does it have balanced \`{}\` and \`()\`, valid statement
-             terminators, and at least one identifier from the entry's \`type\`
-             field?
-
-          3. **\`example_after\`** — corrected $TARGET replacement (3-8 lines),
-             also \`|\` block-literal.
-
-             **Self-check**: must be DIFFERENT from example_before (an identical
-             pair is a non-migration); must NOT use any identifier that the
-             diff says was removed.
-
-          4. **\`guide_section\`** — section number from the existing 1.3.0
-             guide if there's a clear parallel pattern (look at the headings of
-             \`guides/maf-1.3.0-migration-guide.md\`). If there's NO parallel
-             section (because the change touches a surface that didn't exist
-             in 1.3.0), use **\`N/A\`** — not \`TBD\`, not \`TODO\`. Never
-             invent section numbers.
-
-          5. **\`applies_to_codebases\`** _(optional, Phase W.A field)_ — only
-             add this if the diff's API surface DOES NOT EXIST on a public MAF
-             NuGet you can verify (run \`dotnet-inspect type --package
-             Microsoft.Agents.AI@<version>\` for each version 1.0.0 / 1.1.0 /
-             1.2.0 / 1.3.0 if uncertain). Set to \`"pre-1.0.0"\` and add a
-             Phase W.A correction paragraph to \`notes:\` documenting what you
-             verified. Most entries WON'T need this field.
-
-          ## Step 3 — Self-verification checklist (do before opening PR)
-
-          Run through this checklist on every entry you filled:
-
-          - [ ] Every required field filled (no remaining \`TODO\`).
-          - [ ] \`example_before\` ≠ \`example_after\` (a non-noop migration).
-          - [ ] \`example_before\` doesn't reference a type the diff said was
-            removed — only the example_after should.
-          - [ ] Every \`example_*\` has balanced \`{}\` and \`()\`.
-          - [ ] Every \`fix_description\` is at least 20 characters.
-          - [ ] No invented section numbers in \`guide_section\` — only existing
-            section IDs from the guide, OR the literal string \`N/A\`.
-
-          The PR will be automatically checked against
-          \`maf-autopilot verify-registry\` by the
-          \`.github/workflows/maf-ai-fill-verify.yml\` workflow. The check
-          enforces the same items above. If any fail, the check fails and the
-          PR is blocked from auto-merge.
-
-          ## What to fill — compatibility matrix
-
-          For the row \`**$TARGET**\`:
-
-          - **\`Microsoft.Extensions.AI\`** column: replace \`unknown\` with the
-            actual version constraint if the MAF release notes mention a bump.
-            Otherwise leave as \`unknown\` and add a \`<!-- TODO: verify from MAF
-            csproj -->\` HTML comment in the Notes column.
-          - **\`Azure.AI.OpenAI\`** column: same logic.
-
-          Also at the top of \`docs/compatibility-matrix.md\` there is an HTML
-          comment of the form
-          \`<!-- auto-updated-by: maf-release-watcher | last-updated: YYYY-MM-DD -->\`.
-          Update the date to today (UTC).
-
-          ## What to fill — migration guide
-
-          In \`guides/maf-$TARGET-migration-guide.md\`, fill the four
-          \`TODO\`-marked sections under the \`AUTO-GENERATED START / END\`
-          markers:
-
-          - **Breaking Changes**: one bullet per registry entry. Format:
-            \`- <symbol>: <fix_description>\`.
-
-          - **New Patterns**: from the release notes (visible at
-            https://github.com/microsoft/agent-framework/releases/tag/dotnet-$TARGET
-            or scroll to the "Release Notes Extract" section of the guide
-            file itself, which already has them embedded), highlight new types
-            / features worth knowing. 3-7 bullets.
-
-          - **Obsolete APIs Added**: leave as a TODO unless the release notes
-            explicitly call out new \`[Obsolete]\` markings. Add:
-            \`<!-- TODO: run \\\`MafRunCs0618Hunt\\\` against a project pinned to $TARGET to populate. -->\`
-
-          - **Known Misalignments**: \`None documented yet.\` unless the
-            release notes call out doc/assembly mismatches.
-
-          ## Also clean up
-
-          The migration guide's "Diff Summary" code block may contain garbled
-          fragments (e.g. literal \`hape\` or \`d\` from terminal escape codes
-          in \`dotnet-inspect\` output). If present, **replace the code block
-          with a clean human-readable bulleted summary** derived from the
-          release notes.
-
-          ## Constraints
-
-          - **DO NOT** modify entries whose \`id\` does NOT start
-            \`MAF${DIGITS}-\`. Earlier-version entries are off-limits.
-          - **DO NOT** touch any \`## Human additions\` section. Humans own
-            that section across re-runs of the watcher.
-          - **DO NOT** invent facts. When uncertain, leave \`TODO\` /
-            \`unknown\` with an explanation. The toolkit deliberately favours
-            "honest TODO" over "confident guess."
-
-          ## When you're done
-
-          Open the PR with title \`chore: AI-filled TODOs for MAF $TARGET\` and
-          a brief summary of what you filled. Label it
-          \`maf-release,ai-fill\`. The maintainer reviews + merges (or has
-          auto-merge configured on the label).
-
-          ---
-
-          *This issue was auto-generated by \`.github/workflows/maf-ai-fill-todos.yml\`. To re-fire manually: \`gh workflow run maf-ai-fill-todos.yml -f target_version=$TARGET\`.*
-          EOF
-          )
+          # Render the issue body via a Python template helper. Previously
+          # this was a ~180-line bash heredoc with every backtick escaped
+          # (\`...\`); a single missed escape would have corrupted the
+          # whole body. The helper reads ai_fill_issue_prompt.md.tpl and
+          # substitutes {{TARGET}} / {{DIGITS}} with no shell parsing.
+          ISSUE_BODY=$(python3 .github/scripts/build_ai_fill_issue_body.py)
 
           # Two-step pattern: create the issue first, then assign Copilot via
           # GraphQL. The standard `gh issue edit --add-assignee Copilot` fails
@@ -319,30 +165,45 @@ jobs:
             echo "    Actual GraphQL error from the API:"
             sed 's/^/      /' "$GRAPHQL_ERR" | head -5
             echo ""
-            echo "    Most likely cause: the Coding Agent isn't enabled on this repo,"
-            echo "    OR the bot app isn't installed at the org level."
-            echo "    Common error text: 'Bot does not have access to the repository'."
-            echo ""
-            echo "    To enable (one-time per repo):"
-            echo "      1. https://github.com/${GITHUB_REPOSITORY}/settings/copilot"
-            echo "      2. Look for 'Coding Agent' → Enable for this repository."
-            echo "         (Or scroll up to find a master 'Enable Copilot cloud agent'"
-            echo "         toggle above 'Policies' if you don't see Coding Agent.)"
-            echo "      3. Verify https://github.com/apps/copilot-swe-agent is installed"
-            echo "         on this repository (not just the org).      "
-            echo "      Requires Copilot Pro+ / Business / Enterprise subscription."
+            if [ "$GH_TOKEN_KIND" = "github-token" ]; then
+              echo "    ROOT CAUSE (definitive — investigated 2026-05-17):"
+              echo "      This step ran with GITHUB_TOKEN. The Copilot Coding Agent"
+              echo "      assignment API rejects EVERY non-user token by design —"
+              echo "      including GITHUB_TOKEN, GitHub App installation tokens, and"
+              echo "      every other automation credential. It only accepts a fine-"
+              echo "      grained PAT owned by a Copilot-enabled user. No workflow"
+              echo "      permission scope fixes this — it's a GitHub-side policy."
+              echo ""
+              echo "    FIX (one-time):"
+              echo "      1. Create a fine-grained PAT at"
+              echo "         https://github.com/settings/personal-access-tokens/new"
+              echo "         Resource owner: your user."
+              echo "         Repository access: only this repo."
+              echo "         Repo permissions: Contents R/W, Issues R/W, PRs R/W,"
+              echo "         Actions R/W, Metadata R."
+              echo "      2. Save it as repo secret COPILOT_ASSIGN_PAT at"
+              echo "         https://github.com/${GITHUB_REPOSITORY}/settings/secrets/actions"
+              echo "      3. Re-run this workflow."
+              echo ""
+              echo "    Reference: upstream gh-aw issue #19765 + Copilot maintainer"
+              echo "    statement \"Copilot does not support bot accounts for issue"
+              echo "    assignment\"."
+            else
+              echo "    A PAT was used (COPILOT_ASSIGN_PAT is set), so the bot-token-"
+              echo "    rejection class of failure is ruled out. Other causes to check:"
+              echo "      1. PAT scopes — Issues R/W, Repository access on this repo."
+              echo "      2. The PAT owner must have Copilot Pro/Pro+/Business/Enterprise"
+              echo "         AND have the Coding Agent enabled in their settings."
+              echo "      3. Bot global node ID may have rotated (currently $COPILOT_BOT_ID)."
+              echo "         Verify with: gh api graphql -f query='{ repository(owner:\\\"X\\\", name:\\\"Y\\\") { suggestedActors(capabilities:[CAN_BE_ASSIGNED]) { nodes { ... on Bot { id login } } } } }'"
+            fi
             echo ""
             echo "    To proceed manually THIS run:"
-            echo "      Open $ISSUE_URL → Assignees → select 'Copilot'."
-            echo ""
-            echo "    Reference (when this was last verified, 2026-05-17):"
-            echo "      Copilot bot global node ID: $COPILOT_BOT_ID"
-            echo "      Bot login resolved via GraphQL: copilot-swe-agent (databaseId 198982749)"
-            echo "      Mutation: addAssigneesToAssignable"
+            echo "      Open $ISSUE_URL → Assignees → select 'Copilot' / 'Claude'."
             echo ""
             # Emit a GitHub-Actions-UI-level annotation so this shows on the run summary,
             # not just in the log. The workflow itself stays successful (the issue WAS
             # created — only the assignment failed); the annotation makes the gap loud.
-            echo "::warning title=Copilot Coding Agent not assigned::Issue $ISSUE_URL created but Copilot was not auto-assigned. See log for actual GraphQL error + remediation steps."
+            echo "::warning title=Coding Agent not assigned (token: $GH_TOKEN_KIND)::Issue $ISSUE_URL created but bot was not auto-assigned. See log for root cause + fix."
           fi
           rm -f "$GRAPHQL_ERR"
