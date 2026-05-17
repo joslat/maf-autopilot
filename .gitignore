@@ -74,3 +74,5 @@ desktop.ini
 # scratchpad.
 private/
 
+.ai-review-entries.json
+.ai-review-prompt.md
