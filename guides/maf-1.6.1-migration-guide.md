@@ -80,19 +80,79 @@ leMessageInjection' was added
 
 ## Breaking Changes (requires human verification)
 
-<!-- TODO: Review the diff above and list breaking changes here -->
+### WorkflowEvaluationExtensions.EvaluateAsync — New Parameter Insertion
+
+**Change:** A new optional parameter `string? expectedOutput` was added to `WorkflowEvaluationExtensions.EvaluateAsync` between the existing `splitter` and `cancellationToken` parameters.
+
+**Impact:**
+- Code using **named arguments** for `cancellationToken` will compile without error but must be updated if you want to leverage ground-truth evaluation
+- Code using **positional arguments** continues to work (all new parameters are optional)
+- No compilation breaks for typical usage patterns
+
+**Example:**
+
+```csharp
+// 1.5.0 pattern — still works in 1.6.1 but doesn't leverage new capability
+var results = await run.EvaluateAsync(
+    evaluator: myEvaluator,
+    evalName: "MyEvaluation",
+    splitter: conversationSplitter,
+    cancellationToken: ct);
+
+// 1.6.1 pattern — with ground-truth comparison
+var results = await run.EvaluateAsync(
+    evaluator: myEvaluator,
+    evalName: "MyEvaluation",
+    splitter: conversationSplitter,
+    expectedOutput: "Expected workflow result",  // NEW
+    cancellationToken: ct);
+```
+
+**Recommendation:** Update call sites to include `expectedOutput` when evaluating workflows where you have known-good reference outputs for comparison.
 
 ## New Patterns
 
-<!-- TODO: Document any new recommended patterns from release notes -->
+### Ground-Truth Workflow Evaluation
+
+MAF 1.6.1 adds support for comparing workflow outputs against expected results during evaluation:
+
+```csharp
+var expectedResult = "The customer's fraud risk score should be HIGH.";
+
+var evaluationResults = await workflowRun.EvaluateAsync(
+    evaluator: myEvaluator,
+    expectedOutput: expectedResult,
+    cancellationToken: cancellationToken);
+
+// evaluationResults now includes ground-truth comparison metrics
+```
+
+This enables more rigorous evaluation workflows by quantifying how closely actual outputs match expected outputs.
+
+### OpenTelemetry Auto-Wiring
+
+The `OpenTelemetryAgent` now automatically wraps the provided `IChatClient` with `OpenTelemetryChatClient` for observability. This is a breaking change for code that manually wrapped chat clients before passing to `OpenTelemetryAgent`.
+
+**Migration:**
+```csharp
+// OLD (1.5.0) — manual wrapping before passing to agent
+var telemetryClient = new OpenTelemetryChatClient(chatClient, sourceName: "MyAgent");
+var agent = new OpenTelemetryAgent(telemetryClient, options);
+
+// NEW (1.6.1) — agent handles wrapping automatically
+var agent = new OpenTelemetryAgent(chatClient, options);
+// No need to manually wrap — the agent does it for you
+```
+
+See [PR #5750](https://github.com/microsoft/agent-framework/pull/5750) for details.
 
 ## Obsolete APIs Added
 
-<!-- TODO: Use MafRunCs0618Hunt against a project pinned to 1.6.1 and document findings -->
+No new `[Obsolete]` attributes were introduced in 1.6.1. The `WorkflowEvaluationExtensions.EvaluateAsync` signature change is backward-compatible (all new parameters are optional).
 
 ## Known Misalignments
 
-<!-- TODO: Document any discrepancies between official docs and assembly behavior -->
+None identified at this time. The release is primarily additive with one signature enhancement for evaluation workflows.
 
 <!-- AUTO-GENERATED END -->
 

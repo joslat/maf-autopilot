@@ -63,6 +63,21 @@ public sealed class CompatibilityTool
     internal static readonly IReadOnlyDictionary<string, string> Matrix =
         new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
+            ["1.6.1"] = """
+                ## MAF 1.6.1 Compatibility
+
+                | Dependency                                | Version          | Notes |
+                |-------------------------------------------|------------------|-------|
+                | .NET runtime                              | `>= 8.0`         | net8.0, net9.0, net10.0 TFMs all supported |
+                | Microsoft.Extensions.AI                   | `>= 10.5.1`      | Same as 1.5.0 |
+                | Azure.AI.OpenAI                           | _not pinned by MAF_ | BYO via `IChatClient` — consumer chooses the backing implementation |
+                | Microsoft.Agents.AI.Workflows.Generators  | `1.6.1`          | Source-gen package |
+                | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
+
+                Additive release; new expectedOutput parameter for workflow evaluation ground-truth comparisons.
+                OpenTelemetryAgent now auto-wires ChatClient with OpenTelemetryChatClient for observability.
+                """,
+
             ["1.5.0"] = """
                 ## MAF 1.5.0 Compatibility
 
