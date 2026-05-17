@@ -64,7 +64,7 @@
 
 The `.maf-version` file at the repository root records the latest MAF version this toolkit's data covers. The `maf-release-watcher` GitHub Actions workflow compares this against the NuGet feed to detect new releases.
 
-Current tracked version: **`1.3.0`** (see `.maf-version`)
+Current tracked version: **`1.6.1`** (see `.maf-version`)
 
 ---
 
