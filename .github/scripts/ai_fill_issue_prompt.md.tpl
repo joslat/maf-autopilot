@@ -283,12 +283,83 @@ release notes.
   `unknown` with an explanation. The toolkit deliberately favours
   "honest TODO" over "confident guess."
 
+## STEP 5 — MANDATORY POST-IMPLEMENTATION VERIFICATION
+
+**Before you open the PR, run THIS EXACT SEQUENCE of commands and confirm
+each produces the expected output. The rung-1 verify CI gate enforces
+these deterministically and WILL block your PR from merging if any fail.**
+
+Two of these (Version Tracking + last-updated date) have been the #1 and
+#2 cause of fill rejection in past rounds — Claude rounds 2 and 3 both
+left the Version Tracking line at `1.3.0` instead of updating it to the
+target version, even with explicit emphasis earlier in this prompt. The
+post-implementation check below catches it before you waste a CI cycle.
+
+```bash
+TARGET={{TARGET}}
+TODAY=$(date -u +%Y-%m-%d)
+echo "=== POST-IMPLEMENTATION CHECKLIST for MAF $TARGET ==="
+
+# CHECK 1 — Version Tracking section: "Current tracked version" matches target
+echo "--- Check 1: Version Tracking ---"
+grep "Current tracked version:" docs/compatibility-matrix.md
+echo "EXPECTED: a line containing **\`$TARGET\`** (your target version)."
+echo "IF YOU SEE AN OLDER VERSION HERE, YOU FORGOT TO UPDATE IT."
+echo ""
+
+# CHECK 2 — last-updated date in HTML header is today's UTC
+echo "--- Check 2: last-updated date ---"
+grep "last-updated:" docs/compatibility-matrix.md
+echo "EXPECTED: last-updated: $TODAY (today's UTC date)."
+echo ""
+
+# CHECK 3 — Exactly ONE row for current version in compat-matrix
+echo "--- Check 3: no duplicate version rows ---"
+N=$(grep -c "^| \\*\\*$TARGET\\*\\*" docs/compatibility-matrix.md)
+echo "Rows for **$TARGET**: $N"
+[ "$N" = "1" ] && echo "OK" || echo "FAIL: must be exactly 1 (either you added a duplicate row, or you deleted the watcher's placeholder)"
+echo ""
+
+# CHECK 4 — Migration guide exists for current version
+echo "--- Check 4: migration guide exists ---"
+[ -f guides/maf-$TARGET-migration-guide.md ] && echo "OK" || echo "FAIL: guides/maf-$TARGET-migration-guide.md is missing"
+echo ""
+
+# CHECK 5 — Stub warnings preserved in current version's migration guide
+echo "--- Check 5: stub warnings preserved ---"
+N=$(grep -c "Auto-generated stub" guides/maf-$TARGET-migration-guide.md 2>/dev/null || echo 0)
+echo "Stub warnings found: $N"
+[ "$N" -ge 1 ] && echo "OK" || echo "FAIL: you removed all '⚠️ Auto-generated stub' warnings — keep them (the AUTO-GENERATED zone may be overwritten on re-run, the warning is still truthful)"
+echo ""
+
+# CHECK 6 — No invented guide_section values
+echo "--- Check 6: guide_section values are real ---"
+FAIL6=0
+grep -E "^\\s+guide_section:" .github/skills/maf-obsolete-api-registry/registry.yaml | \
+  grep -v 'guide_section:.*"\\?N/A"\\?' | \
+  awk '{gsub(/"/, "", $2); print $2}' | sort -u | while read sec; do
+    [ -z "$sec" ] && continue
+    grep -qE "^##+ ${sec}\\." guides/maf-1.3.0-migration-guide.md || \
+      { echo "FAIL: guide_section '$sec' not in 1.3.0 guide — change to N/A"; FAIL6=1; }
+  done
+[ "$FAIL6" = "0" ] && echo "OK"
+echo ""
+
+echo "=== END CHECKLIST ==="
+echo "If you see ANY 'FAIL' lines above, fix them BEFORE opening the PR."
+echo "The CI verify check runs exactly the same logic. Don't waste a cycle."
+```
+
+**ALL CHECKS MUST RETURN OK BEFORE YOU OPEN THE PR.** Treat any FAIL as a
+blocker — fix it locally, re-run the checklist, then open the PR.
+
 ## When you're done
 
 Open the PR with title `chore: AI-filled TODOs for MAF {{TARGET}}` and
-a brief summary of what you filled. Label it
-`maf-release,ai-fill`. The maintainer reviews + merges (or has
-auto-merge configured on the label).
+a brief summary of what you filled. **In the PR description, state
+"Step 5 post-implementation checklist: all OK"** to confirm you ran it.
+Label the PR `maf-release,ai-fill`. The maintainer reviews + merges (or
+has auto-merge configured on the label).
 
 ---
 
