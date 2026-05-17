@@ -63,6 +63,21 @@ public sealed class CompatibilityTool
     internal static readonly IReadOnlyDictionary<string, string> Matrix =
         new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
+            ["1.6.1"] = """
+                ## MAF 1.6.1 Compatibility
+
+                | Dependency                                | Version          | Notes |
+                |-------------------------------------------|------------------|-------|
+                | .NET runtime                              | `>= 8.0`         | net8.0, net9.0, net10.0 TFMs all supported |
+                | Microsoft.Extensions.AI                   | `>= 10.5.1`      | |
+                | Azure.AI.OpenAI                           | _not pinned by MAF_ | BYO via `IChatClient` — consumer chooses the backing implementation |
+                | Microsoft.Agents.AI.Workflows.Generators  | `1.6.1`          | Source-gen package |
+                | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
+
+                Adds `expectedOutput` parameter to workflow evaluation API (WorkflowEvaluationExtensions.EvaluateAsync).
+                New `IChatMessageInjector` for message injection during function calling loop. New `OpenTelemetryAgent` type.
+                """,
+
             ["1.5.0"] = """
                 ## MAF 1.5.0 Compatibility
 

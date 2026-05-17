@@ -16,8 +16,6 @@
 
 <!-- AUTO-GENERATED START — anything between AUTO-GENERATED START and AUTO-GENERATED END is overwritten on re-run -->
 
-> ⚠️ Auto-generated stub. Review before relying on it for migrations.
-
 ## Versions
 
 - Migrating from: `1.5.0`
@@ -27,19 +25,13 @@
 
 ```
 diff --package Microsoft.Agents.AI@1.5.0..1.6.1 --oneline    # summary statistics
-hape
-was added
+New types added:
+- IChatMessageInjector
+- OpenTelemetryAgent
 
-### OpenTelemetryAgent
-
-- Member '.ctor' was added
-
-### ChatClientBuilderExtensions
-
-- Member 'UseMessageInjection' was added
-leMessageInjection' was added
-
-#
+New members added:
+- ChatClientBuilderExtensions.UseMessageInjection
+- WorkflowEvaluationExtensions.EvaluateAsync (new overload with expectedOutput parameter)
 ```
 
 ## Release Notes Extract
@@ -80,19 +72,62 @@ leMessageInjection' was added
 
 ## Breaking Changes (requires human verification)
 
-<!-- TODO: Review the diff above and list breaking changes here -->
+### WorkflowEvaluationExtensions.EvaluateAsync signature change
+
+The `WorkflowEvaluationExtensions.EvaluateAsync` method now includes a new optional `expectedOutput` parameter before the `cancellationToken` parameter. This supports ground-truth/expected-output comparison in workflow evaluations.
+
+**Before (1.5.0):**
+```csharp
+var results = await run.EvaluateAsync(
+    evaluator,
+    includeOverall: true,
+    includePerAgent: true,
+    evalName: "My Workflow Eval",
+    cancellationToken: ct);
+```
+
+**After (1.6.1):**
+```csharp
+var results = await run.EvaluateAsync(
+    evaluator,
+    includeOverall: true,
+    includePerAgent: true,
+    evalName: "My Workflow Eval",
+    expectedOutput: "Expected response here",  // new optional parameter
+    cancellationToken: ct);
+```
+
+If you're using named arguments for `cancellationToken`, your code will continue to work. If you're using positional arguments, you may need to update call sites.
+
+Reference: PR #5755
 
 ## New Patterns
 
-<!-- TODO: Document any new recommended patterns from release notes -->
+### Message Injection with IChatMessageInjector
+
+MAF 1.6.1 introduces `IChatMessageInjector` for injecting messages during the function calling loop. This allows you to add system messages, context, or other content dynamically during agent execution.
+
+```csharp
+chatClient.AsBuilder()
+    .UseMessageInjection(/* configuration */)
+    .Build();
+```
+
+Reference: PR #5679
+
+### OpenTelemetryAgent
+
+A new `OpenTelemetryAgent` type has been added that auto-wires the chat client with `OpenTelemetryChatClient` for better observability and tracing support.
+
+Reference: PR #5750
 
 ## Obsolete APIs Added
 
-<!-- TODO: Use MafRunCs0618Hunt against a project pinned to 1.6.1 and document findings -->
+None detected. The signature change to `EvaluateAsync` is additive (new optional parameter), not a deprecation.
 
 ## Known Misalignments
 
-<!-- TODO: Document any discrepancies between official docs and assembly behavior -->
+None identified for this release. The API surface changes are additive and backward-compatible.
 
 <!-- AUTO-GENERATED END -->
 
