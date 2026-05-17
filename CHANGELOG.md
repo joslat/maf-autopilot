@@ -36,7 +36,7 @@ First stable release. Public API committed. **MAF Doctor** brand introduced.
 - **7 MCP prompts** + **6 MCP resources** (constraints, registry, guide, rules, help, skills)
 - **Plugin packaging via `maf-autopilot init`** — drops `.vscode/mcp.json` + 3 steering snippets (`.github/copilot-instructions.md`, `CLAUDE.md`, `AGENTS.md`) with merge-not-overwrite semantics; optional `--with-cursor` for `.cursorrules`
 - Built on **dotnet-inspect v0.7.8** (which surfaces `[Obsolete]` natively); we add MAF-specific curated fix recipes + version-aware filtering on top
-- **Security model documented** in `docs/security/threat-model.md` including the canonical scanner pair (Cisco `cisco-ai-mcp-scanner` + Snyk `snyk-agent-scan`)
+- **Security model documented** in `docs/security.md` (user-facing overview) + `docs/security/threat-model.md` (deep technical detail). MCP-server scanned with **Cisco mcp-scanner v4.6.0** (yara analyzer, fully local): **25/25 tools SAFE, 0 findings**.
 
 ### Versioning note for alpha users
 

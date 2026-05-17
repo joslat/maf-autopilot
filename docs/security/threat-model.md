@@ -75,17 +75,23 @@ These will be addressed in 1.1 / 1.2 alongside the Magentic orchestrator work (w
 
 ## 7. MCP security scans
 
-**Policy:** we only use vendor-backed or official-initiative scanners. Single-maintainer hobby projects are excluded — the supply-chain risk of an unverified security tool outweighs its detection value.
+**Policy:** we only depend on scanners that are **fully open-source, fully local (no phone-home), and require no third-party account**. This keeps the supply chain small and avoids vendor lock-in.
 
-We run **two complementary vendor-backed scanners** for each release. The April 2026 [AppSec Santa MCP audit](https://appsecsanta.com/research/mcp-server-security-audit-2026) established this pair as the canonical baseline.
+> **For the user-facing overview** of how we tackle security at the MCP + repo level, see [`docs/security.md`](../security.md). This file is the deeper technical record.
 
 ### Note: these are CLI tools, not VS Code extensions
 
-Both primary scanners are Python command-line tools installed via `pipx` or `uv`. They are NOT in the VS Code extension marketplace. Looking for them there will find nothing — install via Python tooling as documented below.
+The scanner below is a Python CLI tool installed via `pipx` or `uv`. It is NOT in the VS Code extension marketplace. Looking for it there will find nothing — install via Python tooling as documented below.
 
-### Primary scanners (run both)
+### Primary scanner — Cisco mcp-scanner (yara analyzer)
 
-**1. [Cisco mcp-scanner](https://github.com/cisco-ai-defense/mcp-scanner)** — YARA-based pattern matching for known threat patterns (prompt injection, tool poisoning, credential harvesting, code execution). **Maintained by Cisco AI Defense** (Apache-2.0, 926+ stars, v4.6.0 April 2026). PyPI package: `cisco-ai-mcp-scanner`.
+**[Cisco mcp-scanner](https://github.com/cisco-ai-defense/mcp-scanner)** — YARA-based pattern matching for known threat patterns (prompt injection, tool poisoning, credential harvesting, code execution).
+
+- **Maintained by:** Cisco AI Defense
+- **License:** Apache-2.0
+- **Reach:** 926+ stars, v4.6.0 (April 2026)
+- **PyPI:** `cisco-ai-mcp-scanner`
+- **Local-only in `yara` mode:** the `api` and `llm` analyzers need API keys (Cisco AI Defense / OpenAI) — we don't use those; the `yara` analyzer runs entirely on-disk
 
 ```bash
 # Install (requires Python 3.10+ and pipx)
@@ -93,7 +99,7 @@ python -m pip install --user pipx
 python -m pipx ensurepath
 pipx install cisco-ai-mcp-scanner
 
-# Scan our server (yara analyzer is free; api/llm need keys)
+# Scan our server (yara analyzer only — fully local, no API keys)
 mcp-scanner --analyzers yara --format summary --hide-safe \
   stdio --stdio-command=dotnet \
   --stdio-arg=run --stdio-arg=--project --stdio-arg=src/maf-autopilot \
@@ -101,18 +107,9 @@ mcp-scanner --analyzers yara --format summary --hide-safe \
   --stderr-file=/tmp/maf-server.log
 ```
 
-**2. [Snyk agent-scan](https://github.com/invariantlabs-ai/mcp-scan)** (originally Invariant Labs' mcp-scan; now maintained by Snyk) — configuration-level issue detection. Catches what YARA misses (auth gaps, deployment misconfigurations, transport-level issues). **Maintained by Snyk** (Apache-2.0, 2.4k+ stars, v0.5.3 May 2026). PyPI package: `snyk-agent-scan`.
+### Optional cross-check — CSA mcpserver-audit
 
-```bash
-# Requires a free Snyk token
-export SNYK_TOKEN=your-snyk-api-token
-uvx snyk-agent-scan@latest
-# (sandbox the run if scanning untrusted configs)
-```
-
-### Optional third scanner (CSA-backed audit-side tool)
-
-**3. [ModelContextProtocol-Security/mcpserver-audit](https://github.com/ModelContextProtocol-Security/mcpserver-audit)** — part of the **Cloud Security Alliance** Model Context Protocol Security initiative. Helps audit MCP servers before adoption. Useful as an independent cross-check.
+**[ModelContextProtocol-Security/mcpserver-audit](https://github.com/ModelContextProtocol-Security/mcpserver-audit)** — part of the **Cloud Security Alliance** Model Context Protocol Security initiative. Helps audit MCP servers before adoption. Useful as an independent cross-check when comparing scanner results.
 
 ```bash
 # See upstream README for install + usage
@@ -120,12 +117,12 @@ uvx snyk-agent-scan@latest
 
 ### Recurrence cadence
 
-- **Pre-release tag** (every major + minor): run both primary scanners.
+- **Pre-tag** (every major + minor release): run Cisco mcp-scanner; record results below.
 - **CI** (every push): consider Cisco mcp-scanner as a GitHub Action if upstream ships one.
 
 ### Last scan results
 
-**Last scan: 2026-05-17 — Cisco mcp-scanner v4.6.0 (yara analyzer)**
+**2026-05-17 — Cisco mcp-scanner v4.6.0 (yara analyzer)**
 
 ```
 === Scan Statistics ===
@@ -138,15 +135,15 @@ Analyzer stats: yara_analyzer: 25/25 scanned, 0 findings
 
 **Triage notes:** zero findings. All 25 MCP tools enumerated cleanly via stdio. No prompt injection / tool poisoning / credential harvesting patterns matched.
 
-**Snyk agent-scan run: PENDING** (requires Snyk token; deferred to first post-1.0.0 maintenance cycle).
+### Tools we deliberately do NOT use
 
-### Why two vendor-backed scanners (not more, not less)?
+We evaluated these and chose not to depend on them. The reasoning is explicit so users know the supply chain stays small:
 
-Each scanner has a distinct angle:
-- **Cisco mcp-scanner** — tool description / schema content (semantic patterns via YARA)
-- **Snyk agent-scan** — configuration / deployment shape, multi-platform agent surface
-
-Running both takes ~5 minutes total and provides orthogonal coverage. The April 2026 AppSec Santa survey found 82% of MCP implementations have path-traversal vulnerabilities — these two scanners reliably catch them.
+| Tool | Why excluded |
+|---|---|
+| **[Snyk agent-scan](https://github.com/invariantlabs-ai/mcp-scan)** (originally Invariant Labs mcp-scan, now Snyk) | Requires a `SNYK_TOKEN` from a Snyk account. README confirms it "validates the components, both with local checks **and by invoking the Agent Scan API**" — not local-only; phones home to Snyk's servers. Currently in "Open Preview" (free), but Snyk's commercial tier is paid ($52-$98/dev/month) — post-GA pricing uncertain. Account requirement = vendor lock-in regardless. |
+| **[kapilduraphe/mcp-watch](https://github.com/kapilduraphe/mcp-watch)** | Single-maintainer hobby project. Quality may be fine, but a security tool from an unvetted source is itself a supply-chain risk. |
+| **Commercial-only scanners** (Pangea, Enkrypt AI, AQtive Guard) | Fine if your org has a license, but we don't gate the open-source release on them. |
 
 ### Tools we deliberately do NOT use
 
