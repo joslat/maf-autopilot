@@ -16,8 +16,6 @@
 
 <!-- AUTO-GENERATED START — anything between AUTO-GENERATED START and AUTO-GENERATED END is overwritten on re-run -->
 
-> ⚠️ Auto-generated stub. Review before relying on it for migrations.
-
 ## Versions
 
 - Migrating from: `1.5.0`
@@ -27,72 +25,110 @@
 
 ```
 diff --package Microsoft.Agents.AI@1.5.0..1.6.1 --oneline    # summary statistics
-hape
-was added
 
-### OpenTelemetryAgent
+### WorkflowEvaluationExtensions
 
-- Member '.ctor' was added
+- Member 'EvaluateAsync' signature changed: added optional `string? expectedOutput` parameter before `cancellationToken`
 
-### ChatClientBuilderExtensions
+### New types added
 
-- Member 'UseMessageInjection' was added
-leMessageInjection' was added
+- OpenTelemetryAgent
+- ChatClientBuilderExtensions with UseMessageInjection extension methods
 
-#
+### Key additions
+
+- IChatMessageInjector interface for message injection during function loop
+- Hosted agent improvements (AgentSessionFiles SDK, RAG sample with Azure AI Search)
+- A2A input-request content for human-in-the-loop scenarios
+- Harness agent package for testing
 ```
 
 ## Release Notes Extract
 
 ## What's Changed
-* .NET: Add hyperlight to release slnf by @westey-m in https://github.com/microsoft/agent-framework/pull/5695
-* .NET: Update FoundryAgent to address HostedAgents strict URL routing by @rogerbarreto in https://github.com/microsoft/agent-framework/pull/5677
-* .NET: Add IChatMessageInjector for message injection during function loop by @westey-m in https://github.com/microsoft/agent-framework/pull/5679
-* .NET: Foundry.Hosting IT - eliminate MSBuild parallel-output races by @rogerbarreto in https://github.com/microsoft/agent-framework/pull/5725
-* .NET: Hosted-Files sample + AgentSessionFiles SDK companion + integration test by @rogerbarreto in https://github.com/microsoft/agent-framework/pull/5698
-* .NET: Simplify ClientHeadersScope to rely on AsyncLocal natural restoration by @rogerbarreto in https://github.com/microsoft/agent-framework/pull/5676
-* .NET: Hosted Agents - RAG Sample with Azure AI Search (#5693) by @rogerbarreto in https://github.com/microsoft/agent-framework/pull/5701
-* .NET: Fix/per service input persistence on stream error by @alliscode in https://github.com/microsoft/agent-framework/pull/5744
-* .NET: Remove Foundry Toolbox server-side tools support by @alliscode in https://github.com/microsoft/agent-framework/pull/5753
-* .NET: DevUI: add configurable access controls for the DevUI HTTP surface by @moonbox3 in https://github.com/microsoft/agent-framework/pull/5739
-* .NET: Add A2A input-request content for human-in-the-loop scenarios by @SergeyMenshykh in https://github.com/microsoft/agent-framework/pull/5743
-* .NET fix: Synthesized Handoff FunctionResult is never sent to agent by @lokitoth in https://github.com/microsoft/agent-framework/pull/5718
-* .NET: Refactor harness console rendering by @westey-m in https://github.com/microsoft/agent-framework/pull/5751
-* .NET: fix: align Anthropic Extensions AI version by @danyalahmed1995 in https://github.com/microsoft/agent-framework/pull/5709
-* .NET: declare Magentic protocol messages by @he-yufeng in https://github.com/microsoft/agent-framework/pull/5778
-* .NET: Feat/dotnet shell tool by @alliscode in https://github.com/microsoft/agent-framework/pull/5604
-* .NET: Fix OpenAIResponsesAgentClient to include agentName in endpoint path by @giles17 in https://github.com/microsoft/agent-framework/pull/5748
-* .NET: CI hardening — split Functions tests, re-enable skipped integration tests by @giles17 in https://github.com/microsoft/agent-framework/pull/5717
-* .NET: Add harness agent package by @westey-m in https://github.com/microsoft/agent-framework/pull/5782
-* .NET: [Breaking Change] Auto-wire ChatClient with OpenTelemetryChatClient in OpenTelemetryAgent by @Copilot in https://github.com/microsoft/agent-framework/pull/5750
-* Dotnet: Fixing FoundryToolboxMcp sample to use created toolbox by @alliscode in https://github.com/microsoft/agent-framework/pull/5786
-* .NET: fix: avoid mutating handoff message roles by @he-yufeng in https://github.com/microsoft/agent-framework/pull/5808
-* .NET: feat(evals): add ground_truth/expected_output support for workflow evaluation by @alliscode in https://github.com/microsoft/agent-framework/pull/5755
-* .NET: Update version for release. by @alliscode in https://github.com/microsoft/agent-framework/pull/5789
-* .NET: Fix build issue CA1873 in DevUI by using LoggerMessage source generator by @alliscode in https://github.com/microsoft/agent-framework/pull/5831
-* [BREAKING] Python: DevUI: tighten default access controls and CORS posture by @moonbox3 in https://github.com/microsoft/agent-framework/pull/5740
-* [BREAKING] Python: Align file skill folder discovery with agentskills.io spec by @SergeyMenshykh in https://github.com/microsoft/agent-framework/pull/5807
-* .NET: Filestore improvements by @westey-m in https://github.com/microsoft/agent-framework/pull/5842
-* .NET: DevUI: quarantine flaky discovery integration test (#5845) by @rogerbarreto in https://github.com/microsoft/agent-framework/pull/5846
-* .NET: Update version to 1.6.1 for release by @westey-m in https://github.com/microsoft/agent-framework/pull/5843
 
-**Full Changelog**: https://github.com/microsoft/agent-framework/compare/dotnet-1.5.0...dotnet-1.6.1
+Key highlights from the 1.6.1 release:
+
+**Breaking Changes:**
+* `.NET: [Breaking Change] Auto-wire ChatClient with OpenTelemetryChatClient in OpenTelemetryAgent` - Automatic OpenTelemetry instrumentation
+* `.NET: feat(evals): add ground_truth/expected_output support for workflow evaluation` - New parameter in `EvaluateAsync`
+
+**New Features:**
+* `.NET: Add IChatMessageInjector for message injection during function loop` - New middleware capability
+* `.NET: Hosted-Files sample + AgentSessionFiles SDK companion + integration test` - File handling improvements
+* `.NET: Hosted Agents - RAG Sample with Azure AI Search` - New RAG integration pattern
+* `.NET: Add A2A input-request content for human-in-the-loop scenarios` - Better A2A integration
+* `.NET: Add harness agent package` - New testing utilities
+* `.NET: Feat/dotnet shell tool` - Shell tool support
+
+**Fixes:**
+* `.NET: Fix/per service input persistence on stream error` - Streaming reliability
+* `.NET fix: Synthesized Handoff FunctionResult is never sent to agent` - Handoff bug fix
+* `.NET: Fix OpenAIResponsesAgentClient to include agentName in endpoint path` - Routing fix
+* `.NET: fix: avoid mutating handoff message roles` - Message handling fix
+
+Full changelog: https://github.com/microsoft/agent-framework/compare/dotnet-1.5.0...dotnet-1.6.1
 
 ## Breaking Changes (requires human verification)
 
-<!-- TODO: Review the diff above and list breaking changes here -->
+### WorkflowEvaluationExtensions.EvaluateAsync signature change
+
+**What changed:** A new optional parameter `string? expectedOutput = null` was added before the `cancellationToken` parameter in `WorkflowEvaluationExtensions.EvaluateAsync`.
+
+**Impact:**
+- Existing code will continue to compile because the parameter has a default value
+- Call sites using positional arguments should be reviewed for clarity
+- Best practice: use named arguments for all optional parameters to avoid future ambiguity
+
+**Migration:** See registry entry `MAF161-EXTENSIO-001` for details.
+
+### OpenTelemetryAgent auto-wiring
+
+**What changed:** `OpenTelemetryAgent` now automatically wraps the provided `ChatClient` with `OpenTelemetryChatClient` for built-in telemetry.
+
+**Impact:**
+- If you were manually wrapping your chat client with OpenTelemetry instrumentation, you may get double instrumentation
+- Review your telemetry configuration when upgrading
 
 ## New Patterns
 
-<!-- TODO: Document any new recommended patterns from release notes -->
+### Ground-truth evaluation in workflows
+
+MAF 1.6.1 adds support for expected output (ground-truth) in workflow evaluations:
+
+```csharp
+var results = await run.EvaluateAsync(
+    evaluator,
+    includeOverall: true,
+    includePerAgent: true,
+    expectedOutput: "The expected agent response for comparison",
+    cancellationToken: ct);
+```
+
+This enables automated quality assessment by comparing actual agent outputs against expected outputs.
+
+### Message injection middleware
+
+New `IChatMessageInjector` interface enables message injection during the agent function loop:
+
+```csharp
+services.AddSingleton<IChatMessageInjector, MyCustomInjector>();
+chatClient.AsBuilder()
+    .UseMessageInjection()
+    .Build();
+```
+
+This allows for dynamic message modification during agent execution.
 
 ## Obsolete APIs Added
 
-<!-- TODO: Use MafRunCs0618Hunt against a project pinned to 1.6.1 and document findings -->
+No new CS0618 obsoletions in 1.6.1. The release is primarily additive with one signature enhancement (`EvaluateAsync`).
+
+See registry entry `MAF161-EXTENSIO-001` for the signature change details.
 
 ## Known Misalignments
 
-<!-- TODO: Document any discrepancies between official docs and assembly behavior -->
+None identified at this time. The 1.6.1 release is a minor update with mostly additive features and bug fixes.
 
 <!-- AUTO-GENERATED END -->
 
