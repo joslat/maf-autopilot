@@ -27,7 +27,13 @@
   <em>One <code>autofix-all</code> command. Every mechanical rule. Grade F → A, deterministic.</em>
 </p>
 
-**MAF Doctor** (the maf-autopilot toolkit) is an MCP server that turns GitHub Copilot into a MAF expert for the lifetime of your project. One install, one `init`, and Copilot gains live access to the full knowledge base — API signatures, breaking change rules, a 13-entry machine-readable fix registry, and 12 specialised skills — wired up as **17 executable MCP tools** + 3 Roslyn analyzers for write-time enforcement. Copilot invokes them automatically while auditing, migrating, reviewing, and maintaining your agents and workflows.
+**MAF Doctor** (the maf-autopilot toolkit) is a .NET global tool that does three things in one install:
+
+1. **An MCP server** — exposes **25 executable tools**, 6 resources, and 7 prompts to GitHub Copilot / Claude Code / Cursor via `.vscode/mcp.json`.
+2. **A CLI** — `maf-autopilot doctor` (A-F health letter), `maf-autopilot autofix-all` (deterministic rewriters), `maf-autopilot new agent <Name>`, `maf-autopilot new executor <Name>`, `maf-autopilot init` (drops MCP config + steering snippets into your repo), `maf-autopilot verify-registry`, `maf-autopilot badge`, `maf-autopilot registry-extract`.
+3. **A plugin** — `init` also drops 12 specialised skills, 7 specialist agents, and steering snippets for GitHub Copilot Coding Agent so Copilot's agentic loops gain MAF-specific knowledge.
+
+Plus a **separate `maf-autopilot.Analyzers` NuGet** with 3 Roslyn analyzers (`MAF001`/`MAF002`/`MAF003`) for IDE write-time enforcement, and a curated **19-entry obsolete-API registry** keyed by MAF version (`applies_to_codebases` markers). Copilot invokes the tools automatically while auditing, migrating, reviewing, and maintaining your agents and workflows.
 
 ### What makes it worth trying
 
@@ -41,12 +47,14 @@
 
 ## How It Works
 
-`maf-autopilot` is a **[Model Context Protocol (MCP)](https://modelcontextprotocol.io) server** packaged as a .NET global tool. When running, it exposes:
+`maf-autopilot` is a **[Model Context Protocol (MCP)](https://modelcontextprotocol.io) server** packaged as a .NET global tool. When running in MCP mode (default — no subcommand), it exposes:
 
-- **17 executable tools** — registry lookup (`MafApiSafety`, `MafRegistryLookup`, `MafRegistryList`), code scanning (`MafScanAntiPatterns`, `MafValidateFanOut`, `MafLintAgentPrompt`, `MafEstimateCost`), build-verified hunts (`MafRunCs0618Hunt`), NuGet diffing (`MafDiffPackage`, `MafPreUpgradeDryRun`), workflow simulation (`MafSimulateWorkflow`), explanations (`MafExplain`), scaffolders (`MafNewAgent`, `MafNewExecutor`), PR-scoped audits (`MafAuditPullRequest`), version planning (`MafMigrationPath`), and the single-command health letter `MafDoctor`. Anti-pattern + fan-out scanners both support `format: "sarif"` for GitHub Advanced Security integration.
-- **4 resources** — `maf://guide`, `maf://constraints`, `maf://registry`, `maf://skills?name=...` — the full migration knowledge base, readable on demand.
-- **3 prompts** — `maf-audit`, `maf-migrate`, `maf-cs0618-hunt` — structured conversation starters.
+- **25 executable tools**, each annotated with MCP behavior hints (`readOnlyHint` / `destructiveHint` / `idempotentHint` / `openWorldHint`) so well-behaved clients can auto-classify them. Tools include: registry lookup (`MafApiSafety`, `MafRegistryLookup`, `MafListRegistry`), code scanning (`MafScanAntiPatterns`, `MafValidateFanOut`, `MafLintAgentPrompt`, `MafEstimateCost`), build-verified hunts (`MafRunCs0618Hunt`), NuGet diffing (`MafDiffPackage`, `MafPreUpgradeDryRun`), workflow simulation (`MafSimulateWorkflow`), explanations (`MafExplain`), scaffolders (`MafNewAgent`, `MafNewExecutor`), PR-scoped audits (`MafAuditPullRequest`), version planning (`MafMigrationPath`, `MafGenerateRegressionPlan`, `MafScoreMigrationRisk`), upstream-issue drafter (`MafDraftIssue`), capability tour (`MafTour`), `MafBeforeAfter`, `MafCompatibility`, and the single-command health letter `MafDoctor` (markdown + JSON output for CI integration). Anti-pattern + fan-out scanners both support `format: "sarif"` for GitHub Advanced Security integration. The 2 destructive tools (`MafAutoFix`, `MafAutoFixAll`) support `dryRun`.
+- **6 resources** — `maf://guide`, `maf://constraints`, `maf://registry`, `maf://rules`, `maf://help`, `maf://skills?name=...` — the full migration knowledge base, readable on demand.
+- **7 prompts** — `maf-audit`, `maf-migrate`, `maf-cs0618-hunt`, `maf-review`, `maf-debug`, `maf-scaffold`, `maf-help` — structured conversation starters.
 - **3 Roslyn analyzers** (separate `maf-autopilot.Analyzers` NuGet) — `MAF001` fan-out, `MAF002` `DefaultAzureCredential`, `MAF003` `EnableSensitiveData`. Write-time enforcement.
+
+When invoked with a subcommand instead, the same binary runs as a CLI tool. See "Quick Start" below for the most useful subcommands (`init`, `doctor`, `new agent`, `autofix-all`).
 
 GitHub Copilot Chat connects to the MCP server and gains agentic access to all of this during migration work.
 
@@ -159,35 +167,42 @@ This stack gives an AI client: docs lookup (Learn / Context7 / DeepWiki), codeba
 ```
 maf-autopilot/
 ├── .github/
-│   ├── agents/                            # 3 GitHub Copilot Chat agents
-│   │   ├── maf-migration.agent.md         # Build-verified task-by-task migration orchestrator
-│   │   ├── maf-auditor.agent.md           # Pre-migration scan → generates migration-plan.md
-│   │   └── maf-best-practice-reviewer.agent.md   # Steady-state audit (post-migration) → audit-report.md
+│   ├── agents/                            # 7 GitHub Copilot Coding Agent specialists
+│   │   ├── maf.agent.md                          # Root triage agent — routes you to the right specialist
+│   │   ├── maf-auditor.agent.md                  # Pre-migration scan → generates migration-plan.md
+│   │   ├── maf-best-practice-reviewer.agent.md   # Steady-state audit (post-migration) → audit-report.md
+│   │   ├── maf-migration.agent.md                # Build-verified task-by-task migration orchestrator
+│   │   ├── maf-incident-responder.agent.md       # Production failure triage → root-cause + fix
+│   │   ├── maf-onboarding.agent.md               # "New to this MAF repo" guided tour
+│   │   └── maf-rollback.agent.md                 # 1.3 → 1.2 surgical rollback (build-verified per task)
 │   ├── instructions/
 │   │   └── maf-constraints.instructions.md       # Always-loaded: breaking changes, constraints
 │   ├── skills/                            # 12 specialised skills (loaded by agents on demand)
-│   │   ├── dotnet-inspect/                # pinned to v0.7.8 (surfaces [Obsolete])
-│   │   ├── maf-migration-guide/           # 21-section guide navigator (version-keyed)
-│   │   ├── maf-obsolete-api-registry/     # 13-entry CS0618 fix registry
-│   │   ├── maf-anti-pattern-scanner/      # 9-rule canonical anti-pattern list (post-migration)
-│   │   ├── maf-migration-plan-creator/    # template + ID conventions for tracking tables
 │   │   ├── cs0618-hunter/                 # compiler-ground-truth path (paired with MafRunCs0618Hunt)
+│   │   ├── dotnet-inspect/                # pinned to v0.7.8 (surfaces [Obsolete])
+│   │   ├── maf-anti-pattern-scanner/      # canonical anti-pattern rule list (paired with MafScanAntiPatterns)
 │   │   ├── maf-fan-out-validator/         # silent fan-in starvation rules
-│   │   ├── nuget-diff-analyzer/           # (subsumed by MafDiffPackage tool)
-│   │   ├── maf-release-watcher/           # weekly NuGet check workflow
+│   │   ├── maf-issue-reporter/            # upstream-issue filing procedure (paired with MafDraftIssue)
+│   │   ├── maf-migration-guide/           # multi-section guide navigator (version-keyed)
+│   │   ├── maf-migration-plan-creator/    # template + ID conventions for tracking tables
+│   │   ├── maf-migration-retrospective/   # post-migration learning loop
+│   │   ├── maf-obsolete-api-registry/     # 19-entry CS0618 fix registry (the YAML source)
+│   │   ├── maf-release-watcher/           # weekly NuGet check + AI-fill loop documentation
 │   │   ├── maf-workflow-smoke-tester/     # smoke test templates
-│   │   └── maf-migration-retrospective/   # post-migration learning loop
-│   └── workflows/                         # 5 GitHub Actions
-│       ├── release.yml                    # NuGet publish (test → pack → push)
-│       ├── maf-release-watcher.yml        # weekly MAF version check + auto-PR with draft registry entries
+│   │   └── nuget-diff-analyzer/           # generic NuGet diff procedure (subsumed by MafDiffPackage tool)
+│   └── workflows/                         # 7 GitHub Actions
+│       ├── release.yml                    # NuGet publish (test → pack → push) on v* tag
+│       ├── docker-publish.yml             # multi-arch GHCR image on tag push
+│       ├── maf-release-watcher.yml        # weekly (Monday 9 AM UTC) MAF version check
+│       ├── maf-ai-fill-todos.yml          # dispatches GitHub issue for Copilot Coding Agent to fill registry TODOs
+│       ├── maf-ai-fill-verify.yml         # PR-gate: runs verify-registry on AI-filled output before merge
 │       ├── maf-pr-audit.yml               # PR-scoped scan, posts a sticky comment
-│       ├── maf-drift-detector.yml         # weekly MafDoctor; opens issue if grade < A
-│       └── docker-publish.yml             # multi-arch GHCR image on tag push
-├── mcp/
-│   ├── maf-autopilot/                     # MCP server — 17 executable tools, 4 resources, 3 prompts
+│       └── maf-drift-detector.yml         # weekly MafDoctor; opens issue if grade < A
+├── src/
+│   ├── maf-autopilot/                     # MCP server — 25 tools, 6 resources, 7 prompts; CLI binary
 │   ├── maf-autopilot.Analyzers/           # Roslyn analyzer package (MAF001/002/003 — separate NuGet)
-│   ├── maf-autopilot.Tests/               # ~354 xUnit tests
-│   └── maf-autopilot.Analyzers.Tests/     # ~11 analyzer tests
+│   ├── maf-autopilot.Tests/               # 580 xUnit tests (× 3 TFMs = 1740 executions per run)
+│   └── maf-autopilot.Analyzers.Tests/     # 11 analyzer tests (× 3 TFMs = 33 executions)
 ├── Dockerfile                             # multi-stage build → ghcr.io/joslat/maf-autopilot:latest
 ├── guides/
 │   ├── maf-current-migration-guide.md     # Cumulative — auto-generated, all versions concatenated (start here)
@@ -214,9 +229,11 @@ maf-autopilot/
 | Check if a NuGet type/member exists               | `dotnet-inspect`               |
 | Detect and fix CS0618 obsolete warnings           | `cs0618-hunter`                |
 | Look up the fix pattern for a specific CS0618     | `maf-obsolete-api-registry`    |
+| Review 1.3.0 code for known anti-patterns         | `maf-anti-pattern-scanner`     |
 | Generate a migration plan for a new codebase      | `maf-migration-plan-creator`   |
 | Validate fan-out/fan-in workflow structure        | `maf-fan-out-validator`        |
 | Post-process NuGet diff into actionable report    | `nuget-diff-analyzer`          |
+| File an upstream MAF bug                          | `maf-issue-reporter`           |
 | Check for / respond to new MAF versions           | `maf-release-watcher`          |
 | Generate smoke tests for migrated workflows       | `maf-workflow-smoke-tester`    |
 | Learn from migration surprises, improve toolkit   | `maf-migration-retrospective`  |
@@ -239,17 +256,18 @@ The MCP server tools are called automatically by Copilot during steps 1–3 — 
 
 For an up-to-date, evidence-anchored view of what is done, what is in progress, and what is pending, see:
 
-- **[`docs/maf-migration-toolkit-plan.md`](docs/maf-migration-toolkit-plan.md)** — phased roadmap (Phase A → B → C → D) + the 66-row tracking table (single source of truth)
+- **[`docs/maf-migration-toolkit-plan.md`](docs/maf-migration-toolkit-plan.md)** — phased roadmap + the tracking table (single source of truth)
 - **[`docs/project-status-and-vision.md`](docs/project-status-and-vision.md)** — stage assessment, the broader vision beyond migration, completeness audit
 
 > The README used to carry its own tick-list of features. It drifted from the plan twice in two months. The plan tracking table is now authoritative; the README sticks to "what this is" and "how to use it."
 
-### Distribution status (2026-05-16)
+### Distribution status (2026-05-17)
 
 - ✅ **NuGet** — [`1.0.0`](https://www.nuget.org/packages/maf-autopilot) on nuget.org. Supports MAF 1.0 / 1.2 / 1.3.
-- ✅ **Docker GHCR** — multi-arch (amd64+arm64) container, semver tags
+- ✅ **Docker GHCR** — multi-arch (amd64+arm64) container, semver tags (built by `docker-publish.yml` on tag push)
 - ✅ **Roslyn analyzers** — `maf-autopilot.Analyzers` package ships 3 write-time rules
 - ✅ **Multi-version migration paths** — `MafMigrationPath(currentVer, targetVer)` walks version-keyed guide metadata
+- ✅ **Security model documented** — see [`docs/security.md`](docs/security.md). Cisco mcp-scanner v4.6.0 (2026-05-17): **25/25 tools SAFE, 0 findings**.
 
 ---
 
