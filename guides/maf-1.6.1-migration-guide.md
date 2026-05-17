@@ -108,7 +108,7 @@ leMessageInjection' was added
 - `dotnet-inspect` reported the `EvaluateAsync` signature delta, but auto-generated
   registry drafts classify signature changes under a CS0618 placeholder by default.
   In practice, affected call sites more commonly fail with argument-binding compile
-  errors (for example CS1503) when positional arguments are used.
+  errors (CS1503) when positional arguments are used.
 
 <!-- AUTO-GENERATED END -->
 

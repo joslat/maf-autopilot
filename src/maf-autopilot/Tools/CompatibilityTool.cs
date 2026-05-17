@@ -68,8 +68,8 @@ public sealed class CompatibilityTool
 
                 | Dependency                                | Version             | Notes |
                 |-------------------------------------------|---------------------|-------|
-                | .NET runtime                              | `>= 8.0`            | net8.0, net9.0, net10.0 TFMs all supported |
-                | Microsoft.Extensions.AI                   | `>= 10.5.1`         | |
+                | .NET runtime                              | `≥ 8.0`             | net8.0, net9.0, net10.0 TFMs all supported |
+                | Microsoft.Extensions.AI                   | `≥ 10.5.1`          | |
                 | Azure.AI.OpenAI                           | _not pinned by MAF_ | BYO via `IChatClient` — consumer chooses the backing implementation |
                 | Microsoft.Agents.AI.Workflows.Generators  | `1.6.1`             | Source-gen package |
                 | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
