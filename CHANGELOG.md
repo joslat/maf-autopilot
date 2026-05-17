@@ -17,6 +17,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.1] — 2026-05-17
+
+Same-day stabilization patch following 1.0.0. **No functional code changes.** NuGet binary content is byte-identical to 1.0.0 for both packages (`maf-autopilot` + `maf-autopilot.Analyzers`). Diff vs v1.0.0:
+
+```
+.dockerignore |  2 ++
+Dockerfile    | 37 ++++++++++++++++++++++++++-----------
+```
+
+The version bump exists to attach a single tag covering 4 post-1.0.0 Docker pipeline fixes so the `docker-publish.yml` workflow rebuilds the GHCR images cleanly via tag push.
+
+### Fixed
+
+- **Dockerfile** — bumped SDK base image `8.0` → `10.0` (the csproj multi-targets `net8.0;net9.0;net10.0` and SDK 8.0 failed NETSDK1045). Added explicit `--framework net10.0` to `dotnet publish` (required for multi-TFM csprojs). Bumped runtime image to match.
+- **Dockerfile** — added `COPY Directory.Packages.props Directory.Build.props global.json` to the build stage. The csproj uses Central Package Management; without these the restore failed NU1015 ("PackageReference items do not have a version specified").
+- **Dockerfile** — replaced per-folder source COPYs with single `COPY src/maf-autopilot/` (the prior enumeration missed `Commands/` — added during 1.0.0 prep for `init`, `verify-registry`, `registry-extract`, and `badge` subcommands).
+- **.dockerignore** — un-excluded `docs/steering/` (4 steering snippets are `EmbeddedResource` items in the csproj since 1.0.0 — they must be in the Docker build context).
+
+### Distribution
+
+- ✅ NuGet `maf-autopilot/1.0.1` republished (binary identical to 1.0.0)
+- ✅ NuGet `maf-autopilot.Analyzers/1.0.1` republished (binary identical to 1.0.0)
+- ✅ Docker GHCR `:1.0.1` `:1.0` `:1` `:latest` rebuilt with the 4 fixes baked in
+
+---
+
 ## [1.0.0] — 2026-05-17
 
 First stable release. Public API committed. **MAF Doctor** brand introduced.
