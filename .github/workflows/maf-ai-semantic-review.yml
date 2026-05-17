@@ -18,9 +18,12 @@ name: MAF AI Semantic Review
 
 on:
   pull_request:
+    # No `paths:` filter — empirically broken with ready_for_review events
+    # (state flips carry no commit deltas, so paths matching is unreliable
+    # and the trigger silently skips). Observed 2026-05-17 on PR #26.
+    # Instead, the build_prompt step emits skip=true if no entries actually
+    # changed, gating downstream AI inference + post-comment.
     types: [ready_for_review, reopened, synchronize]
-    paths:
-      - '.github/skills/maf-obsolete-api-registry/registry.yaml'
   workflow_dispatch:
     inputs:
       pr_number:

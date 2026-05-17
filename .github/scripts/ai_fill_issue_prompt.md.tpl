@@ -102,6 +102,19 @@ Run through this checklist on every entry you filled:
 - [ ] No invented section numbers in `guide_section` — only existing
   section IDs from the guide, OR the literal string `N/A`.
 
+**Cross-file checks** (the rung-1 verifier WILL fail your PR if any of
+these break):
+
+- [ ] `docs/compatibility-matrix.md` has exactly ONE `**{{TARGET}}**` row,
+  not two. Run `grep -c '^| \*\*{{TARGET}}\*\*' docs/compatibility-matrix.md`
+  — must print `1`.
+- [ ] `## Version Tracking` section's "Current tracked version" line says
+  `**`{{TARGET}}`**`, not an older version.
+- [ ] `guides/maf-{{TARGET}}-migration-guide.md` exists and its
+  AUTO-GENERATED sections are filled (no `TODO`).
+- [ ] `last-updated:` date in the compatibility-matrix HTML comment
+  is today's UTC date.
+
 The PR will be automatically checked against
 `maf-autopilot verify-registry` by the
 `.github/workflows/maf-ai-fill-verify.yml` workflow. The check
@@ -109,6 +122,18 @@ enforces the same items above. If any fail, the check fails and the
 PR is blocked from auto-merge.
 
 ## What to fill — compatibility matrix
+
+The watcher has ALREADY inserted a placeholder row at the top of the
+`## Compatibility Table` in `docs/compatibility-matrix.md`. It looks like:
+
+```
+| **{{TARGET}}** | `>= unknown` | `>= 8.0` | `>= unknown` | `{{TARGET}}` | Auto-detected — verify versions in PR review. |
+```
+
+**UPDATE THIS EXISTING ROW IN-PLACE. DO NOT ADD A NEW ROW.** A common
+failure mode (observed on the 2026-05-17 live-fire of PR #26) is the bot
+adding a new filled row *below* the placeholder, leaving the table with
+two `**{{TARGET}}**` rows. The verifier flags duplicate rows as FAIL.
 
 For the row `**{{TARGET}}**`:
 
@@ -122,6 +147,44 @@ Also at the top of `docs/compatibility-matrix.md` there is an HTML
 comment of the form
 `<!-- auto-updated-by: maf-release-watcher | last-updated: YYYY-MM-DD -->`.
 Update the date to today (UTC).
+
+## What to fill — Version Tracking section
+
+Lower in `docs/compatibility-matrix.md` there is a `## Version Tracking`
+section that contains a line:
+
+```
+Current tracked version: **`X.Y.Z`** (see `.maf-version`)
+```
+
+**UPDATE THIS LINE to match `.maf-version` = `{{TARGET}}`.** A common
+failure mode is leaving this line at the previous version. The cross-file
+consistency check flags this as FAIL.
+
+## Cross-file thoroughness — DO ALL of these
+
+The watcher commit touched MULTIPLE files. Before opening the PR, verify
+EACH of these is consistent with each other:
+
+1. `.maf-version` — already set to `{{TARGET}}` (don't touch).
+2. `.github/skills/maf-obsolete-api-registry/registry.yaml` — fill new
+   entries (Step 2 above).
+3. `docs/compatibility-matrix.md`:
+   - Top row updated, NOT duplicated.
+   - `last-updated:` date updated.
+   - Version Tracking section's "Current tracked version" updated.
+4. `guides/maf-{{TARGET}}-migration-guide.md` — fill the AUTO-GENERATED
+   sections (Step "What to fill — migration guide" above).
+
+Run a final consistency grep before opening the PR:
+
+```bash
+# Should find ONE row for {{TARGET}}, not two:
+grep -c '^| \*\*{{TARGET}}\*\*' docs/compatibility-matrix.md
+
+# Should print {{TARGET}}, not an older version:
+grep 'Current tracked version' docs/compatibility-matrix.md
+```
 
 ## What to fill — migration guide
 

@@ -38,11 +38,19 @@ on:
       target_version:
         description: 'MAF version to fill TODOs for (e.g. 1.4.0, 1.5.0)'
         required: true
+      bot:
+        description: 'Which Coding Agent to assign (claude|copilot|codex). Default: claude — empirically better at structured-instruction following and catching duplicates than Copilot for this task.'
+        required: false
+        default: 'claude'
   workflow_call:
     inputs:
       target_version:
         type: string
         required: true
+      bot:
+        type: string
+        required: false
+        default: 'claude'
 
 permissions:
   contents: read
@@ -80,8 +88,9 @@ jobs:
             --description "AI auto-fill of TODOs (Copilot Coding Agent)" \
             --force || true
 
-      - name: Open issue assigned to Copilot Coding Agent
+      - name: Open issue assigned to chosen Coding Agent
         env:
+          BOT_NAME: ${{ inputs.bot || 'claude' }}
           # COPILOT_ASSIGN_PAT is a fine-grained PAT owned by a Copilot-enabled
           # user. It's REQUIRED for auto-assigning the Coding Agent bot:
           # `addAssigneesToAssignable` categorically rejects GITHUB_TOKEN and
@@ -104,16 +113,16 @@ jobs:
           # substitutes {{TARGET}} / {{DIGITS}} with no shell parsing.
           ISSUE_BODY=$(python3 .github/scripts/build_ai_fill_issue_body.py)
 
-          # Two-step pattern: create the issue first, then assign Copilot via
-          # GraphQL. The standard `gh issue edit --add-assignee Copilot` fails
-          # because gh CLI looks up assignees via REST `/users/Copilot`, and
-          # the Copilot bot ISN'T returned by that endpoint (it's a Bot, not a
-          # User). The GraphQL mutation `addAssigneesToAssignable` accepts the
-          # bot's global node ID directly, which is what the GitHub UI uses
-          # under the hood when you click "Assignees → Copilot".
+          # Two-step pattern: create the issue first, then assign the chosen
+          # Coding Agent via GraphQL. The standard `gh issue edit
+          # --add-assignee` fails because gh CLI looks up assignees via REST
+          # `/users/<name>`, and these bots aren't returned by that endpoint
+          # (they're Bots, not Users). The GraphQL mutation
+          # `addAssigneesToAssignable` accepts global node IDs directly, which
+          # is what the GitHub UI uses under the hood.
 
           ISSUE_URL=$(gh issue create \
-            --title "Fill TODOs for MAF $TARGET" \
+            --title "Fill TODOs for MAF $TARGET (assigned to: $BOT_NAME)" \
             --body "$ISSUE_BODY" \
             --label "maf-release,ai-fill")
           echo "✅ Issue created: $ISSUE_URL"
@@ -132,11 +141,41 @@ jobs:
             -F num="$ISSUE_NUM" \
             --jq '.data.repository.issue.id')
 
-          # Copilot Coding Agent's global node ID. Stable across all repos —
-          # discovered empirically by inspecting a manually-assigned issue.
-          # If Copilot Coding Agent is ever rolled forward to a new bot
-          # account, this constant needs updating.
-          COPILOT_BOT_ID="BOT_kgDOC9w8XQ"
+          # Resolve the chosen bot's GraphQL node ID dynamically via
+          # suggestedActors. Avoids hardcoded constants that can rotate when
+          # GitHub re-provisions bot accounts. Bot login names are stable:
+          #   copilot -> copilot-swe-agent
+          #   claude  -> anthropic-code-agent
+          #   codex   -> openai-code-agent
+          case "$BOT_NAME" in
+            copilot) NEEDLE="copilot-swe-agent" ;;
+            claude)  NEEDLE="anthropic-code-agent" ;;
+            codex)   NEEDLE="openai-code-agent" ;;
+            *) echo "::error::Unknown bot '$BOT_NAME' — expected copilot|claude|codex"; exit 1 ;;
+          esac
+
+          BOT_ID=$(gh api graphql -f query='
+            query($owner: String!, $repo: String!) {
+              repository(owner: $owner, name: $repo) {
+                suggestedActors(capabilities: [CAN_BE_ASSIGNED], first: 25) {
+                  nodes {
+                    ... on Bot { id login }
+                    ... on User { id login }
+                  }
+                }
+              }
+            }' \
+            -f owner="${GITHUB_REPOSITORY%%/*}" \
+            -f repo="${GITHUB_REPOSITORY##*/}" \
+            --jq ".data.repository.suggestedActors.nodes[] | select(.login==\"$NEEDLE\") | .id")
+          if [ -z "$BOT_ID" ] || [ "$BOT_ID" = "null" ]; then
+            echo "::error::Could not find $NEEDLE in suggestedActors. Enable the agent at"
+            echo "::error::https://github.com/${GITHUB_REPOSITORY}/settings/copilot"
+            exit 1
+          fi
+          echo "Resolved bot $BOT_NAME ($NEEDLE) -> $BOT_ID"
+          # Keep COPILOT_BOT_ID name for back-compat with downstream messages.
+          COPILOT_BOT_ID="$BOT_ID"
 
           # Best-effort: assign via the additive GraphQL mutation. Uses
           # `addAssigneesToAssignable` (not `replaceActorsForAssignable`) so
