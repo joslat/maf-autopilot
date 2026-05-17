@@ -409,23 +409,37 @@ public class AutoFixToolTests
         // Critical invariant: the dependency-safe order is documented in the
         // tool's docstring AND in the returned `orderOfExecution` field. This
         // test pins the order so future refactors don't silently break it.
-        var tempRoot = Path.GetTempPath();
-        var tool = new AutoFixTool();
-        var resultJson = tool.MafAutoFixAll(tempRoot, dryRun: true);
-        var result = JsonSerializer.Deserialize<JsonDocument>(resultJson)!;
+        //
+        // Use a unique temp SUBDIRECTORY (not Path.GetTempPath() itself) — on
+        // Linux CI the bare temp root contains systemd-private-* dirs owned by
+        // root which trigger UnauthorizedAccessException in the walker. The
+        // walker is now defensive (IgnoreInaccessible=true) but the test
+        // shouldn't depend on a system-wide path either way.
+        var tempRoot = Path.Combine(Path.GetTempPath(), "maf-autofix-order-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var tool = new AutoFixTool();
+            var resultJson = tool.MafAutoFixAll(tempRoot, dryRun: true);
+            var result = JsonSerializer.Deserialize<JsonDocument>(resultJson)!;
 
-        var order = result.RootElement.GetProperty("orderOfExecution")
-            .EnumerateArray()
-            .Select(e => e.GetString()!)
-            .ToList();
+            var order = result.RootElement.GetProperty("orderOfExecution")
+                .EnumerateArray()
+                .Select(e => e.GetString()!)
+                .ToList();
 
-        var sealedIdx = order.IndexOf("MAF-AP-WF-001");
-        var fanInIdx = order.IndexOf("MAF130-FAN-IN-001");
-        var syncIdx = order.IndexOf("MAF-AP-CONC-002");
+            var sealedIdx = order.IndexOf("MAF-AP-WF-001");
+            var fanInIdx = order.IndexOf("MAF130-FAN-IN-001");
+            var syncIdx = order.IndexOf("MAF-AP-CONC-002");
 
-        Assert.True(sealedIdx >= 0 && fanInIdx >= 0 && syncIdx >= 0);
-        Assert.True(sealedIdx < fanInIdx, "ExecutorSealed must run before FanInArgOrder");
-        Assert.True(fanInIdx < syncIdx,   "FanInArgOrder must run before SyncOverAsync");
+            Assert.True(sealedIdx >= 0 && fanInIdx >= 0 && syncIdx >= 0);
+            Assert.True(sealedIdx < fanInIdx, "ExecutorSealed must run before FanInArgOrder");
+            Assert.True(fanInIdx < syncIdx,   "FanInArgOrder must run before SyncOverAsync");
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
     }
 
     [Fact]
