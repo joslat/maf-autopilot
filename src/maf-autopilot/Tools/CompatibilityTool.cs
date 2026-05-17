@@ -74,8 +74,8 @@ public sealed class CompatibilityTool
                 | Microsoft.Agents.AI.Workflows.Generators  | `1.6.1`          | Source-gen package |
                 | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
 
-                Additive release; new expectedOutput parameter for workflow evaluation ground-truth comparisons.
-                OpenTelemetryAgent now auto-wires ChatClient with OpenTelemetryChatClient for observability.
+                New expectedOutput parameter for workflow evaluation ground-truth comparisons.
+                Breaking: OpenTelemetryAgent now auto-wires ChatClient with OpenTelemetryChatClient.
                 """,
 
             ["1.5.0"] = """

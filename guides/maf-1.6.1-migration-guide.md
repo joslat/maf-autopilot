@@ -80,19 +80,20 @@ leMessageInjection' was added
 
 ## Breaking Changes (requires human verification)
 
-### WorkflowEvaluationExtensions.EvaluateAsync — New Parameter Insertion
+- **WorkflowEvaluationExtensions.EvaluateAsync**: Add optional expectedOutput parameter before cancellationToken when calling WorkflowEvaluationExtensions.EvaluateAsync for ground-truth evaluation support.
 
-**Change:** A new optional parameter `string? expectedOutput` was added to `WorkflowEvaluationExtensions.EvaluateAsync` between the existing `splitter` and `cancellationToken` parameters.
+**Impact:** Positional call sites passing `CancellationToken` as the last argument will break (the token will be interpreted as `expectedOutput`). Named-argument call sites using `cancellationToken:` remain valid.
 
-**Impact:**
-- Code using **named arguments** for `cancellationToken` will compile without error but must be updated if you want to leverage ground-truth evaluation
-- Code using **positional arguments** continues to work (all new parameters are optional)
-- No compilation breaks for typical usage patterns
-
-**Example:**
+**Migration:**
 
 ```csharp
-// 1.5.0 pattern — still works in 1.6.1 but doesn't leverage new capability
+// 1.5.0 pattern using positional arguments — BREAKS in 1.6.1
+var results = await run.EvaluateAsync(myEvaluator, true, true, "MyEval", null, ct);
+
+// 1.6.1 fix: add expectedOutput explicitly (or use named arguments)
+var results = await run.EvaluateAsync(myEvaluator, true, true, "MyEval", null, null, ct);
+
+// 1.5.0 pattern using named arguments — still works in 1.6.1
 var results = await run.EvaluateAsync(
     evaluator: myEvaluator,
     evalName: "MyEvaluation",
@@ -104,11 +105,28 @@ var results = await run.EvaluateAsync(
     evaluator: myEvaluator,
     evalName: "MyEvaluation",
     splitter: conversationSplitter,
-    expectedOutput: "Expected workflow result",  // NEW
+    expectedOutput: "Expected workflow result",
     cancellationToken: ct);
 ```
 
-**Recommendation:** Update call sites to include `expectedOutput` when evaluating workflows where you have known-good reference outputs for comparison.
+- **OpenTelemetryAgent**: Auto-wires ChatClient with OpenTelemetryChatClient for observability. Remove manual wrapping before passing to `OpenTelemetryAgent`.
+
+**Migration:**
+
+```csharp
+// OLD (1.5.0) — manual wrapping before passing to agent
+var telemetryClient = new OpenTelemetryChatClient(chatClient, sourceName: "MyAgent");
+var agent = new OpenTelemetryAgent(telemetryClient, options);
+
+// NEW (1.6.1) — agent handles wrapping automatically
+var agent = new OpenTelemetryAgent(chatClient, options);
+```
+
+See [PR #5750](https://github.com/microsoft/agent-framework/pull/5750) for details.
+
+## Obsolete APIs Added
+
+<!-- TODO: Use MafRunCs0618Hunt against a project pinned to 1.6.1 and document findings -->
 
 ## New Patterns
 
@@ -128,27 +146,6 @@ var evaluationResults = await workflowRun.EvaluateAsync(
 ```
 
 This enables more rigorous evaluation workflows by quantifying how closely actual outputs match expected outputs.
-
-### OpenTelemetry Auto-Wiring
-
-The `OpenTelemetryAgent` now automatically wraps the provided `IChatClient` with `OpenTelemetryChatClient` for observability. This is a breaking change for code that manually wrapped chat clients before passing to `OpenTelemetryAgent`.
-
-**Migration:**
-```csharp
-// OLD (1.5.0) — manual wrapping before passing to agent
-var telemetryClient = new OpenTelemetryChatClient(chatClient, sourceName: "MyAgent");
-var agent = new OpenTelemetryAgent(telemetryClient, options);
-
-// NEW (1.6.1) — agent handles wrapping automatically
-var agent = new OpenTelemetryAgent(chatClient, options);
-// No need to manually wrap — the agent does it for you
-```
-
-See [PR #5750](https://github.com/microsoft/agent-framework/pull/5750) for details.
-
-## Obsolete APIs Added
-
-No new `[Obsolete]` attributes were introduced in 1.6.1. The `WorkflowEvaluationExtensions.EvaluateAsync` signature change is backward-compatible (all new parameters are optional).
 
 ## Known Misalignments
 
