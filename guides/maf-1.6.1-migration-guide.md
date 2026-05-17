@@ -80,19 +80,36 @@ leMessageInjection' was added
 
 ## Breaking Changes (requires human verification)
 
-<!-- TODO: Review the diff above and list breaking changes here -->
+- **Workflows evals**: `WorkflowEvaluationExtensions.EvaluateAsync(...)` added an `expectedOutput` parameter before `cancellationToken`.
+  - **Impact**: positional call sites that passed `cancellationToken` as the final argument will fail to compile (or bind differently if you were relying on optional-arg positions).
+  - **Fix**: pass `expectedOutput` explicitly (or switch to named arguments).
+  - Example:
+    ```csharp
+    // Old (1.5.0): cancellationToken was last.
+    await run.EvaluateAsync(evaluator, true, true, "Workflow Eval", splitter, cancellationToken);
+
+    // New (1.6.1): expectedOutput inserted before cancellationToken.
+    await run.EvaluateAsync(evaluator, true, true, "Workflow Eval", splitter, expectedOutput: expectedOutput, cancellationToken: cancellationToken);
+    ```
+- **OpenTelemetryAgent**: release notes call out a breaking change where `OpenTelemetryAgent` auto-wires the provided `IChatClient` with an `OpenTelemetryChatClient`.
+  - **Impact**: behavior changes (telemetry spans/attributes) even when your agent composition code is unchanged.
+  - **Fix**: validate your observability expectations in staging (span names, headers, sampling) after upgrading.
 
 ## New Patterns
 
-<!-- TODO: Document any new recommended patterns from release notes -->
+- **Message injection during function loop**: `IChatMessageInjector` + `ChatClientBuilderExtensions.UseMessageInjection` allow injecting/modifying messages during tool/function execution.
+  - Use when you need to enforce policy, redact content, or attach diagnostics without mutating your persisted chat history.
+- **Workflow eval "ground truth" support**: supply `expectedOutput` to `Run.EvaluateAsync(...)` to evaluate against a known-good expected response.
 
 ## Obsolete APIs Added
 
-<!-- TODO: Use MafRunCs0618Hunt against a project pinned to 1.6.1 and document findings -->
+- No new CS0618 `[Obsolete]` entries were identified by the 1.5.0 → 1.6.1 public-surface diff in this repo’s auto-generated registry.
+- **Recommended verification**: run `MafRunCs0618Hunt(projectPath)` against your own solution pinned to `Microsoft.Agents.AI.Workflows@1.6.1` to catch any customer-code-specific obsoletions and overload-binding issues.
 
 ## Known Misalignments
 
-<!-- TODO: Document any discrepancies between official docs and assembly behavior -->
+- None documented yet for 1.6.1 in this repository.
+- If you find a doc-vs-assembly mismatch, add it under **Human additions** below so the watcher won’t overwrite it.
 
 <!-- AUTO-GENERATED END -->
 
