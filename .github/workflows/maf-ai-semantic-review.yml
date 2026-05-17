@@ -61,7 +61,9 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             PR_NUM="${{ inputs.pr_number }}"
-            DATA=$(gh pr view "$PR_NUM" --json baseRefOid,headRefOid)
+            # --repo so gh doesn't try to infer from a not-yet-existent git context
+            # (this step runs before actions/checkout).
+            DATA=$(gh pr view "$PR_NUM" --repo "$GITHUB_REPOSITORY" --json baseRefOid,headRefOid)
             BASE=$(echo "$DATA" | jq -r .baseRefOid)
             HEAD=$(echo "$DATA" | jq -r .headRefOid)
           else
