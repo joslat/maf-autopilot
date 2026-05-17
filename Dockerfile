@@ -21,7 +21,10 @@
 # documents are embedded into the .dll at build time (no extra COPY needed).
 
 # ---------- Stage 1 — build ----------
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+# SDK 10.0 required because the csproj multi-targets net8.0/net9.0/net10.0
+# (multi-version test parity with the analyzer NuGet). SDK 8.0 — which we used
+# through the alphas — can't restore net9.0/net10.0 TFMs and fails NETSDK1045.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy only the files needed to restore — better layer caching.
@@ -38,15 +41,19 @@ COPY .github/ .github/
 COPY guides/ guides/
 COPY README.md ./
 
+# Publish a single TFM (net10.0 — matches the runtime image below). Required
+# because `dotnet publish` on a multi-TFM csproj without `--framework` fails.
 RUN dotnet publish src/maf-autopilot/maf-autopilot.csproj \
     --configuration Release \
+    --framework net10.0 \
     --output /app \
     --self-contained false \
     -p:UseAppHost=false
 
 # ---------- Stage 2 — runtime ----------
-# The runtime image is much smaller than the SDK image (~125 MB vs ~860 MB).
-FROM mcr.microsoft.com/dotnet/runtime:8.0
+# The runtime image is much smaller than the SDK image (~150 MB vs ~900 MB).
+# Must match the --framework TFM published above.
+FROM mcr.microsoft.com/dotnet/runtime:10.0
 WORKDIR /app
 
 # Copy build output. Embedded resources (registry.yaml, constraints.md,
