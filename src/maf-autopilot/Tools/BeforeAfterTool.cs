@@ -24,7 +24,7 @@ namespace MafAutopilot.Tools;
 [McpServerToolType]
 public sealed class BeforeAfterTool
 {
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
         Preview the changes a set of MafAutoFix rules would make across a
         codebase — WITHOUT writing anything to disk.

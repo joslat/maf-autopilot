@@ -1,0 +1,152 @@
+name: MAF AI Semantic Review
+
+# Rung-2 of the trust ladder for ai-fill PRs (rung-1 is the deterministic
+# `verify-registry` mechanical check). When an ai-fill PR is marked ready for
+# review, this workflow calls a Claude / GPT-4 model via the GitHub Models
+# inference endpoint, asks it to check each changed registry entry against
+# the raw `dotnet-inspect` diff (preserved in `notes:`), and posts the
+# findings as a single PR review comment.
+#
+# Uses your Copilot subscription's GitHub Models quota — no extra secret,
+# no Anthropic / OpenAI account, no third-party API key. The only auth is
+# the workflow's GITHUB_TOKEN with `models: read` permission.
+#
+# Currently in COMMENT-ONLY mode: the verdict is in the comment; the
+# human still merges. To make it a hard gate (rung-3), flip
+# COMMENT_ONLY_MODE = False in ai_review_post_comment.py and add this
+# workflow as a required status check in branch protection settings.
+
+on:
+  pull_request:
+    # No `paths:` filter — empirically broken with ready_for_review events
+    # (state flips carry no commit deltas, so paths matching is unreliable
+    # and the trigger silently skips). Observed 2026-05-17 on PR #26.
+    # Instead, the build_prompt step emits skip=true if no entries actually
+    # changed, gating downstream AI inference + post-comment.
+    types: [ready_for_review, reopened, synchronize]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review (manual re-run)'
+        required: true
+      model:
+        description: 'Override the model (e.g. openai/gpt-4o, openai/gpt-4o-mini)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  pull-requests: write
+  models: read
+
+jobs:
+  semantic-review:
+    # Only run on PRs that look like ai-fill output — `ai-fill` label OR a
+    # head branch from one of the Coding Agent bots. Skip during draft
+    # iterations to avoid wasting model quota on every push.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.pull_request.draft == false &&
+        (
+          contains(github.event.pull_request.labels.*.name, 'ai-fill') ||
+          startsWith(github.head_ref, 'claude/') ||
+          startsWith(github.head_ref, 'copilot/') ||
+          startsWith(github.head_ref, 'codex/')
+        )
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve PR coordinates
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            PR_NUM="${{ inputs.pr_number }}"
+            # --repo so gh doesn't try to infer from a not-yet-existent git context
+            # (this step runs before actions/checkout).
+            DATA=$(gh pr view "$PR_NUM" --repo "$GITHUB_REPOSITORY" --json baseRefOid,headRefOid)
+            BASE=$(echo "$DATA" | jq -r .baseRefOid)
+            HEAD=$(echo "$DATA" | jq -r .headRefOid)
+          else
+            PR_NUM="${{ github.event.pull_request.number }}"
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          fi
+          echo "pr_number=$PR_NUM" >> $GITHUB_OUTPUT
+          echo "base=$BASE" >> $GITHUB_OUTPUT
+          echo "head=$HEAD" >> $GITHUB_OUTPUT
+          echo "Resolved: PR #$PR_NUM (base=$BASE head=$HEAD)"
+
+      - name: Checkout main (so the scripts are present)
+        uses: actions/checkout@v6
+        with:
+          # Deliberately NOT checking out the PR head — the PR branch (created
+          # by the filler bot) doesn't contain the rung-2 review scripts. We
+          # need this workflow's scripts from main, then we git-fetch the PR
+          # refs separately so `git show $SHA:registry.yaml` works.
+          fetch-depth: 0
+
+      - name: Fetch PR head + base refs
+        env:
+          PR_NUM: ${{ steps.pr.outputs.pr_number }}
+          BASE_SHA: ${{ steps.pr.outputs.base }}
+          HEAD_SHA: ${{ steps.pr.outputs.head }}
+        run: |
+          # Fetching the PR head ref makes HEAD_SHA reachable. BASE_SHA is
+          # usually on main already (fetched by the previous checkout with
+          # depth=0), but we force-fetch it too for safety.
+          git fetch origin "pull/$PR_NUM/head" --depth=20
+          # Sanity-check that both SHAs are now reachable.
+          for SHA in "$BASE_SHA" "$HEAD_SHA"; do
+            if ! git cat-file -e "$SHA" 2>/dev/null; then
+              echo "::error::SHA $SHA not reachable after fetching pull/$PR_NUM/head."
+              exit 1
+            fi
+            echo "$SHA reachable."
+          done
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: pip install pyyaml
+
+      - name: Build review prompt
+        id: build
+        env:
+          BASE_SHA: ${{ steps.pr.outputs.base }}
+          HEAD_SHA: ${{ steps.pr.outputs.head }}
+        run: |
+          python3 .github/scripts/ai_review_build_prompt.py > .ai-review-prompt.md
+          BYTES=$(wc -c < .ai-review-prompt.md | tr -d ' ')
+          ENTRIES_COUNT=$(jq length < .ai-review-entries.json)
+          echo "Prompt bytes: $BYTES; entries to review: $ENTRIES_COUNT"
+          if [ "$ENTRIES_COUNT" = "0" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "::notice title=No registry entries changed::Skipping AI review (no entries in scope)."
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: AI inference (GitHub Models)
+        if: steps.build.outputs.skip != 'true'
+        id: ai
+        uses: actions/ai-inference@v1
+        with:
+          model: ${{ inputs.model != '' && inputs.model || 'openai/gpt-4o' }}
+          prompt-file: .ai-review-prompt.md
+          max-tokens: 4000
+          # Auth is the workflow's GITHUB_TOKEN with models: read permission.
+          # No additional inputs needed; the action picks up the token from
+          # the environment.
+
+      - name: Post review comment to PR
+        if: steps.build.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          AI_RESPONSE: ${{ steps.ai.outputs.response }}
+        run: python3 .github/scripts/ai_review_post_comment.py

@@ -35,7 +35,7 @@ dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff
 
 # Step 3: for each breaking change, look up the registry:
 #   MafApiSafety("<symbol-name>")
-# or browse .github/skills/obsolete-api-registry/registry.yaml
+# or browse .github/skills/maf-obsolete-api-registry/registry.yaml
 ```
 
 ## Output categories (what `MafDiffPackage` produces)

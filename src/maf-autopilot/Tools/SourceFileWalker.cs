@@ -24,15 +24,31 @@ internal static class SourceFileWalker
             : StringComparison.Ordinal;
 
     /// <summary>
+    /// Shared <see cref="EnumerationOptions"/> for recursive .cs walks.
+    /// `IgnoreInaccessible = true` is critical when scanning paths under
+    /// `/tmp/` on Linux CI (and any user-repo containing protected subdirs)
+    /// — without it, an unreadable subdirectory anywhere in the tree throws
+    /// `UnauthorizedAccessException` and aborts the whole scan. Bug surfaced
+    /// in the v1.0.0 release pipeline (`/tmp/systemd-private-*` is owned by
+    /// root on the GitHub Actions Ubuntu runner).
+    /// </summary>
+    private static readonly EnumerationOptions RecursiveCsOptions = new()
+    {
+        RecurseSubdirectories = true,
+        IgnoreInaccessible = true,
+    };
+
+    /// <summary>
     /// Enumerates every <c>*.cs</c> file under <paramref name="repoRoot"/>,
     /// excluding common build artefact paths (<c>/bin/</c>, <c>/obj/</c>).
-    /// Symlinks are followed by <see cref="Directory.EnumerateFiles(string, string, SearchOption)"/>
-    /// — acceptable because the caller has already validated the input path
-    /// via <see cref="PathGuard.ValidateRepoPath"/>.
+    /// Unreadable subdirectories are silently skipped (see
+    /// <see cref="RecursiveCsOptions"/>). Symlinks are followed.
+    /// Caller has already validated the input path via
+    /// <see cref="PathGuard.ValidateRepoPath"/>.
     /// </summary>
     public static IEnumerable<string> EnumerateCsFiles(string repoRoot)
     {
-        foreach (var path in Directory.EnumerateFiles(repoRoot, "*.cs", SearchOption.AllDirectories))
+        foreach (var path in Directory.EnumerateFiles(repoRoot, "*.cs", RecursiveCsOptions))
         {
             var n = path.Replace('\\', '/');
             if (n.Contains("/bin/", StringComparison.Ordinal)) continue;

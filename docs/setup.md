@@ -284,7 +284,7 @@ Here is an honest comparison:
   with:
     prompt: |
       Read diff-core.txt. For each removed or renamed member that relates to
-      Microsoft.Agents.AI workflows, add an entry to .github/skills/obsolete-api-registry/registry.yaml
+      Microsoft.Agents.AI workflows, add an entry to .github/skills/maf-obsolete-api-registry/registry.yaml
       following the existing format. ...
 ```
 

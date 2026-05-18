@@ -14,7 +14,7 @@ using ModelContextProtocol.Server;
 //   maf-autopilot doctor [path]              — one-command repo health report (A/B/C/F grade)
 if (args.Length > 0 && args[0] == "init")
 {
-    var exitCode = await InitCommand.RunAsync();
+    var exitCode = await InitCommand.RunAsync(args);
     Environment.Exit(exitCode);
     return; // unreachable; satisfies compiler
 }
@@ -41,6 +41,28 @@ if (args.Length >= 1 && args[0] == "badge")
     var badge = MafAutopilot.Commands.BadgeCommand.Build(path);
     Console.WriteLine(badge);
     Environment.Exit(0);
+    return;
+}
+if (args.Length >= 1 && args[0] == "autofix-all")
+{
+    // Phase W bonus + #8 enabler — surface MafAutoFixAll on the CLI so the
+    // migration-cast.tape can drive the auto-fix flow without going through
+    // Copilot Chat. Usage: `maf-autopilot autofix-all [path] [--dry-run]`.
+    var positional = args.Skip(1).Where(a => !a.StartsWith("--")).ToList();
+    var path = positional.Count > 0 ? positional[0] : Directory.GetCurrentDirectory();
+    var dryRun = args.Contains("--dry-run");
+    var report = new MafAutopilot.Tools.AutoFixTool().MafAutoFixAll(path, dryRun: dryRun);
+    Console.WriteLine(report);
+    Environment.Exit(0);
+    return;
+}
+if (args.Length >= 1 && args[0] == "verify-registry")
+{
+    // #5 polish (2026-05-13) — verification gate for the AI-fill flow. The
+    // PR-triggered workflow maf-ai-fill-verify.yml runs this command against
+    // the AI-filled registry.yaml. Exit code 1 blocks the PR's auto-merge.
+    var exitCode = MafAutopilot.Commands.VerifyRegistryCommand.Run();
+    Environment.Exit(exitCode);
     return;
 }
 if (args.Length >= 1 && args[0] == "registry-extract")

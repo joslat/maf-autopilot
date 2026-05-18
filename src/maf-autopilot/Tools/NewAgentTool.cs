@@ -15,7 +15,7 @@ namespace MafAutopilot.Tools;
 [McpServerToolType]
 public sealed class NewAgentTool
 {
-    [McpServerTool]
+    [McpServerTool(Destructive = false, Idempotent = true, OpenWorld = false)]
     [Description("""
         Generate a new MAF 1.3.0 agent class + xUnit smoke test.
 
@@ -60,7 +60,7 @@ public sealed class NewAgentTool
         return WriteAndReport(projectPath, files, $"Generated MAF agent: {agentName}");
     }
 
-    [McpServerTool]
+    [McpServerTool(Destructive = false, Idempotent = true, OpenWorld = false)]
     [Description("""
         Generate a new MAF 1.3.0 workflow executor + xUnit smoke test.
 

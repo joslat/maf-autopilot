@@ -140,7 +140,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 | Registry entries | `MAF<MAJ><MIN><PATCH>-<AREA>-<NNN>` | `MAF130-FAN-IN-001` |
 | Agents | `maf-<role>.agent.md` (no `-agent` stem) | `maf-incident-responder.agent.md` |
 | Instructions | `maf-<topic>.instructions.md` | `maf-constraints.instructions.md` |
-| Skills | mixed — `maf-` prefix when the unprefixed name is general-CS; no prefix when context-unambiguous | `maf-anti-pattern-scanner` vs `obsolete-api-registry` |
+| Skills | `maf-` prefix for MAF-specific skills; no prefix for skills wrapping external tools by their own name | `maf-anti-pattern-scanner` vs `dotnet-inspect` |
 | CLI subcommands | natural English | `init`, `doctor`, `new agent`, `registry-extract` |
 
 See [`/CONTRIBUTING.md`](../CONTRIBUTING.md) §"Skill naming convention" + "Adding an agent" for the rationale.
@@ -155,7 +155,7 @@ maf-autopilot.sln
     ├── /src/maf-autopilot                    (net8.0;net9.0;net10.0 console / NuGet tool)
     │       └── embeds: .github/skills/*.md, .github/instructions/*.md,
     │                   guides/maf-1.3.0-migration-guide.md,
-    │                   .github/skills/obsolete-api-registry/registry.yaml
+    │                   .github/skills/maf-obsolete-api-registry/registry.yaml
     │
     ├── /src/maf-autopilot.Analyzers          (netstandard2.0 / NuGet)
     │       └── (no project references — fully standalone)
@@ -216,7 +216,7 @@ The `maf-release-watcher` workflow runs weekly + on-demand, detecting new MAF re
 
 | Surface | Additive? | How it's enforced |
 |---|---|---|
-| `.github/skills/obsolete-api-registry/registry.yaml` | ✅ | `maf-autopilot registry-extract` emits draft entries; watcher appends via `>> $REGISTRY`. **Pinned by test** `RegistryExtractCommandTests.Additivity_DraftEntries_AppendedToExistingRegistry_PreserveAllOriginalEntries`. |
+| `.github/skills/maf-obsolete-api-registry/registry.yaml` | ✅ | `maf-autopilot registry-extract` emits draft entries; watcher appends via `>> $REGISTRY`. **Pinned by test** `RegistryExtractCommandTests.Additivity_DraftEntries_AppendedToExistingRegistry_PreserveAllOriginalEntries`. |
 | `docs/compatibility-matrix.md` | ✅ | `.github/scripts/update_compat_matrix.py` inserts at top of data section; checks for duplicate version rows (no-op on re-run). Idempotency documented in the script's docstring. |
 | `guides/maf-<NEW-VERSION>-migration-guide.md` | ✅ | `.github/scripts/gen_guide_section.py` writes a NEW per-version file. If the file already exists, the AUTO-GENERATED region is overwritten but the `## Human additions` heading and everything below it is preserved. The 1.3.0 guide is never touched. |
 | `.maf-version` (tracked version pointer) | ✅ (overwritten cleanly) | One-line file; the watcher writes the new latest version. The old value is replaced — but the old version's registry/matrix/guide data stays intact (rows above). |

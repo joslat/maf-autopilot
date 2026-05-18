@@ -1,6 +1,6 @@
 ---
-name: obsolete-api-registry
-description: "Machine-readable registry of known CS0618 obsolete API warnings for MAF migrations. Each entry maps an obsolete method signature to its replacement, with the exact fix pattern. Load this skill when cs0618-hunter has identified a CS0618 warning and you need the deterministic fix. Also update this registry whenever a new CS0618 warning is discovered that is not yet listed."
+name: maf-obsolete-api-registry
+description: "Machine-readable registry of known CS0618 obsolete API warnings for MAF migrations. Each entry maps an obsolete method signature to its replacement, with the exact fix pattern. Prefer the MCP tool MafRegistryLookup (by ID) or MafApiSafety (by symbol) for one-shot queries; this skill is for understanding the registry schema and contributing new entries. Load this skill when cs0618-hunter has identified a CS0618 warning and you need the deterministic fix."
 ---
 
 # Obsolete API Registry

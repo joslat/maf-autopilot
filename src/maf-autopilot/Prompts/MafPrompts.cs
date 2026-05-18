@@ -39,8 +39,8 @@ public static class MafPrompts
         sb.AppendLine("3. Use MafApiSafety to validate any API you are unsure about.");
         sb.AppendLine("4. Use MafRegistryLookup to check if a specific CS0618 pattern already has a registered fix.");
         sb.AppendLine();
-        sb.AppendLine("OUTPUT: A complete migration-plan.md tracking table following the migration-plan-creator skill format.");
-        sb.AppendLine("Read maf://skills?name=migration-plan-creator for the canonical template and task ID conventions.");
+        sb.AppendLine("OUTPUT: A complete migration-plan.md tracking table following the maf-migration-plan-creator skill format.");
+        sb.AppendLine("Read maf://skills?name=maf-migration-plan-creator for the canonical template and task ID conventions.");
 
         return [new PromptMessage { Role = Role.User, Content = new TextContentBlock { Text = sb.ToString() } }];
     }

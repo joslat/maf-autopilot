@@ -22,16 +22,43 @@ jobs:
           # Need the base branch ref to compute the diff.
           fetch-depth: 0
 
+      - name: Decide whether to audit (skip if only samples/ changed)
+        id: scope
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # samples/ intentionally contains buggy / out-of-date code:
+          # - samples/find-the-bug/* has an answer-key.md alongside
+          #   intentional anti-patterns (the tutorial IS the point).
+          # - samples/maf-1.2-sample/* is the analyzer's test corpus —
+          #   patterns valid in MAF 1.2 that later versions flag.
+          # Auditing them produces a noisy F grade that doesn't reflect
+          # the toolkit's code quality. Skip if EVERY changed code file
+          # is under samples/.
+          git fetch origin "$BASE_REF":"refs/heads/$BASE_REF" --depth=50 || true
+          CHANGED_CODE=$(git diff --name-only "origin/$BASE_REF" HEAD | grep -E '\.(cs|csproj)$' || true)
+          NON_SAMPLE=$(echo "$CHANGED_CODE" | grep -v '^samples/' || true)
+          echo "Changed .cs/.csproj files in PR:"
+          echo "$CHANGED_CODE" | sed 's/^/  /'
+          if [ -z "$NON_SAMPLE" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "::notice title=MAF audit skipped::Only samples/ files changed — they're intentionally buggy demo corpora, not real code to audit."
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        if: steps.scope.outputs.skip != 'true'
+        uses: actions/setup-dotnet@v5
         with:
-          # Net8 LTS — install-only; nupkg multi-targets so any flavor works.
           dotnet-version: '8.0.x'
 
       - name: Install maf-autopilot (prerelease)
+        if: steps.scope.outputs.skip != 'true'
         run: dotnet tool install --global maf-autopilot --prerelease || dotnet tool update --global maf-autopilot --prerelease
 
       - name: Run MCP server and call MafAuditPullRequest
+        if: steps.scope.outputs.skip != 'true'
         id: audit
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -65,10 +92,11 @@ jobs:
           cat pr-audit-full.md
 
       - name: Comment on PR
+        if: steps.scope.outputs.skip != 'true'
         # SHA-pinned per supply-chain hardening. Verify against tag with:
         #   gh api repos/marocchino/sticky-pull-request-comment/git/refs/tags/v2.9.2 --jq .object.sha
         # Update via Dependabot (.github/dependabot.yml).
-        uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728  # v2.9.2
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0  # v2.9.2
         with:
           header: maf-autopilot-audit
           path: pr-audit-full.md

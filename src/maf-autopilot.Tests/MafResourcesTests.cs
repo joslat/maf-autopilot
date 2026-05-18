@@ -48,17 +48,16 @@ public class MafResourcesTests
     [Theory]
     [InlineData("cs0618-hunter")]
     [InlineData("dotnet-inspect")]
-    [InlineData("fan-in-static-analyzer")]
-    [InlineData("fan-out-validator")]
     [InlineData("maf-anti-pattern-scanner")]
+    [InlineData("maf-fan-out-validator")]
     [InlineData("maf-issue-reporter")]
     [InlineData("maf-migration-guide")]
+    [InlineData("maf-migration-plan-creator")]
+    [InlineData("maf-migration-retrospective")]
+    [InlineData("maf-obsolete-api-registry")]
     [InlineData("maf-release-watcher")]
-    [InlineData("migration-plan-creator")]
-    [InlineData("migration-retrospective")]
+    [InlineData("maf-workflow-smoke-tester")]
     [InlineData("nuget-diff-analyzer")]
-    [InlineData("obsolete-api-registry")]
-    [InlineData("workflow-smoke-tester")]
     public void GetSkill_AllAllowlistedNames_Resolve(string name)
     {
         var body = MafResources.GetSkill(name);

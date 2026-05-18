@@ -12,8 +12,7 @@ You are a best-practice reviewer for **Microsoft Agent Framework (MAF) 1.3.0 cod
 
 ```
 .github/skills/maf-anti-pattern-scanner/SKILL.md  — canonical anti-pattern rule list
-.github/skills/fan-out-validator/SKILL.md         — conceptual silent-starvation rules
-.github/skills/fan-in-static-analyzer/SKILL.md    — code-walking topology analysis
+.github/skills/maf-fan-out-validator/SKILL.md         — conceptual silent-starvation rules + code-walking topology analysis
 .github/skills/maf-migration-guide/SKILL.md       — current 1.3.0 idiom reference
 ```
 

@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Setup .NET (all three runtimes — nupkg multi-targets net8/9/10)
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: |
             8.0.x
@@ -82,12 +82,27 @@ jobs:
           echo "Packed: $(ls src/dist/*.nupkg)"
 
       - name: Pack analyzer package
+        # NU5017 false-positive: the analyzer csproj uses `<None Include ... Pack="true">`
+        # to ship the analyzer DLL under `analyzers/dotnet/cs/`. NuGet pack's heuristic
+        # doesn't see that path and reports "no dependencies nor content" — fires as
+        # an error on .NET SDK 10.0.300+ (Linux runner) but as a warning with exit 0
+        # on 10.0.102 (Windows local). The nupkg IS produced correctly in both cases
+        # (verified by `unzip -l` showing analyzers/dotnet/cs/*.dll present).
+        # Workaround: tolerate the pack exit code; verify success by nupkg presence.
+        shell: bash
         run: |
+          set +e
           dotnet pack src/maf-autopilot.Analyzers/maf-autopilot.Analyzers.csproj \
             --configuration Release \
             --no-restore \
             --output src/dist/
-          echo "Packed: $(ls src/dist/maf-autopilot.Analyzers*.nupkg)"
+          PACK_EXIT=$?
+          if ls src/dist/maf-autopilot.Analyzers*.nupkg >/dev/null 2>&1; then
+            echo "Packed: $(ls src/dist/maf-autopilot.Analyzers*.nupkg)"
+            exit 0
+          fi
+          echo "::error::Analyzer nupkg was not produced (pack exit code was $PACK_EXIT)"
+          exit "$PACK_EXIT"
 
       - name: Publish to NuGet
         run: |

@@ -21,9 +21,16 @@ name: MAF AI Auto-Fill TODOs
 #   4. You review the PR and merge (or set up auto-merge on the label).
 #
 # Requires:
-# - The repository has GitHub Copilot Coding Agent enabled (default on for
-#   repos owned by a Copilot Pro/Business/Enterprise account).
-# - No additional secrets.
+# - The repository has GitHub Copilot Coding Agent (or Claude/Codex Coding
+#   Agent) enabled. Toggle at https://github.com/<owner>/<repo>/settings/copilot
+#   (one of "Allow Copilot/Claude/Codex coding agent" must be ON).
+# - Secret COPILOT_ASSIGN_PAT: fine-grained PAT owned by a Copilot-enabled user,
+#   with Issues R/W + Contents R/W + PRs R/W + Actions R/W on this repo only.
+#   This is REQUIRED for auto-assignment — see the long comment block on the
+#   "Open issue assigned to Copilot Coding Agent" step below for why
+#   GITHUB_TOKEN is unusable here. If the secret is missing the workflow still
+#   runs (the issue gets created), only auto-assignment is skipped with a
+#   loud annotation explaining the gap.
 
 on:
   workflow_dispatch:
@@ -31,11 +38,19 @@ on:
       target_version:
         description: 'MAF version to fill TODOs for (e.g. 1.4.0, 1.5.0)'
         required: true
+      bot:
+        description: 'Which Coding Agent to assign (claude|copilot|codex). Default: claude — empirically better at structured-instruction following and catching duplicates than Copilot for this task.'
+        required: false
+        default: 'claude'
   workflow_call:
     inputs:
       target_version:
         type: string
         required: true
+      bot:
+        type: string
+        required: false
+        default: 'claude'
 
 permissions:
   contents: read
@@ -73,143 +88,41 @@ jobs:
             --description "AI auto-fill of TODOs (Copilot Coding Agent)" \
             --force || true
 
-      - name: Open issue assigned to Copilot Coding Agent
+      - name: Open issue assigned to chosen Coding Agent
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BOT_NAME: ${{ inputs.bot || 'claude' }}
+          # COPILOT_ASSIGN_PAT is a fine-grained PAT owned by a Copilot-enabled
+          # user. It's REQUIRED for auto-assigning the Coding Agent bot:
+          # `addAssigneesToAssignable` categorically rejects GITHUB_TOKEN and
+          # every other GitHub App installation token, because Copilot bills
+          # agent runs against a human Copilot subscription. (Confirmed
+          # 2026-05-17 by upstream gh-aw issue #19765 + Copilot maintainer
+          # statement: "Copilot does not support bot accounts for issue
+          # assignment".) If the secret isn't set, fall back to GITHUB_TOKEN
+          # so the issue still gets created — only the auto-assignment fails,
+          # with a loud annotation pointing at the missing secret.
+          GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN_KIND: ${{ secrets.COPILOT_ASSIGN_PAT && 'pat' || 'github-token' }}
           TARGET: ${{ inputs.target_version }}
           DIGITS: ${{ steps.vars.outputs.version_digits }}
         run: |
-          ISSUE_BODY=$(cat <<EOF
-          @copilot — please fill in the TODO placeholders the release-watcher
-          left for **MAF $TARGET**.
+          # Render the issue body via a Python template helper. Previously
+          # this was a ~180-line bash heredoc with every backtick escaped
+          # (\`...\`); a single missed escape would have corrupted the
+          # whole body. The helper reads ai_fill_issue_prompt.md.tpl and
+          # substitutes {{TARGET}} / {{DIGITS}} with no shell parsing.
+          ISSUE_BODY=$(python3 .github/scripts/build_ai_fill_issue_body.py)
 
-          ## Context
-
-          The watcher just committed an auto-generated update with:
-
-          - **\`.github/skills/obsolete-api-registry/registry.yaml\`** — new entries
-            whose \`id\` starts with **\`MAF${DIGITS}-\`** (e.g. \`MAF${DIGITS}-AGENT-001\`).
-            Each entry has TODO fields: \`fix_description\`, \`example_before\`,
-            \`example_after\`, \`guide_section\`. Each entry's \`notes:\` field
-            already contains the raw \`dotnet-inspect\` diff text — use that as
-            the source of truth for what changed.
-
-          - **\`docs/compatibility-matrix.md\`** — find the row containing
-            \`**$TARGET**\` at the top of the data table. Cells marked
-            \`unknown\` need real version constraints.
-
-          - **\`guides/maf-$TARGET-migration-guide.md\`** — sections under the
-            \`AUTO-GENERATED START / END\` markers say \`TODO\`. Fill them.
-
-          ## Style anchor
-
-          The existing well-filled entries are the canonical format. Match their
-          tone, length, and YAML structure exactly:
-
-          - \`MAF130-FAN-IN-001\`
-          - \`MAF130-SESSION-001\`
-          - \`MAF130-THREAD-001\`
-          - \`MAF130-EXEC-001\`
-
-          ## What to fill — per registry entry
-
-          For each entry with \`id: MAF${DIGITS}-*\`:
-
-          1. **\`fix_description\`** — one concise sentence. Pattern: "Replace X
-             with Y. Add Z." Keep it actionable.
-
-          2. **\`example_before\`** — minimal C# call site (3-8 lines) showing
-             the obsolete signature being used. Use the \`obsolete_signature\`
-             field as the basis. Use YAML block-literal style (\`|\`).
-
-          3. **\`example_after\`** — corrected $TARGET replacement (3-8 lines),
-             also \`|\` block-literal.
-
-          4. **\`guide_section\`** — section number from the existing 1.3.0
-             guide if there's a clear parallel pattern (look at the headings of
-             \`guides/maf-1.3.0-migration-guide.md\`). If there's NO parallel
-             section (because the change touches a surface that didn't exist
-             in 1.3.0), use **\`N/A\`** — not \`TBD\`, not \`TODO\`. Never
-             invent section numbers.
-
-          ## What to fill — compatibility matrix
-
-          For the row \`**$TARGET**\`:
-
-          - **\`Microsoft.Extensions.AI\`** column: replace \`unknown\` with the
-            actual version constraint if the MAF release notes mention a bump.
-            Otherwise leave as \`unknown\` and add a \`<!-- TODO: verify from MAF
-            csproj -->\` HTML comment in the Notes column.
-          - **\`Azure.AI.OpenAI\`** column: same logic.
-
-          Also at the top of \`docs/compatibility-matrix.md\` there is an HTML
-          comment of the form
-          \`<!-- auto-updated-by: maf-release-watcher | last-updated: YYYY-MM-DD -->\`.
-          Update the date to today (UTC).
-
-          ## What to fill — migration guide
-
-          In \`guides/maf-$TARGET-migration-guide.md\`, fill the four
-          \`TODO\`-marked sections under the \`AUTO-GENERATED START / END\`
-          markers:
-
-          - **Breaking Changes**: one bullet per registry entry. Format:
-            \`- <symbol>: <fix_description>\`.
-
-          - **New Patterns**: from the release notes (visible at
-            https://github.com/microsoft/agent-framework/releases/tag/dotnet-$TARGET
-            or scroll to the "Release Notes Extract" section of the guide
-            file itself, which already has them embedded), highlight new types
-            / features worth knowing. 3-7 bullets.
-
-          - **Obsolete APIs Added**: leave as a TODO unless the release notes
-            explicitly call out new \`[Obsolete]\` markings. Add:
-            \`<!-- TODO: run \\\`MafRunCs0618Hunt\\\` against a project pinned to $TARGET to populate. -->\`
-
-          - **Known Misalignments**: \`None documented yet.\` unless the
-            release notes call out doc/assembly mismatches.
-
-          ## Also clean up
-
-          The migration guide's "Diff Summary" code block may contain garbled
-          fragments (e.g. literal \`hape\` or \`d\` from terminal escape codes
-          in \`dotnet-inspect\` output). If present, **replace the code block
-          with a clean human-readable bulleted summary** derived from the
-          release notes.
-
-          ## Constraints
-
-          - **DO NOT** modify entries whose \`id\` does NOT start
-            \`MAF${DIGITS}-\`. Earlier-version entries are off-limits.
-          - **DO NOT** touch any \`## Human additions\` section. Humans own
-            that section across re-runs of the watcher.
-          - **DO NOT** invent facts. When uncertain, leave \`TODO\` /
-            \`unknown\` with an explanation. The toolkit deliberately favours
-            "honest TODO" over "confident guess."
-
-          ## When you're done
-
-          Open the PR with title \`chore: AI-filled TODOs for MAF $TARGET\` and
-          a brief summary of what you filled. Label it
-          \`maf-release,ai-fill\`. The maintainer reviews + merges (or has
-          auto-merge configured on the label).
-
-          ---
-
-          *This issue was auto-generated by \`.github/workflows/maf-ai-fill-todos.yml\`. To re-fire manually: \`gh workflow run maf-ai-fill-todos.yml -f target_version=$TARGET\`.*
-          EOF
-          )
-
-          # Two-step pattern: create the issue first, then assign Copilot via
-          # GraphQL. The standard `gh issue edit --add-assignee Copilot` fails
-          # because gh CLI looks up assignees via REST `/users/Copilot`, and
-          # the Copilot bot ISN'T returned by that endpoint (it's a Bot, not a
-          # User). The GraphQL mutation `addAssigneesToAssignable` accepts the
-          # bot's global node ID directly, which is what the GitHub UI uses
-          # under the hood when you click "Assignees → Copilot".
+          # Two-step pattern: create the issue first, then assign the chosen
+          # Coding Agent via GraphQL. The standard `gh issue edit
+          # --add-assignee` fails because gh CLI looks up assignees via REST
+          # `/users/<name>`, and these bots aren't returned by that endpoint
+          # (they're Bots, not Users). The GraphQL mutation
+          # `addAssigneesToAssignable` accepts global node IDs directly, which
+          # is what the GitHub UI uses under the hood.
 
           ISSUE_URL=$(gh issue create \
-            --title "Fill TODOs for MAF $TARGET" \
+            --title "Fill TODOs for MAF $TARGET (assigned to: $BOT_NAME)" \
             --body "$ISSUE_BODY" \
             --label "maf-release,ai-fill")
           echo "✅ Issue created: $ISSUE_URL"
@@ -228,15 +141,50 @@ jobs:
             -F num="$ISSUE_NUM" \
             --jq '.data.repository.issue.id')
 
-          # Copilot Coding Agent's global node ID. Stable across all repos —
-          # discovered empirically by inspecting a manually-assigned issue.
-          # If Copilot Coding Agent is ever rolled forward to a new bot
-          # account, this constant needs updating.
-          COPILOT_BOT_ID="BOT_kgDOC9w8XQ"
+          # Resolve the chosen bot's GraphQL node ID dynamically via
+          # suggestedActors. Avoids hardcoded constants that can rotate when
+          # GitHub re-provisions bot accounts. Bot login names are stable:
+          #   copilot -> copilot-swe-agent
+          #   claude  -> anthropic-code-agent
+          #   codex   -> openai-code-agent
+          case "$BOT_NAME" in
+            copilot) NEEDLE="copilot-swe-agent" ;;
+            claude)  NEEDLE="anthropic-code-agent" ;;
+            codex)   NEEDLE="openai-code-agent" ;;
+            *) echo "::error::Unknown bot '$BOT_NAME' — expected copilot|claude|codex"; exit 1 ;;
+          esac
+
+          BOT_ID=$(gh api graphql -f query='
+            query($owner: String!, $repo: String!) {
+              repository(owner: $owner, name: $repo) {
+                suggestedActors(capabilities: [CAN_BE_ASSIGNED], first: 25) {
+                  nodes {
+                    ... on Bot { id login }
+                    ... on User { id login }
+                  }
+                }
+              }
+            }' \
+            -f owner="${GITHUB_REPOSITORY%%/*}" \
+            -f repo="${GITHUB_REPOSITORY##*/}" \
+            --jq ".data.repository.suggestedActors.nodes[] | select(.login==\"$NEEDLE\") | .id")
+          if [ -z "$BOT_ID" ] || [ "$BOT_ID" = "null" ]; then
+            echo "::error::Could not find $NEEDLE in suggestedActors. Enable the agent at"
+            echo "::error::https://github.com/${GITHUB_REPOSITORY}/settings/copilot"
+            exit 1
+          fi
+          echo "Resolved bot $BOT_NAME ($NEEDLE) -> $BOT_ID"
+          # Keep COPILOT_BOT_ID name for back-compat with downstream messages.
+          COPILOT_BOT_ID="$BOT_ID"
 
           # Best-effort: assign via the additive GraphQL mutation. Uses
           # `addAssigneesToAssignable` (not `replaceActorsForAssignable`) so
           # we never accidentally remove human assignees who were added later.
+          #
+          # Capture the actual GraphQL error to a temp file (don't suppress with
+          # >/dev/null 2>&1 — that hid the real "Bot does not have access" error
+          # for days during the v1.0 release. Discovered 2026-05-17.)
+          GRAPHQL_ERR=$(mktemp)
           if gh api graphql \
               -f query='mutation($assignable: ID!, $actor: ID!) {
                 addAssigneesToAssignable(input: { assignableId: $assignable, assigneeIds: [$actor] }) {
@@ -247,23 +195,54 @@ jobs:
               }' \
               -f "assignable=$ISSUE_NODE_ID" \
               -f "actor=$COPILOT_BOT_ID" \
-              >/dev/null 2>&1; then
+              >/dev/null 2>"$GRAPHQL_ERR"; then
             echo "✅ Assigned to Copilot Coding Agent — work should start within minutes."
           else
             echo ""
             echo "⚠️  Could NOT auto-assign Copilot Coding Agent via GraphQL."
-            echo "    Most likely cause: the Coding Agent isn't enabled on this repo."
-            echo "    Error usually reads: 'Bot does not have access to the repository'."
             echo ""
-            echo "    To enable (one-time per repo):"
-            echo "      1. https://github.com/${GITHUB_REPOSITORY}/settings/copilot"
-            echo "      2. Look for 'Coding Agent' → Enable for this repository."
-            echo "      Requires Copilot Pro+ / Business / Enterprise subscription."
+            echo "    Actual GraphQL error from the API:"
+            sed 's/^/      /' "$GRAPHQL_ERR" | head -5
+            echo ""
+            if [ "$GH_TOKEN_KIND" = "github-token" ]; then
+              echo "    ROOT CAUSE (definitive — investigated 2026-05-17):"
+              echo "      This step ran with GITHUB_TOKEN. The Copilot Coding Agent"
+              echo "      assignment API rejects EVERY non-user token by design —"
+              echo "      including GITHUB_TOKEN, GitHub App installation tokens, and"
+              echo "      every other automation credential. It only accepts a fine-"
+              echo "      grained PAT owned by a Copilot-enabled user. No workflow"
+              echo "      permission scope fixes this — it's a GitHub-side policy."
+              echo ""
+              echo "    FIX (one-time):"
+              echo "      1. Create a fine-grained PAT at"
+              echo "         https://github.com/settings/personal-access-tokens/new"
+              echo "         Resource owner: your user."
+              echo "         Repository access: only this repo."
+              echo "         Repo permissions: Contents R/W, Issues R/W, PRs R/W,"
+              echo "         Actions R/W, Metadata R."
+              echo "      2. Save it as repo secret COPILOT_ASSIGN_PAT at"
+              echo "         https://github.com/${GITHUB_REPOSITORY}/settings/secrets/actions"
+              echo "      3. Re-run this workflow."
+              echo ""
+              echo "    Reference: upstream gh-aw issue #19765 + Copilot maintainer"
+              echo "    statement \"Copilot does not support bot accounts for issue"
+              echo "    assignment\"."
+            else
+              echo "    A PAT was used (COPILOT_ASSIGN_PAT is set), so the bot-token-"
+              echo "    rejection class of failure is ruled out. Other causes to check:"
+              echo "      1. PAT scopes — Issues R/W, Repository access on this repo."
+              echo "      2. The PAT owner must have Copilot Pro/Pro+/Business/Enterprise"
+              echo "         AND have the Coding Agent enabled in their settings."
+              echo "      3. Bot global node ID may have rotated (currently $COPILOT_BOT_ID)."
+              echo "         Verify with: gh api graphql -f query='{ repository(owner:\\\"X\\\", name:\\\"Y\\\") { suggestedActors(capabilities:[CAN_BE_ASSIGNED]) { nodes { ... on Bot { id login } } } } }'"
+            fi
             echo ""
             echo "    To proceed manually THIS run:"
-            echo "      Open $ISSUE_URL → Assignees → select 'Copilot'."
+            echo "      Open $ISSUE_URL → Assignees → select 'Copilot' / 'Claude'."
             echo ""
-            echo "    Reference (when this was last verified):"
-            echo "      Copilot bot global node ID: $COPILOT_BOT_ID"
-            echo "      Mutation: addAssigneesToAssignable"
+            # Emit a GitHub-Actions-UI-level annotation so this shows on the run summary,
+            # not just in the log. The workflow itself stays successful (the issue WAS
+            # created — only the assignment failed); the annotation makes the gap loud.
+            echo "::warning title=Coding Agent not assigned (token: $GH_TOKEN_KIND)::Issue $ISSUE_URL created but bot was not auto-assigned. See log for root cause + fix."
           fi
+          rm -f "$GRAPHQL_ERR"

@@ -18,18 +18,17 @@ namespace MafAutopilot.Tools;
 [McpServerToolType]
 public sealed class TourTool
 {
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
-        Return a structured catalogue of every maf-autopilot capability — MCP tools,
-        agents, resources, prompts — with a one-line "when to use" each. Designed
-        for new users asking "what can this thing do?". Output is markdown suitable
-        for direct display in chat.
+        List every maf-autopilot capability — MCP tools, agents, resources, prompts —
+        with a one-line "when to use" each. Use this when a new user asks "what can
+        this thing do?". For the same content as a static resource, read maf://help.
 
         Input:
           - section: optional filter — "tools" | "agents" | "resources" | "prompts" | "all"
                      (default: "all").
 
-        Returns a markdown report.
+        Returns markdown grouped by section with one-line "when to use" per item.
         """)]
     public string MafTour(
         [Description("Filter: \"tools\" | \"agents\" | \"resources\" | \"prompts\" | \"all\" (default: all).")]
@@ -100,9 +99,12 @@ public sealed class TourTool
         new("MafNewAgent", "Scaffolder", "Generate a clean `ChatClientAgent`-based class + hermetic xUnit test. Anti-pattern-clean by construction."),
         new("MafNewExecutor", "Scaffolder", "Generate a fan-out-safe `[MessageHandler]` executor with `Task<T>` return + reflection-based shape test."),
 
-        // — Auto-fix (Phase W.6) —
+        // — Auto-fix (Phase W.6/W.7/W.11) —
         new("MafAutoFix", "Auto-fix", "Deterministic per-rule Roslyn rewriter — the \"do\" half of the toolkit. Supports MAF-AP-SEC-001/MAF002 (DefaultAzureCredential), MAF-AP-SEC-003/MAF003 (EnableSensitiveData), MAF-AP-WF-001 (sealed Executor), MAF130-FAN-IN-001 (arg order), MAF-AP-CONC-002 (.Result/.Wait()). `dryRun: true` previews without writing."),
+        new("MafAutoFixAll", "Auto-fix", "The \"fix everything fixable\" batch command. Runs every supported rewriter in dependency-safe order (sealed → EnableSensitiveData → DefaultAzureCredential → fan-in arg swap → sync-over-async). Returns aggregate JSON with per-rule breakdown + total distinct files changed."),
         new("MafBeforeAfter", "Auto-fix", "Phase W.7 preview tool. Given a comma-separated list of rule IDs, dry-runs each MafAutoFix rewriter across the codebase and renders one consolidated markdown report with `diff --git`-style unified diffs per file. Maintainer reviews ONE document before approving the full change-set."),
+        new("MafScoreMigrationRisk", "Risk verdict", "Phase W.11 pre-migration risk score. Weighted sum of detected anti-patterns + silent-starvation risks + CS0246/0117/0618 source-text matches → HARD / MEDIUM / EASY verdict with per-category breakdown + recommended migration approach. Run BEFORE starting a migration to set expectations."),
+        new("MafGenerateRegressionPlan", "Migration planning", "Phase W.12 multi-version migration roadmap. Given (fromVersion, toVersion), emits a Mermaid flowchart with one node per intermediate MAF version + the registry entries that fire at each step + per-step execution instructions. Killer demo for customers migrating across multiple MAF versions."),
 
         // — PR-scoped —
         new("MafAuditPullRequest", "PR-scoped", "Scope every scanner to the `.cs` files changed in this branch vs base. CI-comment-ready markdown."),

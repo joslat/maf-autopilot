@@ -28,7 +28,7 @@ public sealed class PreUpgradeDryRunTool
         _registry = registry;
     }
 
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false)]
     [Description("""
         Preview the impact of a MAF upgrade WITHOUT modifying any code.
 

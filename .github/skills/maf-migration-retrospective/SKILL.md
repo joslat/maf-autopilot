@@ -1,5 +1,5 @@
 ---
-name: migration-retrospective
+name: maf-migration-retrospective
 description: "Post-migration learning skill. After a migration completes, reads the migration plan notes, build history, and surprises to improve the registry, guide, and constraint rules. Invoked as the final step of any migration. This is how the toolkit gets smarter with each use."
 ---
 
@@ -52,7 +52,7 @@ For each surprise (unexpected error, wrong doc, new pattern):
 | CS0618 not in registry | Add to `registry.yaml` |
 | CS0246 for type/member not in plan | Add to registry + add to breaking changes table in `maf-constraints.instructions.md` |
 | Official doc was wrong | Add to Known Misalignments in `maf-1.3.0-migration-guide.md` |
-| Silent runtime failure | Add to fan-out-validator or fan-in-static-analyzer skill |
+| Silent runtime failure | Add to maf-fan-out-validator skill |
 | `dotnet-inspect` missed something | Note in `dotnet-inspect/SKILL.md` limitations section |
 | New hard constraint discovered | Add to `maf-constraints.instructions.md` Hard Constraints section |
 
@@ -126,7 +126,7 @@ If new → add a note in `.github/skills/dotnet-inspect/SKILL.md` under "Critica
 |---|------|-------------|-------------|
 | 1 | CS0618 not in registry | `SerializeSession` was obsolete — docs showed sync version | Added MAF130-SESSION-001 to registry |
 | 2 | Doc misalignment | `RunAsync<T>()` not on `IAIAgent` interface, only on `ChatClientAgent` | Added to Known Misalignments |
-| 3 | Silent runtime | PropertyTheftFanOutExecutor returned non-generic ValueTask | Added to fan-out-validator SKILL.md |
+| 3 | Silent runtime | PropertyTheftFanOutExecutor returned non-generic ValueTask | Added to maf-fan-out-validator SKILL.md |
 
 ### Registry Updates
 - Added N new entries to `registry.yaml`

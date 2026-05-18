@@ -1,5 +1,5 @@
 ---
-name: fan-out-validator
+name: maf-fan-out-validator
 description: "Validates fan-out / fan-in workflow topology — detects the silent fan-in starvation pattern (handlers returning void / non-generic Task that produce no downstream message). Canonical rules + procedure for what the compiler cannot catch and the build cannot surface."
 ---
 

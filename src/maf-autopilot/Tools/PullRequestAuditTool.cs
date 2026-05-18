@@ -20,7 +20,7 @@ namespace MafAutopilot.Tools;
 [McpServerToolType]
 public sealed class PullRequestAuditTool
 {
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
         Audit the current pull-request: scope every MAF scanner to the .cs files
         changed in this branch vs the base branch. Returns a markdown report

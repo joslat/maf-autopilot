@@ -24,8 +24,8 @@ The `maf-autopilot` MCP server provides executable tools for nearly every step b
 
 ```
 .github/skills/maf-migration-guide/SKILL.md       — expected patterns and breaking changes
-.github/skills/migration-plan-creator/SKILL.md    — plan template and task ID conventions
-.github/skills/obsolete-api-registry/SKILL.md     — schema of registry.yaml (for context only — use MafRegistryLookup for entries)
+.github/skills/maf-migration-plan-creator/SKILL.md    — plan template and task ID conventions
+.github/skills/maf-obsolete-api-registry/SKILL.md     — schema of registry.yaml (for context only — use MafRegistryLookup for entries)
 .github/skills/maf-anti-pattern-scanner/SKILL.md  — canonical rule list for steady-state best-practice review (out-of-scope for migration audit, but read once)
 ```
 
@@ -109,7 +109,7 @@ For each area found in Phase C, assess:
 
 ### Phase G — Generate Migration Plan
 
-Load the `migration-plan-creator` skill. Using its template, create `src/docs/migration-plan.md` with:
+Load the `maf-migration-plan-creator` skill. Using its template, create `src/docs/migration-plan.md` with:
 
 1. **Header** — source version, target version, date, solution name
 2. **Tracking table** — one row per task, with:

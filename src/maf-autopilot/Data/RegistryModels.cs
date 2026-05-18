@@ -5,7 +5,7 @@ namespace MafAutopilot.Data;
 
 /// <summary>
 /// Root of the MAF obsolete-API registry YAML document.
-/// Mirrors the structure of .github/skills/obsolete-api-registry/registry.yaml.
+/// Mirrors the structure of .github/skills/maf-obsolete-api-registry/registry.yaml.
 /// </summary>
 public sealed class Registry
 {

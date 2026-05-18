@@ -1,6 +1,6 @@
 # MAF Compatibility Matrix
 
-<!-- auto-updated-by: maf-release-watcher | last-updated: 2026-05-12 -->
+<!-- auto-updated-by: maf-release-watcher | last-updated: 2026-05-17 -->
 
 <!--
   Note on the Azure.AI.OpenAI column: MAF doesn't pin Azure.AI.OpenAI directly.
@@ -21,6 +21,7 @@
 
 | MAF Version | Microsoft.Extensions.AI | .NET | Azure.AI.OpenAI | Generators Package | Notes |
 |-------------|------------------------|------|-----------------|--------------------|-------|
+| **1.6.1** | `≥ 10.5.1` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.6.1` | Additive release; adds `expectedOutput` parameter to `WorkflowEvaluationExtensions.EvaluateAsync` for ground-truth evaluation. |
 | **1.5.0** | `≥ 10.5.1` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.5.0` | Additive release; new `ToolApprovalAgent`. |
 | **1.4.0** | `≥ 10.5.0` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.4.0` | `AgentSkillScript` surface changed: `AIFunctionArguments` → `JsonElement?` + `IServiceProvider?`. |
 | **1.3.0** | `≥ 10.5.0` | `≥ 8.0` | `≥ 2.8.0-beta.1` | `1.3.0` **(required)** | Major breaking release. Generators package mandatory for executors. |
@@ -63,7 +64,7 @@
 
 The `.maf-version` file at the repository root records the latest MAF version this toolkit's data covers. The `maf-release-watcher` GitHub Actions workflow compares this against the NuGet feed to detect new releases.
 
-Current tracked version: **`1.3.0`** (see `.maf-version`)
+Current tracked version: **`1.6.1`** (see `.maf-version`)
 
 ---
 
@@ -74,7 +75,7 @@ When a new MAF version ships:
 1. `maf-release-watcher` GitHub Actions workflow detects the new version (weekly schedule or manual dispatch)
 2. Runs `nuget-diff-analyzer` skill for the version delta
 3. Updates this file with a new row
-4. Updates `obsolete-api-registry/registry.yaml` with new CS0618 entries
+4. Updates `maf-obsolete-api-registry/registry.yaml` with new CS0618 entries
 5. Adds a new section to `guides/maf-1.3.0-migration-guide.md` (or creates a new guide for the new version)
 6. Creates a PR for human review
 

@@ -1,18 +1,22 @@
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace MafAutopilot;
 
 /// <summary>
-/// CLI init subcommand: `maf-autopilot init`
+/// CLI init subcommand: `maf-autopilot init [--with-cursor]`
 ///
 /// Configures a target repository for MAF migration:
 ///   1. Writes (or merges) .vscode/mcp.json with the maf-autopilot global-tool server entry.
 ///   2. Creates .github/copilot-instructions.md (MAF hard constraints) — only if it doesn't exist.
+///   3. Drops steering snippets: CLAUDE.md and AGENTS.md with merge-not-overwrite semantics.
+///   4. With --with-cursor: also drops .cursorrules.
 ///
 /// Run from the root of the repository you want to configure:
 ///   cd /path/to/your-repo
 ///   maf-autopilot init
+///   maf-autopilot init --with-cursor   # also drops .cursorrules
 /// </summary>
 internal static class InitCommand
 {
@@ -50,16 +54,23 @@ internal static class InitCommand
             $"Check that the directory is writable.");
     }
 
-    public static async Task<int> RunAsync()
+    public static async Task<int> RunAsync(string[]? args = null)
     {
+        var withCursor = args != null && args.Contains("--with-cursor", StringComparer.OrdinalIgnoreCase);
         var targetDir = Directory.GetCurrentDirectory();
 
         Console.WriteLine("maf-autopilot init");
         Console.WriteLine($"  Configuring: {targetDir}");
+        if (withCursor) Console.WriteLine("  --with-cursor: .cursorrules will also be dropped");
         Console.WriteLine();
 
         await WriteMcpJsonAsync(targetDir);
         await WriteCopilotInstructionsAsync(targetDir);
+        await DropSteeringFileAsync(targetDir, "steering/copilot-instructions.md", ".github/copilot-instructions.md");
+        await DropSteeringFileAsync(targetDir, "steering/claude-instructions.md", "CLAUDE.md");
+        await DropSteeringFileAsync(targetDir, "steering/agents.md", "AGENTS.md");
+        if (withCursor)
+            await DropSteeringFileAsync(targetDir, "steering/cursor-rules.md", ".cursorrules");
 
         Console.WriteLine();
         Console.WriteLine("Done. ⚡ Try these three commands first:");
@@ -228,6 +239,81 @@ internal static class InitCommand
         await File.WriteAllTextAsync(instructionsPath, pointer);
         Console.WriteLine("  ✓ .github/copilot-instructions.md — pointer to maf://constraints installed");
         Console.WriteLine("    (Always-current — fetched from the live MCP server, not a stale copy)");
+    }
+
+    // ------------------------------------------------------------------ //
+    //  Steering snippets (CLAUDE.md, AGENTS.md, .github/copilot-instructions.md, .cursorrules)
+    // ------------------------------------------------------------------ //
+
+    /// <summary>
+    /// Drops a steering snippet from embedded resources into the target repository.
+    /// Merge-not-overwrite: if the file already exists AND already contains the
+    /// steering snippet marker ("Using maf-autopilot" section), we skip. If the file
+    /// exists but does NOT contain the section, we append. If the file does not exist,
+    /// we create it. The HTML comment header at the top of each snippet is stripped
+    /// when appending to avoid duplicate meta-comments.
+    /// </summary>
+    internal static async Task DropSteeringFileAsync(
+        string targetDir,
+        string embeddedResourceName,
+        string outputRelativePath)
+    {
+        var asm = Assembly.GetExecutingAssembly();
+        var resourceContent = ReadEmbeddedResource(asm, embeddedResourceName);
+        if (resourceContent is null)
+        {
+            // Embedded resource not found — skip silently (may happen if csproj
+            // didn't include the file yet during development).
+            Console.WriteLine($"  ⚠ Steering resource '{embeddedResourceName}' not found in assembly — skipped");
+            return;
+        }
+
+        var outputPath = Path.Combine(targetDir, outputRelativePath);
+        var markerText = "## Using maf-autopilot";
+
+        if (File.Exists(outputPath))
+        {
+            var existing = await File.ReadAllTextAsync(outputPath);
+            if (existing.Contains(markerText, StringComparison.OrdinalIgnoreCase)
+                || existing.Contains("## Microsoft Agent Framework", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine($"  ✓ {outputRelativePath} — maf-autopilot section already present, no change");
+                return;
+            }
+
+            // Append: strip the leading HTML comment block from the snippet content
+            var body = StripLeadingHtmlComment(resourceContent);
+            Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+            await File.AppendAllTextAsync(outputPath, $"\n\n{body}");
+            Console.WriteLine($"  ✓ {outputRelativePath} — merged maf-autopilot steering section");
+        }
+        else
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+            await File.WriteAllTextAsync(outputPath, resourceContent);
+            Console.WriteLine($"  ✓ {outputRelativePath} — created");
+        }
+    }
+
+    private static string? ReadEmbeddedResource(Assembly asm, string logicalName)
+    {
+        using var stream = asm.GetManifestResourceStream(logicalName);
+        if (stream is null) return null;
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+
+    /// <summary>
+    /// Strips the leading HTML comment block (<!-- ... -->) from the content, if present.
+    /// This avoids duplicate meta-comment headers when appending to an existing file.
+    /// </summary>
+    private static string StripLeadingHtmlComment(string content)
+    {
+        var trimmed = content.TrimStart();
+        if (!trimmed.StartsWith("<!--", StringComparison.Ordinal)) return content;
+        var endIndex = trimmed.IndexOf("-->", StringComparison.Ordinal);
+        if (endIndex < 0) return content;
+        return trimmed[(endIndex + 3)..].TrimStart('\r', '\n');
     }
 
 }

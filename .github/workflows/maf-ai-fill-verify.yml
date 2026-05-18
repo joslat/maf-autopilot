@@ -1,0 +1,183 @@
+name: MAF AI-Fill PR Verify
+
+# #5 polish (2026-05-13) — runs the verification gate against AI-filled
+# registry PRs. Triggers on `pull_request` events that modify registry.yaml
+# AND carry the `ai-fill` label.
+#
+# Why this exists: GitHub Copilot Coding Agent fills the TODO placeholders
+# left by `maf-release-watcher`. Quality is good but inconsistent. Common
+# failure modes we've seen:
+#   - example_before == example_after (a non-migration)
+#   - fix_description is "TODO" or empty
+#   - examples have unbalanced braces (Copilot left a half-snippet)
+#   - guide_section is "TBD" / "TODO" instead of the literal "N/A"
+#
+# This workflow runs `maf-autopilot verify-registry` against the PR's HEAD
+# commit. If verification fails, the workflow exits non-zero, which blocks
+# the PR's auto-merge (if branch protection / required-status-checks is
+# configured for this check).
+#
+# The maintainer can still manually merge the PR if the verification gate
+# is being overly strict — the gate is advisory, not mandatory.
+
+on:
+  pull_request:
+    types: [opened, synchronize, labeled, ready_for_review, reopened]
+    # No `paths:` filter — branch protection requires this check to report
+    # a status on EVERY PR (otherwise PRs that don't touch registry.yaml
+    # get blocked by "missing required check"). The job filters internally:
+    # if registry.yaml isn't in the diff, it reports success trivially.
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  verify:
+    # Always run (so branch protection's required-status-check sees a result
+    # on every PR). The first step decides whether to do real verification
+    # or report trivial success based on the actual diff.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Decide whether this PR is in scope
+        id: scope
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # In scope if: PR is labelled `ai-fill` OR head branch is a Coding
+          # Agent bot's, AND the PR diff touches registry.yaml OR the migration
+          # guide OR compatibility-matrix.md (any file the watcher touches).
+          git fetch origin "$BASE_REF":"refs/heads/$BASE_REF" --depth=50 || true
+          DIFF_FILES=$(git diff --name-only "origin/$BASE_REF" HEAD || true)
+          echo "Files changed in PR:"
+          echo "$DIFF_FILES" | sed 's/^/  /'
+
+          TOUCHES_WATCHER_FILES=false
+          if echo "$DIFF_FILES" | grep -qE '^(\.github/skills/maf-obsolete-api-registry/registry\.yaml|docs/compatibility-matrix\.md|guides/maf-.*-migration-guide\.md|\.maf-version)$'; then
+            TOUCHES_WATCHER_FILES=true
+          fi
+
+          LABEL_OR_BOT="${{
+            (contains(github.event.pull_request.labels.*.name, 'ai-fill') ||
+             startsWith(github.head_ref, 'claude/') ||
+             startsWith(github.head_ref, 'copilot/') ||
+             startsWith(github.head_ref, 'codex/')) && 'true' || 'false'
+          }}"
+
+          if [ "$TOUCHES_WATCHER_FILES" = "true" ] && [ "$LABEL_OR_BOT" = "true" ]; then
+            echo "in_scope=true" >> $GITHUB_OUTPUT
+            echo "::notice title=verify-registry in scope::Running full rung-1 verification."
+          else
+            echo "in_scope=false" >> $GITHUB_OUTPUT
+            echo "::notice title=verify-registry trivially passes::PR doesn't touch watcher-managed files OR isn't from a fill bot — reporting success."
+          fi
+
+      - name: Setup .NET
+        if: steps.scope.outputs.in_scope == 'true'
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install maf-autopilot (prerelease)
+        if: steps.scope.outputs.in_scope == 'true'
+        run: |
+          dotnet tool install --global maf-autopilot --prerelease \
+            || dotnet tool update --global maf-autopilot --prerelease
+
+      - uses: actions/setup-python@v6
+        if: steps.scope.outputs.in_scope == 'true'
+        with:
+          python-version: '3.12'
+
+      - name: Install Python deps for cross-file check
+        if: steps.scope.outputs.in_scope == 'true'
+        run: pip install pyyaml
+
+      - name: Run verify-registry (rung-1 mechanical)
+        id: verify
+        if: steps.scope.outputs.in_scope == 'true'
+        continue-on-error: true
+        run: |
+          set +e
+          OUTPUT=$(maf-autopilot verify-registry 2>&1)
+          EXIT=$?
+          echo "$OUTPUT"
+          {
+            echo "output<<EOF"
+            echo "$OUTPUT"
+            echo "EOF"
+            echo "exit_code=$EXIT"
+          } >> $GITHUB_OUTPUT
+          exit $EXIT
+
+      - name: Run cross-file consistency check
+        id: crossfile
+        if: steps.scope.outputs.in_scope == 'true'
+        continue-on-error: true
+        run: |
+          set +e
+          OUTPUT=$(python3 .github/scripts/verify_crossfile_consistency.py 2>&1)
+          EXIT=$?
+          echo "$OUTPUT"
+          {
+            echo "output<<EOF"
+            echo "$OUTPUT"
+            echo "EOF"
+            echo "exit_code=$EXIT"
+          } >> $GITHUB_OUTPUT
+          exit $EXIT
+
+      - name: Comment on PR if any check failed
+        if: |
+          steps.scope.outputs.in_scope == 'true' &&
+          (steps.verify.outputs.exit_code != '0' ||
+           steps.crossfile.outputs.exit_code != '0')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERIFY_OUTPUT: ${{ steps.verify.outputs.output }}
+          CROSSFILE_OUTPUT: ${{ steps.crossfile.outputs.output }}
+          VERIFY_EXIT: ${{ steps.verify.outputs.exit_code }}
+          CROSSFILE_EXIT: ${{ steps.crossfile.outputs.exit_code }}
+        run: |
+          {
+            echo "## ❌ AI-fill verification failed"
+            echo ""
+            if [ "$VERIFY_EXIT" != "0" ]; then
+              echo "### Registry entry checks (rung-1 mechanical)"
+              echo ""
+              echo '```'
+              echo "$VERIFY_OUTPUT"
+              echo '```'
+              echo ""
+            fi
+            if [ "$CROSSFILE_EXIT" != "0" ]; then
+              echo "### Cross-file consistency checks"
+              echo ""
+              echo '```'
+              echo "$CROSSFILE_OUTPUT"
+              echo '```'
+              echo ""
+            fi
+            echo "**Common fixes:**"
+            echo "- example_before == example_after -> these must differ."
+            echo "- fix_description too short -> write a real sentence, no TODO/TBD."
+            echo "- unbalanced braces -> bot truncated a code block."
+            echo "- guide_section placeholder -> use 'N/A' literal."
+            echo "- duplicate version row -> UPDATE the watcher placeholder, do NOT add a row."
+            echo "- Version Tracking section stale -> bump 'Current tracked version' to match .maf-version."
+          } > /tmp/comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/comment.md
+
+      - name: Final status (fail if any check failed)
+        if: |
+          steps.scope.outputs.in_scope == 'true' &&
+          (steps.verify.outputs.exit_code != '0' ||
+           steps.crossfile.outputs.exit_code != '0')
+        run: |
+          echo "Verification failed — see PR comment for detail."
+          exit 1

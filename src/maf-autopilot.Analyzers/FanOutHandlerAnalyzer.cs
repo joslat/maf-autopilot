@@ -38,7 +38,7 @@ public sealed class FanOutHandlerAnalyzer : DiagnosticAnalyzer
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: Description,
-        helpLinkUri: "https://github.com/joslat/maf-autopilot/blob/main/.github/skills/fan-out-validator/SKILL.md");
+        helpLinkUri: "https://github.com/joslat/maf-autopilot/blob/main/.github/skills/maf-fan-out-validator/SKILL.md");
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
         ImmutableArray.Create(Rule);

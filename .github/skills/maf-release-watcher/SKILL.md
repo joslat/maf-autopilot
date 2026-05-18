@@ -13,7 +13,7 @@ When Microsoft ships a new MAF version, this pipeline keeps the toolkit's three 
 - **`docs/compatibility-matrix.md`** — dependency-version table (new row per release)
 - **`guides/maf-X.Y.Z-migration-guide.md`** — per-version delta with banner pointing back to the chain
 - **`guides/maf-current-migration-guide.md`** — auto-regenerated cumulative reference
-- **`.github/skills/obsolete-api-registry/registry.yaml`** — append-only breaking-change registry
+- **`.github/skills/maf-obsolete-api-registry/registry.yaml`** — append-only breaking-change registry
 
 Two of those (`compatibility-matrix.md` row contents, per-version guide TODO sections, registry-entry TODO fields) require *judgement* the deterministic pipeline can't fully automate — release notes have to be interpreted, before/after C# examples written, etc. That work is delegated to **GitHub Copilot Coding Agent** via a second workflow (`maf-ai-fill-todos.yml`) that opens an issue with a structured prompt and assigns the bot.
 
@@ -149,7 +149,7 @@ After Stage 1, before Stage 3:
 | `docs/compatibility-matrix.md` | New row at top of data table (`unknown` cells for some columns) |
 | `guides/maf-X.Y.Z-migration-guide.md` | New per-version file with banner + AUTO-GENERATED stub + Human-additions marker |
 | `guides/maf-current-migration-guide.md` | Regenerated cumulative file |
-| `.github/skills/obsolete-api-registry/registry.yaml` | New entries appended (with TODO placeholders for `fix_description`, `example_before`, `example_after`, `guide_section`) |
+| `.github/skills/maf-obsolete-api-registry/registry.yaml` | New entries appended (with TODO placeholders for `fix_description`, `example_before`, `example_after`, `guide_section`) |
 
 After Stage 3 (Copilot's PR):
 

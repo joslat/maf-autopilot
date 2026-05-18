@@ -20,7 +20,7 @@ namespace MafAutopilot.Tools;
 [McpServerToolType]
 public sealed class FanOutValidatorTool
 {
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
         Validate fan-out/fan-in executor topology at the source level.
 
@@ -178,7 +178,7 @@ public sealed class FanOutValidatorTool
             foreach (var f in risks)
                 sb.AppendLine($"| {f.File} | {f.Line} | `{f.MethodName}` | `{f.ReturnType}` |");
             sb.AppendLine();
-            sb.AppendLine("**Fix:** change the return type to `ValueTask<T>` (or `Task<T>`) where T is the downstream message type, and ensure the handler `return`s a value. See `maf://skills?name=fan-out-validator`.");
+            sb.AppendLine("**Fix:** change the return type to `ValueTask<T>` (or `Task<T>`) where T is the downstream message type, and ensure the handler `return`s a value. See `maf://skills?name=maf-fan-out-validator`.");
             sb.AppendLine();
         }
 

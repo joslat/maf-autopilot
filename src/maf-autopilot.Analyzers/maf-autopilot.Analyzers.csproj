@@ -14,7 +14,7 @@
 
     <!-- NuGet packaging -->
     <PackageId>maf-autopilot.Analyzers</PackageId>
-    <Version>1.3.0-alpha-1</Version>
+    <Version>1.0.1</Version>
     <Authors>joslat</Authors>
     <Description>Roslyn analyzers for Microsoft Agent Framework (MAF) 1.3.0 — write-time enforcement of fan-out safety, secure credentials, and observability defaults. Pairs with the maf-autopilot MCP server.</Description>
     <PackageTags>maf;agent-framework;analyzer;roslyn;dotnet</PackageTags>
@@ -24,6 +24,19 @@
     <DevelopmentDependency>true</DevelopmentDependency>
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <!--
+      NU5017 false-positive: NuGet pack's heuristic doesn't see the analyzer DLL
+      we ship via `<None Include ... Pack="true">` below — it reports "no
+      dependencies nor content" even though `analyzers/dotnet/cs/...dll` IS in
+      the package. On Windows it's logged as a warning (exit 0); on Linux CI
+      under `bash -e` it's a hard error and kills the release pipeline.
+      `<NoPackageAnalysis>true</NoPackageAnalysis>` is the standard fix used by
+      Roslyn-sample analyzer csprojs — disables the pack-time analysis checks
+      (NU5xxx series) for this project, which is appropriate for analyzer
+      packages where the well-known content layout doesn't match the SDK's
+      generic-package expectations.
+    -->
+    <NoPackageAnalysis>true</NoPackageAnalysis>
 
     <!-- W.14 — symbol package + SourceLink (AgentEval parity). -->
     <PublishRepositoryUrl>true</PublishRepositoryUrl>

@@ -24,10 +24,10 @@ The `maf-autopilot` MCP server is running in this workspace. Use its **executabl
 | When you need to…                                          | Call MCP tool                                          | Replaces |
 |------------------------------------------------------------|--------------------------------------------------------|----------|
 | Check if a MAF API name is safe in 1.3.0                   | `MafApiSafety(apiName)`                                | (new capability) |
-| Look up full fix for a known CS0618 entry                  | `MafRegistryLookup(entryId)`                           | `obsolete-api-registry` skill |
+| Look up full fix for a known CS0618 entry                  | `MafRegistryLookup(entryId)`                           | `maf-obsolete-api-registry` skill |
 | List all registry entries                                  | `MafRegistryList()`                                    | (new capability) |
 | Run CS0618 / CS0246 hunt across a project                  | `MafRunCs0618Hunt(projectPath)`                        | `cs0618-hunter` skill manual loop |
-| Validate fan-out / fan-in executor topology (Roslyn)       | `MafValidateFanOut(repoPath)`                          | `fan-in-static-analyzer` skill manual walk |
+| Validate fan-out / fan-in executor topology (Roslyn)       | `MafValidateFanOut(repoPath)`                          | `maf-fan-out-validator` skill manual walk |
 | Diff two NuGet versions of a package                       | `MafDiffPackage(packageId, oldVersion, newVersion)`    | `nuget-diff-analyzer` skill manual `dnx` call |
 | Scan repo for security/concurrency/observability bad code  | `MafScanAntiPatterns(repoPath)`                        | (new capability) |
 | Simulate workflow topology (Mermaid + completion forecast) | `MafSimulateWorkflow(repoPath)`                        | (new capability) |
@@ -43,10 +43,10 @@ Skills remain the source of truth for *narrative* knowledge — when to use what
 |-----------------------------------------------------------|----------------------------------------------------|
 | Look up MAF API signatures, patterns, or guide sections   | `.github/skills/maf-migration-guide/SKILL.md`      |
 | Check if a NuGet type/member exists (beyond MAF surface)  | `.github/skills/dotnet-inspect/SKILL.md`           |
-| Generate a migration plan template                        | `.github/skills/migration-plan-creator/SKILL.md`   |
-| Fan-out / fan-in conceptual rules                         | `.github/skills/fan-out-validator/SKILL.md`        |
-| Generate smoke tests for workflow patterns                | `.github/skills/workflow-smoke-tester/SKILL.md`    |
-| Capture surprises and improve the toolkit post-migration  | `.github/skills/migration-retrospective/SKILL.md`  |
+| Generate a migration plan template                        | `.github/skills/maf-migration-plan-creator/SKILL.md`   |
+| Fan-out / fan-in conceptual rules                         | `.github/skills/maf-fan-out-validator/SKILL.md`        |
+| Generate smoke tests for workflow patterns                | `.github/skills/maf-workflow-smoke-tester/SKILL.md`    |
+| Capture surprises and improve the toolkit post-migration  | `.github/skills/maf-migration-retrospective/SKILL.md`  |
 | Steady-state anti-pattern rules (8 codified rules)        | `.github/skills/maf-anti-pattern-scanner/SKILL.md` |
 
 > **Critical:** Pin `dotnet-inspect` to v0.7.8 or later — v0.7.8 surfaces `[Obsolete]` in member listings. For ground-truth on what your project actually triggers (transitive obsoletions, overload-resolution surprises, project-local `[Obsolete]`), `MafRunCs0618Hunt` (compiler-based) is the authoritative path.
@@ -106,7 +106,7 @@ Work through these in strict order.
 4. Call **`MafDiffPackage("Microsoft.Agents.AI", oldVersion, "1.3.0")`** and **`MafDiffPackage("Microsoft.Agents.AI.Workflows", oldVersion, "1.3.0")`** to enumerate every breaking and additive change. The tool returns a Mermaid-ready structured report cross-referenced against the registry.
 5. Skim all `.cs` source files — confirm the migration plan is accurate.
 6. For any unclear API, call **`MafApiSafety(apiName)`** first. If the registry has it, you get the canonical fix in one round-trip. Fall back to the `dotnet-inspect` skill only when `MafApiSafety` returns SAFE on an API you still suspect.
-7. If the plan is incomplete, generate a complete one: load `migration-plan-creator` skill.
+7. If the plan is incomplete, generate a complete one: load `maf-migration-plan-creator` skill.
 
 ### Phase 1 — Plan Review
 1. Review the tracking table in `src/docs/migration-plan.md`.
@@ -139,7 +139,7 @@ Follow the **Mandatory Workflow** above. Tasks in order:
 7. **Fan-out topology check** — call **`MafValidateFanOut(repoPath)`**. The tool walks every `[MessageHandler]` method via Roslyn and flags any `void` / non-generic `Task` / `ValueTask` returns. Fix each finding.
 8. **Workflow simulation** — call **`MafSimulateWorkflow(repoPath)`**. Emits a Mermaid diagram of the executor topology and proves end-to-end whether the workflow can complete without silent fan-in starvation. Paste the diagram into your PR description.
 9. **Anti-pattern sweep** — call **`MafScanAntiPatterns(repoPath)`**. Catches `DefaultAzureCredential` slipping into prod, `EnableSensitiveData = true` outside dev, mutable state on `AIContextProvider`, missing `UseOpenTelemetry`. Address every Error-severity finding; review every Warning.
-10. **Smoke tests** — if workflows are present, load `workflow-smoke-tester` skill and generate + run smoke tests for fan-out/fan-in patterns.
+10. **Smoke tests** — if workflows are present, load `maf-workflow-smoke-tester` skill and generate + run smoke tests for fan-out/fan-in patterns.
 11. Update tracking table: mark T10.x as complete and verified.
 
 ### Phase 4 — Polish and Iterate
@@ -151,7 +151,7 @@ Follow the **Mandatory Workflow** above. Tasks in order:
 
 ### Phase 5 — Done + Retrospective
 1. Mark T11.2 complete.
-2. Run `migration-retrospective` if the skill is available — log any surprises encountered that were NOT in the plan.
+2. Run `maf-migration-retrospective` if the skill is available — log any surprises encountered that were NOT in the plan.
 3. Summarize all changes by file and category.
 4. Confirm build is green.
 5. Note any items that could not be fully migrated and why.

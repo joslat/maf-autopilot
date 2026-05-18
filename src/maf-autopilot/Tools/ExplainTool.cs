@@ -28,7 +28,7 @@ public sealed class ExplainTool
         _registry = registry;
     }
 
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
         Annotate a MAF code snippet with line-by-line explanations.
 
@@ -222,7 +222,7 @@ public sealed class ExplainTool
 
         if (findings.Count == 0)
         {
-            sb.AppendLine("ℹ️ No MAF API surface contact detected in the snippet. (If you expected matches, the analyzer may not know about this identifier — propose an addition via `obsolete-api-registry`.)");
+            sb.AppendLine("ℹ️ No MAF API surface contact detected in the snippet. (If you expected matches, the analyzer may not know about this identifier — propose an addition via `maf-obsolete-api-registry`.)");
             return sb.ToString();
         }
 

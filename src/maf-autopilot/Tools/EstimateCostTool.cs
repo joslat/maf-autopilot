@@ -25,7 +25,7 @@ public sealed class EstimateCostTool
     /// <summary>Rule-of-thumb chars per token.</summary>
     private const int CharsPerToken = 4;
 
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
         Static token-cost audit of every `RunAsync` / `RunStreamingAsync` call
         site. Reports per-call-site:

@@ -21,32 +21,47 @@
 # documents are embedded into the .dll at build time (no extra COPY needed).
 
 # ---------- Stage 1 — build ----------
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+# SDK 10.0 required because the csproj multi-targets net8.0/net9.0/net10.0
+# (multi-version test parity with the analyzer NuGet). SDK 8.0 — which we used
+# through the alphas — can't restore net9.0/net10.0 TFMs and fails NETSDK1045.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-# Copy only the files needed to restore — better layer caching.
-COPY src/maf-autopilot/maf-autopilot.csproj src/maf-autopilot/
-COPY src/maf-autopilot/*.cs src/maf-autopilot/
-COPY src/maf-autopilot/Tools/ src/maf-autopilot/Tools/
-COPY src/maf-autopilot/Prompts/ src/maf-autopilot/Prompts/
-COPY src/maf-autopilot/Resources/ src/maf-autopilot/Resources/
-COPY src/maf-autopilot/Data/ src/maf-autopilot/Data/
-COPY src/maf-autopilot/Scaffolding/ src/maf-autopilot/Scaffolding/
+# Repo-root build-influencing files. CRITICAL: csproj uses Central Package
+# Management (CPM) — package versions live in Directory.Packages.props, NOT
+# in the csproj. Without these COPYs, restore fails NU1015 ("PackageReference
+# items do not have a version specified"). global.json pins the SDK band.
+COPY Directory.Build.props Directory.Packages.props global.json ./
+
+# Copy the whole MCP server project in one shot — `.dockerignore` already
+# excludes bin/obj/test-projects so this stays lean. Switched from per-folder
+# COPYs after the docker-publish v1.0.0 run failed because the Commands/
+# folder wasn't enumerated. Folder-by-folder COPYs are fragile — any new
+# subfolder silently breaks the image build. Single COPY is robust.
+COPY src/maf-autopilot/ src/maf-autopilot/
 
 # Embedded resources required for `<EmbeddedResource>` in the csproj.
+# The csproj embeds 4 files from docs/steering/ (init drops them into user repos);
+# .dockerignore explicitly un-excludes that subfolder. Plus .github/skills,
+# .github/instructions, guides/, and root README.md.
 COPY .github/ .github/
 COPY guides/ guides/
+COPY docs/steering/ docs/steering/
 COPY README.md ./
 
+# Publish a single TFM (net10.0 — matches the runtime image below). Required
+# because `dotnet publish` on a multi-TFM csproj without `--framework` fails.
 RUN dotnet publish src/maf-autopilot/maf-autopilot.csproj \
     --configuration Release \
+    --framework net10.0 \
     --output /app \
     --self-contained false \
     -p:UseAppHost=false
 
 # ---------- Stage 2 — runtime ----------
-# The runtime image is much smaller than the SDK image (~125 MB vs ~860 MB).
-FROM mcr.microsoft.com/dotnet/runtime:8.0
+# The runtime image is much smaller than the SDK image (~150 MB vs ~900 MB).
+# Must match the --framework TFM published above.
+FROM mcr.microsoft.com/dotnet/runtime:10.0
 WORKDIR /app
 
 # Copy build output. Embedded resources (registry.yaml, constraints.md,

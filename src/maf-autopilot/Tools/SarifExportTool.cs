@@ -80,6 +80,6 @@ internal static class SarifExportTool
             Name: "Fan-out handler must return Task<T> or ValueTask<T>",
             Severity: SarifSeverity.Error,
             FullDescription: "A [MessageHandler] method that returns void, Task, or ValueTask (non-generic) produces no downstream message and silently starves the fan-in barrier.",
-            HelpUri: "https://github.com/joslat/maf-autopilot/blob/main/.github/skills/fan-out-validator/SKILL.md");
+            HelpUri: "https://github.com/joslat/maf-autopilot/blob/main/.github/skills/maf-fan-out-validator/SKILL.md");
     }
 }

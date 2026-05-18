@@ -29,7 +29,7 @@ public sealed class DiffPackageTool
         _registry = registry;
     }
 
-    [McpServerTool]
+    [McpServerTool(ReadOnly = true, Destructive = false)]
     [Description("""
         Diff two versions of a NuGet package's public API surface.
 

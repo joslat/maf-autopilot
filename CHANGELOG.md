@@ -1,18 +1,13 @@
 # Changelog
 
-All notable changes to **maf-autopilot** are documented in this file.
+All notable changes to **maf-autopilot (MAF Doctor)** are documented here.
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-For full per-row history including audit findings, see [`docs/maf-migration-toolkit-plan.md`](docs/maf-migration-toolkit-plan.md).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
 ## [Unreleased]
-
-### Planned for 1.3.0 stable
-- Cut stable `1.3.0` to NuGet (the toolkit is currently shipped as `1.3.0-alpha-3`). Gated on at least one external migration validation.
-- Project rename decision (`maf-autopilot` → `maf-keeper` / `maf-copilot` / `maf-steward`?). Deferred until post-1.0.
 
 ### Deferred (1.1.0+)
 - Full Roslyn data-flow `MafScanPromptInjection` (PROMPT-004 covers the syntactic case today).
@@ -22,7 +17,92 @@ For full per-row history including audit findings, see [`docs/maf-migration-tool
 
 ---
 
-## [1.3.0-alpha-3] — 2026-05-12
+## [1.0.1] — 2026-05-17
+
+Same-day stabilization patch following 1.0.0. **No functional code changes.** NuGet binary content is byte-identical to 1.0.0 for both packages (`maf-autopilot` + `maf-autopilot.Analyzers`). Diff vs v1.0.0:
+
+```
+.dockerignore |  2 ++
+Dockerfile    | 37 ++++++++++++++++++++++++++-----------
+```
+
+The version bump exists to attach a single tag covering 4 post-1.0.0 Docker pipeline fixes so the `docker-publish.yml` workflow rebuilds the GHCR images cleanly via tag push.
+
+### Fixed
+
+- **Dockerfile** — bumped SDK base image `8.0` → `10.0` (the csproj multi-targets `net8.0;net9.0;net10.0` and SDK 8.0 failed NETSDK1045). Added explicit `--framework net10.0` to `dotnet publish` (required for multi-TFM csprojs). Bumped runtime image to match.
+- **Dockerfile** — added `COPY Directory.Packages.props Directory.Build.props global.json` to the build stage. The csproj uses Central Package Management; without these the restore failed NU1015 ("PackageReference items do not have a version specified").
+- **Dockerfile** — replaced per-folder source COPYs with single `COPY src/maf-autopilot/` (the prior enumeration missed `Commands/` — added during 1.0.0 prep for `init`, `verify-registry`, `registry-extract`, and `badge` subcommands).
+- **.dockerignore** — un-excluded `docs/steering/` (4 steering snippets are `EmbeddedResource` items in the csproj since 1.0.0 — they must be in the Docker build context).
+
+### Distribution
+
+- ✅ NuGet `maf-autopilot/1.0.1` republished (binary identical to 1.0.0)
+- ✅ NuGet `maf-autopilot.Analyzers/1.0.1` republished (binary identical to 1.0.0)
+- ✅ Docker GHCR `:1.0.1` `:1.0` `:1` `:latest` rebuilt with the 4 fixes baked in
+
+---
+
+## [1.0.0] — 2026-05-17
+
+First stable release. Public API committed. **MAF Doctor** brand introduced.
+
+### Highlights
+
+- **25 curated MCP tools** for diagnosing, fixing, and migrating Microsoft Agent Framework code, **all annotated with MCP behavior hints** (`readOnlyHint` / `destructiveHint` / `idempotentHint` / `openWorldHint`) so well-behaved clients can auto-classify them
+- **Curated obsolete-API registry** with `applies_to_codebases` markers — version-aware migration paths for MAF 1.0 / 1.2 / 1.3
+- **Deterministic Roslyn rewriters** with `--dry-run` and `--all` orchestration modes
+- **`MafDoctor`** — A-F holistic health verdict in one call; supports `format=markdown` (default) and `format=json` (7 discrete fields for CI/dashboards)
+- **`MafAutoFixAll`** — dependency-ordered fix-everything pass
+- **`MafRunCs0618Hunt`** — compiler ground truth + registry join
+- **Roslyn analyzer NuGet** (`MAF001` / `002` / `003`) for write-time enforcement
+- **AI-fill maintenance loop** — release-watcher + registry-extract + Copilot Coding Agent + verify-registry PR gate
+- **Multi-version sample regression CI** — proves fixes don't break older codebases
+- **12 skills + 7 specialist agents** for GitHub Copilot Coding Agent
+- **7 MCP prompts** + **6 MCP resources** (constraints, registry, guide, rules, help, skills)
+- **Plugin packaging via `maf-autopilot init`** — drops `.vscode/mcp.json` + 3 steering snippets (`.github/copilot-instructions.md`, `CLAUDE.md`, `AGENTS.md`) with merge-not-overwrite semantics; optional `--with-cursor` for `.cursorrules`
+- Built on **dotnet-inspect v0.7.8** (which surfaces `[Obsolete]` natively); we add MAF-specific curated fix recipes + version-aware filtering on top
+- **Security model documented** in `docs/security.md` (user-facing overview) + `docs/security/threat-model.md` (deep technical detail). MCP-server scanned with **Cisco mcp-scanner v4.6.0** (yara analyzer, fully local): **25/25 tools SAFE, 0 findings**.
+
+### Versioning note for alpha users
+
+Previous releases were tagged `1.3.0-alpha-1` through `1.3.0-alpha-3` to track the MAF target version. 1.0.0 decouples our versioning from MAF's. **maf-autopilot 1.0.0 supports MAF 1.0 / 1.2 / 1.3 simultaneously.** Existing alpha users upgrade with:
+
+```bash
+dotnet tool update -g maf-autopilot --version 1.0.0
+```
+
+### Recommended companion MCPs
+
+For best results, pair maf-autopilot with:
+
+- **[Microsoft Learn MCP](https://learn.microsoft.com/api/mcp)** — live MAF documentation
+- **[Context7](https://github.com/upstash/context7)** — version-specific NuGet docs
+- **[DeepWiki MCP](https://mcp.deepwiki.com/mcp)** — query `microsoft/agent-framework` source
+- **[Serena](https://github.com/oraios/serena)** — semantic IDE-shape navigation across 40+ languages
+
+### Breaking changes from 1.3.0-alpha-3
+
+- Skill `fan-in-static-analyzer` removed (was a redirect; use `maf-fan-out-validator` directly).
+- 5 skills renamed with `maf-` prefix for namespace clarity: `fan-out-validator` → `maf-fan-out-validator`, `migration-plan-creator` → `maf-migration-plan-creator`, `migration-retrospective` → `maf-migration-retrospective`, `obsolete-api-registry` → `maf-obsolete-api-registry`, `workflow-smoke-tester` → `maf-workflow-smoke-tester`. Skills without the prefix (`cs0618-hunter`, `dotnet-inspect`, `nuget-diff-analyzer`) are unchanged — those are generic .NET concepts, not MAF-specific.
+- `MafDoctor` JSON output re-split into 7 discrete fields (`rule_id`, `severity`, `file`, `line`, `issue`, `fix_description`, `auto_fixable`) — CI dashboards can now link directly to file:line without parsing concatenated strings.
+- Tool descriptions tightened (~30% rewritten for verb-first wording, when-to-use clarity, neighbor disambiguation). Existing prompt scripts referencing tools by name still work; descriptions are server-side only.
+- `MafDoctor` now supports `format=json` parameter for CI-friendly structured output (default remains `markdown`).
+- `dotnet-inspect` dependency bumped from `0.7.6` to `0.7.8` across all 21 pin sites (workflows, agents, skills, tools, tests, guides). v0.7.8 surfaces `[Obsolete]` natively — we add the MAF-specific curated fix recipes + version-aware filtering on top.
+- **MCP tool annotations** added to all 25 [McpServerTool] decorations (readOnlyHint / destructiveHint / idempotentHint / openWorldHint). Well-behaved clients (Claude Code, VS Code Copilot) will no longer show "may modify system" confirmation prompts for read-only scanners. Classification: 18 read-only local + 3 read-only open-world (shells dotnet-inspect/build) + 2 destructive writers + 2 idempotent scaffolders. Adopts the pattern from microsoft/skills/mcp-builder.
+
+### Documentation
+
+- New: `AGENTS.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `LICENSE`
+- New: `docs/steering/` (paste-able snippets for `.github/copilot-instructions.md`, `CLAUDE.md`, `AGENTS.md`)
+- New: `docs/security/threat-model.md`
+- New: `docs/output-schemas.md` (JSON schema for `MafDoctor` and `MafAuditPullRequest`)
+
+---
+
+## Pre-1.0 history
+
+### [1.3.0-alpha-3] — 2026-05-12
 
 This release captures the full toolkit after the magic-path sprint, the multi-Opus review round, and the Phase E/F polish.
 
@@ -97,7 +177,8 @@ Internal alpha; superseded by `1.3.0-alpha-3`. Not announced.
 
 Initial MCP server prototype. Three tools (`MafApiSafety`, `MafRegistryLookup`, `MafRegistryList`), 11 skills, 2 agents, 10 registry entries. Validated against one real migration (`maf-claims-fraud-guardian` 1.2.0 → 1.3.0). Internal alpha; not announced.
 
-[Unreleased]: https://github.com/joslat/maf-autopilot/compare/v1.3.0-alpha-3...HEAD
+[Unreleased]: https://github.com/joslat/maf-autopilot/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/joslat/maf-autopilot/releases/tag/v1.0.0
 [1.3.0-alpha-3]: https://www.nuget.org/packages/maf-autopilot/1.3.0-alpha-3
 [1.3.0-alpha-2]: https://www.nuget.org/packages/maf-autopilot/1.3.0-alpha-2
 [1.3.0-alpha-1]: https://www.nuget.org/packages/maf-autopilot/1.3.0-alpha-1
