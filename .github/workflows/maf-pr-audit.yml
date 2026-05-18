@@ -96,7 +96,7 @@ jobs:
         # SHA-pinned per supply-chain hardening. Verify against tag with:
         #   gh api repos/marocchino/sticky-pull-request-comment/git/refs/tags/v2.9.2 --jq .object.sha
         # Update via Dependabot (.github/dependabot.yml).
-        uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728  # v2.9.2
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0  # v2.9.2
         with:
           header: maf-autopilot-audit
           path: pr-audit-full.md
