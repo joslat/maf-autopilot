@@ -89,7 +89,7 @@ jobs:
           dotnet tool install --global maf-autopilot --prerelease \
             || dotnet tool update --global maf-autopilot --prerelease
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         if: steps.scope.outputs.in_scope == 'true'
         with:
           python-version: '3.12'
