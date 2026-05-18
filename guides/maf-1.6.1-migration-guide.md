@@ -80,19 +80,46 @@ leMessageInjection' was added
 
 ## Breaking Changes (requires human verification)
 
-<!-- TODO: Review the diff above and list breaking changes here -->
+> ⚠️ Auto-generated stub. Review before relying on it for migrations.
+
+**None.** MAF 1.6.1 is a purely additive release with no breaking changes. The only API change is the addition of an optional `expectedOutput` parameter to `WorkflowEvaluationExtensions.EvaluateAsync`, which defaults to `null` and maintains backward compatibility with existing code.
 
 ## New Patterns
 
-<!-- TODO: Document any new recommended patterns from release notes -->
+> ⚠️ Auto-generated stub. Review before relying on it for migrations.
+
+### Ground-Truth Evaluation for Workflows
+
+MAF 1.6.1 adds support for ground-truth evaluation in workflow scenarios via the new `expectedOutput` parameter on `WorkflowEvaluationExtensions.EvaluateAsync`. This enables comparison of actual workflow output against expected output for quality assessment.
+
+**Usage:**
+
+```csharp
+var results = await run.EvaluateAsync(
+    evaluator,
+    includeOverall: true,
+    includePerAgent: true,
+    evalName: "Workflow Quality Check",
+    splitter: conversationSplitter,
+    expectedOutput: "Expected agent response for comparison",
+    cancellationToken: ct);
+```
+
+The `expectedOutput` parameter is optional and defaults to `null`. When provided, evaluators can use it to compute accuracy metrics by comparing the actual workflow output against the expected ground truth.
+
+**Related PR:** [#5755](https://github.com/microsoft/agent-framework/pull/5755)
 
 ## Obsolete APIs Added
 
-<!-- TODO: Use MafRunCs0618Hunt against a project pinned to 1.6.1 and document findings -->
+> ⚠️ Auto-generated stub. Review before relying on it for migrations.
+
+**None.** No APIs were marked as `[Obsolete]` in MAF 1.6.1. The release is purely additive — no deprecations or obsoletions. Running `MafRunCs0618Hunt` against a 1.6.1 project would return no new CS0618 warnings beyond those already present in earlier versions.
 
 ## Known Misalignments
 
-<!-- TODO: Document any discrepancies between official docs and assembly behavior -->
+> ⚠️ Auto-generated stub. Review before relying on it for migrations.
+
+**None identified.** No discrepancies between official documentation and assembly behavior have been identified for MAF 1.6.1 at the time of this guide's creation. The additive nature of this release (single optional parameter addition) reduces the risk of doc/behavior drift.
 
 <!-- AUTO-GENERATED END -->
 
