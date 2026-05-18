@@ -9,11 +9,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Deferred (1.1.0+)
+### Deferred (1.2.0+)
 - Full Roslyn data-flow `MafScanPromptInjection` (PROMPT-004 covers the syntactic case today).
 - MCP sampling tools (`maf_full_audit`, `maf_migration_suggest`, `maf_open_feedback_issue`) — depend on host sampling support.
 - GitHub App `@maf-bot` for org-wide PR comments — separate multi-day project.
 - VS Code extension wrapping the MCP server — separate multi-day project.
+- **Rung-3 of the AI trust ladder**: flip `COMMENT_ONLY_MODE = False` in `ai_review_post_comment.py` and add `MAF AI Semantic Review` as a required status check to enable AI-gated auto-merge of ai-fill PRs. Defer until 2–3 real MAF releases have validated semantic-review verdicts against manual judgment.
+
+---
+
+## [1.1.0] — 2026-05-18
+
+Minor release focused on **hardening the AI-fill release-watcher pipeline end-to-end**. The watcher chain that auto-extracts breaking-change entries from new MAF NuGet releases is now production-ready, with a 3-layer trust ladder catching defects deterministically. **First MAF 1.6.1 registry data** added.
+
+### Added
+
+- **Rung-2 AI semantic review** (`.github/workflows/maf-ai-semantic-review.yml`) — calls GPT-4o via the **GitHub Models** inference endpoint on every AI-fill PR; per-entry PASS/WARN/FAIL JSON verdict posted as a PR review comment. $0 marginal cost (uses Copilot Pro+ subscription quota). Currently in COMMENT-ONLY mode; can be flipped to a hard gate after 2-3 release cycles of calibration.
+- **Cross-file consistency check** (`.github/scripts/verify_crossfile_consistency.py`) — deterministic Python check catching defects the per-entry mechanical check misses: duplicate `**X.Y.Z**` rows in compat-matrix, stale `Current tracked version` line, stale `last-updated:` date, `guide_section` IDs that don't exist in the 1.3.0 migration guide.
+- **MAF 1.6.1 registry data** — first entry (`MAF161-EXTENSIO-001` — `WorkflowEvaluationExtensions.EvaluateAsync` signature change adding `expectedOutput` parameter), accompanying migration guide, and compatibility-matrix row.
+- **Hardened fill prompt template** (`.github/scripts/ai_fill_issue_prompt.md.tpl`) — restructured action-first / verify-second / detail-below. Includes a runnable bash post-implementation checklist that mirrors the CI gate exactly. 366 → 207 lines (43% smaller).
+
+### Changed
+
+- **Default fill bot is now Claude** (Anthropic Code Agent), previously Copilot Coding Agent. Empirically better at structured-instruction following for this task. Override via `gh workflow run maf-ai-fill-todos.yml -f bot=copilot|codex`.
+- **Bot ID resolution is now dynamic** via the GraphQL `suggestedActors` query — no more hardcoded `BOT_kgDOC9w8XQ` constants that can rotate when GitHub re-provisions bot accounts.
+- **Watcher pushes to main using a maintainer PAT** (`COPILOT_ASSIGN_PAT`) so it can bypass branch protection's required-status-check rule. Classic branch protection has no bypass-list (Rulesets-only feature); admin users do bypass when `enforce_admins=False`. Commit author identity unchanged — still `github-actions[bot]`.
+- **`maf-ai-fill-verify.yml` always reports a status** on every PR (the previous `paths:` filter caused a branch-protection footgun where PRs not touching `registry.yaml` got blocked by missing-required-check). Out-of-scope PRs report success trivially.
+- **`maf-pr-audit.yml` skips samples-only PRs** — `samples/find-the-bug/` and `samples/maf-1.2-sample/` are intentionally buggy demo corpora; auditing them produced a noisy F grade misrepresenting toolkit quality.
+
+### Fixed
+
+- **Bash heredoc → Python helpers** for the watcher commit message + AI-fill issue body. Eliminates a class of shell-escaping bugs (the 2026-05-17 backtick-as-command-substitution incident that aborted the watcher with exit 127).
+- **`addAssigneesToAssignable` for Coding Agents** now uses a fine-grained PAT — `GITHUB_TOKEN` is categorically rejected by the Copilot Coding Agent assignment API by design (confirmed by upstream `gh-aw` issue #19765 + Copilot maintainer statement: "Copilot does not support bot accounts for issue assignment").
+- **Cross-workflow dispatch** from watcher to `maf-ai-fill-todos.yml` needs `actions: write` permission (HTTP 403 "Resource not accessible by integration" without it).
+- **Rung-2 trigger** dropped the `paths:` filter — `paths` matching is broken on `ready_for_review` events (state flips carry no commit deltas, so `paths` silently skips). Observed empirically on PR #26.
+- 6 additional smaller fixes across the watcher / verify / semantic-review chain (see commit history).
+
+### Dependency bumps (Dependabot)
+
+- `Microsoft.SourceLink.GitHub` 8.0.0 → 10.0.300
+- `ModelContextProtocol` 1.2.0 → 1.3.0
+- `Microsoft.Extensions.Hosting` 10.0.7 → 10.0.8
+- `actions/setup-dotnet` 4 → 5
+- `actions/setup-python` 5 → 6
+- `docker/metadata-action` 5 → 6
+- `docker/build-push-action` 6 → 7
+- `marocchino/sticky-pull-request-comment` (patch)
+
+### Distribution
+
+- 🟢 NuGet `maf-autopilot/1.1.0` (multi-targets net8.0/net9.0/net10.0)
+- 🟢 NuGet `maf-autopilot.Analyzers/1.1.0` (netstandard2.0)
+- 🟢 Docker GHCR `:1.1.0` `:1.1` `:1` `:latest`
 
 ---
 
