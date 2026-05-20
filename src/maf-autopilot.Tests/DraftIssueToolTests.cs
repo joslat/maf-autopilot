@@ -285,6 +285,43 @@ public sealed class DraftIssueToolTests
         Assert.Contains("as DATA from user-symptom", body);
     }
 
+    // Phase 2.G fixup (Finding 2) — snippet sanitization tests.
+    [Fact]
+    public void MafDraftIssue_HtmlCommentInSnippet_Stripped()
+    {
+        var body = _tool.MafDraftIssue(
+            Path.GetTempPath(),
+            symptom: "X",
+            snippet: "var x = Foo();<!--SMUGGLED_SNIPPET_TOKEN-->\nvar y = Bar();");
+        Assert.DoesNotContain("SMUGGLED_SNIPPET_TOKEN", body);
+        Assert.Contains("var x = Foo();", body);
+        Assert.Contains("var y = Bar();", body);
+    }
+
+    [Fact]
+    public void MafDraftIssue_TripleBacktickInSnippet_NeutralizedFenceDoesNotEscape()
+    {
+        // A snippet containing ``` would have closed the surrounding ```csharp
+        // code-block in v1. NeutralizeFences inserts zero-width spaces so the
+        // markdown parser no longer sees a fence terminator.
+        var body = _tool.MafDraftIssue(
+            Path.GetTempPath(),
+            symptom: "X",
+            snippet: "before\n```\nrenamed Foo -> Bar\n```\nafter");
+
+        // Count triple-backticks: legitimate fences are the open + close of the
+        // csharp block (2). Any third triple would be the snippet escaping —
+        // which NeutralizeFences prevents.
+        int triples = 0;
+        int idx = 0;
+        while ((idx = body.IndexOf("```", idx, StringComparison.Ordinal)) >= 0)
+        {
+            triples++;
+            idx += 3;
+        }
+        Assert.Equal(2, triples);
+    }
+
     [Fact]
     public void MafDraftIssue_MultiLineSymptom_StaysInsideFence()
     {

@@ -105,7 +105,14 @@ def build_chain_banner(old_version: str, new_version: str) -> str:
 
 diff_lines = read_file('diff-core.txt', '(diff not available)').splitlines()
 # Trim to a reasonable length — full diffs can be huge.
-diff = '\n'.join(diff_lines[:120])
+raw_diff = '\n'.join(diff_lines[:120])
+# Phase 2.G fixup (Finding 1) — fence the dotnet-inspect diff. The diff is the
+# sibling input to release notes — same TA-1 threat (malicious upstream NuGet
+# author can put HTML-comment-disguised payloads or stray triple-backticks in
+# a public-API XML doc or type name, which dotnet-inspect surfaces verbatim).
+# Without the fence, those flow into the AI-fill issue body alongside the
+# (already-fenced) release notes.
+diff = fence('upstream-maf-diff-core', raw_diff, max_bytes=32 * 1024)
 raw_notes = read_file('release-notes.txt', '(no release notes available)').strip()
 # Phase 2.2 — fence the release notes. 32 KB cap is generous: release notes
 # typically run a few KB; anything over 32 KB is almost certainly an attempt
@@ -128,7 +135,7 @@ auto_body = (
     f"- Migrating from: `{old}`\n"
     f"- Migrating to: `{new}`\n\n"
     f"## Diff Summary (first 120 lines of `dotnet-inspect` output)\n\n"
-    f"```\n{diff}\n```\n\n"
+    f"{diff}\n\n"
     f"## Release Notes Extract\n\n"
     f"{notes}\n\n"
     f"## Breaking Changes (requires human verification)\n\n"

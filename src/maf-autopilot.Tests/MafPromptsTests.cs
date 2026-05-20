@@ -80,4 +80,68 @@ public sealed class MafPromptsTests
         var text = PromptText(MafPrompts.Debug(errorOrSymptom: big));
         Assert.Contains("[TRUNCATED]", text);
     }
+
+    // -------------------------------------------------------------------------
+    // Phase 2.G fixup (Finding 3) — HTML-comment-strip on other prompts.
+    //
+    // Audit / Migrate / Cs0618Hunt / Review / Scaffold echo identifier-like
+    // inputs into the prompt body. Defense-in-depth: strip HTML comments so
+    // a smuggle-payload like `repoPath="<!--ignore previous-->"` cannot
+    // instruct the calling LLM.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Audit_HtmlCommentInRepoPath_Stripped()
+    {
+        var text = PromptText(MafPrompts.Audit(
+            repoPath: "/repo<!--SMUGGLED_AUDIT_PATH-->",
+            fromVersion: "1.2.0"));
+        Assert.DoesNotContain("SMUGGLED_AUDIT_PATH", text);
+        Assert.DoesNotContain("<!--", text);
+    }
+
+    [Fact]
+    public void Audit_HtmlCommentInFromVersion_Stripped()
+    {
+        var text = PromptText(MafPrompts.Audit(
+            repoPath: "/repo",
+            fromVersion: "1.2.0<!--EVIL_VERSION-->"));
+        Assert.DoesNotContain("EVIL_VERSION", text);
+    }
+
+    [Fact]
+    public void Migrate_HtmlCommentInTaskIds_Stripped()
+    {
+        var text = PromptText(MafPrompts.Migrate(
+            taskIds: "5,6,7<!--SMUGGLED_TASK_TOKEN-->",
+            planPath: "/repo/plan.md"));
+        Assert.DoesNotContain("SMUGGLED_TASK_TOKEN", text);
+    }
+
+    [Fact]
+    public void Cs0618Hunt_HtmlCommentInProjectPath_Stripped()
+    {
+        var text = PromptText(MafPrompts.Cs0618Hunt(
+            projectPath: "/repo<!--SMUGGLED_HUNT_PATH-->/foo.csproj"));
+        Assert.DoesNotContain("SMUGGLED_HUNT_PATH", text);
+        Assert.Contains("/repo/foo.csproj", text);
+    }
+
+    [Fact]
+    public void Review_HtmlCommentInFocusArea_Stripped()
+    {
+        var text = PromptText(MafPrompts.Review(
+            target: "src/Foo.cs",
+            focusArea: "executors<!--SMUGGLED_REVIEW_AREA-->"));
+        Assert.DoesNotContain("SMUGGLED_REVIEW_AREA", text);
+    }
+
+    [Fact]
+    public void Scaffold_HtmlCommentInName_Stripped()
+    {
+        var text = PromptText(MafPrompts.Scaffold(
+            template: "agent",
+            name: "ChatBot<!--SMUGGLED_NAME-->"));
+        Assert.DoesNotContain("SMUGGLED_NAME", text);
+    }
 }

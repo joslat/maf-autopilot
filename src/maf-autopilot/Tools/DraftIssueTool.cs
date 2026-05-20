@@ -132,8 +132,18 @@ public sealed class DraftIssueTool
         sb.AppendLine();
         if (!string.IsNullOrWhiteSpace(snippet))
         {
+            // Phase 2.G fixup (Finding 2) — `snippet` sits inside a triple-backtick
+            // csharp block, so a snippet containing ``` would escape the fence and
+            // any HTML comment inside would inject into the downstream create_issue
+            // agent's context. We can't use LlmFencing.Fence here without dropping
+            // the markdown code-block (the code-block is part of the issue
+            // template that human reviewers expect), so apply the two cheaper
+            // defenses: NeutralizeFences breaks any embedded ``` via zero-width
+            // space; StripHtmlComments removes the most common smuggle vector.
+            var sanitised = RegistryService.NeutralizeFences(
+                LlmFencing.StripHtmlComments(snippet.Trim()));
             sb.AppendLine("```csharp");
-            sb.AppendLine(snippet.Trim());
+            sb.AppendLine(sanitised);
             sb.AppendLine("```");
         }
         else
