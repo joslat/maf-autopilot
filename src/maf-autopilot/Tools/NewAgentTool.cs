@@ -188,7 +188,16 @@ public sealed class NewAgentTool
             {
                 var content = File.ReadAllText(csproj);
                 var match = NamespaceRegex.Match(content);
-                if (match.Success) return match.Groups[1].Value;
+                if (match.Success)
+                {
+                    // Trim+validate before returning. The XML capture may include
+                    // surrounding whitespace (e.g. `<RootNamespace>My App </RootNamespace>`
+                    // from a formatter). Post-Phase-1.3 AgentScaffolder.IsValidNamespace
+                    // rejects whitespace, so we MUST sanitise here or the scaffold
+                    // call throws. Fall through to the filename fallback on rejection.
+                    var rawNs = match.Groups[1].Value.Trim();
+                    if (IsValidNamespace(rawNs)) return rawNs;
+                }
 
                 // Fall back to the csproj filename (typically project name). Sanitise
                 // hyphens and other invalid namespace characters BEFORE returning, so

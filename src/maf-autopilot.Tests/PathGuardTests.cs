@@ -167,6 +167,40 @@ public class PathGuardTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    [Fact]
+    public void Containment_FileLevelSymlinkAtCandidate_Throws()
+    {
+        // Phase 1.G review finding: Path.GetFullPath does NOT resolve symlinks
+        // (only canonicalizes `.`/`..`), so a file-level symlink placed inside
+        // the workspace at <root>/safe.cs pointing outside the root would
+        // pass the StartsWith containment check without an explicit leaf-level
+        // reparse-point probe. This test pins the probe.
+        var root = CreateTempRoot();
+        var outsideTarget = Path.Combine(Path.GetTempPath(), "pathguard-symlink-target-" + Guid.NewGuid().ToString("N") + ".txt");
+        File.WriteAllText(outsideTarget, "secret");
+        var symlinkPath = Path.Combine(root, "safe.cs");
+
+        try
+        {
+            // Symlink creation on Windows requires admin or Developer Mode.
+            // Skip gracefully if neither is available.
+            try { File.CreateSymbolicLink(symlinkPath, outsideTarget); }
+            catch (UnauthorizedAccessException) { return; }
+            catch (IOException) { return; }
+            catch (PlatformNotSupportedException) { return; }
+
+            var ex = Assert.Throws<ArgumentException>(
+                () => PathGuard.ValidateContainment(root, "safe.cs"));
+            Assert.Contains("symlink", ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            try { File.Delete(symlinkPath); } catch { /* best effort */ }
+            try { File.Delete(outsideTarget); } catch { /* best effort */ }
+            try { Directory.Delete(root, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
     private static string CreateTempRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), "pathguard-containment-" + Guid.NewGuid().ToString("N"));

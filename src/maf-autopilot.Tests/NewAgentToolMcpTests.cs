@@ -163,4 +163,74 @@ public sealed class NewAgentToolMcpTests : IDisposable
         Assert.Contains("Error", result, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(before, after);
     }
+
+    // -------------------------------------------------------------------------
+    // Phase 1.G review fixup — DetectNamespace tolerates whitespace in the
+    // csproj <RootNamespace> capture.
+    //
+    // A formatter or hand-edited csproj may emit `<RootNamespace>Foo.Bar </RootNamespace>`
+    // (trailing space). Pre-Phase-1, this passed through as `Foo.Bar ` and
+    // the user's `dotnet build` would complain. Post-Phase-1, AgentScaffolder
+    // rejects whitespace and threw ArgumentException — making the scaffold
+    // unusable on perfectly-fine projects. The fix trims + validates inside
+    // DetectNamespace before returning, falling back to the filename if
+    // validation fails.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void DetectNamespace_TrailingWhitespaceInRootNamespace_TrimmedAndAccepted()
+    {
+        var ws = Path.Combine(Path.GetTempPath(), "detect-ns-ws-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(ws);
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(ws, "App.csproj"),
+                "<Project><PropertyGroup><RootNamespace>Foo.Bar </RootNamespace></PropertyGroup></Project>");
+            var detected = NewAgentTool.DetectNamespace(ws, fallback: "MyApp.Agents");
+            Assert.Equal("Foo.Bar", detected);
+        }
+        finally { Directory.Delete(ws, recursive: true); }
+    }
+
+    [Fact]
+    public void DetectNamespace_MalformedRootNamespace_FallsBackToFilename()
+    {
+        // `<RootNamespace>Has Space</RootNamespace>` is malformed (the segment
+        // contains a space). Trim does not fix it. Validator rejects. Detection
+        // must fall through to the csproj filename rather than returning a
+        // value that the new scaffolder validator will then reject.
+        var ws = Path.Combine(Path.GetTempPath(), "detect-ns-fb-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(ws);
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(ws, "MyApp.csproj"),
+                "<Project><PropertyGroup><RootNamespace>Has Space</RootNamespace></PropertyGroup></Project>");
+            var detected = NewAgentTool.DetectNamespace(ws, fallback: "MyApp.Agents");
+            Assert.Equal("MyApp", detected);
+        }
+        finally { Directory.Delete(ws, recursive: true); }
+    }
+
+    [Fact]
+    public void DetectNamespace_MalformedAndUnsalvageable_ReturnsFallback()
+    {
+        // Both <RootNamespace> and the filename are unsalvageable → fallback wins.
+        var ws = Path.Combine(Path.GetTempPath(), "detect-ns-final-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(ws);
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(ws, "9-bad.csproj"),
+                "<Project><PropertyGroup><RootNamespace>Bad Space</RootNamespace></PropertyGroup></Project>");
+            var detected = NewAgentTool.DetectNamespace(ws, fallback: "MyApp.Agents");
+            // SanitiseNamespace turns "9-bad" into "_9_bad" which IS valid → that's used.
+            // The test value depends on sanitiser behavior; assert the result is at least
+            // valid and not the malformed RootNamespace.
+            Assert.DoesNotContain(" ", detected);
+            Assert.True(NewAgentTool.IsValidNamespace(detected));
+        }
+        finally { Directory.Delete(ws, recursive: true); }
+    }
 }

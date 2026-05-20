@@ -102,20 +102,36 @@ internal static class PathGuard
                 nameof(candidatePath));
         }
 
-        // Walk parents from the resolved path up to (but not including) the
+        // Walk the resolved path from candidate up to (but not including) the
         // root. A reparse point anywhere in that chain would let a hostile
         // workspace redirect reads/writes outside the root that we just
-        // confirmed contains the resolution.
+        // confirmed contains the resolution syntactically.
         //
-        // Note: DirectoryInfo.Attributes on a non-existent path returns
-        // (FileAttributes)(-1) which has every bit set, including ReparsePoint.
-        // We therefore SKIP non-existent intermediates (they cannot be reparse
-        // points by definition) and only probe extant filesystem entries.
-        var startPath = resolvedFull;
-        if (File.Exists(startPath))
+        // Two distinct probes are required:
+        //   (a) the candidate file itself, if it exists — Path.GetFullPath
+        //       does NOT resolve symlinks (it only canonicalizes `.`/`..`
+        //       syntactically), so a file-level symlink at <root>/safe.cs ->
+        //       /etc/passwd would pass the StartsWith check.
+        //   (b) every parent directory up to the root — covers junctions
+        //       and directory-level symlinks placed inside the workspace.
+        //
+        // probe.Exists short-circuits non-existent intermediates so we do not
+        // need to read Attributes (which returns (FileAttributes)(-1) on a
+        // missing path).
+        if (File.Exists(resolvedFull) || Directory.Exists(resolvedFull))
         {
-            startPath = Path.GetDirectoryName(startPath) ?? rootFull;
+            var leafAttrs = File.GetAttributes(resolvedFull);
+            if ((leafAttrs & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new ArgumentException(
+                    $"{parameterName} is a symlink/reparse point.",
+                    nameof(candidatePath));
+            }
         }
+
+        var startPath = File.Exists(resolvedFull)
+            ? Path.GetDirectoryName(resolvedFull) ?? rootFull
+            : resolvedFull;
         var probe = new DirectoryInfo(startPath);
 
         while (probe is not null
