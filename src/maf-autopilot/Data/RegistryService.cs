@@ -65,12 +65,12 @@ public sealed class RegistryService
         // to materialize a 1 GB copy, then `Contains` to walk it against every
         // haystack. The cap is generous (256 bytes — wider than any real API
         // name our registry contains) but bounded enough to neutralize abuse.
-        // Throws instead of silently truncating because the caller is upstream
-        // tool code with structured-output expectations.
-        if (apiName.Length > 256)
-            throw new ArgumentException(
-                "apiName exceeds the 256-byte search-needle cap.",
-                nameof(apiName));
+        //
+        // Phase 5.G fixup — route through BoundedInput.Validate so the cap is
+        // BYTE-count (not UTF-16 char count). The string `apiName.Length > 256`
+        // check would have allowed a 256-emoji string = 1024 UTF-8 bytes,
+        // inconsistent with the IdentifierBytes contract used elsewhere.
+        Tools.BoundedInput.Validate(apiName, Tools.BoundedInput.IdentifierBytes, nameof(apiName));
 
         var needle = apiName.Trim().ToLowerInvariant();
         return _registry.Entries

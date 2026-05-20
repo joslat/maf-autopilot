@@ -141,15 +141,13 @@ jobs:
   # hostile repo redirect reads. Non-recursive enumeration (single-level lookup
   # of `*.sln` / `*.csproj` next to a path) is low-risk and skipped.
   #
-  # ADVISORY UNTIL Phase 5.3 / Phase 5.x: DraftIssueTool.cs and
-  # FanOutValidatorTool.cs currently use AllDirectories without options.
-  # Flip `continue-on-error` off once those are migrated to SourceFileWalker
-  # (which is owned by Phase 5.3).
+  # Phase 5.G fixup landed: DraftIssueTool.cs and FanOutValidatorTool.cs both
+  # migrated to SourceFileWalker.EnumerateCsFiles / EnumerateCsprojFiles which
+  # carry the reparse-point-skip options. Job is hard-fail going forward.
   # ----------------------------------------------------------------------------
   enumeration-options:
     name: EnumerationOptions on recursive walkers
     runs-on: ubuntu-latest
-    continue-on-error: true  # TODO(Phase 5.3+): remove after DraftIssueTool/FanOutValidatorTool migrate.
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 

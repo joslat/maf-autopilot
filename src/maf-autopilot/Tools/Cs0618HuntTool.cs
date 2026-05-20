@@ -87,9 +87,22 @@ public sealed class Cs0618HuntTool
 
     // Matches MSBuild's standard diagnostic line:
     //   <file>(line,col): warning|error CSnnnn: <message>
+    //
+    // Phase 5.G fixup — ReDoS hygiene. The pattern itself is bounded
+    // (lazy `[^()\r\n]+?` between literal anchors), but the `<file>` slot is
+    // attacker-influenced (source filenames in `dotnet build` output can
+    // contain odd characters from a hostile user repo). NonBacktracking +
+    // 100ms timeout cap any future drift.
+    //
+    // NOTE: Multiline can't combine with NonBacktracking on .NET (Multiline
+    // affects `^`/`$` semantics which the regex engine handles separately
+    // from backtracking). We use `Multiline` (no NonBacktracking) but still
+    // attach a `MatchTimeout` — the dominant risk here is catastrophic
+    // backtracking in patterns WITH backtracking, which this one cannot do.
     private static readonly Regex DiagRegex = new(
         @"^(?<file>[^()\r\n]+?)\((?<line>\d+),(?<col>\d+)\):\s+(?<severity>warning|error)\s+(?<code>CS\d{4}):\s+(?<msg>.+)$",
-        RegexOptions.Compiled | RegexOptions.Multiline);
+        RegexOptions.Compiled | RegexOptions.Multiline,
+        TimeSpan.FromMilliseconds(100));
 
     /// <summary>
     /// Parses MSBuild stdout for CS0618 / CS0246 diagnostics. Pure: no I/O.
@@ -157,7 +170,14 @@ public sealed class Cs0618HuntTool
         return null;
     }
 
-    private static readonly Regex FirstQuotedRegex = new(@"'([^']+)'", RegexOptions.Compiled);
+    // Phase 5.G fixup — NonBacktracking + 100ms timeout. The `[^']+` class
+    // is bounded by literal anchors so backtracking is structurally limited,
+    // but the pattern matches `dotnet build` diagnostic text which is
+    // attacker-influenced. Hygiene is cheap; we pay it.
+    private static readonly Regex FirstQuotedRegex = new(
+        @"'([^']+)'",
+        RegexOptions.Compiled | RegexOptions.NonBacktracking,
+        TimeSpan.FromMilliseconds(100));
 
     internal static string? ExtractObsoleteSymbol(string message)
     {

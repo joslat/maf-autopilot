@@ -263,7 +263,10 @@ public sealed class DraftIssueTool
         var tfms = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            foreach (var csproj in Directory.EnumerateFiles(repoPath, "*.csproj", SearchOption.AllDirectories))
+            // Phase 5.G fixup — was Directory.EnumerateFiles(..., SearchOption.AllDirectories)
+            // which followed symlinks by default. Migrated to SourceFileWalker.EnumerateCsprojFiles
+            // which uses RecursiveCsOptions (AttributesToSkip = ReparsePoint).
+            foreach (var csproj in SourceFileWalker.EnumerateCsprojFiles(repoPath))
             {
                 var content = File.ReadAllText(csproj);
                 foreach (Match m in PackageRefRegex.Matches(content))

@@ -152,7 +152,12 @@ public sealed class FanOutValidatorTool
         if (File.Exists(path) && path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
             return new[] { path };
         if (Directory.Exists(path))
-            return Directory.GetFiles(path, "*.cs", SearchOption.AllDirectories);
+        {
+            // Phase 5.G fixup — migrated from Directory.GetFiles(..., SearchOption.AllDirectories)
+            // (default options follow symlinks) to SourceFileWalker.EnumerateCsFiles which sets
+            // AttributesToSkip = ReparsePoint and also filters /bin/ + /obj/ noise paths.
+            return SourceFileWalker.EnumerateCsFiles(path).ToList();
+        }
         return Array.Empty<string>();
     }
 

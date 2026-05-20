@@ -26,6 +26,17 @@ public static class MafPrompts
         [Description("Path to the repository root or solution file to audit.")] string repoPath,
         [Description("Current MAF version in the codebase (e.g. 1.1.0, 1.2.0). Leave empty if unknown.")] string? fromVersion = null)
     {
+        // Phase 5.G fixup — DoS guard on each echoed input (length cap
+        // before LlmFencing.StripHtmlComments). Without this, a 1 GB
+        // `repoPath` flows into StringBuilder and the MCP wire response.
+        // Caps swallow the throw — prompt methods can't return error
+        // strings (they return a list of PromptMessage), so we treat
+        // oversized inputs as "treated as empty" rather than failing.
+        try { BoundedInput.Validate(repoPath,    BoundedInput.PathBytes,       nameof(repoPath)); }
+        catch (ArgumentException) { repoPath = string.Empty; }
+        try { BoundedInput.Validate(fromVersion, BoundedInput.IdentifierBytes, nameof(fromVersion)); }
+        catch (ArgumentException) { fromVersion = null; }
+
         // Phase 2.G fixup (Finding 3) — strip HTML comments from user-echoed
         // values. These prompts return a markdown body that the calling LLM
         // renders as its next user turn, so an HTML-comment-disguised payload
@@ -65,6 +76,12 @@ public static class MafPrompts
         [Description("Task row number(s) from migration-plan.md to execute. Single: '5'. Range: '5,6,7'.")] string taskIds,
         [Description("Path to the migration-plan.md file. Leave empty to let the agent locate it.")] string? planPath = null)
     {
+        // Phase 5.G fixup — length caps before sanitization. See Audit for rationale.
+        try { BoundedInput.Validate(taskIds,  BoundedInput.ShortTextBytes, nameof(taskIds)); }
+        catch (ArgumentException) { taskIds = string.Empty; }
+        try { BoundedInput.Validate(planPath, BoundedInput.PathBytes,      nameof(planPath)); }
+        catch (ArgumentException) { planPath = null; }
+
         // Phase 2.G fixup (Finding 3) — see Audit for rationale.
         var safeTaskIds = LlmFencing.StripHtmlComments(taskIds);
         var safePlanPath = LlmFencing.StripHtmlComments(planPath);
@@ -108,6 +125,10 @@ public static class MafPrompts
         // `MafRunCs0618Hunt` now automates that AND registry-joins each finding to
         // its canonical fix. Telling the LLM to do it by hand is a footgun: it skips
         // the registry join and produces a noisier, less-actionable report.
+        // Phase 5.G fixup — length cap before sanitization. See Audit for rationale.
+        try { BoundedInput.Validate(projectPath, BoundedInput.PathBytes, nameof(projectPath)); }
+        catch (ArgumentException) { projectPath = string.Empty; }
+
         // Phase 2.G fixup (Finding 3) — see Audit for rationale. projectPath
         // is splashed inside a quoted argument; an embedded quote would still
         // break out of the literal, but HTML-comment stripping defangs the
@@ -149,6 +170,12 @@ public static class MafPrompts
         [Description("Path to the file or directory to review. A .cs file path, a project directory, or omit for the current context.")] string? target = null,
         [Description("Optional focus area: executors / sessions / fan-out / security / streaming / a2a. Omit for full sweep.")] string? focusArea = null)
     {
+        // Phase 5.G fixup — length caps before sanitization.
+        try { BoundedInput.Validate(target,    BoundedInput.PathBytes,       nameof(target)); }
+        catch (ArgumentException) { target = null; }
+        try { BoundedInput.Validate(focusArea, BoundedInput.IdentifierBytes, nameof(focusArea)); }
+        catch (ArgumentException) { focusArea = null; }
+
         // Phase 2.G fixup (Finding 3) — see Audit for rationale.
         var safeTarget = LlmFencing.StripHtmlComments(target);
         var safeFocusArea = LlmFencing.StripHtmlComments(focusArea);
@@ -264,6 +291,14 @@ public static class MafPrompts
         [Description("For executor only: incoming message type (default: string).")] string? inputType = null,
         [Description("For executor only: outgoing message type (default: string).")] string? outputType = null)
     {
+        // Phase 5.G fixup — length caps before sanitization.
+        try { BoundedInput.Validate(name,       BoundedInput.IdentifierBytes, nameof(name)); }
+        catch (ArgumentException) { name = null; }
+        try { BoundedInput.Validate(inputType,  BoundedInput.IdentifierBytes, nameof(inputType)); }
+        catch (ArgumentException) { inputType = null; }
+        try { BoundedInput.Validate(outputType, BoundedInput.IdentifierBytes, nameof(outputType)); }
+        catch (ArgumentException) { outputType = null; }
+
         // Phase 2.G fixup (Finding 3) — see Audit for rationale.
         var safeName = LlmFencing.StripHtmlComments(name);
         var safeInputType = LlmFencing.StripHtmlComments(inputType);

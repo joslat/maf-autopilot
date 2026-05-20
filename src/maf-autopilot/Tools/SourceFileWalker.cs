@@ -77,6 +77,19 @@ internal static class SourceFileWalker
     }
 
     /// <summary>
+    /// Enumerates every <c>*.csproj</c> file under <paramref name="repoRoot"/>.
+    /// Same EnumerationOptions as <see cref="EnumerateCsFiles"/> — no symlinks,
+    /// no hidden/system, inaccessible subdirs skipped. Phase 5.G fixup: added
+    /// so <c>DraftIssueTool</c> and <c>FanOutValidatorTool</c> can migrate off
+    /// the raw <c>Directory.EnumerateFiles</c> / <c>GetFiles</c> calls that
+    /// followed symlinks by default.
+    /// </summary>
+    public static IEnumerable<string> EnumerateCsprojFiles(string repoRoot)
+    {
+        return Directory.EnumerateFiles(repoRoot, "*.csproj", RecursiveCsOptions);
+    }
+
+    /// <summary>
     /// Returns the path of <paramref name="file"/> relative to
     /// <paramref name="root"/>, with forward-slash separators.
     ///
