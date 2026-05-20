@@ -268,8 +268,12 @@ public sealed class RegistryService
     /// Phase 5.5 of the v1.1 security hardening release. Rejects shell
     /// metachars, NUL/CR/LF, symlinks, and (optionally) paths outside an
     /// allowlist declared via MAF_REGISTRY_PATH_ROOTS.
+    ///
+    /// Promoted to <c>internal</c> in Phase 7.G fixup so the test assembly
+    /// can exercise the guard directly (Phase 5.5 had no test coverage —
+    /// surfaced by the final Opus review).
     /// </summary>
-    private static void ValidateOverridePath(string envPath)
+    internal static void ValidateOverridePath(string envPath)
     {
         if (envPath.IndexOfAny(['\0', '\r', '\n', '"', ';', '|', '&']) >= 0)
             throw new InvalidOperationException(

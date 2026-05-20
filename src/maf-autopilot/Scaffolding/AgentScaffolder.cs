@@ -322,7 +322,13 @@ public static class AgentScaffolder
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static readonly Regex IdentifierRegex = new(@"^[A-Za-z][A-Za-z0-9_]*$", RegexOptions.Compiled);
+    // Phase 7.G fixup — regex hygiene. Pattern is structurally backtracking-safe
+    // (anchored char-class) but the project-wide invariant requires
+    // NonBacktracking + MatchTimeout on every Regex declaration.
+    private static readonly Regex IdentifierRegex = new(
+        @"^[A-Za-z][A-Za-z0-9_]*$",
+        RegexOptions.Compiled | RegexOptions.NonBacktracking,
+        TimeSpan.FromMilliseconds(100));
 
     private static bool IsValidIdentifier(string s) =>
         !string.IsNullOrWhiteSpace(s) && IdentifierRegex.IsMatch(s);

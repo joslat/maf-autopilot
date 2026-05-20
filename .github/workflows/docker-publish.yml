@@ -112,15 +112,23 @@ jobs:
           platforms: linux/amd64,linux/arm64
 
       - name: Image summary
+        # Phase 7.G fixup — env-redirect `steps.*.outputs.*` so the run: block
+        # contains no template substitutions. `env.*` references inside another
+        # `env:` block are valid GitHub Actions syntax (the runner resolves them
+        # before the shell sees the value).
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PULL_URL: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         run: |
           echo "## 🐳 Image published" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Tags:" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "$TAGS" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Pull with:" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${PULL_URL}:${VERSION}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY

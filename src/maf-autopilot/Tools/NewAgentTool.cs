@@ -147,8 +147,18 @@ public sealed class NewAgentTool
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static readonly Regex IdentifierRegex = new(@"^[A-Za-z][A-Za-z0-9_]*$", RegexOptions.Compiled);
-    private static readonly Regex NamespaceRegex = new(@"<RootNamespace>([^<]+)</RootNamespace>", RegexOptions.Compiled);
+    // Phase 7.G fixup — regex hygiene applied to all Regex declarations.
+    // NamespaceRegex matches user-controlled .csproj content; the bounded
+    // `[^<]+` class is backtracking-safe but the policy requires
+    // NonBacktracking + 100ms timeout regardless.
+    private static readonly Regex IdentifierRegex = new(
+        @"^[A-Za-z][A-Za-z0-9_]*$",
+        RegexOptions.Compiled | RegexOptions.NonBacktracking,
+        TimeSpan.FromMilliseconds(100));
+    private static readonly Regex NamespaceRegex = new(
+        @"<RootNamespace>([^<]+)</RootNamespace>",
+        RegexOptions.Compiled | RegexOptions.NonBacktracking,
+        TimeSpan.FromMilliseconds(100));
 
     internal static bool IsSafeIdentifier(string s) =>
         !string.IsNullOrWhiteSpace(s) && IdentifierRegex.IsMatch(s);

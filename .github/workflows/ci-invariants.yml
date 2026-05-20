@@ -98,7 +98,12 @@ jobs:
           # NonBacktracking and MatchTimeout appear in the declaration body.
           VIOLATIONS=$(python3 - <<'PY'
           import os, re, sys
-          decl = re.compile(r'\bnew\s+Regex\s*\(')
+          # Phase 7.G fixup — also match the target-typed form
+          # `Regex IdentifierName = new(...)`. Without this branch, 9 declarations
+          # using `private static readonly Regex X = new(...)` escaped detection
+          # (caught by the Phase 7.G final Opus review).
+          decl_classical = re.compile(r'\bnew\s+Regex\s*\(')
+          decl_targettyped = re.compile(r'\bRegex\s+\w+\s*=\s*new\s*\(')
           violations = []
           for root, _, files in os.walk('src'):
               if 'maf-autopilot.Tests' in root or '/bin/' in root or '/obj/' in root:
@@ -110,14 +115,14 @@ jobs:
                   with open(path, encoding='utf-8') as fh:
                       lines = fh.readlines()
                   for i, line in enumerate(lines):
-                      if decl.search(line):
+                      if decl_classical.search(line) or decl_targettyped.search(line):
                           # Capture this line + up to 4 following lines as the declaration block.
                           block = ''.join(lines[i:i+5])
-                          # Phase 5.9 introduced shared `RegexHygiene` and
-                          # `RegexBudget` constants in AntiPatternScannerTool.
-                          # Accept either the raw `NonBacktracking` +
-                          # `MatchTimeout` tokens OR the constant names.
-                          has_options = ('NonBacktracking' in block) or ('RegexHygiene' in block)
+                          # Phase 5.9 introduced shared `RegexHygiene` /
+                          # `HygieneOptions` and `RegexBudget` constants.
+                          # Accept the raw `NonBacktracking` + `MatchTimeout`
+                          # tokens OR any of the constant names.
+                          has_options = ('NonBacktracking' in block) or ('RegexHygiene' in block) or ('HygieneOptions' in block)
                           has_timeout = ('MatchTimeout' in block) or ('RegexBudget' in block) or ('TimeSpan.FromMilliseconds' in block)
                           if not has_options or not has_timeout:
                               violations.append(f"{path}:{i+1}: {line.rstrip()}")
@@ -199,12 +204,20 @@ jobs:
           fi
 
   # ----------------------------------------------------------------------------
-  # (4) Workflow input templates — no `${{ inputs.X }}` or
-  # `${{ github.event.inputs.X }}` inside `run:` blocks. Inputs must flow via
-  # `env:` redirect; downstream scripts reference `$X` as a shell variable.
+  # (4) Workflow templating discipline — no `${{ … }}` substitution inside
+  # `run:` blocks for any of the following second-order sources:
+  #   - `inputs.X` / `github.event.inputs.X` (workflow_dispatch input)
+  #   - `needs.<job>.outputs.X` (cross-job output, attacker-influenced if the
+  #     upstream job's regex/source is widened)
+  #   - `steps.<step>.outputs.X` (intra-job output, same threat shape)
+  # All three must flow via `env:` redirect so downstream shell sees only
+  # shell-variable expansions, not template substitutions.
   #
   # Phase 3.2 landed: all five previously-noncompliant workflows now use the
-  # `env:` redirect pattern. Job is hard-fail going forward.
+  # env: redirect pattern for `inputs.*`. Phase 7.G review broadened the rule
+  # to also cover `needs.*.outputs.*` and `steps.*.outputs.*` — five
+  # additional sites in maf-release-watcher / release / docker-publish were
+  # surfaced and fixed. Job is hard-fail going forward.
   # ----------------------------------------------------------------------------
   workflow-input-redirect:
     name: Workflow inputs flow via env redirect
@@ -218,10 +231,18 @@ jobs:
           VIOLATIONS=$(python3 - <<'PY'
           import os, re, sys
           violations = []
-          # Match an inputs template that appears inside a run: block. Track
-          # whether the current line is within a `run: |` or `run: >` multi-line
-          # block by simple indentation.
-          tpl = re.compile(r'\$\{\{\s*(?:inputs\.|github\.event\.inputs\.)')
+          # Match any of the three template families inside a `run:` block.
+          # Tracking the run: block by indentation: a `run: |` / `run: >`
+          # opens a multi-line shell script; nested indented lines belong
+          # to the block until we see a sibling key at the same indent.
+          tpl = re.compile(
+              r'\$\{\{\s*(?:'
+              r'inputs\.'
+              r'|github\.event\.inputs\.'
+              r'|needs\.[^.]+\.outputs\.'
+              r'|steps\.[^.]+\.outputs\.'
+              r')'
+          )
           # Self-exclude ci-invariants.yml — this meta-workflow names the
           # forbidden pattern in its own comments and error messages, so its
           # text necessarily contains the literal we are detecting.

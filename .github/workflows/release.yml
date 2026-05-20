@@ -83,8 +83,13 @@ jobs:
 
       - name: Override version in csproj
         if: github.event.inputs.version != '' || startsWith(github.ref, 'refs/tags/v')
+        # Phase 7.G fixup — env-redirect `steps.*.outputs.*` like we do for
+        # `inputs.*`. Defense in depth: VERSION is already semver-validated
+        # upstream by the validate-inputs job, but eliminating the templating
+        # site entirely is the cleaner invariant.
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
           sed -i "s|<Version>.*</Version>|<Version>${VERSION}</Version>|" src/maf-autopilot/maf-autopilot.csproj
           echo "Set csproj <Version> to $VERSION"
 
