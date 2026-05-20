@@ -81,6 +81,24 @@ Agents are GitHub Copilot Chat agents (Markdown + YAML frontmatter). The three e
 4. **Tool name convention.** The SDK emits PascalCase from the C# method name (`MafApiSafety` → exposed as `MafApiSafety`). Use PascalCase in docs.
 5. **Tests.** Add `<ToolName>Tests.cs` in `src/maf-autopilot.Tests/`. Cover: empty input → friendly error; happy path; the regression case that motivated the tool.
 
+### Security rubric (every new tool MUST pass)
+
+Anchored to the [`docs/security.md`](docs/security.md) canon — MCP spec annotations, OWASP MCP Top 10, Keysight 2026 command-injection. The CI workflow `.github/workflows/ci-invariants.yml` enforces several of these mechanically; the others are a code-review gate. Reviewer rejects any tool PR that fails one of the below.
+
+1. **Path inputs route through `PathGuard`.** Use `PathGuard.ValidateRepoPath()` for any path that names the user's repository root, and `PathGuard.ValidateContainment(repoPath, candidate)` for any *secondary* path that must stay within that root (e.g. `specificFile`, `subPath`). Never `Path.Combine` user input without containment validation — see C1 in the v1.1 hardening plan.
+2. **Length caps on every user-controlled string input.** Call `BoundedInput.Validate(value, maxBytes, paramName)` at the top of the method. Caps by class: file path = 4 KB; identifier / package id / version = 256 B; short user text = 16 KB; code snippet = 256 KB; instructions = 64 KB; multi-file aggregate = 100 MB. Failing this is the most common source of DoS surface.
+3. **`[McpServerTool]` annotation must match actual behavior.** This is the contract MCP clients consume to decide auto-invoke vs. user-consent — getting it wrong puts MCP-spec-compliant clients in a bad position:
+   - `ReadOnly = true` is allowed **only** if the tool does not write to disk, does not spawn a subprocess that compiles/builds/runs code, and does not mutate server state.
+   - `Destructive = true` is required if the tool writes any new file in the user's project tree (even when the writer skips-on-exist — the act of writing is destructive to "the empty state").
+   - `OpenWorld = true` is required if any code path reaches the network (HTTP, NuGet, DNS), directly or via subprocess.
+   - `Idempotent = true` is allowed only if invoking the tool a second time with the same arguments is observably equivalent.
+4. **Subprocess spawn discipline.** All `Process.Start` sites use `ProcessStartInfo.ArgumentList` (argv-style); the unsafe `Arguments` *string* property is forbidden — see [`docs/security.md` → "Command injection via tool arguments (Keysight, 2026)"](docs/security.md#command-injection-via-tool-arguments-keysight-2026). New spawn sites must be added to the `ci-invariants.yml` allowlist in the same PR.
+5. **LLM-bound user content is fenced.** Any string that ends up in another LLM's context (whether served as a tool output rendered by a downstream agent, or via an MCP Prompt template) must wrap user-controlled slots via `LlmFencing.Fence("label", value, maxBytes)`. This applies to tool descriptions, prompt templates, and tool outputs that are designed to be passed to a sibling MCP tool (e.g. `MafDraftIssue` → GitHub `create_issue`).
+6. **Recursive file enumeration uses `SourceFileWalker`.** Custom `Directory.EnumerateFiles(..., SearchOption.AllDirectories)` calls follow symlinks by default and can be redirected by a hostile repo. Use the canonical walker, which sets `AttributesToSkip = ReparsePoint`.
+7. **Regex hygiene.** Every `new Regex(` declaration includes `RegexOptions.NonBacktracking` and `MatchTimeout = TimeSpan.FromMilliseconds(100)`. The CI invariant flags missing options.
+
+If your tool genuinely needs to violate one of the above (e.g. an in-repo developer-only override), discuss in the PR description first; the rubric is a default, not an absolute ban — but the burden of proof is on the contributor.
+
 ## PR conventions
 
 - **Conventional commits** (`feat:`, `fix:`, `docs:`, `chore:`, `test:`).
