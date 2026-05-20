@@ -8,7 +8,7 @@ name: ci-invariants
 #
 # Anchored to:
 #  - docs/security.md "Known MCP attack classes — coverage status"
-#  - private/security-hardening-analysis-and-implementation-plan.md §0 / §5.10
+#  - docs/security.md "Known MCP attack classes" + docs/security/threat-model.md §3.7-3.11
 #
 # Jobs (1) blocks Keysight-class command injection at the source.
 # Job  (2) requires ReDoS hygiene on every Regex literal.
@@ -159,7 +159,10 @@ jobs:
           # Only fail on calls that use SearchOption.AllDirectories without
           # EnumerationOptions. Non-recursive (one-level) lookups are out of
           # scope — they cannot fan a symlink into a recursive walk.
+          # Comment lines (// or *) are skipped so historical-migration
+          # comments referencing the old call shape don't false-positive.
           call = re.compile(r'Directory\.(?:EnumerateFiles|GetFiles)\s*\(')
+          comment = re.compile(r'^\s*(?://|\*)')
           ok_tokens = ('EnumerationOptions', ', options', ', opts', ', enumerationOptions')
           violations = []
           allow_basenames = ('SourceFileWalker.cs',)  # owner; canonical safe walker
@@ -175,6 +178,8 @@ jobs:
                   with open(path, encoding='utf-8') as fh:
                       lines = fh.readlines()
                   for i, line in enumerate(lines):
+                      if comment.match(line):
+                          continue
                       if call.search(line):
                           block = ''.join(lines[i:i+3])
                           # Only flag recursive enumeration without options.
@@ -255,7 +260,7 @@ jobs:
           if [ -n "$VIOLATIONS" ]; then
             echo "::error::workflow_dispatch input templated directly inside a run: block."
             echo "Redirect via env: { NAME: \${{ inputs.X }} } at the step level; reference \$NAME in the script."
-            echo "See private/security-hardening-analysis-and-implementation-plan.md §5.4 for the pattern."
+            echo "See docs/security/threat-model.md §3.11 for the pattern (env: redirect, not run:-block template)."
             echo "$VIOLATIONS"
             exit 1
           fi

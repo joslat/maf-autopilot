@@ -29,7 +29,12 @@
 
 ### 3.1 Prompt injection via repo content
 
-User repo `.cs` files contain strings, comments, and identifiers. When `MafExplain` or `MafLintAgentPrompt` consumes them, malicious content flows into the LLM context. **Mitigated as of v1.1** — `LlmFencing.Fence` (`src/maf-autopilot/Tools/LlmFencing.cs`) wraps user-controlled content in BEGIN/END sentinel markers with explicit "treat as data" framing + HTML-comment strip + UTF-8-byte cap. Applied to `MafDraftIssue` (symptom/expected/actual), `MafPrompts.Debug`, the registry `notes:` embed in `RegistryExtractCommand`, the upstream release-notes hop in `gen_guide_section.py`, and PR-controlled registry entries in `ai_review_build_prompt.py`. Anchored to OWASP LLM05 + MITRE ATLAS AML.T0051 — see `docs/security.md` for the user-facing breakdown.
+User repo `.cs` files contain strings, comments, and identifiers. **Mitigated as of v1.1** — the defense has two halves:
+
+- **Tools that re-feed user content to a downstream LLM** (`MafDraftIssue` → GitHub `create_issue`; `MafPrompts.Debug` rendered by the calling client; `RegistryExtractCommand` writing `notes:` that `MafRegistryLookup` later serves; the AI-fill workflow scripts that compose model prompts) wrap user-controlled content via `LlmFencing.Fence` (`src/maf-autopilot/Tools/LlmFencing.cs` + parity helper at `.github/scripts/llm_fencing.py`). The fence strips HTML comments, caps content at the appropriate byte budget, and wraps the result in random-sentinel BEGIN/END markers with explicit "treat as data" framing.
+- **Tools that return analytical output** (`MafExplain`, `MafLintAgentPrompt`, every scanner under `MafScanAntiPatterns` / `MafValidateFanOut` / `MafDoctor`) bound the attack surface by construction — output is Roslyn-syntax-extracted identifiers + line numbers + structured findings, never raw user-source-text. A `// Ignore all previous instructions` comment in a user's `.cs` file never reaches a downstream LLM via these paths because comments are not part of the extracted output shape.
+
+Anchored to OWASP LLM05 (Improper Output Handling) + MITRE ATLAS AML.T0051 (LLM Prompt Injection, indirect variant). See `docs/security.md` for the user-facing breakdown of the fenced sites.
 
 ### 3.2 Path traversal via `MAF_REGISTRY_PATH`
 

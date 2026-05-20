@@ -50,7 +50,7 @@ None of the 25 `[McpServerTool]`s accept "a command to run." Every tool is a nar
 
 With `ProcessStartInfo.ArgumentList`, .NET passes each element to the OS as a separate `argv[i]`. There is no shell to inject into — a payload like `; rm -rf /` would arrive at the child process as a single literal argv string and be rejected as a malformed argument. The unsafe `ProcessStartInfo.Arguments` *string* property (which Windows re-parses with shell-style splitting) is **not used anywhere** in the codebase.
 
-The exhaustive list of spawn sites:
+The exhaustive list of argv-construction sites (two share a single `Process.Start` inside `ProcessRunner`):
 
 | File:line | Process | Argument construction |
 |---|---|---|
@@ -66,7 +66,7 @@ All three set `UseShellExecute = false`. There is no `cmd.exe /c`, no `bash -c`,
 grep -rn "Process.Start" src/
 ```
 
-Returns only the three sites above (plus negative-test fixtures in `src/maf-autopilot.Tests/ScaffolderSecurityTests.cs` that prove the scaffolder rejects code-injection payloads in template inputs). If a future PR adds a fourth spawn site that uses the unsafe `Arguments` string property instead of `ArgumentList`, it shows up immediately in code review and is rejected per [`CONTRIBUTING.md`](../CONTRIBUTING.md) §"Adding an MCP server tool."
+Returns the three call sites above plus (a) security-documentation comments in `src/maf-autopilot/Scaffolding/AgentScaffolder.cs` that name `Process.Start` inside a code-injection-payload example, and (b) negative-test fixtures in `src/maf-autopilot.Tests/ScaffolderSecurityTests.cs` that prove the scaffolder rejects those payloads. Both comment-only and test-only hits are correctly excluded by [`ci-invariants.yml` Job 1](../.github/workflows/ci-invariants.yml), which scopes its regex to call-site syntax and skips both the tests directory and lines beginning with `//`. If a future PR adds a fourth real spawn site that uses the unsafe `Arguments` string property instead of `ArgumentList`, CI fails — see also [`CONTRIBUTING.md`](../CONTRIBUTING.md) §"Adding an MCP server tool."
 
 #### 4. Cisco mcp-scanner enforces this from the outside
 
@@ -104,7 +104,7 @@ The invariant is also enforced in CI by [`.github/workflows/ci-invariants.yml`](
 
 **Are we vulnerable? No.**
 
-1. Every `workflow_dispatch` workflow has a `validate-inputs` job that runs FIRST with `permissions: {}` (no scopes). It regex-checks the input shape — semver for version fields, positive-int for `pr_number`, hardcoded enum for `bot` / `model`. Downstream jobs gate via `needs: validate-inputs`.
+1. Every `workflow_dispatch` workflow **that accepts inputs** has a `validate-inputs` job that runs FIRST with `permissions: {}` (no scopes). It regex-checks the input shape — semver for version fields, positive-int for `pr_number`, hardcoded enum for `bot` / `model`. Downstream jobs gate via `needs: validate-inputs`. Input-less dispatches (e.g. `maf-drift-detector.yml`) do not need the guard.
 2. Every `run:` block reads inputs via `env:` redirect (`env: { X: ${{ inputs.X }} }` then `$X` in shell). The single `env:` interpolation is YAML-quoted by the runner; downstream `$X` references are shell-variable expansions, not template substitutions.
 3. CI invariant `ci-invariants.yml` Job 4 blocks any future `${{ inputs.* }}` literal inside a `run:` block.
 4. Third-party actions are SHA-pinned (9 distinct actions × 23 call sites). Dependabot keeps them current.
@@ -180,7 +180,7 @@ Analyzer stats: yara_analyzer: 25/25 scanned, 0 findings
 
 ### Scan cadence
 
-- **Every PR against `main`** that touches `src/maf-autopilot/**`: [`.github/workflows/mcp-scanner.yml`](../.github/workflows/mcp-scanner.yml) runs the scanner and posts results as a sticky PR comment (added in v1.1 — G8 closure). Currently advisory (`continue-on-error: true`); flip to hard-fail after 2 weeks of clean runs.
+- **Every PR against `main`** that touches `src/maf-autopilot/**`: [`.github/workflows/mcp-scanner.yml`](../.github/workflows/mcp-scanner.yml) runs the scanner and posts results as a sticky PR comment (added in v1.1 — G8 closure). Currently advisory (`continue-on-error: true`); flip to hard-fail after 5 consecutive clean runs.
 - **Weekly cron** (Mondays 11:00 UTC): scheduled run as backstop for findings introduced by upstream regex / tooling drift even without code changes on our side.
 - **Every minor release** (1.0 → 1.1 → 1.2): full Cisco mcp-scanner pass; results recorded in [`docs/security/threat-model.md`](security/threat-model.md) §7.
 - **Pre-tag** during release prep: re-run if any tool was added or modified.
