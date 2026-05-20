@@ -35,4 +35,102 @@ internal static class PathGuard
 
         return null;
     }
+
+    /// <summary>
+    /// Validates that a secondary path parameter (a file or directory the LLM
+    /// names alongside the primary <c>repoPath</c>) stays inside that root,
+    /// regardless of whether the caller supplied an absolute or relative form.
+    ///
+    /// Reject conditions:
+    ///   - <paramref name="candidatePath"/> contains a NUL / CR / LF / shell
+    ///     metacharacter, or a <c>..</c> path segment (defense in depth — the
+    ///     containment check below would catch path traversal anyway, but the
+    ///     explicit segment rejection produces a clearer error message).
+    ///   - the canonicalized candidate does not lie under the canonicalized
+    ///     repository root (catches absolute paths to anywhere on disk and
+    ///     any leftover <c>..</c>-driven escapes from non-segment-style input).
+    ///   - any segment of the resolved chain from candidate up to (but not
+    ///     including) the root is a reparse point (symlink / junction). The
+    ///     repository root itself may legitimately be reached through a
+    ///     symlink the user set up; we only reject reparse points encountered
+    ///     <em>inside</em> the root.
+    ///
+    /// On success returns the canonical absolute path of the candidate so the
+    /// caller can use it directly. On failure throws <see cref="ArgumentException"/>
+    /// with a non-leaky message (no echo of the input path — error reporting
+    /// telemetry, if added later, should not leak filesystem layout).
+    ///
+    /// Anchored to:
+    ///   - OWASP MCP Top 10 — MCP04 Command Injection / path-escape variant.
+    ///   - v1.1 security hardening plan §3.1 row C1 (AutoFix specificFile).
+    /// </summary>
+    public static string ValidateContainment(string repoPath, string candidatePath, string parameterName = "path")
+    {
+        if (string.IsNullOrWhiteSpace(repoPath))
+            throw new ArgumentException("repoPath must not be empty.", nameof(repoPath));
+        if (string.IsNullOrWhiteSpace(candidatePath))
+            throw new ArgumentException($"{parameterName} must not be empty.", nameof(candidatePath));
+
+        // Defense-in-depth char + segment rejection before any FS resolution.
+        if (candidatePath.IndexOfAny(['\0', '\r', '\n', '"', ';', '|', '&']) >= 0)
+            throw new ArgumentException($"{parameterName} contains invalid characters.", nameof(candidatePath));
+        var normalized = candidatePath.Replace('\\', '/');
+        foreach (var segment in normalized.Split('/'))
+            if (segment == "..")
+                throw new ArgumentException(
+                    $"{parameterName} must not contain '..' segments (path traversal).",
+                    nameof(candidatePath));
+
+        // Canonicalize both sides. GetFullPath collapses any remaining
+        // syntactic redundancy and produces an OS-native absolute path.
+        var rootFull = Path.GetFullPath(repoPath)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var resolvedFull = Path.GetFullPath(
+            Path.IsPathRooted(candidatePath)
+                ? candidatePath
+                : Path.Combine(repoPath, candidatePath));
+
+        var rootBoundary = rootFull + Path.DirectorySeparatorChar;
+        if (!resolvedFull.Equals(rootFull, StringComparison.OrdinalIgnoreCase)
+            && !resolvedFull.StartsWith(rootBoundary, StringComparison.OrdinalIgnoreCase))
+        {
+            // Do not echo the input — error-reporting telemetry should not
+            // leak filesystem layout. The parameter name + class of failure
+            // is enough for an honest caller to diagnose.
+            throw new ArgumentException(
+                $"{parameterName} resolves outside the repository root.",
+                nameof(candidatePath));
+        }
+
+        // Walk parents from the resolved path up to (but not including) the
+        // root. A reparse point anywhere in that chain would let a hostile
+        // workspace redirect reads/writes outside the root that we just
+        // confirmed contains the resolution.
+        //
+        // Note: DirectoryInfo.Attributes on a non-existent path returns
+        // (FileAttributes)(-1) which has every bit set, including ReparsePoint.
+        // We therefore SKIP non-existent intermediates (they cannot be reparse
+        // points by definition) and only probe extant filesystem entries.
+        var startPath = resolvedFull;
+        if (File.Exists(startPath))
+        {
+            startPath = Path.GetDirectoryName(startPath) ?? rootFull;
+        }
+        var probe = new DirectoryInfo(startPath);
+
+        while (probe is not null
+            && !probe.FullName.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .Equals(rootFull, StringComparison.OrdinalIgnoreCase))
+        {
+            if (probe.Exists && (probe.Attributes & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new ArgumentException(
+                    $"{parameterName} traverses a symlink/reparse point inside the repository.",
+                    nameof(candidatePath));
+            }
+            probe = probe.Parent;
+        }
+
+        return resolvedFull;
+    }
 }

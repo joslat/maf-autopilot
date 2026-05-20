@@ -29,7 +29,11 @@ public sealed class DiffPackageTool
         _registry = registry;
     }
 
-    [McpServerTool(ReadOnly = true, Destructive = false)]
+    // Annotation rationale: OpenWorld = true because dotnet-inspect reaches
+    // api.nuget.org (and any configured private feeds) to download the package
+    // versions being diffed. ReadOnly = true is correct — the tool produces a
+    // text report and writes nothing to the user's workspace.
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = true)]
     [Description("""
         Diff two versions of a NuGet package's public API surface.
 

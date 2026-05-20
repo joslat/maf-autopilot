@@ -28,7 +28,11 @@ public sealed class PreUpgradeDryRunTool
         _registry = registry;
     }
 
-    [McpServerTool(ReadOnly = true, Destructive = false)]
+    // Annotation rationale: OpenWorld = true because dotnet-inspect reaches
+    // api.nuget.org to download the two MAF NuGet versions being diffed.
+    // ReadOnly = true is correct — only emits a report; the repo scan is
+    // grep-only, no writes.
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = true)]
     [Description("""
         Preview the impact of a MAF upgrade WITHOUT modifying any code.
 

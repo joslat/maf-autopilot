@@ -15,7 +15,14 @@ namespace MafAutopilot.Tools;
 [McpServerToolType]
 public sealed class NewAgentTool
 {
-    [McpServerTool(Destructive = false, Idempotent = true, OpenWorld = false)]
+    // Annotation rationale (see docs/security.md, CONTRIBUTING.md security rubric):
+    //   Destructive = true → writes new files into the user's project tree.
+    //                        Idempotent skip-on-exist does not make the act
+    //                        non-destructive; the contract communicates
+    //                        "this changes the workspace state."
+    //   Idempotent  = true → second invocation with same args is a no-op (skip-on-exist).
+    //   OpenWorld   = false → purely local: no network calls.
+    [McpServerTool(Destructive = true, Idempotent = true, OpenWorld = false)]
     [Description("""
         Generate a new MAF 1.3.0 agent class + xUnit smoke test.
 
@@ -60,7 +67,9 @@ public sealed class NewAgentTool
         return WriteAndReport(projectPath, files, $"Generated MAF agent: {agentName}");
     }
 
-    [McpServerTool(Destructive = false, Idempotent = true, OpenWorld = false)]
+    // Annotation rationale: same as MafNewAgent above — writes new files into
+    // the user's project tree; idempotent on second call; no network.
+    [McpServerTool(Destructive = true, Idempotent = true, OpenWorld = false)]
     [Description("""
         Generate a new MAF 1.3.0 workflow executor + xUnit smoke test.
 

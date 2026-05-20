@@ -94,6 +94,20 @@ public sealed class AutoFixTool
         if (PathGuard.ValidateRepoPath(repoPath) is { } err)
             return JsonSerializer.Serialize(new { error = err });
 
+        // C1 mitigation: `specificFile` was previously joined to repoPath with a
+        // `Path.IsPathRooted` short-circuit that accepted absolute paths and
+        // unblocked `..` segments — letting an LLM-supplied value redirect the
+        // rewriter to arbitrary host files. ValidateContainment forces the
+        // resolved path inside the repo root and rejects symlink escapes.
+        if (!string.IsNullOrEmpty(specificFile))
+        {
+            try { PathGuard.ValidateContainment(repoPath, specificFile, nameof(specificFile)); }
+            catch (ArgumentException ex)
+            {
+                return JsonSerializer.Serialize(new { error = $"Error: {ex.Message}" });
+            }
+        }
+
         if (!_factories.TryGetValue(ruleId, out var factory))
             return JsonSerializer.Serialize(new
             {
@@ -140,6 +154,18 @@ public sealed class AutoFixTool
     {
         if (PathGuard.ValidateRepoPath(repoPath) is { } err)
             return JsonSerializer.Serialize(new { error = err });
+
+        // C1 mitigation: see MafAutoFix above for the rationale. Same containment
+        // check applies — MafAutoFixAll runs every rewriter, so a path escape
+        // here is more severe (multiplies blast radius across rewriters).
+        if (!string.IsNullOrEmpty(specificFile))
+        {
+            try { PathGuard.ValidateContainment(repoPath, specificFile, nameof(specificFile)); }
+            catch (ArgumentException ex)
+            {
+                return JsonSerializer.Serialize(new { error = $"Error: {ex.Message}" });
+            }
+        }
 
         // **Dependency-safe execution order.** Rationale per rule:
         //   1. ExecutorSealedRewriter      — purely additive modifier; never affects other rewrites.
@@ -234,12 +260,20 @@ public sealed class AutoFixTool
     /// <summary>
     /// Files to scan. If <paramref name="specificFile"/> is set, restrict to
     /// that single file (resolved relative to <paramref name="repoPath"/>).
+    ///
+    /// Callers MUST have validated containment of <paramref name="specificFile"/>
+    /// via <see cref="PathGuard.ValidateContainment"/> upstream — this helper
+    /// does not re-validate; it assumes the input has already been jail-checked
+    /// against <paramref name="repoPath"/>. The public <c>MafAutoFix</c> and
+    /// <c>MafAutoFixAll</c> entry points do this guard before reaching here.
     /// </summary>
     private static IEnumerable<string> EnumerateFiles(string repoPath, string? specificFile)
     {
         if (string.IsNullOrEmpty(specificFile))
             return SourceFileWalker.EnumerateCsFiles(repoPath);
 
+        // Containment already verified by the public entry point. Path.Combine
+        // handles both relative-segment and (already-validated) absolute forms.
         var resolved = Path.IsPathRooted(specificFile)
             ? specificFile
             : Path.Combine(repoPath, specificFile);

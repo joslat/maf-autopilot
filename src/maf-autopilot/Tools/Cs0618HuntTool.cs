@@ -30,7 +30,18 @@ public sealed class Cs0618HuntTool
         _registry = registry;
     }
 
-    [McpServerTool(ReadOnly = true, Destructive = false)]
+    // Annotation rationale (see docs/security.md, threat-model.md §3.5):
+    //   ReadOnly  = false  → `dotnet build` executes user-supplied MSBuild targets
+    //                        (BeforeBuild, Exec tasks, source generators, NuGet
+    //                        restore scripts). This is code execution, not a read.
+    //                        Setting ReadOnly = true would let MCP-spec-compliant
+    //                        clients auto-invoke the tool without user consent —
+    //                        the exact opposite of what's safe.
+    //   OpenWorld = true   → `dotnet build` triggers NuGet restore, which reaches
+    //                        api.nuget.org (and any configured private feeds).
+    //   Destructive = false → the tool itself does not write to disk; the build's
+    //                        side-effects (obj/, bin/) are scoped to the project.
+    [McpServerTool(ReadOnly = false, Destructive = false, OpenWorld = true)]
     [Description("""
         Run a CS0618 / CS0246 hunt against a .NET project.
 
@@ -41,6 +52,10 @@ public sealed class Cs0618HuntTool
         Input:
           - Path to a .csproj or .sln file. If the path is a directory, the first .csproj
             or .sln inside it is used.
+
+        Security note: this tool spawns `dotnet build`, which compiles and executes the
+        target project's MSBuild targets, source generators, and NuGet restore scripts.
+        Do not invoke on untrusted repositories. Reaches the network via NuGet restore.
 
         Cost note: this runs `dotnet build`, which may take several seconds on a real project.
         """)]

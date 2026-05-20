@@ -461,4 +461,138 @@ public class AutoFixToolTests
             Directory.Delete(tempRoot, recursive: true);
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Phase 1.1 — C1 path-escape fix
+    //
+    // MafAutoFix.specificFile previously joined to repoPath with a
+    // `Path.IsPathRooted` short-circuit that accepted absolute paths and
+    // unblocked `..` segments. The new flow runs every non-empty specificFile
+    // through PathGuard.ValidateContainment at the public entry point.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MafAutoFix_SpecificFile_AbsolutePathOutsideRepo_ReturnsError()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "maf-autofix-c1-abs-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        // Pick an absolute path that exists but lives outside the repo root.
+        // %SystemRoot%\System32\drivers\etc\hosts on Windows or /etc/hosts on POSIX.
+        var outsidePath = OperatingSystem.IsWindows()
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "drivers", "etc", "hosts")
+            : "/etc/hosts";
+
+        try
+        {
+            var tool = new AutoFixTool();
+            var resultJson = tool.MafAutoFix(tempRoot, "MAF-AP-SEC-001",
+                specificFile: outsidePath, dryRun: true);
+            var result = JsonSerializer.Deserialize<JsonDocument>(resultJson)!;
+            Assert.True(result.RootElement.TryGetProperty("error", out var err),
+                $"Expected error property, got: {resultJson}");
+            Assert.Contains("repository root", err.GetString(), StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void MafAutoFix_SpecificFile_DotDotEscape_ReturnsError()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "maf-autofix-c1-dotdot-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        try
+        {
+            var tool = new AutoFixTool();
+            // Relative `..` segments that would syntactically escape the root.
+            var resultJson = tool.MafAutoFix(tempRoot, "MAF-AP-SEC-001",
+                specificFile: "../../../etc/hosts", dryRun: true);
+            var result = JsonSerializer.Deserialize<JsonDocument>(resultJson)!;
+            Assert.True(result.RootElement.TryGetProperty("error", out var err),
+                $"Expected error property, got: {resultJson}");
+            // PathGuard rejects `..` segments with the "traversal" wording from ValidateRepoPath.
+            Assert.Contains("..", err.GetString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void MafAutoFix_SpecificFile_ShellMetacharacter_ReturnsError()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "maf-autofix-c1-meta-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        try
+        {
+            var tool = new AutoFixTool();
+            var resultJson = tool.MafAutoFix(tempRoot, "MAF-AP-SEC-001",
+                specificFile: "Foo.cs; rm -rf /", dryRun: true);
+            var result = JsonSerializer.Deserialize<JsonDocument>(resultJson)!;
+            Assert.True(result.RootElement.TryGetProperty("error", out var err),
+                $"Expected error property, got: {resultJson}");
+            Assert.Contains("invalid characters", err.GetString(), StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void MafAutoFix_SpecificFile_LegitRelativePath_NoContainmentError()
+    {
+        // A legitimate relative path inside the repo must not be rejected by
+        // containment; the tool should reach EnumerateFiles and return a normal
+        // (empty changed-files) result rather than an `error` property.
+        var tempRoot = Path.Combine(Path.GetTempPath(), "maf-autofix-c1-legit-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        File.WriteAllText(Path.Combine(tempRoot, "Foo.cs"), "class C { int X() => 1; }");
+
+        try
+        {
+            var tool = new AutoFixTool();
+            var resultJson = tool.MafAutoFix(tempRoot, "MAF-AP-SEC-001",
+                specificFile: "Foo.cs", dryRun: true);
+            var result = JsonSerializer.Deserialize<JsonDocument>(resultJson)!;
+            Assert.False(result.RootElement.TryGetProperty("error", out _),
+                $"Did not expect error property for legit relative path, got: {resultJson}");
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void MafAutoFixAll_SpecificFile_AbsolutePathOutsideRepo_ReturnsError()
+    {
+        // Same fix applied to MafAutoFixAll; multiplies blast radius via the
+        // ordered rule pass, so an independent test pins the behavior.
+        var tempRoot = Path.Combine(Path.GetTempPath(), "maf-autofixall-c1-abs-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        var outsidePath = OperatingSystem.IsWindows()
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "drivers", "etc", "hosts")
+            : "/etc/hosts";
+
+        try
+        {
+            var tool = new AutoFixTool();
+            var resultJson = tool.MafAutoFixAll(tempRoot, specificFile: outsidePath, dryRun: true);
+            var result = JsonSerializer.Deserialize<JsonDocument>(resultJson)!;
+            Assert.True(result.RootElement.TryGetProperty("error", out var err),
+                $"Expected error property, got: {resultJson}");
+            Assert.Contains("repository root", err.GetString(), StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
 }
