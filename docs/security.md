@@ -32,7 +32,7 @@
 
 ## Known MCP attack classes — coverage status
 
-This section names public, well-documented MCP attack classes and shows — with file/line citations — why MAF Doctor is not vulnerable. If a class isn't listed here, see [`docs/security/threat-model.md`](security/threat-model.md) for the full attack-surface map.
+This section names public, well-documented MCP attack classes and shows — with file/line citations — why MAF Doctor is not vulnerable. If a class isn't listed here, see [`docs/security/threat-model.md`](security/threat-model.md) for the full attack-surface map. The classes below are anchored against the canonical sources listed in the [Canonical references](#canonical-references) section at the end of this document.
 
 ### Command injection via tool arguments (Keysight, 2026)
 
@@ -161,6 +161,26 @@ If you find a vulnerability, please **do not open a public issue.** Email the ma
 We aim to acknowledge within 72 hours and ship a fix in the next patch release (or sooner if critical).
 
 ---
+
+## Canonical references
+
+The MCP / LLM / GitHub-Actions security canon that MAF Doctor's defensive posture is anchored against. Each mitigation in the hardening tables above maps to one or more of these.
+
+| Source | What it names |
+|---|---|
+| [MCP Specification — Security Considerations (2025-11-25)](https://modelcontextprotocol.io/specification/2025-11-25) | Trust model, behavioral hint accuracy (`readOnlyHint` / `destructiveHint` / `idempotentHint` / `openWorldHint`), user-consent gating, sandboxing |
+| [MCP Blog — Tool Annotations as Risk Vocabulary (2026-03-16)](https://blog.modelcontextprotocol.io/posts/2026-03-16-tool-annotations/) | How well-behaved clients use annotations to decide auto-invoke vs. confirmation |
+| [OWASP Top 10 for LLM Applications v2025](https://owasp.org/www-project-top-10-for-large-language-model-applications/) | LLM01 Prompt Injection, LLM02 Info Disclosure, LLM05 Improper Output Handling, LLM06 Excessive Agency, LLM07 System Prompt Leakage, LLM10 Unbounded Consumption |
+| [OWASP MCP Top 10](https://owasp.org/www-project-mcp-top-10/) | MCP01 Token Mismanagement, MCP02 Excessive Scope, MCP03 Tool Poisoning, MCP04 Command Injection, MCP05 Context Spoofing, MCP06 Insecure Memory References, MCP07 Covert Channel Abuse, MCP08 Model Misbinding, MCP09 Prompt-State Manipulation |
+| [OWASP Top 10 for Agentic Applications 2026](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/) | Agent Behavior Hijacking, Tool Misuse, Indirect Prompt Injection via tool output |
+| [MITRE ATLAS](https://atlas.mitre.org/) | AML.T0051 LLM Prompt Injection, AML.T0048 ML Supply Chain Compromise, AML.T0058 Context Poisoning |
+| [Cisco AI Defense MCP Scanner](https://github.com/cisco-ai-defense/mcp-scanner) | YARA categories: prompt injection, tool poisoning, credential harvesting, code execution, parameter injection, cross-origin escalation, rug-pull |
+| [Invariant Labs — Tool Poisoning, Shadowing, Rug-Pull (Apr 2025)](https://invariantlabs.ai/blog/mcp-security-notification-tool-poisoning-attacks) | TPA, Tool Shadowing, MCP Rug Pull |
+| [Snyk Labs — Prompt Injection Meets MCP / MCP Command Injection (2025–2026)](https://labs.snyk.io/resources/prompt-injection-mcp/) | Real-world MCP command-injection CVEs (CVE-2025-5277 aws-mcp, CVE-2025-6514 mcp-remote, CVE-2025-59377 mcp-kubernetes) |
+| [Keysight — MCP Command Injection: New Attack Vector (2026-01-12)](https://www.keysight.com/blogs/en/tech/nwvs/2026/01/12/mcp-command-injection-new-attack-vector) | Local STDIO trust-boundary abuse, model-biasing via tool description, runtime-response prompt injection |
+| [GitHub — Security Hardening for GitHub Actions](https://docs.github.com/en/actions/reference/security/secure-use) | `pull_request_target` discipline, `workflow_dispatch` input sanitization via env vars, SHA-pin actions, minimum `permissions:`, `GITHUB_TOKEN` least privilege |
+| [NIST SP 800-218A — SSDF Community Profile for AI](https://csrc.nist.gov/pubs/sp/800/218/a/final) | PW.4/PW.5 secure-by-design tasks, PS.1 third-party model/tool provenance, RV.1/RV.2 post-release vuln id |
+| [CSA mcpserver-audit](https://github.com/ModelContextProtocol-Security/mcpserver-audit) | Pre-install MCP audit checklist |
 
 ## See also
 

@@ -150,9 +150,4 @@ We evaluated these and chose not to depend on them. The reasoning is explicit so
 | **[Snyk agent-scan](https://github.com/invariantlabs-ai/mcp-scan)** (originally Invariant Labs mcp-scan, now Snyk) | Requires a `SNYK_TOKEN` from a Snyk account. README confirms it "validates the components, both with local checks **and by invoking the Agent Scan API**" — not local-only; phones home to Snyk's servers. Currently in "Open Preview" (free), but Snyk's commercial tier is paid ($52-$98/dev/month) — post-GA pricing uncertain. Account requirement = vendor lock-in regardless. |
 | **[kapilduraphe/mcp-watch](https://github.com/kapilduraphe/mcp-watch)** | Single-maintainer hobby project. Quality may be fine, but a security tool from an unvetted source is itself a supply-chain risk. |
 | **Commercial-only scanners** (Pangea, Enkrypt AI, AQtive Guard) | Fine if your org has a license, but we don't gate the open-source release on them. |
-
-### Tools we deliberately do NOT use
-
-- **kapilduraphe/mcp-watch** — single-maintainer hobby project. Quality may be fine, but a security tool from an unvetted source is itself a supply-chain risk.
-- Commercial-only scanners (Pangea, Enkrypt AI, AQtive Guard) — fine if your org has a license, but we don't gate the open-source release on them.
-- "MCP Scanner" or "mcp-scan" VS Code extensions in the marketplace — none of the established scanners ship VS Code extensions. If you see one, verify the publisher carefully before installing.
+| **"MCP Scanner" / "mcp-scan" VS Code extensions** | None of the established scanners ship as VS Code extensions. If you see one in the marketplace, verify the publisher carefully before installing. |
