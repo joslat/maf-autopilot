@@ -193,7 +193,7 @@ public sealed class RegistryService
         {
             sb.AppendLine("### Before");
             sb.AppendLine("```csharp");
-            sb.AppendLine(e.ExampleBefore.Trim());
+            sb.AppendLine(NeutralizeFences(e.ExampleBefore.Trim()));
             sb.AppendLine("```");
             sb.AppendLine();
         }
@@ -201,7 +201,7 @@ public sealed class RegistryService
         {
             sb.AppendLine("### After");
             sb.AppendLine("```csharp");
-            sb.AppendLine(e.ExampleAfter.Trim());
+            sb.AppendLine(NeutralizeFences(e.ExampleAfter.Trim()));
             sb.AppendLine("```");
             sb.AppendLine();
         }
@@ -211,6 +211,25 @@ public sealed class RegistryService
             sb.AppendLine(e.Notes.Trim());
         }
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Neutralize triple-backtick fences embedded inside an example so the
+    /// surrounding markdown code-fence cannot be broken out of. Inserts a
+    /// zero-width space between the three backticks — invisible to a human
+    /// reader but the markdown parser no longer sees a fence terminator.
+    ///
+    /// Phase 2.9 — without this, an attacker-controlled <c>example_before</c>
+    /// containing <c>```yaml\nevil: true\n```</c> would close the enclosing
+    /// fence and render the attacker's content as live markdown / executable
+    /// instructions in the LLM context.
+    /// </summary>
+    internal static string NeutralizeFences(string source)
+    {
+        if (string.IsNullOrEmpty(source)) return source;
+        // U+200B zero-width space between the backticks: humans see ```, the
+        // markdown parser sees three separate non-fence backticks.
+        return source.Replace("```", "`​`​`");
     }
 
     // -------------------------------------------------------------------------

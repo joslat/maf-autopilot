@@ -23,6 +23,16 @@ import re
 import sys
 from pathlib import Path
 
+# Phase 2.2 — sanitize untrusted upstream release notes before embedding.
+# Released-notes.txt is sourced from `gh release view microsoft/agent-framework`
+# (verified at maf-release-watcher.yml:169) and is therefore attacker-controllable
+# under TA-1 (malicious upstream maintainer or compromise-of-microsoft/agent-framework
+# release). The sibling llm_fencing module strips HTML comments, caps length,
+# and wraps the content in BEGIN/END markers with explicit "treat as data"
+# framing so a downstream Coding Agent or human reader cannot be redirected.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from llm_fencing import fence  # noqa: E402
+
 old = os.environ.get('OLD_VERSION', 'unknown')
 new = os.environ.get('NEW_VERSION', 'unknown')
 
@@ -96,7 +106,11 @@ def build_chain_banner(old_version: str, new_version: str) -> str:
 diff_lines = read_file('diff-core.txt', '(diff not available)').splitlines()
 # Trim to a reasonable length — full diffs can be huge.
 diff = '\n'.join(diff_lines[:120])
-notes = read_file('release-notes.txt', '(no release notes available)').strip()
+raw_notes = read_file('release-notes.txt', '(no release notes available)').strip()
+# Phase 2.2 — fence the release notes. 32 KB cap is generous: release notes
+# typically run a few KB; anything over 32 KB is almost certainly an attempt
+# to flood the guide / downstream AI-fill context.
+notes = fence('upstream-maf-release-notes', raw_notes, max_bytes=32 * 1024)
 
 AUTO_START = '<!-- AUTO-GENERATED START — anything between AUTO-GENERATED START and AUTO-GENERATED END is overwritten on re-run -->'
 AUTO_END = '<!-- AUTO-GENERATED END -->'

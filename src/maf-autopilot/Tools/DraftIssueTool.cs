@@ -47,6 +47,13 @@ public sealed class DraftIssueTool
         via the GitHub MCP server's `create_issue` tool (if installed) or by
         pasting into github.com/microsoft/agent-framework/issues/new.
 
+        Security note: user-supplied symptom / expected / actual content is
+        wrapped in LLM data-fences (BEGIN/END markers with a random sentinel
+        and explicit "treat as data" framing) so any prompt-injection payload
+        inside cannot redirect the downstream `create_issue` agent. Pass the
+        body to `create_issue` as-is — do NOT strip the fence markers; they
+        are part of the security contract.
+
         Input:
           - repoPath: absolute path to the project root (used to detect MAF + .NET versions).
           - symptom: one-sentence description (e.g. "AddFanInBarrierEdge throws NRE at runtime").
@@ -75,14 +82,39 @@ public sealed class DraftIssueTool
         var env = DetectEnvironment(repoPath);
         var registryMatches = MatchRegistry(symptom, snippet);
 
+        // Phase 2.4 — fence user-controlled fields. symptom/expected/actual
+        // previously flowed into the markdown body either raw (expected/actual)
+        // or with a single-line `>` blockquote prefix (symptom) that multi-line
+        // content could escape. The tool's description tells the calling
+        // agent to pass the body to GitHub `create_issue` — i.e. straight into
+        // another LLM's context — so anything that survives untreated is an
+        // indirect prompt-injection lane.
+        //
+        // Cap at 16 KB per field (per §5.6 — short user text class). The fence
+        // strips HTML comments (the most common smuggle vector in markdown)
+        // and instructs the downstream model to treat the content as data.
+        var fencedSymptom = LlmFencing.Fence("user-symptom", symptom, maxBytes: 16 * 1024);
+        var fencedExpected = string.IsNullOrWhiteSpace(expected)
+            ? null
+            : LlmFencing.Fence("user-expected-behavior", expected, maxBytes: 16 * 1024);
+        var fencedActual = string.IsNullOrWhiteSpace(actual)
+            ? null
+            : LlmFencing.Fence("user-actual-behavior", actual, maxBytes: 16 * 1024);
+
+        // Strip HTML comments from the symptom before using it in the title /
+        // search URL; the fence handles the body insertion separately. The
+        // title is short by SuggestTitle's 80-char truncation, so we don't
+        // need a full data-fence here — just sanitize the smuggle vector.
+        var sanitisedSymptom = LlmFencing.StripHtmlComments(symptom);
+
         var sb = new StringBuilder();
-        sb.AppendLine($"## Title: {SuggestTitle(symptom)}");
+        sb.AppendLine($"## Title: {SuggestTitle(sanitisedSymptom)}");
         sb.AppendLine();
         sb.AppendLine("> Drafted by `maf-autopilot` `MafDraftIssue`. Review before posting. Strip any private content (file paths, internal identifiers) from snippet/stack trace.");
         sb.AppendLine();
         sb.AppendLine($"### Symptom");
         sb.AppendLine();
-        sb.AppendLine($"> {symptom.Trim()}");
+        sb.Append(fencedSymptom);
         sb.AppendLine();
 
         sb.AppendLine("### Environment");
@@ -114,16 +146,18 @@ public sealed class DraftIssueTool
 
         sb.AppendLine("### Expected behaviour");
         sb.AppendLine();
-        sb.AppendLine(string.IsNullOrWhiteSpace(expected)
-            ? "_(Describe what should happen. If you can quote the relevant guide section, do.)_"
-            : expected.Trim());
+        if (fencedExpected is not null)
+            sb.Append(fencedExpected);
+        else
+            sb.AppendLine("_(Describe what should happen. If you can quote the relevant guide section, do.)_");
         sb.AppendLine();
 
         sb.AppendLine("### Actual behaviour");
         sb.AppendLine();
-        sb.AppendLine(string.IsNullOrWhiteSpace(actual)
-            ? "_(Exception type + first stack frame is ideal. Or: \"workflow exits cleanly but produces no output.\")_"
-            : actual.Trim());
+        if (fencedActual is not null)
+            sb.Append(fencedActual);
+        else
+            sb.AppendLine("_(Exception type + first stack frame is ideal. Or: \"workflow exits cleanly but produces no output.\")_");
         sb.AppendLine();
 
         sb.AppendLine("### maf-autopilot interpretation");
@@ -146,7 +180,7 @@ public sealed class DraftIssueTool
 
         sb.AppendLine("### Filing checklist");
         sb.AppendLine();
-        sb.AppendLine("- [ ] I've checked existing issues for duplicates: https://github.com/microsoft/agent-framework/issues?q=" + Uri.EscapeDataString(symptom));
+        sb.AppendLine("- [ ] I've checked existing issues for duplicates: https://github.com/microsoft/agent-framework/issues?q=" + Uri.EscapeDataString(sanitisedSymptom));
         sb.AppendLine("- [ ] My repro is minimal (no unrelated app code).");
         sb.AppendLine("- [ ] I've stripped private content (file paths, internal identifiers, secrets).");
         sb.AppendLine("- [ ] The stack trace (if any) is the first 10-15 frames, not the full thing.");

@@ -2,6 +2,7 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 using System.Text;
+using MafAutopilot.Tools;
 
 namespace MafAutopilot.Prompts;
 
@@ -171,10 +172,18 @@ public static class MafPrompts
         var sb = new StringBuilder();
         sb.AppendLine("You are diagnosing a MAF 1.3.0 issue. Identify the root cause and provide the exact fix (or recommend the right specialist agent).");
         sb.AppendLine();
-        if (errorOrSymptom is not null)
+        if (!string.IsNullOrWhiteSpace(errorOrSymptom))
         {
+            // Phase 2.5 — fence the user-supplied error/symptom.
+            // Previously: `"> " + errorOrSymptom.Replace("\n", "\n> ")` — a
+            // single-line blockquote prefix per line, easily escaped by content
+            // containing a markdown heading, triple-backtick fence, or
+            // additional `>` lines. The fence wraps the whole block with
+            // BEGIN/END markers + "treat as data" framing so the model knows
+            // the content is not its own instructions.
+            // 16 KB cap — short user text class (see hardening plan §5.6).
             sb.AppendLine("**Error / Symptom:**");
-            sb.AppendLine("> " + errorOrSymptom.Replace("\n", "\n> "));
+            sb.Append(LlmFencing.Fence("user-error-or-symptom", errorOrSymptom, maxBytes: 16 * 1024));
             sb.AppendLine();
         }
         if (projectPath is not null) sb.AppendLine($"Project: `{projectPath}`");
