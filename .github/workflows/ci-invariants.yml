@@ -75,19 +75,18 @@ jobs:
 
   # ----------------------------------------------------------------------------
   # (2) Regex hygiene — every `new Regex(` must specify both NonBacktracking
-  # and MatchTimeout. Without these, a hostile input can pin CPU via catastrophic
-  # backtracking. Required across all production code; tests are exempt because
-  # they synthesize fixture patterns that need to be expressively flexible.
+  # and MatchTimeout (or one of the shared `RegexHygiene` / `RegexBudget`
+  # constants introduced by Phase 5.9). Without these, a hostile input can
+  # pin CPU via catastrophic backtracking. Required across all production
+  # code; tests are exempt because they synthesize fixture patterns that
+  # need to be expressively flexible.
   #
-  # ADVISORY UNTIL Phase 5.9: AntiPatternScannerTool.cs hosts the only currently
-  # noncompliant regexes; Phase 5.9 retrofits them. Until then we surface the
-  # violations as a CI annotation but do not block. Flip `continue-on-error` to
-  # `false` (or remove it) in the same PR that lands Phase 5.9.
+  # Phase 5.9 landed: AntiPatternScannerTool and PreUpgradeDryRunTool both
+  # retrofitted. Job is hard-fail going forward.
   # ----------------------------------------------------------------------------
   regex-hygiene:
     name: Regex hygiene (NonBacktracking + MatchTimeout)
     runs-on: ubuntu-latest
-    continue-on-error: true  # TODO(Phase 5.9): remove after AntiPatternScannerTool regex hardening.
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
@@ -114,7 +113,13 @@ jobs:
                       if decl.search(line):
                           # Capture this line + up to 4 following lines as the declaration block.
                           block = ''.join(lines[i:i+5])
-                          if 'NonBacktracking' not in block or 'MatchTimeout' not in block:
+                          # Phase 5.9 introduced shared `RegexHygiene` and
+                          # `RegexBudget` constants in AntiPatternScannerTool.
+                          # Accept either the raw `NonBacktracking` +
+                          # `MatchTimeout` tokens OR the constant names.
+                          has_options = ('NonBacktracking' in block) or ('RegexHygiene' in block)
+                          has_timeout = ('MatchTimeout' in block) or ('RegexBudget' in block) or ('TimeSpan.FromMilliseconds' in block)
+                          if not has_options or not has_timeout:
                               violations.append(f"{path}:{i+1}: {line.rstrip()}")
           if violations:
               print('\n'.join(violations))

@@ -61,6 +61,17 @@ public sealed class RegistryService
         if (string.IsNullOrWhiteSpace(apiName))
             return [];
 
+        // Phase 5.10 — DoS guard. A 1 GB `apiName` would force `ToLowerInvariant`
+        // to materialize a 1 GB copy, then `Contains` to walk it against every
+        // haystack. The cap is generous (256 bytes — wider than any real API
+        // name our registry contains) but bounded enough to neutralize abuse.
+        // Throws instead of silently truncating because the caller is upstream
+        // tool code with structured-output expectations.
+        if (apiName.Length > 256)
+            throw new ArgumentException(
+                "apiName exceeds the 256-byte search-needle cap.",
+                nameof(apiName));
+
         var needle = apiName.Trim().ToLowerInvariant();
         return _registry.Entries
             .Where(e => _haystacks[e].Contains(needle, StringComparison.Ordinal))
@@ -252,16 +263,88 @@ public sealed class RegistryService
     // first MCP request. Real registries are KB-scale.
     private const long RegistryMaxBytes = 5 * 1024 * 1024;
 
+    /// <summary>
+    /// Validate the MAF_REGISTRY_PATH env-var-supplied path before reading.
+    /// Phase 5.5 of the v1.1 security hardening release. Rejects shell
+    /// metachars, NUL/CR/LF, symlinks, and (optionally) paths outside an
+    /// allowlist declared via MAF_REGISTRY_PATH_ROOTS.
+    /// </summary>
+    private static void ValidateOverridePath(string envPath)
+    {
+        if (envPath.IndexOfAny(['\0', '\r', '\n', '"', ';', '|', '&']) >= 0)
+            throw new InvalidOperationException(
+                "MAF_REGISTRY_PATH contains invalid characters (NUL / CR / LF / shell metacharacters). Refusing to load.");
+
+        // Reject reparse-point at the file itself. The env var is meant to
+        // point at a LOCAL override file, not a symlink-redirect to an
+        // arbitrary location on the host.
+        if (File.Exists(envPath))
+        {
+            var attrs = File.GetAttributes(envPath);
+            if ((attrs & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidOperationException(
+                    "MAF_REGISTRY_PATH points to a symlink / reparse point. Refusing to follow — use the canonical absolute path.");
+        }
+
+        // Optional allowlist: MAF_REGISTRY_PATH_ROOTS = ";"-separated parent
+        // directories the override path must canonicalize under.
+        var allowlist = Environment.GetEnvironmentVariable("MAF_REGISTRY_PATH_ROOTS");
+        if (!string.IsNullOrWhiteSpace(allowlist))
+        {
+            var resolved = Path.GetFullPath(envPath);
+            var roots = allowlist.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var anyMatch = false;
+            foreach (var root in roots)
+            {
+                if (string.IsNullOrWhiteSpace(root)) continue;
+                var rootFull = Path.GetFullPath(root)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (resolved.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                    || resolved.Equals(rootFull, StringComparison.OrdinalIgnoreCase))
+                {
+                    anyMatch = true;
+                    break;
+                }
+            }
+            if (!anyMatch)
+                throw new InvalidOperationException(
+                    "MAF_REGISTRY_PATH is outside the allowlist declared by MAF_REGISTRY_PATH_ROOTS. Refusing to load.");
+        }
+    }
+
     private static string ReadYaml()
     {
         // 1. Developer override via environment variable.
         var envPath = Environment.GetEnvironmentVariable("MAF_REGISTRY_PATH");
         if (!string.IsNullOrWhiteSpace(envPath) && File.Exists(envPath))
         {
+            // Phase 5.5 — guard the env-var override path.
+            //
+            // Pre-Phase-5.5 the only check was a 5 MB byte-size cap. The env
+            // var is set by whoever owns the parent process — a malicious VS
+            // Code extension, a misconfigured CI runner, a developer who
+            // copy-pasted from a tutorial — and the value flows straight
+            // into `File.ReadAllText` without any path-hygiene check.
+            //
+            // Reject conditions (in addition to the existing size cap):
+            //   - Shell metacharacters / NUL / CR / LF (defense in depth;
+            //     File.ReadAllText doesn't shell-interpret, but the value
+            //     also flows into error messages + telemetry).
+            //   - Symlink / reparse-point at the file itself. The env-var
+            //     path is a developer override for a LOCAL registry override;
+            //     resolving through a symlink to anywhere else on the host
+            //     is unexpected and a soft path-escape lane.
+            //
+            // Per §10 decision: an optional MAF_REGISTRY_PATH_ROOTS env var
+            // can declare a `;`-separated allowlist of acceptable parent
+            // directories. When unset, only the metachar + reparse-point
+            // checks apply.
+            ValidateOverridePath(envPath);
+
             var info = new FileInfo(envPath);
             if (info.Length > RegistryMaxBytes)
                 throw new InvalidOperationException(
-                    $"MAF_REGISTRY_PATH file '{envPath}' is {info.Length / 1024} KB — exceeds the {RegistryMaxBytes / 1024 / 1024} MB safety cap. " +
+                    $"MAF_REGISTRY_PATH file is {info.Length / 1024} KB — exceeds the {RegistryMaxBytes / 1024 / 1024} MB safety cap. " +
                     "Real MAF registries are KB-scale; refusing to load.");
             return File.ReadAllText(envPath);
         }

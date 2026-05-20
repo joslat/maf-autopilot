@@ -267,12 +267,27 @@ public sealed class DraftIssueToolTests
     }
 
     [Fact]
-    public void MafDraftIssue_LongSymptom_Truncated()
+    public void MafDraftIssue_OversizedSymptom_RejectedWithErrorMessage()
     {
-        // 50 KB symptom — cap is 16 KB. Output must show [TRUNCATED] marker.
+        // Phase 5.1 — fail-fast on oversized input rather than soft-truncate.
+        // Pre-Phase-5 this test asserted `[TRUNCATED]` (via LlmFencing's
+        // own cap). Post-Phase-5, `BoundedInput.Validate` rejects upstream.
+        // Either contract is reasonable; we chose fail-fast because the
+        // user's downstream consumer (`create_issue`) expects a clean body.
         var bigSymptom = "A" + new string('B', 50 * 1024);
         var body = _tool.MafDraftIssue(Path.GetTempPath(), symptom: bigSymptom);
-        Assert.Contains("[TRUNCATED]", body);
+        Assert.Contains("symptom exceeds the maximum allowed length", body);
+    }
+
+    [Fact]
+    public void MafDraftIssue_BoundarySizedSymptom_FencesAndTruncatesViaLlmFencing()
+    {
+        // Sanity check that the soft-cap path (just under BoundedInput's
+        // ShortTextBytes = 16 KB) still produces a usable fenced body.
+        var symptom = new string('A', 16 * 1024 - 100); // under cap
+        var body = _tool.MafDraftIssue(Path.GetTempPath(), symptom: symptom);
+        Assert.DoesNotContain("exceeds the maximum allowed length", body);
+        Assert.Contains("<<<BEGIN_USER_DATA_", body);
     }
 
     [Fact]

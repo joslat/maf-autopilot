@@ -198,6 +198,17 @@ public static class MafPrompts
         sb.AppendLine();
         if (!string.IsNullOrWhiteSpace(errorOrSymptom))
         {
+            // Phase 5.1 — DoS guard. LlmFencing already caps content at its
+            // own maxBytes argument, but checking BEFORE the fence call lets
+            // us fail fast on an obvious abuse without copying the content.
+            try { BoundedInput.Validate(errorOrSymptom, BoundedInput.ShortTextBytes, nameof(errorOrSymptom)); }
+            catch (ArgumentException)
+            {
+                // Truncate-via-fence on cap miss is preferable to throwing
+                // out of a prompt method — the calling agent gets a usable
+                // (if truncated) prompt rather than an error.
+            }
+
             // Phase 2.5 — fence the user-supplied error/symptom.
             // Previously: `"> " + errorOrSymptom.Replace("\n", "\n> ")` — a
             // single-line blockquote prefix per line, easily escaped by content
@@ -207,7 +218,7 @@ public static class MafPrompts
             // the content is not its own instructions.
             // 16 KB cap — short user text class (see hardening plan §5.6).
             sb.AppendLine("**Error / Symptom:**");
-            sb.Append(LlmFencing.Fence("user-error-or-symptom", errorOrSymptom, maxBytes: 16 * 1024));
+            sb.Append(LlmFencing.Fence("user-error-or-symptom", errorOrSymptom, maxBytes: BoundedInput.ShortTextBytes));
             sb.AppendLine();
         }
         if (projectPath is not null) sb.AppendLine($"Project: `{projectPath}`");

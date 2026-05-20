@@ -53,6 +53,20 @@ public sealed class NewAgentTool
         if (!IsSafeIdentifier(agentName))
             return $"Error: '{agentName}' is not a valid PascalCase identifier.";
 
+        // Phase 5.1 — length caps. agentName is already constrained by
+        // IsSafeIdentifier (chars+length) so we cap defensively to identifier
+        // class. `instructions` is the high-value DoS lane — defaults to a
+        // 64 KB system-prompt class cap.
+        try
+        {
+            BoundedInput.Validate(agentName,    BoundedInput.IdentifierBytes,   nameof(agentName));
+            BoundedInput.Validate(instructions, BoundedInput.InstructionsBytes, nameof(instructions));
+        }
+        catch (ArgumentException ex)
+        {
+            return $"Error: {ex.Message}";
+        }
+
         var ns = DetectNamespace(projectPath, fallback: "MyApp.Agents");
         IReadOnlyList<AgentScaffolder.ScaffoldedFile> files;
         try
@@ -100,6 +114,20 @@ public sealed class NewAgentTool
             return $"Error: directory does not exist: '{projectPath}'.";
         if (!IsSafeIdentifier(executorName))
             return $"Error: '{executorName}' is not a valid PascalCase identifier.";
+
+        // Phase 5.1 — length caps. inputType/outputType already capped at 200 B
+        // by AgentScaffolder.IsValidTypeExpression; defensive 256 B cap matches
+        // the identifier class. executorName same.
+        try
+        {
+            BoundedInput.Validate(executorName, BoundedInput.IdentifierBytes, nameof(executorName));
+            BoundedInput.Validate(inputType,    BoundedInput.IdentifierBytes, nameof(inputType));
+            BoundedInput.Validate(outputType,   BoundedInput.IdentifierBytes, nameof(outputType));
+        }
+        catch (ArgumentException ex)
+        {
+            return $"Error: {ex.Message}";
+        }
 
         var ns = DetectNamespace(projectPath, fallback: "MyApp.Workflows");
         IReadOnlyList<AgentScaffolder.ScaffoldedFile> files;

@@ -79,6 +79,23 @@ public sealed class DraftIssueTool
         if (string.IsNullOrWhiteSpace(symptom))
             return "Error: symptom must not be empty — provide a one-sentence description (\"X throws Y at Z\").";
 
+        // Phase 5.1 — length caps on every user-controlled string input.
+        // Without these, an LLM-supplied 1 GB snippet/symptom is a DoS lane.
+        // Caps per §5.6 cap table: symptom/expected/actual = short-text class;
+        // snippet = code-snippet class. ArgumentException is wrapped to keep
+        // the tool's error-string return contract.
+        try
+        {
+            BoundedInput.Validate(symptom,  BoundedInput.ShortTextBytes, nameof(symptom));
+            BoundedInput.Validate(snippet,  BoundedInput.SnippetBytes,   nameof(snippet));
+            BoundedInput.Validate(expected, BoundedInput.ShortTextBytes, nameof(expected));
+            BoundedInput.Validate(actual,   BoundedInput.ShortTextBytes, nameof(actual));
+        }
+        catch (ArgumentException ex)
+        {
+            return $"Error: {ex.Message}";
+        }
+
         var env = DetectEnvironment(repoPath);
         var registryMatches = MatchRegistry(symptom, snippet);
 

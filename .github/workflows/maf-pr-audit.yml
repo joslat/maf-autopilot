@@ -43,9 +43,34 @@ jobs:
           if [ -z "$NON_SAMPLE" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
             echo "::notice title=MAF audit skipped::Only samples/ files changed — they're intentionally buggy demo corpora, not real code to audit."
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
+            exit 0
           fi
+
+          # Phase 5.11 (G6 in the hardening plan) — compiler-bomb cap.
+          # A malicious PR can submit a small number of .cs files that each
+          # exceed several MB (deeply-nested generics, multi-MB attributes,
+          # giant XML doc comments) and pin Roslyn-host memory on the runner.
+          # Cap the audit at: ≤ 200 changed .cs files AND ≤ 5 MB aggregate.
+          # Above either ceiling, skip the Roslyn-heavy audit and surface a
+          # warning — the PR can still merge, just without the per-file scan.
+          CHANGED_CS=$(echo "$CHANGED_CODE" | grep -E '\.cs$' || true)
+          if [ -n "$CHANGED_CS" ]; then
+            COUNT=$(echo "$CHANGED_CS" | wc -l | tr -d ' ')
+            # Sum the byte sizes of the changed files that currently exist on
+            # disk. Renamed/deleted files contribute 0 (acceptable — we only
+            # care about the post-image the audit would parse).
+            TOTAL_BYTES=$(echo "$CHANGED_CS" \
+              | xargs -I {} sh -c 'wc -c < "{}" 2>/dev/null || true' \
+              | awk '{ s += $1 } END { print s+0 }')
+            echo "Compiler-bomb cap check: $COUNT .cs files, $TOTAL_BYTES bytes total."
+            if [ "$COUNT" -gt 200 ] || [ "$TOTAL_BYTES" -gt 5242880 ]; then
+              echo "skip=true" >> $GITHUB_OUTPUT
+              echo "::warning title=MAF audit skipped (compiler-bomb cap)::PR changes $COUNT .cs files / $TOTAL_BYTES bytes. Caps are 200 files / 5 MB. Roslyn-heavy audit skipped to protect the runner; CI-side scanners still run."
+              exit 0
+            fi
+          fi
+
+          echo "skip=false" >> $GITHUB_OUTPUT
 
       - name: Setup .NET
         if: steps.scope.outputs.skip != 'true'
