@@ -141,8 +141,8 @@ jobs:
         # (no tag ref) — in that case the user typically created the Release manually
         # via the GitHub UI before dispatching.
         if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/0') || startsWith(github.ref, 'refs/tags/1') || startsWith(github.ref, 'refs/tags/2') || startsWith(github.ref, 'refs/tags/3') || startsWith(github.ref, 'refs/tags/4') || startsWith(github.ref, 'refs/tags/5') || startsWith(github.ref, 'refs/tags/6') || startsWith(github.ref, 'refs/tags/7') || startsWith(github.ref, 'refs/tags/8') || startsWith(github.ref, 'refs/tags/9')
-        # SHA-pinned to softprops/action-gh-release v2.2.1 (2025-01-23) per supply-chain
-        # hardening: a major-tag pin would let the maintainer's compromised account push
+        # SHA-pinned to softprops/action-gh-release v3.0.0 per supply-chain hardening:
+        # a major-tag pin would let an upstream maintainer's compromised account push
         # arbitrary code into our release workflow with NUGET_API_KEY in scope.
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
         with:
