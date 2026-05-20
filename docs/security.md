@@ -82,6 +82,52 @@ new ProcessStartInfo("dotnet") { Arguments = userInput }   // ← UNSAFE
 
 — note the singular `Arguments` *string* property, which Windows re-parses with shell-style splitting. Always use `ArgumentList`. The [`ProcessRunner.cs`](../src/maf-autopilot/Tools/ProcessRunner.cs) summary block documents this as the first item in its hardening checklist.
 
+The invariant is also enforced in CI by [`.github/workflows/ci-invariants.yml`](../.github/workflows/ci-invariants.yml) — Job 1 fails any PR introducing the unsafe `Arguments` *string* property or a new `Process.Start` call site outside the small allowlist (`ProcessRunner.cs`, `PullRequestAuditTool.cs`).
+
+---
+
+### LLM-to-LLM prompt smuggling via tool outputs
+
+**The attack class.** An MCP tool returns markdown that the calling LLM is instructed to pass to a sibling MCP tool (e.g. `MafDraftIssue` → GitHub's `create_issue`). User-controlled content inside the tool's output lands in another LLM's context — an indirect-prompt-injection lane. Anchored to [OWASP LLM05 Improper Output Handling](https://owasp.org/www-project-top-10-for-large-language-model-applications/) and [OWASP Top 10 for Agentic Applications 2026 — Indirect Prompt Injection via Tool Output](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/).
+
+**Are we vulnerable? No.** [`LlmFencing.Fence`](../src/maf-autopilot/Tools/LlmFencing.cs) wraps every user-controlled field destined for another LLM in BEGIN/END markers with a random-GUID sentinel + explicit "treat as data" framing. HTML comments (the most common smuggle vector in markdown) are stripped; content is capped at a per-field byte budget. Applied to `MafDraftIssue` (symptom / expected / actual / snippet), `MafPrompts.Debug` (errorOrSymptom), the `gen_guide_section.py` release-notes hop, the `ai_review_build_prompt.py` PR-registry embed, and `RegistryExtractCommand`'s `notes:` field. The fence's framing instruction is the load-bearing primitive — modern LLMs respect it; the random sentinel ensures user content cannot replicate the closer.
+
+### Supply-chain prompt injection via upstream release notes
+
+**The attack class.** Our `maf-release-watcher` workflow reads `gh release view microsoft/agent-framework --jq .body` weekly and uses the body to author the per-version migration guide + the AI-fill issue body that a Copilot Coding Agent processes. A malicious upstream maintainer (or a compromise of microsoft/agent-framework-release) could ship HTML-comment-disguised injection in release notes. Anchored to [MITRE ATLAS AML.T0048 ML Supply Chain Compromise](https://atlas.mitre.org/) + [AML.T0058 Context Poisoning](https://atlas.mitre.org/).
+
+**Are we vulnerable? No.** [`gen_guide_section.py`](../.github/scripts/gen_guide_section.py) fences both the release notes AND the `dotnet-inspect` diff via the Python `llm_fencing` module (parity with the C# `LlmFencing`) before embedding into the migration guide. Each fenced section carries a label (`upstream-maf-release-notes`, `upstream-maf-diff-core`), an HTML-comment-stripped body, a 32 KB byte cap, and the same random-sentinel BEGIN/END framing as the C# side. [`RegistryExtractCommand`](../src/maf-autopilot/RegistryExtractCommand.cs) applies an 8 KB fence to the `notes:` field that persists in `registry.yaml` — content that survives forever and is served to downstream LLMs via `MafRegistryLookup`.
+
+### Workflow input injection (workflow_dispatch templating)
+
+**The attack class.** GitHub Actions `${{ inputs.X }}` substitutes literal text BEFORE shell parsing. Any future contributor who changes a `run:` block in a way that puts the template inside a shell-interpreted context (e.g. unquoted `$( )` or backticks) creates a command-injection lane. Reference: [GitHub — Security Hardening for GitHub Actions](https://docs.github.com/en/actions/reference/security/secure-use).
+
+**Are we vulnerable? No.**
+
+1. Every `workflow_dispatch` workflow has a `validate-inputs` job that runs FIRST with `permissions: {}` (no scopes). It regex-checks the input shape — semver for version fields, positive-int for `pr_number`, hardcoded enum for `bot` / `model`. Downstream jobs gate via `needs: validate-inputs`.
+2. Every `run:` block reads inputs via `env:` redirect (`env: { X: ${{ inputs.X }} }` then `$X` in shell). The single `env:` interpolation is YAML-quoted by the runner; downstream `$X` references are shell-variable expansions, not template substitutions.
+3. CI invariant `ci-invariants.yml` Job 4 blocks any future `${{ inputs.* }}` literal inside a `run:` block.
+4. Third-party actions are SHA-pinned (9 distinct actions × 23 call sites). Dependabot keeps them current.
+5. All 9 workflows declare an explicit `permissions:` scope; `validate-inputs` jobs run with no permissions at all.
+
+### Path-escape via secondary path parameters
+
+**The attack class.** Many tools accept a primary `repoPath` and a secondary path (e.g. `MafAutoFix.specificFile`). Joining the secondary path naively via `Path.Combine` or via a `Path.IsPathRooted` short-circuit lets an LLM-supplied absolute path or `..`-segment redirect file I/O outside the repo root. The rewriter then writes through the resolved path. Anchored to [OWASP MCP Top 10 — MCP04 Command Injection / path-escape variant](https://owasp.org/www-project-mcp-top-10/).
+
+**Are we vulnerable? No.** [`PathGuard.ValidateContainment`](../src/maf-autopilot/Tools/PathGuard.cs) is called at every secondary-path entry. It (a) canonicalizes both `repoPath` and the candidate via `Path.GetFullPath`, (b) verifies the resolved path starts with `repoPath + separator`, (c) probes BOTH the resolved file itself AND its parent chain for `FileAttributes.ReparsePoint` — closing the file-level symlink lane that `Path.GetFullPath` alone cannot detect (it canonicalizes `..` syntactically but does not resolve symlinks). Error messages never echo the input path.
+
+### Code injection via scaffold parameters
+
+**The attack class.** Code generators that splice user-supplied identifiers into output source files (e.g. `namespace {{ns}};`) are vulnerable to break-out via crafted parameter values like `MyApp; class Evil { static int x = Process.Start("calc"); }`. The generated file is valid C# and gets compiled into the user's project.
+
+**Are we vulnerable? No.** `AgentScaffolder.IsValidTypeExpression` (for `inputType` / `outputType`) and `AgentScaffolder.IsValidNamespace` (for `projectNamespace`) both use the same defense: pre-reject char filter (`;`, `{`, `}`, `(`, `)`, `=`, newline, NUL, quote, backtick) + Roslyn parse + roundtrip equality check. If Roslyn silently dropped extra tokens after parsing, the printed form differs from the input — that's the actual injection gate. Tests in `ScaffolderSecurityTests` pin a catalog of injection payloads.
+
+### Annotation drift (tool poisoning / consent bypass)
+
+**The attack class.** MCP-spec-compliant clients gate auto-invocation on the `[McpServerTool]` annotations (`ReadOnly` / `Destructive` / `Idempotent` / `OpenWorld`). A wrong annotation is a security bug, not a style issue: setting `ReadOnly=true` on a tool that spawns `dotnet build` is a privilege escalation. Anchored to [MCP Specification — Security Considerations](https://modelcontextprotocol.io/specification/2025-11-25) + [MCP Blog — Tool Annotations as Risk Vocabulary](https://blog.modelcontextprotocol.io/posts/2026-03-16-tool-annotations/) + [Invariant Labs — Tool Poisoning Attack](https://invariantlabs.ai/blog/mcp-security-notification-tool-poisoning-attacks).
+
+**Are we vulnerable? No.** Reflection tests (`McpToolAnnotationTests`) lock the per-tool annotation contract. `CONTRIBUTING.md`'s security rubric requires future tools to match annotations to behavior. The audit found and fixed five drift cases in v1.1: `MafRunCs0618Hunt` (was `ReadOnly=true`, now `false` + `OpenWorld=true` because `dotnet build` reaches NuGet), `MafNewAgent`/`MafNewExecutor` (were `Destructive=false`, now `true` because they write to the project tree), `MafDiffPackage`/`MafPreUpgradeDryRun` (were missing `OpenWorld`, both reach api.nuget.org).
+
 ---
 
 ## MCP-server security scan — Cisco mcp-scanner
@@ -134,6 +180,8 @@ Analyzer stats: yara_analyzer: 25/25 scanned, 0 findings
 
 ### Scan cadence
 
+- **Every PR against `main`** that touches `src/maf-autopilot/**`: [`.github/workflows/mcp-scanner.yml`](../.github/workflows/mcp-scanner.yml) runs the scanner and posts results as a sticky PR comment (added in v1.1 — G8 closure). Currently advisory (`continue-on-error: true`); flip to hard-fail after 2 weeks of clean runs.
+- **Weekly cron** (Mondays 11:00 UTC): scheduled run as backstop for findings introduced by upstream regex / tooling drift even without code changes on our side.
 - **Every minor release** (1.0 → 1.1 → 1.2): full Cisco mcp-scanner pass; results recorded in [`docs/security/threat-model.md`](security/threat-model.md) §7.
 - **Pre-tag** during release prep: re-run if any tool was added or modified.
 
