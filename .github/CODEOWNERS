@@ -1,0 +1,50 @@
+# CODEOWNERS — auto-request reviews from listed owners on PRs touching these paths.
+#
+# Anchored to the v1.1 security-hardening release (G1 in the hardening plan):
+# without CODEOWNERS, any contributor (including bot identities with write
+# tokens) could land changes in security-critical paths without an automatic
+# maintainer review. Combined with the existing `maf-release-watcher`
+# direct-to-main lane (intentional design tradeoff, documented in that
+# workflow at line 249), a compromise of the bot identity was unbounded by
+# review.
+#
+# To activate the gate, also enable "Require review from Code Owners" in the
+# branch protection rule for `main`.
+#
+# Pattern matching follows .gitignore syntax. The first matching pattern in
+# this file (top-to-bottom) wins. Most-specific paths last.
+
+# --- Default: maintainer reviews everything touched ---
+*                                       @joslat
+
+# --- Security-critical surfaces (defense in depth — duplicate of default,
+#     pinned explicitly so a future contributor's override of `*` cannot
+#     accidentally drop these) ---
+
+# MCP server runtime + tool implementations.
+/src/maf-autopilot/Tools/                @joslat
+/src/maf-autopilot/Scaffolding/          @joslat
+/src/maf-autopilot/Commands/             @joslat
+/src/maf-autopilot/Prompts/              @joslat
+/src/maf-autopilot/Resources/            @joslat
+/src/maf-autopilot/Data/                 @joslat
+
+# Roslyn analyzer NuGet — runs at IDE build time in downstream consumers'
+# projects; supply-chain critical.
+/src/maf-autopilot.Analyzers/            @joslat
+
+# CI surface — workflows execute with elevated tokens (NUGET_API_KEY,
+# COPILOT_ASSIGN_PAT, packages:write). A PR that modifies a workflow can
+# silently introduce new secret usage or new auto-merge logic.
+/.github/workflows/                      @joslat
+/.github/scripts/                        @joslat
+/.github/CODEOWNERS                      @joslat
+/.github/dependabot.yml                  @joslat
+
+# Security documentation — the public commitments + threat model.
+/docs/security.md                        @joslat
+/docs/security/                          @joslat
+/SECURITY.md                             @joslat
+
+# Private hardening notes / release-tracking memos.
+/private/                                @joslat

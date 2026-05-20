@@ -44,7 +44,7 @@ jobs:
     name: Process.Start discipline
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Block ProcessStartInfo.Arguments string property
         run: |
@@ -89,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true  # TODO(Phase 5.9): remove after AntiPatternScannerTool regex hardening.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Check Regex declarations
         run: |
@@ -146,7 +146,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true  # TODO(Phase 5.3+): remove after DraftIssueTool/FanOutValidatorTool migrate.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Require EnumerationOptions on recursive enumerators
         run: |
@@ -195,17 +195,14 @@ jobs:
   # `${{ github.event.inputs.X }}` inside `run:` blocks. Inputs must flow via
   # `env:` redirect; downstream scripts reference `$X` as a shell variable.
   #
-  # ADVISORY UNTIL Phase 3.2: five workflows currently template inputs directly
-  # into run blocks (`maf-release-watcher.yml`, `release.yml`, `docker-publish.yml`,
-  # `maf-ai-fill-todos.yml`, `maf-ai-semantic-review.yml`). Phase 3.2 redirects
-  # them through `env:`. Flip `continue-on-error` off when Phase 3.2 lands.
+  # Phase 3.2 landed: all five previously-noncompliant workflows now use the
+  # `env:` redirect pattern. Job is hard-fail going forward.
   # ----------------------------------------------------------------------------
   workflow-input-redirect:
     name: Workflow inputs flow via env redirect
     runs-on: ubuntu-latest
-    continue-on-error: true  # TODO(Phase 3.2): remove after env-redirect refactor lands.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: "Block inputs.* templates inside run blocks"
         run: |
@@ -269,7 +266,7 @@ jobs:
     name: Workflow permissions block required
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: "Require a permissions block on every workflow"
         run: |

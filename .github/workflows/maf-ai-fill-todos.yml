@@ -57,10 +57,35 @@ permissions:
   issues: write
 
 jobs:
+  # Phase 3.1 — validate workflow_dispatch / workflow_call inputs BEFORE any
+  # privileged step runs. The `open-issue-for-copilot` job uses
+  # COPILOT_ASSIGN_PAT (an admin PAT). A malformed target_version (e.g.
+  # "1.4.0; rm -rf /") would otherwise hit the env-redirect at line 68 and
+  # the downstream shell var expansion would render it inert — but defense
+  # in depth: catch the bad shape upstream with a regex.
+  validate-inputs:
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Validate inputs
+        env:
+          TARGET: ${{ inputs.target_version }}
+          BOT: ${{ inputs.bot || 'claude' }}
+        run: |
+          if ! echo "$TARGET" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$'; then
+            echo "::error::Invalid target_version input shape: $TARGET (must be semver)"
+            exit 1
+          fi
+          case "$BOT" in
+            claude|copilot|codex) ;;
+            *) echo "::error::Invalid bot input: $BOT (must be claude|copilot|codex)" ; exit 1 ;;
+          esac
+
   open-issue-for-copilot:
+    needs: validate-inputs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Compute helper variables
         id: vars

@@ -18,16 +18,37 @@ on:
       - '[0-9]*'
 
 jobs:
+  # Phase 3.1 — validate workflow_dispatch inputs BEFORE any privileged step
+  # runs. release.yml has NUGET_API_KEY in scope downstream; a malformed
+  # `version` input is the highest-value injection lane in this repo.
+  validate-inputs:
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Validate version input shape
+        env:
+          INPUT: ${{ inputs.version }}
+        run: |
+          if [ -z "$INPUT" ]; then
+            echo "No version input — will use tag or csproj"
+            exit 0
+          fi
+          if ! echo "$INPUT" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$'; then
+            echo "::error::Invalid version input shape: $INPUT (must be semver)"
+            exit 1
+          fi
+
   release:
+    needs: validate-inputs
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Setup .NET (all three runtimes — nupkg multi-targets net8/9/10)
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
         with:
           dotnet-version: |
             8.0.x
@@ -36,9 +57,13 @@ jobs:
 
       - name: Determine version
         id: version
+        # Phase 3.2 — read inputs via `env:` redirect, not `${{ }}` templating
+        # inside the run block. Eliminates the template-injection surface.
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
             echo "Using input version: $VERSION"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             # Canonical: tag with `v` prefix (e.g. `v1.3.0-alpha-5`).
