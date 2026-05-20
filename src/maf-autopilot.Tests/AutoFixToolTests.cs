@@ -570,6 +570,147 @@ public class AutoFixToolTests
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Phase 4.1a — ExecutorSealedRewriter corruption guards.
+    //
+    // `sealed abstract class` is a C# compile error (the two modifiers are
+    // mutually exclusive). Pre-fix the rewriter happily inserted `sealed` on
+    // any class deriving from Executor with a [MessageHandler], producing
+    // uncompilable user code when the source class was abstract. Same for
+    // `sealed static class` (also rejected by the compiler). Now: skip the
+    // rewrite and emit a leading-trivia comment explaining why.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void ExecutorSealedRewriter_AbstractClass_NotRewritten_WithWarningComment()
+    {
+        var src = """
+            using Microsoft.Agents.AI.Workflow;
+            public abstract class BaseAuditor : Executor
+            {
+                [MessageHandler]
+                public abstract System.Threading.Tasks.Task<string> Audit(string input);
+            }
+            """;
+        var output = ApplyRewriter(new ExecutorSealedRewriter(), src);
+
+        // The output must NOT contain the uncompilable `sealed abstract` order
+        // (the unguarded path would insert `sealed` right after `abstract`,
+        // producing `abstract sealed class`).
+        Assert.DoesNotContain("sealed", output);
+        // The skip-warning comment is present.
+        Assert.Contains("cannot seal an abstract Executor", output);
+    }
+
+    [Fact]
+    public void ExecutorSealedRewriter_RegularClass_StillRewritten()
+    {
+        // Sanity check — the guard doesn't accidentally skip a legitimate target.
+        var src = """
+            using Microsoft.Agents.AI.Workflow;
+            public partial class FraudAuditor : Executor
+            {
+                [MessageHandler]
+                public System.Threading.Tasks.Task<string> Audit(string input) => null!;
+            }
+            """;
+        var output = ApplyRewriter(new ExecutorSealedRewriter(), src);
+        Assert.Contains("public sealed partial class FraudAuditor", output);
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 4.1b — SyncOverAsyncRewriter corruption guards.
+    //
+    // `await` is a compile error (a) inside a `lock` block (CS1996) and
+    // (b) inside a non-async method (CS0117). Pre-fix the rewriter inserted
+    // `await` without checking either context, producing uncompilable code.
+    // Now: skip the rewrite and emit a TODO comment.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void SyncOverAsyncRewriter_InsideLockBlock_NotRewritten_WithWarning()
+    {
+        var src = """
+            class C
+            {
+                readonly object _lock = new();
+                async System.Threading.Tasks.Task M()
+                {
+                    lock (_lock)
+                    {
+                        var x = Foo().Result;
+                    }
+                }
+                System.Threading.Tasks.Task<int> Foo() => null!;
+            }
+            """;
+        var output = ApplyRewriter(new SyncOverAsyncRewriter(), src);
+
+        // Result access still uses `.Result` — the rewriter did NOT insert `await`.
+        Assert.Contains(".Result", output);
+        Assert.Contains("cannot await inside a lock", output);
+    }
+
+    [Fact]
+    public void SyncOverAsyncRewriter_NonAsyncMethod_NotRewritten_WithWarning()
+    {
+        var src = """
+            class C
+            {
+                int M()
+                {
+                    return Foo().Result;
+                }
+                System.Threading.Tasks.Task<int> Foo() => null!;
+            }
+            """;
+        var output = ApplyRewriter(new SyncOverAsyncRewriter(), src);
+
+        Assert.Contains(".Result", output);
+        Assert.Contains("enclosing method is not async", output);
+    }
+
+    [Fact]
+    public void SyncOverAsyncRewriter_AsyncMethodOutsideLock_StillRewritten()
+    {
+        // Sanity check — the guard doesn't break the happy path.
+        var src = """
+            class C
+            {
+                async System.Threading.Tasks.Task M()
+                {
+                    var x = Foo().Result;
+                }
+                System.Threading.Tasks.Task<int> Foo() => null!;
+            }
+            """;
+        var output = ApplyRewriter(new SyncOverAsyncRewriter(), src);
+        Assert.Contains("await Foo()", output);
+        Assert.DoesNotContain(".Result", output);
+    }
+
+    [Fact]
+    public void SyncOverAsyncRewriter_WaitCall_InsideLock_NotRewritten()
+    {
+        var src = """
+            class C
+            {
+                readonly object _lock = new();
+                async System.Threading.Tasks.Task M()
+                {
+                    lock (_lock)
+                    {
+                        Foo().Wait();
+                    }
+                }
+                System.Threading.Tasks.Task Foo() => null!;
+            }
+            """;
+        var output = ApplyRewriter(new SyncOverAsyncRewriter(), src);
+        Assert.Contains(".Wait()", output);
+        Assert.Contains("cannot await inside a lock", output);
+    }
+
     [Fact]
     public void MafAutoFixAll_SpecificFile_AbsolutePathOutsideRepo_ReturnsError()
     {

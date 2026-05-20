@@ -45,7 +45,13 @@ public sealed class FanOutHandlerAnalyzer : DiagnosticAnalyzer
 
     public override void Initialize(AnalysisContext context)
     {
-        context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
+        // Phase 4.5 — consistent with MAF002 and MAF003: analyze generated
+        // code too. A T4 / source-generator that emits a `[MessageHandler]`
+        // method with a void return type would still starve the fan-in
+        // barrier silently; the warning must surface regardless of how the
+        // method got into the assembly.
+        context.ConfigureGeneratedCodeAnalysis(
+            GeneratedCodeAnalysisFlags.Analyze | GeneratedCodeAnalysisFlags.ReportDiagnostics);
         context.EnableConcurrentExecution();
         context.RegisterSyntaxNodeAction(AnalyzeMethod, SyntaxKind.MethodDeclaration);
     }

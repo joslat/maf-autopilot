@@ -10,12 +10,18 @@ namespace MafAutopilot.Tools.Rewriters;
 /// Rewrite: <c>SomeAsync().Result</c> → <c>(await SomeAsync())</c>.
 /// Also handles <c>SomeAsync().Wait()</c> → <c>await SomeAsync()</c>.
 ///
-/// **Important limitation.** This rewriter does NOT verify the enclosing
-/// method is `async`. If it isn't, the produced code won't compile — but
-/// the build error is loud and easy to spot. v2 of this rewriter could walk
-/// up to the enclosing method declaration and add the <c>async</c> modifier
-/// + adjust the return type. For now, the caller (MafAutoFix) emits a TODO
-/// comment when changes are made in a non-async method.
+/// <para><b>Corruption guard (Phase 4.1b).</b> Before rewriting, the visitor
+/// walks ancestors. Skip with a TODO comment if:</para>
+/// <list type="bullet">
+///   <item>Any ancestor is a <c>lock</c> block — <c>await</c> inside <c>lock</c>
+///         is a C# compile error.</item>
+///   <item>The enclosing function (method / local function / lambda) is not
+///         marked <c>async</c> — <c>await</c> in a synchronous body is also
+///         a compile error.</item>
+/// </list>
+/// Pre-fix the rewriter happily inserted <c>await</c> in either case and
+/// produced uncompilable user code. Now we surface a comment and leave the
+/// expression unchanged so the developer can refactor manually.
 /// </summary>
 internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewriter
 {
@@ -27,6 +33,9 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
         if (node.Name.Identifier.ValueText == "Result"
             && node.Expression is InvocationExpressionSyntax inv)
         {
+            if (ShouldSkipForContext(node, out var reason))
+                return WithTodoTrivia(node, reason);
+
             // Rewrite `Foo().Result` → `(await Foo())`.
             // Wrap in parens so the surrounding member-access / arg context
             // doesn't bind incorrectly. Explicit `await ` keyword token with a
@@ -49,6 +58,9 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
             && mae.Expression is InvocationExpressionSyntax inner
             && node.ArgumentList.Arguments.Count == 0)
         {
+            if (ShouldSkipForContext(node, out var reason))
+                return WithTodoTrivia(node, reason);
+
             // Rewrite `Foo().Wait()` → `await Foo()`. Need an explicit
             // trailing-space on the `await` token.
             return SyntaxFactory.AwaitExpression(
@@ -58,5 +70,92 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
                 .WithTrailingTrivia(node.GetTrailingTrivia());
         }
         return base.VisitInvocationExpression(node);
+    }
+
+    /// <summary>
+    /// Returns true if the rewrite must be skipped because awaiting in this
+    /// position would produce uncompilable code. Populates <paramref name="reason"/>
+    /// with a short comment explaining the skip.
+    /// </summary>
+    private static bool ShouldSkipForContext(SyntaxNode node, out string reason)
+    {
+        // (a) Any ancestor lock-statement makes `await` here a CS1996.
+        foreach (var ancestor in node.Ancestors())
+        {
+            if (ancestor is LockStatementSyntax)
+            {
+                reason = "// MAF-AP-CONC-002: cannot await inside a lock block — refactor to SemaphoreSlim.WaitAsync or restructure.";
+                return true;
+            }
+        }
+
+        // (b) Enclosing function must be async. Walk to the nearest "function"-y
+        // ancestor and check its modifiers / async lambda token. If we hit the
+        // top-level program or a property accessor (rare), treat as non-async.
+        foreach (var ancestor in node.Ancestors())
+        {
+            switch (ancestor)
+            {
+                case MethodDeclarationSyntax m:
+                    if (!m.Modifiers.Any(mod => mod.IsKind(SyntaxKind.AsyncKeyword)))
+                    {
+                        reason = "// MAF-AP-CONC-002: enclosing method is not async — mark `async` (and adjust return type) or refactor before applying this rule.";
+                        return true;
+                    }
+                    reason = string.Empty;
+                    return false; // method is async — OK to rewrite
+                case LocalFunctionStatementSyntax lf:
+                    if (!lf.Modifiers.Any(mod => mod.IsKind(SyntaxKind.AsyncKeyword)))
+                    {
+                        reason = "// MAF-AP-CONC-002: enclosing local function is not async — mark `async` or refactor.";
+                        return true;
+                    }
+                    reason = string.Empty;
+                    return false;
+                case AnonymousFunctionExpressionSyntax af:
+                    if (af.AsyncKeyword == default)
+                    {
+                        reason = "// MAF-AP-CONC-002: enclosing lambda is not async — add `async` or refactor.";
+                        return true;
+                    }
+                    reason = string.Empty;
+                    return false;
+                case AccessorDeclarationSyntax: // property/event accessors — never async-able in our targets
+                    reason = "// MAF-AP-CONC-002: cannot await inside a property/event accessor — refactor.";
+                    return true;
+            }
+        }
+
+        // No enclosing function found (top-level statement context). Top-level
+        // is implicitly async-allowed in modern C#; leave the rewrite alone.
+        reason = string.Empty;
+        return false;
+    }
+
+    /// <summary>
+    /// Attach a leading-trivia comment to the expression node. Returns the
+    /// unchanged node otherwise.
+    ///
+    /// Idempotence: dedup by scanning the enclosing method / function for
+    /// the same comment text. Roslyn re-parses can reattach trivia to
+    /// neighboring tokens, so we cannot rely on the node's own leading-trivia
+    /// list. Scanning by source-text of the enclosing scope is stable
+    /// across parse round-trips.
+    /// </summary>
+    private static SyntaxNode WithTodoTrivia(SyntaxNode node, string commentText)
+    {
+        var enclosingMethod = (SyntaxNode?)node.FirstAncestorOrSelf<MethodDeclarationSyntax>()
+            ?? node.FirstAncestorOrSelf<LocalFunctionStatementSyntax>()
+            ?? node.FirstAncestorOrSelf<AnonymousFunctionExpressionSyntax>()
+            ?? node.Parent;
+        if (enclosingMethod is not null
+            && enclosingMethod.ToFullString().Contains(commentText, StringComparison.Ordinal))
+        {
+            return node;
+        }
+        return node.WithLeadingTrivia(
+            node.GetLeadingTrivia()
+                .Add(SyntaxFactory.Comment(commentText))
+                .Add(SyntaxFactory.EndOfLine("\n")));
     }
 }
