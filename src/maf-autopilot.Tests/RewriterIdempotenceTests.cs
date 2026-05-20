@@ -80,10 +80,8 @@ public sealed class RewriterIdempotenceTests
     {
         // The abstract-class guard skips the rewrite with a warning comment.
         // Running it twice should leave the comment exactly once — the second
-        // pass should detect the comment-bearing skip and not duplicate.
-        // (The guard fires before the modifier check on EVERY visit, so the
-        // comment is added on each pass — verify the output is stable
-        // regardless.)
+        // pass should detect the existing comment via source-text dedup and
+        // not duplicate it.
         const string src = """
             using Microsoft.Agents.AI.Workflow;
             public abstract class BaseAuditor : Executor
@@ -92,7 +90,40 @@ public sealed class RewriterIdempotenceTests
                 public abstract System.Threading.Tasks.Task<string> Audit(string input);
             }
             """;
-        ApplyTwice(new ExecutorSealedRewriter(), src);
+        var output = ApplyTwice(new ExecutorSealedRewriter(), src);
+
+        // Phase 4.G fixup (nit #3) — assert the warning appears EXACTLY once.
+        // Without this, a future bug where two abstract Executors in the same
+        // source produce two comments per visit could pass the equality check
+        // (both passes producing identical bad output) while still being buggy.
+        var matches = System.Text.RegularExpressions.Regex.Matches(
+            output, "cannot seal an abstract Executor");
+        Assert.Equal(1, matches.Count);
+    }
+
+    [Fact]
+    public void ExecutorSealedRewriter_TwoAbstractExecutors_EachGetsOneComment()
+    {
+        // Adversarial input (suggested by Phase 4.G review): two abstract
+        // Executor-derived classes in one source. Each should get its OWN
+        // comment, totaling two — but each only once, not duplicated.
+        const string src = """
+            using Microsoft.Agents.AI.Workflow;
+            public abstract class FirstAuditor : Executor
+            {
+                [MessageHandler]
+                public abstract System.Threading.Tasks.Task<string> Audit(string input);
+            }
+            public abstract class SecondAuditor : Executor
+            {
+                [MessageHandler]
+                public abstract System.Threading.Tasks.Task<string> Audit(string input);
+            }
+            """;
+        var output = ApplyTwice(new ExecutorSealedRewriter(), src);
+        var matches = System.Text.RegularExpressions.Regex.Matches(
+            output, "cannot seal an abstract Executor");
+        Assert.Equal(2, matches.Count);
     }
 
     [Fact]

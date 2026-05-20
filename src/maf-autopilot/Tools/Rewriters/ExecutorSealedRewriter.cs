@@ -60,6 +60,9 @@ internal sealed class ExecutorSealedRewriter : CSharpSyntaxRewriter, IRuleRewrit
         else
         {
             // Insert after the first modifier (preserves "public sealed partial class X").
+            // Note: when `node.Modifiers.Count == 1` (e.g. just `public`), index 1
+            // equals the list's Count, and List<T>.Insert(Count, x) appends — which
+            // is exactly what we want: `public` → `public sealed`.
             var list = node.Modifiers.ToList();
             list.Insert(1, sealedToken);
             newModifiers = SyntaxFactory.TokenList(list);

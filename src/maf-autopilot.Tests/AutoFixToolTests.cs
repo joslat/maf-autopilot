@@ -105,6 +105,68 @@ public class AutoFixToolTests
     }
 
     // -------------------------------------------------------------------------
+    // Phase 4.G fixup — shape C (member-access statement) + shape D (standalone
+    // element-access statement). Analyzer Phase 4.4 caught these; rewriter
+    // was missing parity. Now closed.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void EnableSensitiveDataRewriter_MemberAccessStatement_StatementRemoved()
+    {
+        var input = """
+            class C
+            {
+                void Configure()
+                {
+                    var opts = new ChatOptions();
+                    opts.EnableSensitiveData = true;
+                    opts.MaxTokens = 1024;
+                }
+            }
+            """;
+        var output = ApplyRewriter(new EnableSensitiveDataRewriter(), input);
+        Assert.DoesNotContain("opts.EnableSensitiveData = true", output);
+        Assert.Contains("opts.MaxTokens = 1024", output);
+    }
+
+    [Fact]
+    public void EnableSensitiveDataRewriter_ElementAccessStatement_StatementRemoved()
+    {
+        var input = """
+            using System.Collections.Generic;
+            class C
+            {
+                void Configure()
+                {
+                    var dict = new Dictionary<string, object>();
+                    dict["EnableSensitiveData"] = true;
+                    dict["KeepThis"] = true;
+                }
+            }
+            """;
+        var output = ApplyRewriter(new EnableSensitiveDataRewriter(), input);
+        Assert.DoesNotContain("dict[\"EnableSensitiveData\"]", output);
+        Assert.Contains("dict[\"KeepThis\"]", output);
+    }
+
+    [Fact]
+    public void EnableSensitiveDataRewriter_MemberAccessStatementFalse_NotRemoved()
+    {
+        var input = """
+            class C
+            {
+                void Configure()
+                {
+                    var opts = new ChatOptions();
+                    opts.EnableSensitiveData = false;
+                }
+            }
+            """;
+        var output = ApplyRewriter(new EnableSensitiveDataRewriter(), input);
+        Assert.Contains("opts.EnableSensitiveData = false", output);
+    }
+
+    // -------------------------------------------------------------------------
     // ExecutorSealedRewriter (MAF-AP-WF-001)
     // -------------------------------------------------------------------------
 

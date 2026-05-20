@@ -7,12 +7,26 @@ namespace MafAutopilot.Tools.Rewriters;
 /// <summary>
 /// Rule: <c>MAF-AP-SEC-003</c> / <c>MAF003</c>.
 ///
-/// Rewrite: any object-initializer assignment <c>EnableSensitiveData = true</c>
-/// is dropped from the initializer list (the property defaults to false, so
-/// removing the assignment yields the safe default).
+/// Rewrite: any <c>EnableSensitiveData = true</c> assignment is dropped.
+/// The property defaults to false, so removal restores the safe default.
 ///
-/// Matches BOTH bare initializer assignments AND dictionary-style
-/// <c>AdditionalProperties</c> entries like <c>["EnableSensitiveData"] = true</c>.
+/// <para>Four shapes handled (parity with <see cref="Analyzers.SensitiveDataAnalyzer"/>):</para>
+/// <list type="bullet">
+///   <item>A. Object-initializer entry — <c>new Options { EnableSensitiveData = true }</c>.
+///         Removed from the initializer's expression list.</item>
+///   <item>B. Dictionary-initializer entry — <c>new Dict { ["EnableSensitiveData"] = true }</c>.
+///         Removed from the initializer's expression list.</item>
+///   <item>C. Member-access assignment statement — <c>opts.EnableSensitiveData = true;</c>.
+///         The whole statement is removed via <see cref="VisitExpressionStatement"/>.</item>
+///   <item>D. Standalone dictionary-key assignment statement — <c>dict["EnableSensitiveData"] = true;</c>.
+///         Same removal path.</item>
+/// </list>
+///
+/// <para>Phase 4.G fixup: shapes C and D were missing pre-Phase-4.G. The analyzer
+/// (<see cref="Analyzers.SensitiveDataAnalyzer"/>) was extended to all four shapes
+/// in Phase 4.4, which created an asymmetry where the IDE warned but
+/// <c>MafAutoFix</c> silently left the assignment in place. This rewriter now
+/// matches.</para>
 /// </summary>
 internal sealed class EnableSensitiveDataRewriter : CSharpSyntaxRewriter, IRuleRewriter
 {
@@ -31,6 +45,38 @@ internal sealed class EnableSensitiveDataRewriter : CSharpSyntaxRewriter, IRuleR
         // outer braces and any trivia on the unchanged expressions.
         var newList = SyntaxFactory.SeparatedList(filtered);
         return node.WithExpressions(newList);
+    }
+
+    /// <summary>
+    /// Statement-level visitor for shapes C + D (member access and standalone
+    /// element access). Returns <c>null</c> to remove the statement from its
+    /// parent block. Roslyn's syntax-list semantics treat a null Visit result
+    /// as "remove this child."
+    /// </summary>
+    public override SyntaxNode? VisitExpressionStatement(ExpressionStatementSyntax node)
+    {
+        if (node.Expression is AssignmentExpressionSyntax assign
+            && assign.Right is LiteralExpressionSyntax valueLit
+            && valueLit.IsKind(SyntaxKind.TrueLiteralExpression))
+        {
+            // Shape C: `opts.EnableSensitiveData = true;` or
+            //          `_options.EnableSensitiveData = true;`
+            if (assign.Left is MemberAccessExpressionSyntax mae
+                && mae.Name.Identifier.ValueText == "EnableSensitiveData")
+            {
+                return null;
+            }
+            // Shape D: `dict["EnableSensitiveData"] = true;`
+            if (assign.Left is ElementAccessExpressionSyntax eae
+                && eae.ArgumentList.Arguments.Count == 1
+                && eae.ArgumentList.Arguments[0].Expression is LiteralExpressionSyntax keyLit
+                && keyLit.IsKind(SyntaxKind.StringLiteralExpression)
+                && keyLit.Token.ValueText == "EnableSensitiveData")
+            {
+                return null;
+            }
+        }
+        return base.VisitExpressionStatement(node);
     }
 
     private static bool IsEnableSensitiveDataTrueAssignment(ExpressionSyntax expr)
