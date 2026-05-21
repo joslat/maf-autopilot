@@ -70,6 +70,12 @@ public sealed class RegistryService
         // BYTE-count (not UTF-16 char count). The string `apiName.Length > 256`
         // check would have allowed a 256-emoji string = 1024 UTF-8 bytes,
         // inconsistent with the IdentifierBytes contract used elsewhere.
+        //
+        // Cross-layer dep `Data → Tools` is intentional: BoundedInput is a
+        // primitive (length-cap helper), not a feature module. See
+        // CONTRIBUTING.md "Helper composition — decision tree" for the
+        // rationale. The dependency graph stays acyclic: Tools does not
+        // depend on Data (verified by `using` grep).
         Tools.BoundedInput.Validate(apiName, Tools.BoundedInput.IdentifierBytes, nameof(apiName));
 
         var needle = apiName.Trim().ToLowerInvariant();

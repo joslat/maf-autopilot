@@ -49,9 +49,28 @@ internal sealed class EnableSensitiveDataRewriter : CSharpSyntaxRewriter, IRuleR
 
     /// <summary>
     /// Statement-level visitor for shapes C + D (member access and standalone
-    /// element access). Returns <c>null</c> to remove the statement from its
-    /// parent block. Roslyn's syntax-list semantics treat a null Visit result
-    /// as "remove this child."
+    /// element access).
+    ///
+    /// <para>When the parent is a <see cref="BlockSyntax"/>, returns
+    /// <c>null</c> to remove the statement from the block — Roslyn's
+    /// syntax-list semantics treat a null Visit result as "remove this
+    /// child". Most call sites land here (`{ … }` body).</para>
+    ///
+    /// <para>When the parent is NOT a block (single-line <c>if</c>,
+    /// <c>for</c>, <c>while</c>, <c>else</c>, <c>using</c> without braces),
+    /// returns a no-op empty statement (<c>;</c>) instead — Roslyn's
+    /// <c>VisitIfStatement</c> (and its siblings) throw
+    /// <see cref="ArgumentNullException"/> when their single embedded
+    /// child returns null. Substituting an empty statement preserves the
+    /// surrounding structure without introducing the offending true-literal
+    /// assignment.</para>
+    ///
+    /// <para>Phase 7-final fixup — the original implementation returned
+    /// <c>null</c> unconditionally, which crashed the rewriter on
+    /// embedded-statement contexts. The crash was caught at the outer
+    /// <see cref="AutoFixTool"/> try/catch (no file corruption) but the
+    /// rule silently no-op'd on those files, re-creating the
+    /// analyzer/rewriter asymmetry Phase 4.G was meant to close.</para>
     /// </summary>
     public override SyntaxNode? VisitExpressionStatement(ExpressionStatementSyntax node)
     {
@@ -59,21 +78,30 @@ internal sealed class EnableSensitiveDataRewriter : CSharpSyntaxRewriter, IRuleR
             && assign.Right is LiteralExpressionSyntax valueLit
             && valueLit.IsKind(SyntaxKind.TrueLiteralExpression))
         {
-            // Shape C: `opts.EnableSensitiveData = true;` or
-            //          `_options.EnableSensitiveData = true;`
-            if (assign.Left is MemberAccessExpressionSyntax mae
-                && mae.Name.Identifier.ValueText == "EnableSensitiveData")
-            {
-                return null;
-            }
+            // Shape C: `opts.EnableSensitiveData = true;`
+            bool isShapeC = assign.Left is MemberAccessExpressionSyntax mae
+                && mae.Name.Identifier.ValueText == "EnableSensitiveData";
+
             // Shape D: `dict["EnableSensitiveData"] = true;`
-            if (assign.Left is ElementAccessExpressionSyntax eae
+            bool isShapeD = assign.Left is ElementAccessExpressionSyntax eae
                 && eae.ArgumentList.Arguments.Count == 1
                 && eae.ArgumentList.Arguments[0].Expression is LiteralExpressionSyntax keyLit
                 && keyLit.IsKind(SyntaxKind.StringLiteralExpression)
-                && keyLit.Token.ValueText == "EnableSensitiveData")
+                && keyLit.Token.ValueText == "EnableSensitiveData";
+
+            if (isShapeC || isShapeD)
             {
-                return null;
+                // Safe to remove only when the parent is a block. Embedded
+                // statement contexts (single-line if/for/while/else) require
+                // a replacement node — return an empty `;` statement that
+                // preserves the parent shape without keeping the assignment.
+                if (node.Parent is BlockSyntax)
+                {
+                    return null;
+                }
+                return SyntaxFactory.EmptyStatement()
+                    .WithLeadingTrivia(node.GetLeadingTrivia())
+                    .WithTrailingTrivia(node.GetTrailingTrivia());
             }
         }
         return base.VisitExpressionStatement(node);

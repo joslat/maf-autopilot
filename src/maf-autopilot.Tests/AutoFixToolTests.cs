@@ -167,6 +167,107 @@ public class AutoFixToolTests
     }
 
     // -------------------------------------------------------------------------
+    // Phase 7-final fixup — embedded-statement contexts.
+    //
+    // Returning `null` from `VisitExpressionStatement` to remove a statement
+    // CRASHES Roslyn's `VisitIfStatement` / `VisitForStatement` / etc. when
+    // the single embedded child is a removable assignment (the parent is
+    // not a block and expects a non-null replacement). Fix: substitute an
+    // empty `;` statement in those positions.
+    //
+    // The crash was caught by AutoFixTool's outer try/catch — but the rule
+    // silently no-op'd on those files, re-creating the analyzer/rewriter
+    // asymmetry Phase 4.G was meant to close. Tests below pin every
+    // embedded shape.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void EnableSensitiveDataRewriter_EmbeddedInSingleLineIf_ReplacedWithEmptyStatement()
+    {
+        var input = """
+            class C
+            {
+                void Configure(bool cond)
+                {
+                    var opts = new ChatOptions();
+                    if (cond) opts.EnableSensitiveData = true;
+                    opts.MaxTokens = 1024;
+                }
+            }
+            """;
+        var output = ApplyRewriter(new EnableSensitiveDataRewriter(), input);
+        // The dangerous assignment is gone.
+        Assert.DoesNotContain("opts.EnableSensitiveData = true", output);
+        // Surrounding statements survive intact.
+        Assert.Contains("opts.MaxTokens = 1024", output);
+        // The output re-parses cleanly (no crash, no orphan tokens).
+        var tree = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(output);
+        Assert.Empty(tree.GetDiagnostics().Where(
+            d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+    }
+
+    [Fact]
+    public void EnableSensitiveDataRewriter_EmbeddedInSingleLineFor_ReplacedWithEmptyStatement()
+    {
+        var input = """
+            class C
+            {
+                void Configure()
+                {
+                    var opts = new ChatOptions();
+                    for (int i = 0; i < 10; i++) opts.EnableSensitiveData = true;
+                }
+            }
+            """;
+        var output = ApplyRewriter(new EnableSensitiveDataRewriter(), input);
+        Assert.DoesNotContain("opts.EnableSensitiveData = true", output);
+        var tree = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(output);
+        Assert.Empty(tree.GetDiagnostics().Where(
+            d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+    }
+
+    [Fact]
+    public void EnableSensitiveDataRewriter_EmbeddedInIfElse_ReplacedWithEmptyStatement()
+    {
+        var input = """
+            class C
+            {
+                void Configure(bool cond)
+                {
+                    var opts = new ChatOptions();
+                    if (cond) { opts.MaxTokens = 100; }
+                    else opts.EnableSensitiveData = true;
+                }
+            }
+            """;
+        var output = ApplyRewriter(new EnableSensitiveDataRewriter(), input);
+        Assert.DoesNotContain("opts.EnableSensitiveData = true", output);
+        var tree = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(output);
+        Assert.Empty(tree.GetDiagnostics().Where(
+            d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+    }
+
+    [Fact]
+    public void EnableSensitiveDataRewriter_EmbeddedDictionaryStyleInSingleLineIf_Handled()
+    {
+        var input = """
+            using System.Collections.Generic;
+            class C
+            {
+                void Configure(bool cond, Dictionary<string, object> dict)
+                {
+                    if (cond) dict["EnableSensitiveData"] = true;
+                }
+            }
+            """;
+        var output = ApplyRewriter(new EnableSensitiveDataRewriter(), input);
+        Assert.DoesNotContain("[\"EnableSensitiveData\"] = true", output);
+        var tree = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(output);
+        Assert.Empty(tree.GetDiagnostics().Where(
+            d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+    }
+
+    // -------------------------------------------------------------------------
     // ExecutorSealedRewriter (MAF-AP-WF-001)
     // -------------------------------------------------------------------------
 

@@ -9,7 +9,148 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security (security hardening release — branch `security-hardening-v1.1`)
+
+Comprehensive hardening pass following a three-agent Opus security review.
+Each phase carried its own Opus full-phase review + fixup commit; the final
+comprehensive review returned **READY TO SHIP**. Anchored to the canonical
+MCP / LLM / GHA security canon documented in
+[`docs/security.md` "Canonical references"](docs/security.md#canonical-references).
+The full attack-surface map + closure list is in
+[`docs/security/threat-model.md`](docs/security/threat-model.md) §3–§5.
+
+#### Critical-severity closures (5)
+- **C1 — Path-escape via `AutoFix.specificFile`** — added `PathGuard.ValidateContainment`
+  (canonicalize + jail + reparse-point reject at both leaf AND parent-chain).
+  An LLM-supplied `specificFile = "C:\\Users\\victim\\..."` is now rejected
+  with a non-leaky error message.
+- **C2 — `MafRunCs0618Hunt` annotation drift** — was `[ReadOnly=true]` despite
+  spawning `dotnet build` (executes MSBuild targets, source generators,
+  NuGet post-install). Now `[ReadOnly=false, OpenWorld=true]`; MCP-spec-
+  compliant clients prompt for consent before auto-invoke.
+- **C3 — Code injection via `AgentScaffolder.projectNamespace`** — added
+  `IsValidNamespace` (Roslyn `ParseName` + roundtrip equality) mirroring the
+  existing `IsValidTypeExpression` defense applied to `inputType`/`outputType`.
+- **C4 — Supply-chain prompt injection via upstream MAF release notes** —
+  `gen_guide_section.py` now fences both `release-notes.txt` AND `diff-core.txt`
+  via new shared `LlmFencing` helpers (HTML-comment strip + UTF-8 byte cap +
+  random-sentinel BEGIN/END markers with "treat as data" framing). Same
+  fence applied at every downstream hop (`build_ai_fill_issue_body.py`,
+  `ai_review_build_prompt.py`, `RegistryExtractCommand.notes:` embed).
+- **C5 — Workflow `${{ inputs.* }}` injection** — every `workflow_dispatch`
+  workflow that accepts inputs gained a `validate-inputs` job (semver-regex /
+  enum-check, `permissions: {}`); every `run:` block migrated to `env:`
+  redirect pattern. CI invariant blocks regressions on `inputs.*`,
+  `needs.*.outputs.*`, and `steps.*.outputs.*`.
+
+#### High-severity closures (~11)
+- **LLM-to-LLM prompt smuggling via `MafDraftIssue`** — every user-controlled
+  field (symptom, expected, actual, snippet) wrapped in `LlmFencing.Fence`
+  + `NeutralizeFences` + `StripHtmlComments` (snippet sits in a `csharp`
+  code-block so triple-backtick neutralization is required).
+- **`MafPrompts.Debug.errorOrSymptom`** — replaced single-line `>` blockquote
+  bypass with full `LlmFencing.Fence` + `BoundedInput.Validate`.
+- **`MafNewAgent` / `MafNewExecutor` annotation drift** — both `[Destructive=true]`
+  now (they write new `.cs` files to the project tree).
+- **`MafDiffPackage` / `MafPreUpgradeDryRun` annotation drift** — both
+  `[OpenWorld=true]` now (they reach `api.nuget.org`).
+- **`VerifyRegistryCommand` `pre-X.Y.Z` + `IsRawDraft` bypass** — pre-1.0 +
+  raw-draft branches now run `CheckContentSafety` instead of skipping all
+  checks. `IsRawDraft` tightened to require `// TODO` at line-start regex
+  (substring-anywhere allowed `// TODO` inside string literals to re-qualify).
+- **`SourceFileWalker` symlink-follow + `MakeRelative` info leak** —
+  `EnumerationOptions.AttributesToSkip = ReparsePoint | Hidden | System`;
+  `MakeRelative` throws on out-of-root instead of leaking the absolute path.
+- **`MAF_REGISTRY_PATH` unguarded** — `ValidateOverridePath` rejects shell
+  metachars + NUL/CR/LF + reparse-points; optional `MAF_REGISTRY_PATH_ROOTS`
+  env-var allowlist.
+- **`RegistryExtractCommand` persistence injection** — `notes:` field
+  attacker-controllable via `dotnet-inspect diff` output is now fenced
+  (8 KB cap because the value persists forever in `registry.yaml`).
+- **`ai_review_build_prompt.py` PR-registry injection** — each changed
+  registry entry now fenced before embedding in the GPT-4o review prompt.
+- **`ExecutorSealedRewriter` produces uncompilable `abstract sealed class`** —
+  abstract / static guard skips with leading-trivia warning comment.
+  Idempotence via source-text dedup so repeat passes don't duplicate.
+- **`SyncOverAsyncRewriter` produces uncompilable `await`** — lock-block /
+  non-async-method / accessor / non-async-lambda guards. Same idempotence pattern.
+
+#### G-tier gaps closed (added during the audit)
+- **`.github/CODEOWNERS`** — `@joslat` required on security-critical paths
+  (`src/maf-autopilot/Tools/`, `Scaffolding/`, `Commands/`, `Prompts/`,
+  `Resources/`, `Data/`, `Analyzers/`, `.github/workflows/`, `.github/scripts/`,
+  `docs/security*`, `private/`, root metadata like `Dockerfile` and
+  `Directory.Build.props`).
+- **Root `SECURITY.md`** — GitHub Security tab entry point; 72-hour
+  acknowledgement + patch-release SLA + scope + recognition policy.
+- **`.github/workflows/mcp-scanner.yml`** — Cisco mcp-scanner runs on every
+  PR against `main` touching `src/maf-autopilot/**`, plus weekly Monday cron.
+  Sticky PR comment with results. Advisory for the first 5 consecutive
+  clean runs, then promote to hard-fail.
+- **`maf-pr-audit.yml` compiler-bomb cap** — skip Roslyn-heavy audit when
+  PR changes > 200 `.cs` files OR > 5 MB aggregate; `git diff -z` +
+  `xargs -0` + `stat -c %s --` for filename-safety.
+
+#### Defense-in-depth additions
+- **`BoundedInput.Validate`** — single helper, UTF-8 byte count, six named
+  cap classes (`PathBytes` / `IdentifierBytes` / `ShortTextBytes` /
+  `SnippetBytes` / `InstructionsBytes` / `AggregateBytes`). Applied across
+  every MCP tool's user-controlled string parameter.
+- **`LlmFencing.Fence` + `LlmFencing.StripHtmlComments` (C# + Python parity)** —
+  the reusable primitive for "user content destined for another LLM."
+- **Annotation reflection tests (`McpToolAnnotationTests`)** — locks the
+  `[McpServerTool]` contract for every tool whose annotation gates MCP-client
+  auto-invocation behavior.
+- **Rewriter idempotence property tests (`RewriterIdempotenceTests`)** —
+  pass-1 must equal pass-2 for every rewriter; catches a regression class
+  that would otherwise only surface in production.
+- **`SensitiveDataAnalyzer` dictionary-form parity** — MAF003 now catches
+  `["EnableSensitiveData"] = true` in addition to the bare-identifier and
+  member-access forms; rewriter extended to remove the standalone statement
+  shapes too.
+- **Regex hygiene** — every `new Regex(` in `src/maf-autopilot/` carries
+  `NonBacktracking + MatchTimeout = 100ms` (and the CI invariant now
+  catches the target-typed `Regex X = new(...)` form too).
+- **SHA-pinning** — 9 third-party actions across 23 call sites pinned to
+  full SHAs with a trailing-comment specific tag; Dependabot's
+  `github-actions` ecosystem updates both in lockstep.
+
+#### CI invariants (`.github/workflows/ci-invariants.yml`)
+Five hard-fail jobs that lock the invariants going forward:
+1. `Process.Start` allowlist + unsafe `Arguments` string property block.
+2. Regex hygiene (`NonBacktracking + MatchTimeout` required on every `new Regex(`).
+3. `EnumerationOptions` on recursive `Directory.EnumerateFiles` walkers.
+4. `${{ inputs.* | needs.*.outputs.* | steps.*.outputs.* }}` blocked inside `run:` blocks.
+5. Explicit `permissions:` block on every workflow.
+
+#### Documentation
+- `docs/security.md` — six new "Known MCP attack classes" subsections with
+  canonical-source citations + a new "Canonical references" section
+  enumerating 13 sources (MCP spec, OWASP LLM / MCP / Agentic Top 10s,
+  MITRE ATLAS, Cisco MCP scanner, Invariant Labs, Snyk, Keysight, GitHub
+  Actions secure-use, NIST SP 800-218A, CSA mcpserver-audit).
+- `docs/security/threat-model.md` — §3 expanded with 5 new attack-surface
+  subsections (code injection via namespace, LLM-to-LLM smuggling,
+  supply-chain PI via release notes, workflow input injection, third-party
+  action supply chain); §4 split into "carried over from 1.0" + 18-item
+  "Added in 1.1" list; §5 rewritten with 7 documented residual gaps each
+  carrying a v1.2.x tracking note.
+- `CONTRIBUTING.md` — new 7-item security rubric for MCP tool contributions
+  (PathGuard containment, BoundedInput length caps, annotation correctness,
+  ArgumentList discipline, LlmFencing on LLM-bound content, recursive walker
+  safety, regex hygiene). CI invariants enforce most items mechanically.
+
 ### Deferred (1.2.0+)
+- **`PullRequestAuditTool` inline `Process.Start`** → migrate to `ProcessRunner`
+  (bypasses the 16 MB output cap today; larger refactor than v1.1 scope).
+- **`ProcessRunner` streaming-cap-during-read + env scrubbing** (`MAF_FORWARD_ENV=*`
+  opt-out) — both risk breaking `dotnet build` for users with custom env setups.
+- **Semantic-model upgrade** for `DefaultAzureCredentialRewriter` /
+  `FanInArgOrderRewriter` — pure-syntax matching can silently rewrite unrelated
+  user types with name collisions. Bounded today by `--dry-run` default
+  + idempotence tests.
+- **Roslyn-analyzer NuGet signing posture** — undocumented today.
+- **Commit-signing requirement** — maintainer choice.
 - Full Roslyn data-flow `MafScanPromptInjection` (PROMPT-004 covers the syntactic case today).
 - MCP sampling tools (`maf_full_audit`, `maf_migration_suggest`, `maf_open_feedback_issue`) — depend on host sampling support.
 - GitHub App `@maf-bot` for org-wide PR comments — separate multi-day project.

@@ -44,6 +44,7 @@ Plus a **separate `maf-autopilot.Analyzers` NuGet** with 3 Roslyn analyzers (`MA
 - 📖 **Self-updating knowledge** — a GitHub Actions workflow watches NuGet weekly, diffs the MAF API surface, and opens a PR updating the migration guide and compatibility matrix automatically when a new version ships.
 - 🧰 **Deterministic fixes, not guesses** — a machine-readable Obsolete API Registry maps every known CS0618 warning to its exact replacement pattern. No hallucinated fix patterns.
 - 🔄 **Keeps your code current** — as MAF evolves, re-run the auditor on your codebase. It cross-references the latest guide, flags anything that's now obsolete or has a better pattern, and tells you exactly what to change.
+- 🔐 **Hardened against the named MCP attack lattice** — v1.1 ships a comprehensive security pass: 5 critical-tier closures (path-escape, MCP annotation drift, scaffold-namespace code injection, supply-chain prompt injection via release notes, `workflow_dispatch` input injection), 11+ high-tier closures, defense-in-depth helpers (`LlmFencing`, `BoundedInput`, `PathGuard.ValidateContainment`), and `.github/workflows/ci-invariants.yml` enforcing 5 invariants in CI. Cisco mcp-scanner v4.6.0: 25/25 SAFE, 0 findings. See [`SECURITY.md`](SECURITY.md) for the vulnerability-disclosure policy + [`docs/security.md`](docs/security.md) for user-facing attack-class coverage.
 
 ## How It Works
 

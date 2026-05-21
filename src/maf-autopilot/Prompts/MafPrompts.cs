@@ -2,6 +2,9 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 using System.Text;
+// Cross-layer dep `Prompts → Tools` is intentional: LlmFencing and
+// BoundedInput are primitives (data-fencing + length-cap helpers), not
+// feature modules. See CONTRIBUTING.md "Helper composition — decision tree".
 using MafAutopilot.Tools;
 
 namespace MafAutopilot.Prompts;

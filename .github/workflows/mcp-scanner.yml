@@ -40,6 +40,21 @@ jobs:
     # removing this line after 5 consecutive clean runs (combining PR + cron
     # cadence — the weekly cron alone gives only ~2 runs in 14 days, so the
     # calendar-deadline framing of the initial version was unrealistic).
+    #
+    # Rollback playbook (post-flip):
+    #   If a false-positive lands after promoting to hard-fail, do NOT just
+    #   re-enable `continue-on-error: true` — that loses the gate's signal
+    #   value. Instead:
+    #     1. Restore `continue-on-error: true` AS A SHORT-TERM UNBLOCK.
+    #     2. Open an issue labeled `cisco-mcp-scanner` documenting the YARA
+    #        rule that fired, the triggering tool/code path, and whether the
+    #        rule warrants an upstream report to cisco-ai-defense/mcp-scanner.
+    #     3. Triage within 1 week: either suppress at the source (rule too
+    #        aggressive — file upstream), refactor our code (the rule is right
+    #        and we drifted), or pin the scanner version below the flagging
+    #        release.
+    #     4. Remove `continue-on-error: true` again once triaged.
+    #   The triage-not-suppress posture is the contract.
     continue-on-error: true
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2

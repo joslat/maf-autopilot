@@ -231,6 +231,19 @@ public sealed class AutoFixTool
 
         foreach (var file in EnumerateFiles(repoPath, specificFile))
         {
+            // Compute the relative path ONCE up-front. Post-Phase-5.4,
+            // `MakeRelative` throws when the file is out-of-root rather than
+            // silently leaking the absolute path. Computing here (with the
+            // happy-path file from `EnumerateFiles`) keeps the catch handler
+            // free of any call that itself might throw — without this, an
+            // OS-level symlink race between enumeration and catch would
+            // double-fault out of `ApplyRewriterToRepo`. Falls back to the
+            // raw file path (acceptable for error reporting) if MakeRelative
+            // does throw.
+            string relative;
+            try { relative = SourceFileWalker.MakeRelative(repoPath, file); }
+            catch (InvalidOperationException) { relative = file; }
+
             try
             {
                 var src = File.ReadAllText(file);
@@ -243,13 +256,13 @@ public sealed class AutoFixTool
                 if (!dryRun)
                     WriteAtomic(file, newRoot.ToFullString());
 
-                changedFiles.Add(SourceFileWalker.MakeRelative(repoPath, file));
+                changedFiles.Add(relative);
             }
             catch (Exception ex)
             {
                 errors.Add(new
                 {
-                    file = SourceFileWalker.MakeRelative(repoPath, file),
+                    file = relative,
                     error = ex.Message,
                 });
             }
