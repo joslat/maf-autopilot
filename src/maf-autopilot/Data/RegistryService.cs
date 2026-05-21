@@ -298,9 +298,17 @@ public sealed class RegistryService
 
         // Optional allowlist: MAF_REGISTRY_PATH_ROOTS = ";"-separated parent
         // directories the override path must canonicalize under.
+        //
+        // OS-conditional path comparison — same rationale as PathGuard.PathComparison:
+        // POSIX paths are case-sensitive (`/etc/Foo` and `/etc/foo` differ);
+        // using OrdinalIgnoreCase unconditionally would let a case-permuted
+        // allowlist root accept a different directory.
         var allowlist = Environment.GetEnvironmentVariable("MAF_REGISTRY_PATH_ROOTS");
         if (!string.IsNullOrWhiteSpace(allowlist))
         {
+            var pathComparison = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows)
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
             var resolved = Path.GetFullPath(envPath);
             var roots = allowlist.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             var anyMatch = false;
@@ -309,8 +317,8 @@ public sealed class RegistryService
                 if (string.IsNullOrWhiteSpace(root)) continue;
                 var rootFull = Path.GetFullPath(root)
                     .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                if (resolved.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-                    || resolved.Equals(rootFull, StringComparison.OrdinalIgnoreCase))
+                if (resolved.StartsWith(rootFull + Path.DirectorySeparatorChar, pathComparison)
+                    || resolved.Equals(rootFull, pathComparison))
                 {
                     anyMatch = true;
                     break;

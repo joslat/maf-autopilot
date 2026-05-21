@@ -70,27 +70,43 @@ jobs:
           python-version: '3.12'
 
       - name: Cache pipx install
-        # Phase 6.G fixup — fixed cache path (default PIPX_HOME on Linux is
-        # ~/.local/share/pipx; binaries land in ~/.local/bin) and made the
-        # key invalidate on any change to this workflow file so version-pin
-        # edits force a fresh install instead of resurrecting a stale cache.
+        # Post-merge fixup — the original cache paths (`~/.local/share/pipx` +
+        # `~/.local/bin/mcp-scanner`) were wrong on the GHA Ubuntu runner.
+        # Pipx on this runner installs venvs to `/opt/pipx` and links binaries
+        # into `/opt/pipx_bin/` (verified via workflow log on PR #59). The
+        # cache step is kept (saves ~20s on hits) but the paths are corrected.
+        # Key still invalidates on workflow-file edits so version-pin changes
+        # force a fresh install instead of resurrecting a stale cache.
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
         with:
           path: |
-            ~/.local/share/pipx
-            ~/.local/bin/mcp-scanner
+            /opt/pipx
+            /opt/pipx_bin
           key: pipx-cisco-mcp-scanner-${{ hashFiles('.github/workflows/mcp-scanner.yml') }}
 
       - name: Install Cisco mcp-scanner via pipx
         run: |
+          set -e
           python -m pip install --user pipx
           python -m pipx ensurepath
           # Idempotent: install or upgrade. Pin major version to v4 to stay
           # ahead of any v5 breaking changes; allow minor bumps automatically.
           pipx install 'cisco-ai-mcp-scanner>=4,<5' || \
             pipx upgrade cisco-ai-mcp-scanner
-          # Surface the resolved version in the workflow log.
-          ~/.local/bin/mcp-scanner --version || true
+          # Surface the resolved binary path + version in the workflow log so
+          # the next person debugging this can see exactly what shipped.
+          # `command -v` is PATH-aware — handles both `~/.local/bin` (default
+          # PIPX_BIN_DIR on dev machines) and `/opt/pipx_bin/` (GHA Ubuntu).
+          SCANNER_BIN=$(command -v mcp-scanner || echo "")
+          if [ -z "$SCANNER_BIN" ]; then
+            echo "::error::mcp-scanner binary not on PATH after pipx install."
+            echo "PATH = $PATH"
+            echo "pipx environment dump:"
+            pipx environment || true
+            exit 1
+          fi
+          echo "mcp-scanner installed at: $SCANNER_BIN"
+          "$SCANNER_BIN" --version
 
       - name: Build the MCP server (so the scanner can launch it)
         run: |
@@ -102,11 +118,16 @@ jobs:
       - name: Run mcp-scanner (yara analyzers, summary format)
         id: scan
         run: |
+          # Invoke via PATH-resolved bare command — pipx puts the binary
+          # somewhere on PATH (location varies by runner: `~/.local/bin` on
+          # dev machines, `/opt/pipx_bin` on GHA Ubuntu). The previous
+          # hardcoded `~/.local/bin/mcp-scanner` failed on GHA.
+          #
           # The scanner stdio-launches the server we just built. Use
           # --no-build so we don't pay restore + build twice. Pipe stderr
           # to a file so the maintainer can see any server-side bootstrap
           # noise alongside the scanner findings.
-          ~/.local/bin/mcp-scanner \
+          mcp-scanner \
             --analyzers yara \
             --format summary \
             --hide-safe \

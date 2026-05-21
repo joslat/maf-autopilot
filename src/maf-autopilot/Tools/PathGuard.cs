@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace MafAutopilot.Tools;
 
 /// <summary>
@@ -12,6 +14,21 @@ namespace MafAutopilot.Tools;
 /// </summary>
 internal static class PathGuard
 {
+    // Path comparison is case-insensitive on Windows (paths /Foo and /foo
+    // resolve to the same file) and case-sensitive on POSIX (they do NOT).
+    // Using `OrdinalIgnoreCase` unconditionally on Linux would let `/repo/Foo`
+    // and `/repo/foo` compare equal even though they are distinct directories
+    // — opening (a) a false-positive on the stop condition of the
+    // parent-chain walk, and (b) a containment false-pass where a case-
+    // permuted resolved path is treated as inside the root when it is not.
+    // This matches `SourceFileWalker.PathComparison` exactly.
+    //
+    // Phase post-merge fixup: surfaced by Copilot PR review on PR #59.
+    private static readonly StringComparison PathComparison =
+        RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
     /// <summary>
     /// Returns an error message if the path is unsafe to use, or null when it's OK.
     /// </summary>
@@ -91,8 +108,8 @@ internal static class PathGuard
                 : Path.Combine(repoPath, candidatePath));
 
         var rootBoundary = rootFull + Path.DirectorySeparatorChar;
-        if (!resolvedFull.Equals(rootFull, StringComparison.OrdinalIgnoreCase)
-            && !resolvedFull.StartsWith(rootBoundary, StringComparison.OrdinalIgnoreCase))
+        if (!resolvedFull.Equals(rootFull, PathComparison)
+            && !resolvedFull.StartsWith(rootBoundary, PathComparison))
         {
             // Do not echo the input — error-reporting telemetry should not
             // leak filesystem layout. The parameter name + class of failure
@@ -136,7 +153,7 @@ internal static class PathGuard
 
         while (probe is not null
             && !probe.FullName.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                .Equals(rootFull, StringComparison.OrdinalIgnoreCase))
+                .Equals(rootFull, PathComparison))
         {
             if (probe.Exists && (probe.Attributes & FileAttributes.ReparsePoint) != 0)
             {
