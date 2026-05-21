@@ -3,6 +3,8 @@
 > **Audience:** end users evaluating whether MAF Doctor is safe to install in their environment, and maintainers verifying mitigations stay in place.
 >
 > **For the deep technical breakdown** of attack surfaces, mitigations, and acknowledged gaps, read [`docs/security/threat-model.md`](security/threat-model.md). This file is the high-level overview.
+>
+> **If you're hardening your OWN MCP server**, see [`docs/mcp-security-hardening-best-practices.md`](mcp-security-hardening-best-practices.md) — a reusable playbook distilled from the patterns below: threat lattice (T1–T10), seven code-side invariants, GitHub Actions hardening, Cisco mcp-scanner CI wiring, the five CI invariants, and a quick-start checklist.
 
 ---
 
