@@ -116,9 +116,16 @@ jobs:
           "$SCANNER_BIN" --help 2>&1 | head -1 || true
 
       - name: Build the MCP server (so the scanner can launch it)
+        # Build Debug (the default) — `dotnet run --no-build` in the next
+        # step defaults to Debug too and looks for `bin/Debug/net10.0/`.
+        # The previous version passed `--configuration Release` here but
+        # not on the `dotnet run` side, so the scanner crashed with
+        # "No such file or directory" trying to launch the Debug binary
+        # that was never built (seen on PR #59 run 26213390604).
+        # The scanner doesn't need optimized code — it just needs the
+        # assemblies to exist for the stdio handshake.
         run: |
           dotnet build src/maf-autopilot/maf-autopilot.csproj \
-            --configuration Release \
             --framework net10.0 \
             --nologo
 
