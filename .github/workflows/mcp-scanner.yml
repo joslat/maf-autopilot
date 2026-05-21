@@ -93,10 +93,15 @@ jobs:
           # ahead of any v5 breaking changes; allow minor bumps automatically.
           pipx install 'cisco-ai-mcp-scanner>=4,<5' || \
             pipx upgrade cisco-ai-mcp-scanner
-          # Surface the resolved binary path + version in the workflow log so
-          # the next person debugging this can see exactly what shipped.
-          # `command -v` is PATH-aware — handles both `~/.local/bin` (default
-          # PIPX_BIN_DIR on dev machines) and `/opt/pipx_bin/` (GHA Ubuntu).
+          # Surface the resolved binary path in the workflow log so future
+          # debugging doesn't require log-diving. `command -v` is PATH-aware —
+          # handles both `~/.local/bin` (default PIPX_BIN_DIR on dev machines)
+          # and `/opt/pipx_bin/` (GHA Ubuntu).
+          #
+          # Note: cisco-ai-mcp-scanner's CLI does NOT support `--version`
+          # (verified from `--help` output on v4.7.0). Don't try to invoke
+          # it as a sanity probe — `set -e` would kill the step. Trust the
+          # pipx-install success line above.
           SCANNER_BIN=$(command -v mcp-scanner || echo "")
           if [ -z "$SCANNER_BIN" ]; then
             echo "::error::mcp-scanner binary not on PATH after pipx install."
@@ -106,7 +111,9 @@ jobs:
             exit 1
           fi
           echo "mcp-scanner installed at: $SCANNER_BIN"
-          "$SCANNER_BIN" --version
+          # Print the help banner first line as a soft liveness probe (the
+          # scanner's argparse exits 0 on --help, so this is safe under set -e).
+          "$SCANNER_BIN" --help 2>&1 | head -1 || true
 
       - name: Build the MCP server (so the scanner can launch it)
         run: |
