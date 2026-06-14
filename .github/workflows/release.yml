@@ -90,8 +90,13 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
+          # Keep BOTH packages in version lockstep (the server tool + the analyzer).
+          # Previously only the server csproj was overridden, so the analyzer
+          # shipped at its stale csproj <Version> and `--skip-duplicate` silently
+          # skipped re-publishing it. Override both from the tag/input.
           sed -i "s|<Version>.*</Version>|<Version>${VERSION}</Version>|" src/maf-autopilot/maf-autopilot.csproj
-          echo "Set csproj <Version> to $VERSION"
+          sed -i "s|<Version>.*</Version>|<Version>${VERSION}</Version>|" src/maf-autopilot.Analyzers/maf-autopilot.Analyzers.csproj
+          echo "Set <Version> to $VERSION on both the server tool and the analyzer."
 
       - name: Restore
         run: dotnet restore maf-autopilot.sln
