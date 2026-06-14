@@ -113,7 +113,7 @@ Wire it into your IDE's `mcp.json`:
 ```json
 {
   "servers": {
-    "maf-autopilot": {
+    "maf-doctor": {
       "type": "stdio",
       "command": "docker",
       "args": ["run", "--rm", "-i", "ghcr.io/joslat/maf-autopilot:latest"]
@@ -194,11 +194,11 @@ maf-autopilot/
 │   └── workflows/                         # 7 GitHub Actions
 │       ├── release.yml                    # NuGet publish (test → pack → push) on v* tag
 │       ├── docker-publish.yml             # multi-arch GHCR image on tag push
-│       ├── maf-release-watcher.yml        # weekly (Monday 9 AM UTC) MAF version check
+│       ├── maf-release-watcher.yml        # daily (09:00 UTC) MAF version check; minors auto-commit, majors escalate
 │       ├── maf-ai-fill-todos.yml          # dispatches GitHub issue for Copilot Coding Agent to fill registry TODOs
 │       ├── maf-ai-fill-verify.yml         # PR-gate: runs verify-registry on AI-filled output before merge
 │       ├── maf-pr-audit.yml               # PR-scoped scan, posts a sticky comment
-│       └── maf-drift-detector.yml         # weekly MafDoctor; opens issue if grade < A
+│       └── maf-drift-detector.yml         # weekly (Mon 11:00 UTC) MafDoctor on product code; opens issue if grade < A
 ├── src/
 │   ├── maf-autopilot/                     # MCP server — 25 tools, 6 resources, 7 prompts; CLI binary
 │   ├── maf-autopilot.Analyzers/           # Roslyn analyzer package (MAF001/002/003 — separate NuGet)

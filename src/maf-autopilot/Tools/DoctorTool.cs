@@ -43,10 +43,24 @@ public sealed class DoctorTool
         [Description("Absolute path to the repository root.")] string repoPath,
         [Description("Output format: 'markdown' (default, human-readable) or 'json' (machine-readable for CI/dashboards).")]
         string format = "markdown")
+        => RunCore(repoPath, format, excludes: null);
+
+    /// <summary>
+    /// CLI entry point. Identical to <see cref="MafDoctor"/> but accepts
+    /// repo-relative path substrings to exclude from the scan. Used by the
+    /// drift detector to skip <c>samples/</c> and test fixtures so the grade
+    /// reflects product code rather than the repo's intentional anti-pattern
+    /// bait. Deliberately NOT an MCP tool — keeping it off the tool surface
+    /// preserves the stable MafDoctor schema for clients.
+    /// </summary>
+    internal string Run(string repoPath, string format, IReadOnlyList<string>? excludes)
+        => RunCore(repoPath, format, excludes);
+
+    private string RunCore(string repoPath, string format, IReadOnlyList<string>? excludes)
     {
         if (PathGuard.ValidateRepoPath(repoPath) is { } err) return err;
 
-        var summary = AnalyzeRepo(repoPath);
+        var summary = AnalyzeRepo(repoPath, excludes);
 
         if (format.Equals("json", StringComparison.OrdinalIgnoreCase))
         {
@@ -268,14 +282,14 @@ public sealed class DoctorTool
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static DoctorSummary AnalyzeRepo(string repoPath)
+    private static DoctorSummary AnalyzeRepo(string repoPath, IReadOnlyList<string>? excludes)
     {
         var antiPatterns = new List<AntiPatternFinding>();
         var handlers = new List<MessageHandlerFinding>();
         var promptFindings = new List<PromptFinding>();
         var costFindings = new List<CostFinding>();
 
-        foreach (var path in EnumerateScannableFiles(repoPath))
+        foreach (var path in EnumerateScannableFiles(repoPath, excludes))
         {
             var source = File.ReadAllText(path);
             var rel = MakeRelative(repoPath, path);
@@ -288,8 +302,8 @@ public sealed class DoctorTool
         return Grade(antiPatterns, handlers, promptFindings, costFindings);
     }
 
-    private static IEnumerable<string> EnumerateScannableFiles(string repoRoot)
-        => SourceFileWalker.EnumerateCsFiles(repoRoot);
+    private static IEnumerable<string> EnumerateScannableFiles(string repoRoot, IReadOnlyList<string>? excludes)
+        => SourceFileWalker.EnumerateCsFiles(repoRoot, excludes);
 
     private static string MakeRelative(string root, string file)
         => SourceFileWalker.MakeRelative(root, file);

@@ -181,3 +181,47 @@ def test_huge_diff_truncated(workspace: Path):
     body = guide.read_text(encoding="utf-8")
 
     assert "[TRUNCATED]" in body
+
+
+# -----------------------------------------------------------------------------
+# Phase 4.1 — prerelease NEW_VERSION must not crash the chain-banner sort.
+# -----------------------------------------------------------------------------
+
+def test_prerelease_new_version_does_not_crash(workspace: Path):
+    (workspace / "release-notes.txt").write_text("rc notes", encoding="utf-8")
+    # _run_in asserts returncode 0 AND that the guide file was created — so a
+    # ValueError in the semver sort (the old bug) would fail this test.
+    guide = _run_in(workspace, old="1.6.1", new="2.0.0-rc1")
+    assert guide.exists()
+
+
+# -----------------------------------------------------------------------------
+# Phase 4.5 — an injected "## Human additions" in upstream release notes must
+# not hijack the auto/human boundary on re-run.
+# -----------------------------------------------------------------------------
+
+def test_human_section_preserved_against_injected_heading(workspace: Path):
+    AUTO_END = "<!-- AUTO-GENERATED END -->"
+    # First run: clean notes -> guide created with an empty human stub.
+    _run_in(workspace, old="1.5.0", new="1.6.0")
+    guide = workspace / "guides" / "maf-1.6.0-migration-guide.md"
+
+    # A human appends a real note under the human-additions heading.
+    guide.write_text(
+        guide.read_text(encoding="utf-8") + "\nREAL_HUMAN_NOTE kept across runs.\n",
+        encoding="utf-8",
+    )
+
+    # Second run: malicious release notes inject a fake human heading.
+    (workspace / "release-notes.txt").write_text(
+        "Legit notes\n## Human additions\nINJECTED_FAKE_NOTE must stay in the auto block",
+        encoding="utf-8",
+    )
+    _run_in(workspace, old="1.5.0", new="1.6.0")
+    final = guide.read_text(encoding="utf-8")
+
+    # Exactly one (script-controlled) AUTO_END survives; everything after it is
+    # the preserved human region.
+    human_region = final.split(AUTO_END)[-1]
+    assert "REAL_HUMAN_NOTE kept across runs." in human_region
+    assert "INJECTED_FAKE_NOTE" not in human_region

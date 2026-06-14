@@ -326,3 +326,88 @@ jobs:
             echo "$MISSING"
             exit 1
           fi
+
+  # ----------------------------------------------------------------------------
+  # (6) Workflow + helper-script lint. Guards against the class of failure that
+  # silently broke the self-update workflows for weeks:
+  #   - YAML parse check (BLOCKING): every workflow must parse. This is the
+  #     startup_failure guard — an unparseable workflow at a commit is exactly
+  #     what produced the 0-second "workflow file issue" runs.
+  #   - actionlint (ADVISORY): deeper schema + `${{ }}` expression checks.
+  #     Non-blocking until a clean baseline is confirmed, so it can't red-gate a
+  #     PR on a pre-existing nit; shellcheck/pyflakes off to avoid shell noise.
+  #   - compileall (BLOCKING): syntax-checks every .github/scripts/*.py — the
+  #     guard that catches an indented first statement (the IndentationError
+  #     that killed the watcher) now that the inline python3 -c is a real module.
+  # ----------------------------------------------------------------------------
+  lint-workflows-and-scripts:
+    name: Lint workflows + helper scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Validate every workflow YAML parses (startup_failure guard)
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check pyyaml
+          python3 - <<'PY'
+          import glob, sys, yaml
+
+          # GitHub's workflow parser REJECTS duplicate mapping keys (e.g. two
+          # `env:` blocks in one step) — a startup_failure (the 0-second "workflow
+          # file issue" runs). PyYAML tolerates them by default (last wins), so we
+          # use a loader that errors on duplicates to catch that class here.
+          class StrictLoader(yaml.SafeLoader):
+              pass
+
+          def _no_dup(loader, node, deep=False):
+              seen = set()
+              for k, _ in node.value:
+                  key = loader.construct_object(k, deep=deep)
+                  if key in seen:
+                      raise yaml.YAMLError(f"duplicate key {key!r}")
+                  seen.add(key)
+              return loader.construct_mapping(node, deep=deep)
+
+          StrictLoader.add_constructor(
+              yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _no_dup)
+
+          bad = []
+          for f in glob.glob('.github/workflows/*.yml') + glob.glob('.github/workflows/*.yaml'):
+              try:
+                  with open(f, encoding='utf-8') as fh:
+                      yaml.load(fh, StrictLoader)
+              except Exception as e:
+                  bad.append(f"{f}: {e}")
+          if bad:
+              print("::error::Invalid workflow YAML (would cause a startup_failure):")
+              print("\n".join(bad)); sys.exit(1)
+          print("All workflow YAML files parse (no duplicate keys).")
+          PY
+
+      - name: actionlint (schema + expressions — advisory)
+        continue-on-error: true
+        # shellcheck/pyflakes off (= empty) — schema/expression focus. Advisory
+        # until a clean baseline is confirmed; promote to blocking afterwards.
+        # Two known false positives are suppressed via -ignore so the advisory
+        # output stays signal-only:
+        #   - `models: read` is a valid permission actionlint 1.7.7 doesn't know.
+        #   - `property "x" is not defined` comes from THIS meta-workflow's own
+        #     regex strings (it deliberately contains `${{ inputs.* }}` text).
+        # TODO: digest-pin the image; drop the model-ignore once actionlint ships
+        # the `models` scope.
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            rhysd/actionlint:1.7.7 -color -shellcheck= -pyflakes= \
+            -ignore 'permission scope "models"' \
+            -ignore 'property "x" is not defined' || true
+
+      - name: Compile-check Python helper scripts
+        run: python3 -m compileall -q .github/scripts
+
+      - name: Run helper-script unit tests
+        # Task 5.1 — runs .github/scripts/tests (incl. the NuGet version-detection
+        # fixture for get_latest_stable.py) so the watcher's detection logic and
+        # the verify/dedupe/guide helpers can't silently regress.
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check pytest pyyaml
+          python3 -m pytest .github/scripts/tests -q

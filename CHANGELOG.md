@@ -9,6 +9,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (self-update reliability — branch `fix/self-update`)
+
+The scheduled **MAF Release Watcher** and **MAF Drift Detector** had failed on
+**every** scheduled run since creation, for two unrelated reasons (full report +
+living tracker in [`docs/self-update-remediation-plan.md`](docs/self-update-remediation-plan.md)):
+- **Watcher** — the NuGet version filter was an inline `python3 -c` whose code
+  inherited the shell block's indentation → `IndentationError` on every
+  scheduled run (only an explicit-version manual dispatch bypassed it). Extracted
+  to `.github/scripts/get_latest_stable.py` (+ unit tests).
+- **Drift detector** — `gh issue create --label maf-drift` hard-failed because
+  the `maf-drift` / `needs-review` labels never existed. The workflow now
+  self-provisions them idempotently (`gh label create --force`).
+- **Observability** — both workflows open/de-dupe a `maf-release`-labelled
+  tracking issue on failure (`if: failure()`), so a scheduled failure can no
+  longer go unnoticed for weeks.
+- **Engine** — major MAF bumps escalate to a review issue instead of
+  auto-committing to `main`; registry append is idempotent; the doctor gained an
+  opt-in `doctor … --exclude <substr>` so the drift grade reflects product code
+  (samples / test fixtures excluded); the two crons are staggered with
+  `concurrency:` guards; the watcher polls daily (was weekly). Plus a batch of
+  latent fixes across the AI-fill / verify / semantic-review chain and the
+  Python helpers (prerelease-safe guide gen, union guide-section validation,
+  placeholder gate, sticky verify comment, non-fatal bot-id resolution, …).
+- **CI** — `ci-invariants` gained a workflow-lint + helper-test gate
+  (actionlint + `compileall` + `pytest`) so this class of breakage is caught
+  pre-merge.
+
+### Changed (brand — MAF Doctor)
+
+- The MCP **server id** is now `maf-doctor` (the brand) in `.vscode/mcp.json`,
+  the README / setup / workshop config snippets, and what `maf-autopilot init`
+  writes into a user's `.vscode/mcp.json`. The **`command` stays `maf-autopilot`**
+  (the frozen global-tool binary), so existing entries keep launching and
+  `dotnet tool install --global maf-autopilot` is unchanged. `init` recognizes
+  both the new `maf-doctor` and the legacy `maf-autopilot` server keys, so
+  re-running it never creates a duplicate.
+- **Maintainer follow-ups (post-merge, not in this PR):** rename the GitHub repo
+  `joslat/maf-autopilot` → `joslat/maf-doctor` (GitHub auto-redirects old URLs),
+  then flip the remaining `joslat/maf-autopilot` URL / `RepositoryUrl` / SARIF /
+  OCI-label references to `joslat/maf-doctor` (deferred here to avoid a 404
+  window). The GHCR image path follows the repo rename automatically; **new tags
+  publish under `ghcr.io/joslat/maf-doctor`** — old `ghcr.io/joslat/maf-autopilot`
+  tags stay pullable. The NuGet package id and CLI command are deliberately
+  **not** renamed (immutable id; renaming would break every existing install).
+
 ### Security (security hardening release — branch `security-hardening-v1.1`)
 
 Comprehensive hardening pass following a three-agent Opus security review.
