@@ -610,12 +610,12 @@ entries:
     obsolete_signature: "string Content { get; }"
     replacement_signature: "N/A — define skill content via the skill XML schema file"
     argument_order_change: false
-    fix_description: "Remove access to AgentClassSkill<T>.Content; define skill content in the skill XML schema instead of setting it programmatically."
+    fix_description: "Remove access to AgentClassSkill<T>.Content; define skill content in the skill XML schema instead of reading it programmatically."
     example_before: |
       var skill = new AgentClassSkill<MySkill>();
-      skill.Content = "You are a helpful assistant.";
+      string content = skill.Content; // get-only Content removed in 1.10.0 — no longer compiles
     example_after: |
-      // Content is no longer settable as a property in 1.10.0.
+      // Content was removed as a property in 1.10.0.
       // Define skill content in the skill XML schema file.
       var skill = new AgentClassSkill<MySkill>();
     cs_warning: CS0246
@@ -752,13 +752,13 @@ entries:
     obsolete_signature: "string Content { get; }"
     replacement_signature: "N/A — define inline skill content via the skill XML schema"
     argument_order_change: false
-    fix_description: "Remove access to AgentInlineSkill.Content; define inline skill content in the skill XML schema instead of setting it programmatically."
+    fix_description: "Remove access to AgentInlineSkill.Content; define inline skill content in the skill XML schema instead of reading it programmatically."
     example_before: |
       var skill = new AgentInlineSkill();
-      skill.Content = "You are a helpful assistant.";
+      string content = skill.Content; // get-only Content removed in 1.10.0 — no longer compiles
     example_after: |
-      // Content is no longer settable as a property in 1.10.0.
-      // Define skill content in the skill XML schema.
+      // Content was removed as a property in 1.10.0.
+      // Define inline skill content in the skill XML schema.
       var skill = new AgentInlineSkill();
     cs_warning: CS0246
     guide_section: "N/A"
