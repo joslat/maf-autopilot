@@ -388,10 +388,18 @@ jobs:
         continue-on-error: true
         # shellcheck/pyflakes off (= empty) — schema/expression focus. Advisory
         # until a clean baseline is confirmed; promote to blocking afterwards.
-        # TODO: digest-pin the image.
+        # Two known false positives are suppressed via -ignore so the advisory
+        # output stays signal-only:
+        #   - `models: read` is a valid permission actionlint 1.7.7 doesn't know.
+        #   - `property "x" is not defined` comes from THIS meta-workflow's own
+        #     regex strings (it deliberately contains `${{ inputs.* }}` text).
+        # TODO: digest-pin the image; drop the model-ignore once actionlint ships
+        # the `models` scope.
         run: |
           docker run --rm -v "$PWD:/repo" -w /repo \
-            rhysd/actionlint:1.7.7 -color -shellcheck= -pyflakes= || true
+            rhysd/actionlint:1.7.7 -color -shellcheck= -pyflakes= \
+            -ignore 'permission scope "models"' \
+            -ignore 'property "x" is not defined' || true
 
       - name: Compile-check Python helper scripts
         run: python3 -m compileall -q .github/scripts
