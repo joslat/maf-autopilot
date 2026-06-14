@@ -256,23 +256,93 @@ public sealed class InitCommandTests : IDisposable
     }
 
     // -------------------------------------------------------------------------
-    // Steering merge idempotency — marker must match the snippet's actual header
+    // Steering sidecars — overwrite-on-reinit, convention-correct, never duplicated,
+    // and never touching the user's own copilot-instructions.md / CLAUDE.md body.
     // -------------------------------------------------------------------------
 
-    /// <summary>
-    /// Regression: the merge-marker once read "## Using maf-doctor" while the rename left
-    /// the copilot snippet header at "## Using maf-autopilot (MAF Doctor)", so re-running
-    /// init appended a duplicate section. Headers + markers are now aligned.
-    /// </summary>
     [Fact]
-    public async Task DropSteeringFile_CopilotInstructions_ReRun_DoesNotDuplicate()
+    public async Task WriteSidecar_CopilotInstructions_CreatesAutoLoadedSidecar_NotUserFile()
     {
-        await InitCommand.DropSteeringFileAsync(_tempDir, "steering/copilot-instructions.md", ".github/copilot-instructions.md");
-        await InitCommand.DropSteeringFileAsync(_tempDir, "steering/copilot-instructions.md", ".github/copilot-instructions.md");
+        await InitCommand.WriteSidecarAsync(_tempDir, "steering/copilot-instructions.md",
+            ".github/instructions/maf-doctor.instructions.md", "---\napplyTo: '**'\n---\n\n");
 
-        var path = Path.Combine(_tempDir, ".github", "copilot-instructions.md");
+        var sidecar = Path.Combine(_tempDir, ".github", "instructions", "maf-doctor.instructions.md");
+        Assert.True(File.Exists(sidecar));
+
+        var content = await File.ReadAllTextAsync(sidecar);
+        Assert.StartsWith("---", content);                 // applyTo frontmatter so Copilot auto-loads it
+        Assert.Contains("applyTo:", content);
+        Assert.Contains("## Using maf-doctor", content);    // steering body present
+
+        // It must NOT create/touch the user's own copilot-instructions.md.
+        Assert.False(File.Exists(Path.Combine(_tempDir, ".github", "copilot-instructions.md")));
+    }
+
+    [Fact]
+    public async Task WriteSidecar_ReRun_OverwritesWithoutDuplicating()
+    {
+        const string rel = ".github/instructions/maf-doctor.instructions.md";
+        const string fm = "---\napplyTo: '**'\n---\n\n";
+        await InitCommand.WriteSidecarAsync(_tempDir, "steering/copilot-instructions.md", rel, fm);
+        var first = await File.ReadAllTextAsync(Path.Combine(_tempDir, ".github", "instructions", "maf-doctor.instructions.md"));
+
+        await InitCommand.WriteSidecarAsync(_tempDir, "steering/copilot-instructions.md", rel, fm);
+        var second = await File.ReadAllTextAsync(Path.Combine(_tempDir, ".github", "instructions", "maf-doctor.instructions.md"));
+
+        Assert.Equal(first, second);
+        Assert.Equal(1, second.Split("## Using maf-doctor").Length - 1);
+    }
+
+    [Fact]
+    public async Task WriteClaudeSteering_WritesSidecarAndImportsItExactlyOnce()
+    {
+        await InitCommand.WriteClaudeSteeringAsync(_tempDir);
+        await InitCommand.WriteClaudeSteeringAsync(_tempDir);  // re-run must stay idempotent
+
+        var sidecar = Path.Combine(_tempDir, ".claude", "maf-doctor.md");
+        var claudeMd = Path.Combine(_tempDir, "CLAUDE.md");
+        Assert.True(File.Exists(sidecar));
+        Assert.True(File.Exists(claudeMd));
+        Assert.Contains("## Microsoft Agent Framework", await File.ReadAllTextAsync(sidecar));
+
+        var claudeContent = await File.ReadAllTextAsync(claudeMd);
+        Assert.Equal(1, claudeContent.Split("@.claude/maf-doctor.md").Length - 1);
+    }
+
+    [Fact]
+    public async Task WriteClaudeSteering_PreservesExistingClaudeMdContent()
+    {
+        var claudeMd = Path.Combine(_tempDir, "CLAUDE.md");
+        await File.WriteAllTextAsync(claudeMd, "# My project rules\n\nUse 4-space indents.\n");
+
+        await InitCommand.WriteClaudeSteeringAsync(_tempDir);
+
+        var content = await File.ReadAllTextAsync(claudeMd);
+        Assert.Contains("Use 4-space indents.", content);    // user content preserved
+        Assert.Contains("@.claude/maf-doctor.md", content);  // import appended
+    }
+
+    [Fact]
+    public async Task UpsertManagedBlock_Agents_ReplacesBlockWithoutDuplicating()
+    {
+        await InitCommand.UpsertManagedBlockAsync(_tempDir, "steering/agents.md", "AGENTS.md");
+        await InitCommand.UpsertManagedBlockAsync(_tempDir, "steering/agents.md", "AGENTS.md");
+
+        var content = await File.ReadAllTextAsync(Path.Combine(_tempDir, "AGENTS.md"));
+        Assert.Equal(1, content.Split("<!-- BEGIN maf-doctor").Length - 1);
+        Assert.Equal(1, content.Split("<!-- END maf-doctor -->").Length - 1);
+    }
+
+    [Fact]
+    public async Task UpsertManagedBlock_Agents_PreservesSurroundingUserContent()
+    {
+        var path = Path.Combine(_tempDir, "AGENTS.md");
+        await File.WriteAllTextAsync(path, "# My agents\n\nProject-specific notes.\n");
+
+        await InitCommand.UpsertManagedBlockAsync(_tempDir, "steering/agents.md", "AGENTS.md");
+
         var content = await File.ReadAllTextAsync(path);
-        var occurrences = content.Split("## Using maf-doctor").Length - 1;
-        Assert.Equal(1, occurrences);
+        Assert.Contains("Project-specific notes.", content);
+        Assert.Contains("<!-- BEGIN maf-doctor", content);
     }
 }

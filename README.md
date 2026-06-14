@@ -62,7 +62,7 @@ cd your-maf-project
 maf-doctor init
 ```
 
-init wires the MCP server into both **VS Code** (.vscode/mcp.json) and **Claude Code** (.mcp.json), and drops the steering files (CLAUDE.md, AGENTS.md, copilot-instructions.md). Your assistant picks the server up automatically and gains live tool calls, resource reads, and structured prompts.
+init wires the MCP server into both **VS Code** (.vscode/mcp.json) and **Claude Code** (.mcp.json), and drops auto-loaded steering in each tool's convention dir — .github/instructions/ for Copilot, .claude/ plus a one-line CLAUDE.md import for Claude Code, and an AGENTS.md managed block. These are refreshed on every re-run and never merged into your own files. Your assistant picks the server up automatically and gains live tool calls, resource reads, and structured prompts.
 
 **First three commands to try:**
 

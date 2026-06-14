@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-06-14
+
+### Changed (`init` steering layout — no longer merges into your own files)
+
+- **`init` now writes its steering as overwrite-on-reinit sidecars in each tool's auto-loaded convention location, instead of appending into your hand-authored files:**
+  - **Copilot** → `.github/instructions/maf-doctor.instructions.md` (with `applyTo: '**'` frontmatter). `init` no longer creates or touches `.github/copilot-instructions.md`.
+  - **Claude Code** → `.claude/maf-doctor.md`, imported via a single stable `@.claude/maf-doctor.md` line in `CLAUDE.md` (added once; the rest of your `CLAUDE.md` is never touched).
+  - **AGENTS.md** → a sentinel-delimited managed block (`<!-- BEGIN maf-doctor -->…<!-- END maf-doctor -->`) that is replaced in place; content outside the block is preserved.
+  - **Cursor** (`--with-cursor`) → `.cursor/rules/maf-doctor.mdc`.
+- **Why:** the previous append-into-existing behavior froze the guidance at first-init and (before 1.2.4) could stack duplicates. Sidecars are **overwritten on every `init`**, so re-running refreshes the guidance to the installed version, never duplicates, and never edits your own files. Added sidecar/managed-block tests (16 InitCommand tests green across net8/9/10).
+
 ## [1.2.4] - 2026-06-14
 
 ### Added
