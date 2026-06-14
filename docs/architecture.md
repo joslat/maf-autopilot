@@ -203,7 +203,7 @@ This pattern matches the sibling [`AgentEval`](https://github.com/joslat/AgentEv
 |---|---|---|---|
 | NuGet (server) | `maf-autopilot` .NET global tool | Developers installing via `dotnet tool install` | `nuget.org/packages/maf-autopilot` |
 | NuGet (analyzer) | `maf-autopilot.Analyzers` analyzer | Consumer .csproj `<PackageReference>` | `nuget.org/packages/maf-autopilot.Analyzers` |
-| Docker | Multi-arch image (amd64+arm64) | Developers without .NET SDK on host | `ghcr.io/joslat/maf-autopilot:<semver>` |
+| Docker | Multi-arch image (amd64+arm64) | Developers without .NET SDK on host | `ghcr.io/joslat/maf-doctor:<semver>` |
 | Skills-only | The `.github/` directory copied into a consumer repo | Users wanting agents+skills without the MCP server | `git clone` |
 
 ---

@@ -68,7 +68,7 @@ maf-autopilot --version
 If you don't have a clone of this repo handy, also:
 
 ```bash
-git clone https://github.com/joslat/maf-autopilot
+git clone https://github.com/joslat/maf-doctor
 cd maf-autopilot
 ```
 
@@ -659,7 +659,7 @@ The first two are **automatable** (just run the `.tape` scripts). The last two a
 
 [7:00 — 7:30]  Close
   "maf-autopilot 1.3.0 on NuGet. Install with one command. Audits any
-   MAF codebase. github.com/joslat/maf-autopilot."
+   MAF codebase. github.com/joslat/maf-doctor."
 ```
 
 **Recording tips:**
@@ -682,7 +682,7 @@ The first two are **automatable** (just run the `.tape` scripts). The last two a
 | **Before state** | Slide 1: "maf-autopilot Workshop — From Zero to Migrated Codebase" + your name. |
 | **What to do** | Walk through Phase A → B → C → D → E in order. Stop after each Phase for Q&A (~2 min each). Total: ~40 min content + ~10 min Q&A. |
 | **What to say** | The "Talk-track" callout boxes throughout the workshop sections. They're written as one-liners you can read verbatim or paraphrase. |
-| **After state** | Final slide: "Try it: `dotnet tool install -g maf-autopilot`; github.com/joslat/maf-autopilot; questions?" |
+| **After state** | Final slide: "Try it: `dotnet tool install -g maf-autopilot`; github.com/joslat/maf-doctor; questions?" |
 | **Where it goes** | YouTube / conference recording platform. |
 
 **Tip:** if recording over 50 minutes, plan **deliberate dead air at chapter transitions** (between Phase A → B, B → C, etc.) so your editor can cut cleanly. ~3 seconds of silent screen between phases makes editing 10× easier.

@@ -17,7 +17,7 @@ See [`AGENTS.md`](./AGENTS.md) for the full repo layout and location of every so
 - Versions for every NuGet are centrally pinned in `/Directory.Packages.props` — when adding a `<PackageReference>` to any csproj, do NOT include `Version=` inline; add a `<PackageVersion>` to `Directory.Packages.props` instead.
 
 ```bash
-git clone https://github.com/joslat/maf-autopilot
+git clone https://github.com/joslat/maf-doctor
 cd maf-autopilot
 dotnet restore maf-autopilot.sln
 dotnet build maf-autopilot.sln           # builds net8.0 + net9.0 + net10.0 + netstandard2.0 (analyzer)
