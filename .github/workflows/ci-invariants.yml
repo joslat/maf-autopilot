@@ -356,3 +356,11 @@ jobs:
 
       - name: Compile-check Python helper scripts
         run: python3 -m compileall -q .github/scripts
+
+      - name: Run helper-script unit tests
+        # Task 5.1 — runs .github/scripts/tests (incl. the NuGet version-detection
+        # fixture for get_latest_stable.py) so the watcher's detection logic and
+        # the verify/dedupe/guide helpers can't silently regress.
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check pytest pyyaml
+          python3 -m pytest .github/scripts/tests -q

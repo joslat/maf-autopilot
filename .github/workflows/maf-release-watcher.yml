@@ -9,6 +9,10 @@ on:
         description: 'Specific MAF version to process (leave blank for latest from NuGet)'
         required: false
         default: ''
+      push_target:
+        description: 'Branch to push watcher commits to (task 5.2 — set to a throwaway branch for a safe dry-run; default main)'
+        required: false
+        default: 'main'
 
 # Phase 3.3 — a run can never overlap itself (analyze-and-update pushes to main;
 # an overlap could double-apply registry edits). cancel-in-progress is false so
@@ -36,6 +40,19 @@ jobs:
           fi
           if ! echo "$INPUT" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$'; then
             echo "::error::Invalid maf_version input shape: $INPUT (must be semver)"
+            exit 1
+          fi
+
+      - name: Validate push_target input shape
+        # Task 5.2 — push_target lets a maintainer dry-run analyze-and-update
+        # against a throwaway branch. Validate it's a plausible branch name
+        # (defense-in-depth; it's also env-redirected at the push site).
+        env:
+          PT: ${{ inputs.push_target }}
+        run: |
+          if [ -z "$PT" ]; then exit 0; fi
+          if ! echo "$PT" | grep -qE '^[A-Za-z0-9._/-]+$'; then
+            echo "::error::Invalid push_target: $PT (branch-name characters only)"
             exit 1
           fi
 
@@ -319,6 +336,9 @@ jobs:
           NEW_VERSION: ${{ needs.check-for-new-maf-release.outputs.new_version }}
           OLD_VERSION: ${{ needs.check-for-new-maf-release.outputs.old_version }}
           IS_MAJOR: ${{ needs.check-for-new-maf-release.outputs.is_major }}
+          # Task 5.2 — defaults to main on schedule (inputs context is empty);
+          # a manual dispatch can target a throwaway branch for a safe dry-run.
+          PUSH_TARGET: ${{ inputs.push_target || 'main' }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -349,10 +369,10 @@ jobs:
           python3 .github/scripts/build_watcher_commit_message.py \
             > "$RUNNER_TEMP/commit-msg.txt"
           git commit -F "$RUNNER_TEMP/commit-msg.txt"
-          git push origin HEAD:main
+          git push origin "HEAD:${PUSH_TARGET}"
 
           echo "committed=true" >> $GITHUB_OUTPUT
-          echo "✅ Pushed watcher updates directly to main."
+          echo "✅ Pushed watcher updates to ${PUSH_TARGET}."
 
       - name: Open issue for Copilot Coding Agent to fill TODOs
         if: ${{ steps.commit_to_main.outputs.committed == 'true' }}

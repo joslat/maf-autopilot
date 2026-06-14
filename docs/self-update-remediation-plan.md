@@ -1,6 +1,6 @@
 # MAF self-update remediation plan
 
-**Created:** 2026-06-14 · **Owner:** @joslat · **Status:** In progress — Phases 0–4 complete (25/33 tasks)
+**Created:** 2026-06-14 · **Owner:** @joslat · **Status:** In progress — Phases 0–4 + 5.1/5.4 complete; 5.2/5.3 await maintainer 🔒 (27.5/33)
 **Scope:** Fix the two failing self-update workflows (MAF Release Watcher, MAF Drift Detector), harden the whole self-update engine and its AI-fill chain, validate the auto-update path end-to-end, and execute the brand-only rename to **MAF Doctor**.
 
 ## Why this exists (one-paragraph problem statement)
@@ -46,10 +46,10 @@ Both scheduled self-update workflows have failed on **every** scheduled run sinc
 | 4 · Chain bugs | 4.9 | ai-fill-todos bot-id non-fatal | Warn+skip on empty BOT_ID instead of `exit 1` | 100% | ☑ | done — warn + `exit 0` |
 | 4 · Chain bugs | 4.10 | pr-audit honest scoping | Scope doctor to changed files OR fix the comment | 100% | ☑ | done — honest comment + product `--exclude` |
 | 4 · Chain bugs | 4.11 | ai-fill template guide anchor | Parameterize/comment the hardcoded 1.3.0 anchor | 100% | ☑ | done — check #6 now unions all guides |
-| 5 · Validation | 5.1 | NuGet fixture smoke test | Unit-test version detection in ci-invariants | 0% | ☐ | P1 · M · depends 1.1 |
-| 5 · Validation | 5.2 | analyze-and-update dry-run | Synthetic bump on throwaway branch, prove push chain | 0% | ☐ | **P1** · M · 🔒 |
-| 5 · Validation | 5.3 | Re-trigger + verify lifecycle | Manual run both; confirm green + issue open/close | 0% | ☐ | P1 · S · 🔒 |
-| 5 · Validation | 5.4 | Workflow-set parse audit | Lint all 10 workflows; confirm startup_failures clear | 0% | ☐ | P3 · S |
+| 5 · Validation | 5.1 | NuGet fixture smoke test | Unit-test version detection in ci-invariants | 100% | ☑ | done — pytest step runs .github/scripts/tests in CI |
+| 5 · Validation | 5.2 | analyze-and-update dry-run | Synthetic bump on throwaway branch, prove push chain | 50% | ☐ | code-ready — `push_target` input added; **live run 🔒 maintainer** |
+| 5 · Validation | 5.3 | Re-trigger + verify lifecycle | Manual run both; confirm green + issue open/close | 0% | ☐ | **🔒 post-merge** — runs the OLD main until this PR merges |
+| 5 · Validation | 5.4 | Workflow-set parse audit | Lint all 10 workflows; confirm startup_failures clear | 100% | ☑ | done — all 10 parse; actionlint gate added (0.2) |
 | 6 · Rebrand | 6.1 | PR-A: brand + server id + URLs | Text-only rename to MAF Doctor / maf-doctor | 0% | ☐ | P2 · M |
 | 6 · Rebrand | 6.2 | InitCommand server key | Write `maf-doctor` key, keep `command=maf-autopilot` | 0% | ☐ | P2 · S · depends 6.1 |
 | 6 · Rebrand | 6.3 | CHANGELOG migration notes | GHCR image-path + mcp.json server-id change | 0% | ☐ | P3 · S |
@@ -469,3 +469,10 @@ Every code change ships on a branch behind PRs; revert the PR to roll back. The 
 - **4.10** `maf-pr-audit` comment corrected (whole-repo product audit, not per-changed-file) and the doctor call now passes `--exclude samples/ .Tests/ find-the-bug/`.
 - **4.11** The issue-template's check #6 now unions all per-version guides (matches the 4.2 CI gate) instead of grepping only the 1.3.0 guide.
 - Validated: all 10 workflows parse; ci-invariants job (4)+(5) clean; **50 Python tests green**; compileall clean.
+
+### 2026-06-14 — Phase 5 (validation): 5.1 + 5.4 done; 5.2/5.3 maintainer-gated
+- **5.1** Added a `Run helper-script unit tests` step to `ci-invariants` (`pytest .github/scripts/tests`) so the NuGet detection + verify/dedupe/guide helpers can't silently regress.
+- **5.2** Added a `push_target` workflow_dispatch input (validated; env-redirected at the push site) so a maintainer can dry-run `analyze-and-update` against a throwaway branch with a synthetic `maf_version`. **The actual privileged dry-run is 🔒 maintainer-only** (needs secrets + a live run).
+- **5.3** 🔒 — re-triggering the live scheduled workflows is only meaningful once this PR merges (the cron runs `main`'s copy). Post-merge: dispatch both with blank inputs and confirm green + the drift-issue open/close lifecycle.
+- **5.4** All 10 workflows parse; the actionlint gate (0.2) now guards the parse class on every workflow PR. The historical 0-second startup_failures self-clear once a valid workflow set lands on `main`.
+- **Regression gate: full `dotnet test` (net10.0) = 739 passed, 0 failed** — the Phase 3 C# changes (doctor `--exclude`) are clean.
