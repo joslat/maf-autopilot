@@ -127,7 +127,7 @@ public sealed class DraftIssueTool
         var sb = new StringBuilder();
         sb.AppendLine($"## Title: {SuggestTitle(sanitisedSymptom)}");
         sb.AppendLine();
-        sb.AppendLine("> Drafted by `maf-autopilot` `MafDraftIssue`. Review before posting. Strip any private content (file paths, internal identifiers) from snippet/stack trace.");
+        sb.AppendLine("> Drafted by `maf-doctor` `MafDraftIssue`. Review before posting. Strip any private content (file paths, internal identifiers) from snippet/stack trace.");
         sb.AppendLine();
         sb.AppendLine($"### Symptom");
         sb.AppendLine();
@@ -187,7 +187,7 @@ public sealed class DraftIssueTool
             sb.AppendLine("_(Exception type + first stack frame is ideal. Or: \"workflow exits cleanly but produces no output.\")_");
         sb.AppendLine();
 
-        sb.AppendLine("### maf-autopilot interpretation");
+        sb.AppendLine("### maf-doctor interpretation");
         sb.AppendLine();
         if (registryMatches.Count > 0)
         {
@@ -219,7 +219,7 @@ public sealed class DraftIssueTool
         sb.AppendLine("- **Via GitHub MCP server** (if installed): ask Copilot to *\"create an issue in `microsoft/agent-framework` with this body.\"*");
         sb.AppendLine();
         sb.AppendLine("---");
-        sb.AppendLine("_Drafted by `maf-autopilot` `MafDraftIssue` on " + DateTime.UtcNow.ToString("yyyy-MM-dd") + ". Toolkit version: see `.maf-version`._");
+        sb.AppendLine("_Drafted by `maf-doctor` `MafDraftIssue` on " + DateTime.UtcNow.ToString("yyyy-MM-dd") + ". Toolkit version: see `.maf-version`._");
 
         return sb.ToString();
     }

@@ -32,7 +32,7 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Install maf-autopilot (prerelease)
-        run: dotnet tool install --global maf-autopilot --prerelease || dotnet tool update --global maf-autopilot --prerelease
+        run: dotnet tool install --global maf-doctor --prerelease || dotnet tool update --global maf-doctor --prerelease
 
       - name: Run MafDoctor against repo
         id: doctor
@@ -43,7 +43,7 @@ jobs:
           # F regardless of real health. `--exclude` is honored by maf-autopilot
           # builds carrying task 3.1; older published builds ignore the extra
           # args (forward-compatible). See docs/self-update-remediation-plan.md.
-          REPORT=$(maf-autopilot doctor "$GITHUB_WORKSPACE" \
+          REPORT=$(maf-doctor doctor "$GITHUB_WORKSPACE" \
             --exclude samples/ --exclude .Tests/ --exclude find-the-bug/)
           echo "$REPORT" > maf-doctor-report.md
           # Extract grade (first line: "## <emoji> MAF health grade: **X**").

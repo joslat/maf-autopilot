@@ -39,7 +39,7 @@ public sealed class TourToolTests
         var output = _tool.MafTour(section);
 
         // Assert — the requested section is present, and at least one of the others is absent.
-        Assert.Contains("# 🗺️ maf-autopilot — capability tour", output);
+        Assert.Contains("# 🗺️ maf-doctor — capability tour", output);
         var others = new[] { "🔧 MCP tools", "🤖 Copilot Chat agents", "📄 MCP resources", "💬 MCP prompts" }
             .Where(h => !h.Contains(GetEmojiForSection(section), StringComparison.Ordinal))
             .ToList();

@@ -136,7 +136,7 @@ public sealed class RegressionPlanTool
         sb.AppendLine("**To execute this plan:**");
         sb.AppendLine();
         sb.AppendLine("1. Bump the MAF pin in your csproj to the FIRST intermediate version above (not the target).");
-        sb.AppendLine("2. Run `maf-autopilot doctor .` against your codebase. Apply `MafAutoFix` for each rule the doctor flags.");
+        sb.AppendLine("2. Run `maf-doctor doctor .` against your codebase. Apply `MafAutoFix` for each rule the doctor flags.");
         sb.AppendLine("3. `dotnet build` + run your test suite.");
         sb.AppendLine("4. Repeat 1-3 for each subsequent version step in the table above.");
         sb.AppendLine("5. After the last step, you should be on the target version with a clean build + green tests.");

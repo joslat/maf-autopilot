@@ -37,7 +37,7 @@ Enter
 Sleep 4s
 
 # ───────── beat 3: get the diagnosis ─────────
-Type "maf-autopilot doctor .  # full health report"
+Type "maf-doctor doctor .  # full health report"
 Sleep 200ms
 Enter
 Sleep 5s
@@ -47,13 +47,13 @@ Type "# One command. Every mechanical rule. Deterministic — no LLM."
 Enter
 Sleep 800ms
 
-Type "maf-autopilot autofix-all ."
+Type "maf-doctor autofix-all ."
 Sleep 200ms
 Enter
 Sleep 4s
 
 # ───────── beat 5: prove it's fixed ─────────
-Type "maf-autopilot doctor .  # re-audit"
+Type "maf-doctor doctor .  # re-audit"
 Sleep 200ms
 Enter
 Sleep 4s

@@ -48,7 +48,7 @@ public sealed class CompatibilityTool
             Known versions: {string.Join(", ", Matrix.Keys.OrderBy(k => k, StringComparer.Ordinal))}
 
             For up-to-date data:
-            - `docs/compatibility-matrix.md` in the maf-autopilot repo (canonical source).
+            - `docs/compatibility-matrix.md` in the maf-doctor repo (canonical source).
             - The `maf-release-watcher` GitHub Actions workflow auto-adds a new row when MAF
               ships a new version; if your version is missing, fire the watcher manually
               (`gh workflow run maf-release-watcher.yml -f maf_version={mafVersion}`).

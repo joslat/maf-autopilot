@@ -66,7 +66,7 @@ public static class MafResources
         var sb = new StringBuilder();
         sb.AppendLine("# MAF rule catalog");
         sb.AppendLine();
-        sb.AppendLine("Auto-generated from the live tool surface. If a rule appears here, it ships in the current `maf-autopilot` binary.");
+        sb.AppendLine("Auto-generated from the live tool surface. If a rule appears here, it ships in the current `maf-doctor` binary.");
         sb.AppendLine();
         sb.AppendLine("## Anti-pattern scanner rules (`MafScanAntiPatterns`)");
         sb.AppendLine();
@@ -91,7 +91,7 @@ public static class MafResources
         sb.AppendLine("| `PROMPT-004` | Untrusted-input concatenation — prompt-injection risk. **Error.** |");
         sb.AppendLine();
 
-        sb.AppendLine("## Roslyn analyzer rules (ships as `maf-autopilot.Analyzers` NuGet)");
+        sb.AppendLine("## Roslyn analyzer rules (ships as `maf-doctor.Analyzers` NuGet)");
         sb.AppendLine();
         sb.AppendLine("| Rule ID | Description | Same intent as scanner |");
         sb.AppendLine("|---|---|---|");

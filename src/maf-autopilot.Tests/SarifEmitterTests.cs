@@ -23,7 +23,7 @@ public class SarifEmitterTests
         var runs = root.GetProperty("runs");
         Assert.Equal(1, runs.GetArrayLength());
         var run = runs[0];
-        Assert.Equal("maf-autopilot", run.GetProperty("tool").GetProperty("driver").GetProperty("name").GetString());
+        Assert.Equal("maf-doctor", run.GetProperty("tool").GetProperty("driver").GetProperty("name").GetString());
         Assert.Empty(run.GetProperty("results").EnumerateArray());
     }
 

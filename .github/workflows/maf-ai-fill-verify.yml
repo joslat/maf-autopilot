@@ -12,7 +12,7 @@ name: MAF AI-Fill PR Verify
 #   - examples have unbalanced braces (Copilot left a half-snippet)
 #   - guide_section is "TBD" / "TODO" instead of the literal "N/A"
 #
-# This workflow runs `maf-autopilot verify-registry` against the PR's HEAD
+# This workflow runs `maf-doctor verify-registry` against the PR's HEAD
 # commit. If verification fails, the workflow exits non-zero, which blocks
 # the PR's auto-merge (if branch protection / required-status-checks is
 # configured for this check).
@@ -78,8 +78,8 @@ jobs:
       - name: Install maf-autopilot (prerelease)
         if: steps.scope.outputs.in_scope == 'true'
         run: |
-          dotnet tool install --global maf-autopilot --prerelease \
-            || dotnet tool update --global maf-autopilot --prerelease
+          dotnet tool install --global maf-doctor --prerelease \
+            || dotnet tool update --global maf-doctor --prerelease
 
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         if: steps.scope.outputs.in_scope == 'true'
@@ -96,7 +96,7 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          OUTPUT=$(maf-autopilot verify-registry 2>&1)
+          OUTPUT=$(maf-doctor verify-registry 2>&1)
           EXIT=$?
           echo "$OUTPUT"
           {

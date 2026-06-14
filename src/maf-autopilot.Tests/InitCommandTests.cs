@@ -5,7 +5,7 @@ using Xunit;
 namespace MafDoctor.Tests;
 
 /// <summary>
-/// Tests for `maf-autopilot init` — specifically the .vscode/mcp.json merge logic.
+/// Tests for `maf-doctor init` — specifically the .vscode/mcp.json merge logic.
 ///
 /// The clobber-prevention scenario (malformed JSON must back up, not silently destroy)
 /// was identified as plan task #36 during the 2026-05-11 project review. The fix:
@@ -18,7 +18,7 @@ public sealed class InitCommandTests : IDisposable
 
     public InitCommandTests()
     {
-        _tempDir = Path.Combine(Path.GetTempPath(), "maf-autopilot-tests-" + Guid.NewGuid().ToString("N"));
+        _tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-tests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tempDir);
     }
 
@@ -44,8 +44,8 @@ public sealed class InitCommandTests : IDisposable
         var servers = root["servers"]!.AsObject();
         Assert.True(servers.ContainsKey("maf-doctor"));
         Assert.Equal("stdio", servers["maf-doctor"]!["type"]!.GetValue<string>());
-        // Brand key is maf-doctor; the command stays the frozen binary maf-autopilot.
-        Assert.Equal("maf-autopilot", servers["maf-doctor"]!["command"]!.GetValue<string>());
+        // Brand key is maf-doctor; the command stays the frozen binary maf-doctor.
+        Assert.Equal("maf-doctor", servers["maf-doctor"]!["command"]!.GetValue<string>());
     }
 
     [Fact]
@@ -148,7 +148,7 @@ public sealed class InitCommandTests : IDisposable
         var backups = Directory.GetFiles(vscodeDir, "mcp.json.bak.*");
         Assert.Empty(backups);
 
-        // And the team-server entry must still be present alongside maf-autopilot.
+        // And the team-server entry must still be present alongside maf-doctor.
         var root = JsonNode.Parse(await File.ReadAllTextAsync(mcpJsonPath))!.AsObject();
         var servers = root["servers"]!.AsObject();
         Assert.True(servers.ContainsKey("team-server"));

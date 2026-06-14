@@ -2,7 +2,7 @@
 Paste-able .cursorrules snippet for repos using maf-autopilot (MAF Doctor) MCP.
 Cursor auto-loads .cursorrules from the project root.
 
-Drop via: `maf-autopilot init --with-cursor`
+Drop via: `maf-doctor init --with-cursor`
 -->
 
 # MAF Doctor (maf-autopilot) is installed for MAF code

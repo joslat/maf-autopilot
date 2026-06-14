@@ -266,8 +266,8 @@ jobs:
         continue-on-error: true   # never block the PR on registry extraction
         run: |
           # Install maf-autopilot itself so we can call the registry-extract subcommand.
-          dotnet tool install --global maf-autopilot --prerelease \
-            || dotnet tool update --global maf-autopilot --prerelease
+          dotnet tool install --global maf-doctor --prerelease \
+            || dotnet tool update --global maf-doctor --prerelease
 
           REGISTRY=".github/skills/maf-obsolete-api-registry/registry.yaml"
           TMP_ENTRIES="/tmp/draft-registry-entries.yaml"
@@ -276,7 +276,7 @@ jobs:
           : > "$TMP_ENTRIES"
           for pkg in Microsoft.Agents.AI Microsoft.Agents.AI.Workflows; do
             echo "=== Extracting draft entries for $pkg ($OLD → $NEW) ==="
-            maf-autopilot registry-extract "$pkg" "$OLD" "$NEW" >> "$TMP_ENTRIES" || true
+            maf-doctor registry-extract "$pkg" "$OLD" "$NEW" >> "$TMP_ENTRIES" || true
             echo "" >> "$TMP_ENTRIES"
           done
 

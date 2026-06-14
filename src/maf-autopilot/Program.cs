@@ -8,10 +8,10 @@ using ModelContextProtocol.Server;
 
 // CLI mode: short-circuit before Host.CreateApplicationBuilder so stdin/stdout remain clean.
 // Supported subcommands:
-//   maf-autopilot init                       — scaffold .vscode/mcp.json + copilot-instructions
-//   maf-autopilot new agent <Name>           — generate a MAF 1.3.0 agent + smoke test
-//   maf-autopilot new executor <Name> [In] [Out]  — generate a workflow executor + smoke test
-//   maf-autopilot doctor [path]              — one-command repo health report (A/B/C/F grade)
+//   maf-doctor init                       — scaffold .vscode/mcp.json + copilot-instructions
+//   maf-doctor new agent <Name>           — generate a MAF 1.3.0 agent + smoke test
+//   maf-doctor new executor <Name> [In] [Out]  — generate a workflow executor + smoke test
+//   maf-doctor doctor [path]              — one-command repo health report (A/B/C/F grade)
 if (args.Length > 0 && args[0] == "init")
 {
     var exitCode = await InitCommand.RunAsync(args);
@@ -26,7 +26,7 @@ if (args.Length >= 2 && args[0] == "new")
 }
 if (args.Length >= 1 && args[0] == "doctor")
 {
-    // Usage: maf-autopilot doctor [path] [--exclude <substr>]...
+    // Usage: maf-doctor doctor [path] [--exclude <substr>]...
     // Repeatable `--exclude` skips files whose repo-relative path contains the
     // substring — used by the drift detector to scan product code only (skip
     // samples/ + test fixtures). The first non-flag arg is the path (default cwd).
@@ -58,7 +58,7 @@ if (args.Length >= 1 && args[0] == "autofix-all")
 {
     // Phase W bonus + #8 enabler — surface MafAutoFixAll on the CLI so the
     // migration-cast.tape can drive the auto-fix flow without going through
-    // Copilot Chat. Usage: `maf-autopilot autofix-all [path] [--dry-run]`.
+    // Copilot Chat. Usage: `maf-doctor autofix-all [path] [--dry-run]`.
     var positional = args.Skip(1).Where(a => !a.StartsWith("--")).ToList();
     var path = positional.Count > 0 ? positional[0] : Directory.GetCurrentDirectory();
     var dryRun = args.Contains("--dry-run");
