@@ -119,7 +119,7 @@ The previous "(1) fix registry drift" item is **done** — landed in the same se
 
 1. **(50 min — must be human) Run the workshop end-to-end (T.3 → T.4 → T.5).** Follow [`samples/workshop.md`](../samples/workshop.md). This drives `@maf-auditor` → `@maf-migration` via Copilot Chat in VS Code Insiders — the agents themselves are a GitHub Copilot client feature, not something Claude Code can invoke. The migration log + final `MafDoctor` grade A/B IS the A.8 evidence to point at when announcing 1.0.
 
-2. **(10 min — human-driven publish) Cut stable `1.3.0` (T.7 → A.8 unblocked).** This is the **release cut**: `gh workflow run release.yml -f version=1.3.0` triggers the GitHub Actions release workflow which (a) runs `dotnet test` across all 3 TFMs, (b) `dotnet pack`s the multi-target nupkg + the analyzer nupkg, (c) pushes both to `nuget.org` with the `NUGET_API_KEY` secret, (d) builds + pushes the multi-arch Docker image to `ghcr.io/joslat/maf-autopilot:1.3.0`, (e) creates a tagged GitHub Release with auto-generated release notes. **"Announces" means: once `1.3.0` (without `-alpha-N`) is live on nuget.org, anyone running `dotnet tool install -g maf-autopilot` (no `--prerelease` flag needed) gets it.** That's the implicit announcement. An optional explicit announcement step would be a discussions post / blog / social — none required for the cut itself. This is a one-way publish to a public registry, so it stays human-driven.
+2. **(10 min — human-driven publish) Cut stable `1.3.0` (T.7 → A.8 unblocked).** This is the **release cut**: `gh workflow run release.yml -f version=1.3.0` triggers the GitHub Actions release workflow which (a) runs `dotnet test` across all 3 TFMs, (b) `dotnet pack`s the multi-target nupkg + the analyzer nupkg, (c) pushes both to `nuget.org` with the `NUGET_API_KEY` secret, (d) builds + pushes the multi-arch Docker image to `ghcr.io/joslat/maf-doctor:1.3.0`, (e) creates a tagged GitHub Release with auto-generated release notes. **"Announces" means: once `1.3.0` (without `-alpha-N`) is live on nuget.org, anyone running `dotnet tool install -g maf-autopilot` (no `--prerelease` flag needed) gets it.** That's the implicit announcement. An optional explicit announcement step would be a discussions post / blog / social — none required for the cut itself. This is a one-way publish to a public registry, so it stays human-driven.
 
 3. **(done by Claude Code, 2026-05-13)** Phase R Dependabot triage:
    - ✅ Closed #1, #2 (Docker .NET 10 forcers — Dockerfile stays net8 LTS)
@@ -1055,7 +1055,7 @@ rm -f  samples/maf-1.3-sample/docs/migration-plan.md
 2. `dotnet pack src/maf-autopilot/maf-autopilot.csproj` — produces a single multi-TFM nupkg.
 3. `dotnet pack src/maf-autopilot.Analyzers/maf-autopilot.Analyzers.csproj` — produces the analyzer nupkg.
 4. `dotnet nuget push *.nupkg --api-key $NUGET_API_KEY --source https://api.nuget.org/v3/index.json --skip-duplicate`.
-5. Docker multi-arch image built + pushed to `ghcr.io/joslat/maf-autopilot:1.3.0` + `:latest`.
+5. Docker multi-arch image built + pushed to `ghcr.io/joslat/maf-doctor:1.3.0` + `:latest`.
 6. `softprops/action-gh-release` creates a tagged GitHub Release with auto-generated notes.
 
 **Why you (not Claude).** One-way publish to a public registry. Once `1.3.0` (no `-alpha-N`) is live, anyone running `dotnet tool install -g maf-autopilot` (no `--prerelease`) gets it. That's the implicit announcement.
@@ -1088,7 +1088,7 @@ gh run watch
 - [ ] **Package live on nuget.org:** https://www.nuget.org/packages/maf-autopilot/1.3.0 should resolve within ~5 minutes.
 - [ ] **Analyzer package live:** https://www.nuget.org/packages/maf-autopilot.Analyzers/1.3.0.
 - [ ] **GitHub Release page** has been created with auto-generated notes from `softprops/action-gh-release`.
-- [ ] **Docker image** pushed: `docker pull ghcr.io/joslat/maf-autopilot:1.3.0` succeeds.
+- [ ] **Docker image** pushed: `docker pull ghcr.io/joslat/maf-doctor:1.3.0` succeeds.
 - [ ] **A clean install works:** in a fresh shell, `dotnet tool install -g maf-autopilot` (NO `--prerelease`) gets you 1.3.0 stable.
 
 **Rollback (if the publish goes wrong).**
@@ -1217,7 +1217,7 @@ After push, refresh the README on GitHub. The two `<img>` blocks at the top shou
    ```
    https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2F<user>%2F<gist-id>%2Fraw%2Fmaf-autopilot-health.json
    ```
-5. Add `[![MAF Health](https://img.shields.io/endpoint?url=...)](https://github.com/joslat/maf-autopilot)` to your README.
+5. Add `[![MAF Health](https://img.shields.io/endpoint?url=...)](https://github.com/joslat/maf-doctor)` to your README.
 6. **Wire CI to refresh the gist** — add a step to `.github/workflows/maf-drift-detector.yml` (or release.yml) that updates the gist via `gh gist edit` after each release.
 
 ##### Alternative — Cloudflare Worker (~30 min, free tier, more flexible)
@@ -1290,7 +1290,7 @@ File the failure detail as a follow-up issue. Claude can fix the toolkit-side co
 
 ##### Suggested channels (any subset)
 
-- **GitHub Discussions** on `joslat/maf-autopilot` — long-form, evergreen, indexable.
+- **GitHub Discussions** on `joslat/maf-doctor` — long-form, evergreen, indexable.
 - **A Medium / dev.to blog post** — for narrative + screenshots of the casts (X.3 produces them).
 - **Twitter/X thread** — 5-tweet outline: install → audit → grade F → auto-fix → grade A. The cast GIFs from X.3 are tweet-shaped.
 - **LinkedIn post** — tag Microsoft Agent Framework team for visibility.

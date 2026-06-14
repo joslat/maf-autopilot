@@ -14,7 +14,7 @@ namespace MafAutopilot.Tools;
 internal static class SarifEmitter
 {
     public const string ToolName = "maf-autopilot";
-    public const string ToolUri = "https://github.com/joslat/maf-autopilot";
+    public const string ToolUri = "https://github.com/joslat/maf-doctor";
 
     /// <summary>
     /// Builds a SARIF document for a collection of normalised findings.

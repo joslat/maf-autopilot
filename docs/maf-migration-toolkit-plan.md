@@ -208,7 +208,7 @@ Vision-completing work; ship as 1.1.0 / 1.2.0.
 
 | Order | Item | Note |
 |---|---|---|
-| D.1 | **#28** Docker distribution via GHCR | `docker pull ghcr.io/joslat/maf-autopilot:latest`. Multi-arch amd64+arm64; semver-keyed tags; stable-only `latest`. | ✅ DONE 2026-05-12 |
+| D.1 | **#28** Docker distribution via GHCR | `docker pull ghcr.io/joslat/maf-doctor:latest`. Multi-arch amd64+arm64; semver-keyed tags; stable-only `latest`. | ✅ DONE 2026-05-12 |
 | D.2 | **#32** Multi-version migration paths | `MafMigrationPath(currentVer, targetVer)` walks version-keyed guide metadata, returns ordered intermediate-step sections. Built on #20 metadata. | ✅ DONE 2026-05-12 |
 | D.3 | **#45** Merge `fan-out-validator` + `fan-in-static-analyzer` | Cosmetic — done as part of A.3 skill slimming (`fan-in-static-analyzer` is now a redirect stub). | ✅ DONE 2026-05-12 (via A.3) |
 | D.4 | GitHub App `@maf-bot` | PR comments scoped to changed lines; pairs with #52. Org-wide adoption vector. Not in current tracking table — file an issue. |
@@ -275,10 +275,10 @@ Vision-completing work; ship as 1.1.0 / 1.2.0.
 | 25 | NuGet publish (`dotnet tool install -g maf-autopilot`) | Publish to NuGet.org as a global tool. Enables `dotnet tool install -g maf-autopilot` | P1 | 🔄 IN PROGRESS | 60% | 50% | **Updated 2026-05-11.** 3 alphas live on nuget.org (`1.3.0-alpha-1/2/3`). Pipeline works (release.yml proven). Remaining: (a) plain `dotnet tool install --global maf-autopilot` fails because all versions are prereleases — needs `--prerelease` flag OR a stable cut; (b) csproj `<Version>` is `1.3.0-tool.1` — drifted from reality (release.yml overrides via workflow input); (c) no stable 1.3.0 yet. Track stable cut as separate row #50. |
 | 26 | `maf-autopilot` Sampling tools | Agentic tools using `server.SampleAsync()`: `maf_full_audit` (analyze→plan→generate→validate), `maf_migration_suggest` | P3 | ❌ NOT STARTED | 0% | 0% | Unlocked by SDK 1.2.0. Server calls host LLM (VS Code Copilot) with zero API keys. Multi-step reasoning chains entirely inside the MCP server. |
 | 27 | `maf-autopilot` full analysis tools | Remaining 6 tools: `maf_detect_cs0618`, `maf_api_diff`, `maf_fan_out_validate`, `maf_executor_pattern_check`, `maf_compatibility`, `maf_migration_path` | P3 | ❌ NOT STARTED | 0% | 0% | Higher-effort tools requiring dotnet build invocation, Roslyn analysis, dotnet-inspect subprocess. See Section 10 tool specs. |
-| 28 | Docker distribution via GHCR | `docker pull ghcr.io/joslat/maf-autopilot:latest` | P3 | ❌ NOT STARTED | 0% | 0% | Depends on #25. Dockerfile + GHCR push in workflow. |
+| 28 | Docker distribution via GHCR | `docker pull ghcr.io/joslat/maf-doctor:latest` | P3 | ❌ NOT STARTED | 0% | 0% | Depends on #25. Dockerfile + GHCR push in workflow. |
 | 29 | Roslyn analyzer companion | Flags void fan-out handlers + insecure credentials + sensitive-data logging at write-time in the IDE | P1 | ✅ DONE | 100% | 85% | **Done 2026-05-11 (magic-path sprint).** New `src/maf-autopilot.Analyzers/` project targeting `netstandard2.0` (Roslyn requirement). Three rules: `MAF001` fan-out handler must return `Task<T>`/`ValueTask<T>` (Error), `MAF002` avoid `DefaultAzureCredential` outside tests (Warning), `MAF003` `EnableSensitiveData = true` outside tests (Warning). Each shipped with help-link URIs to the SKILL.md files. Analyzer release tracking files in place. 11 tests using `Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit`. Will pack as `maf-autopilot.Analyzers` NuGet — separate package from the global tool. |
 | 30 | `registry.yaml` auto-update in CI | Semantic step (Copilot Coding Agent or LLM API call) to auto-generate new registry entries from dotnet-inspect diff output — closes the last manual step in `maf-release-watcher.yml` | P2 | ❌ NOT STARTED | 0% | 0% | Pure scripts can't write meaningful YAML entries without semantic analysis. Target: hybrid Copilot Agent step in workflow (see Section 11). No external prerequisite — this is a CI-internal improvement to the release watcher itself. |
-| 31 | `maf_open_feedback_issue` Sampling tool | After migration, uses `server.SampleAsync()` to analyze the migration log, then opens a structured GitHub Issue on `joslat/maf-autopilot` with new CS0618 patterns and guide corrections | P2 | ❌ NOT STARTED | 0% | 0% | Closes the reflexive learning loop in MCP binary mode. Requires GitHub MCP access (already in VS Code Copilot via `mcp_github_*`). See Section 9.2. Prerequisite: #25 NuGet publish. |
+| 31 | `maf_open_feedback_issue` Sampling tool | After migration, uses `server.SampleAsync()` to analyze the migration log, then opens a structured GitHub Issue on `joslat/maf-doctor` with new CS0618 patterns and guide corrections | P2 | ❌ NOT STARTED | 0% | 0% | Closes the reflexive learning loop in MCP binary mode. Requires GitHub MCP access (already in VS Code Copilot via `mcp_github_*`). See Section 9.2. Prerequisite: #25 NuGet publish. |
 | 32 | Multi-version migration paths | Support 1.1.0 → 1.3.0 in one pass (not step-by-step through intermediate versions) | P3 | ❌ NOT STARTED | 0% | 0% | Depends on version-keyed guide sections (#20 ✅). Migration agent stacks multiple version paths by loading sections tagged for each intermediate version. |
 | 33 | **Bump `dotnet-inspect` 0.7.6 → 0.7.8 + fix attribution** | Pin update across 21 places. Author correction `filipw` → `richlander`. Rewrite "[Obsolete] caveat" paragraphs in README, `dotnet-inspect/SKILL.md`, `copilot-instructions.md`, `maf-constraints.instructions.md`, migration guide. | P1 | ✅ DONE | 100% | 85% | **Done 2026-05-11.** All 21 pinned references bumped. Attribution corrected. `cs0618-hunter` framing rewritten: dotnet-inspect@0.7.8 is the static / pre-build path; compiler stays authoritative for transitive / overload-resolution / project-local cases. Reviewed by Opus; minor housekeeping (cs0618 §"Why Not Use" + guide frontmatter) swept in follow-up commit. |
 | 34 | Fix README install command + csproj version drift | README + setup.md install snippets must use `--prerelease` (or be pinned to `--version 1.3.0-alpha-3`) until stable ships. `maf-autopilot.csproj:15` `<Version>` bumped to next prerelease so csproj stops lying. | P1 | ✅ DONE | 100% | 85% | **Done 2026-05-11.** README + setup.md install snippets show `--prerelease` and link nuget.org/packages/maf-autopilot. csproj `<Version>` bumped `1.3.0-tool.1` → `1.3.0-alpha-4`. Build clean. |
@@ -779,12 +779,12 @@ When `maf-autopilot` is deployed as an installed binary (the MCP-first model), t
 
 | Mode | Where learnings live | How they reach the central toolkit |
 |------|---------------------|------------------------------------|
-| File-copy mode (17 `.github/` files copied to target repo) | Updated in-place by retrospective skill directly | Manual PR from the updated local files to `joslat/maf-autopilot` |
+| File-copy mode (17 `.github/` files copied to target repo) | Updated in-place by retrospective skill directly | Manual PR from the updated local files to `joslat/maf-doctor` |
 | MCP binary mode (`dotnet tool install -g maf-autopilot`) | Cannot write embedded resources | **Via `maf_open_feedback_issue` Sampling tool** |
 
 **The `maf_open_feedback_issue` tool (tracking row #31):**
 
-After a migration completes, this MCP tool uses `server.SampleAsync()` to analyze the migration log (plan file, terminal history, or user-provided excerpt), then — if the user has [GitHub MCP](https://github.com/github/github-mcp-server) connected — opens a structured issue on `joslat/maf-autopilot`:
+After a migration completes, this MCP tool uses `server.SampleAsync()` to analyze the migration log (plan file, terminal history, or user-provided excerpt), then — if the user has [GitHub MCP](https://github.com/github/github-mcp-server) connected — opens a structured issue on `joslat/maf-doctor`:
 
 ```
 Title: [Retrospective] CS0618 pattern not in registry: WorkflowBuilder.SomeMember
@@ -1227,8 +1227,8 @@ dotnet tool install --global maf-autopilot
 ### Option 2: Docker / GitHub Container Registry
 
 ```bash
-docker pull ghcr.io/joslat/maf-autopilot:latest
-docker run -p 7891:7891 ghcr.io/joslat/maf-autopilot:latest
+docker pull ghcr.io/joslat/maf-doctor:latest
+docker run -p 7891:7891 ghcr.io/joslat/maf-doctor:latest
 ```
 
 **How to release:**
@@ -1371,7 +1371,7 @@ Ordered by value-to-effort ratio. See the **Implementation Tracking Table** at t
 
 - [ ] #26 Sampling tools — `maf_full_audit`, `maf_migration_suggest` using `server.SampleAsync()`
 - [ ] #27 Full analysis tools — `maf_detect_cs0618`, `maf_api_diff`, `maf_fan_out_validate`, `maf_compatibility`, `maf_migration_path`
-- [ ] #28 Docker distribution via GHCR — `ghcr.io/joslat/maf-autopilot:latest`
+- [ ] #28 Docker distribution via GHCR — `ghcr.io/joslat/maf-doctor:latest`
 - [ ] #29 Roslyn analyzer companion — flags void fan-out handlers at write-time in IDE
 - [ ] #32 Multi-version migration paths — 1.1.0 → 1.3.0 in one pass without step-by-step
 

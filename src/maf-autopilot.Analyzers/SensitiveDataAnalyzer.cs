@@ -27,7 +27,7 @@ public sealed class SensitiveDataAnalyzer : DiagnosticAnalyzer
         description: "Sensitive-data logging is intended for development diagnostics only. Production telemetry should default to redacted attributes.",
         // Anchor fragments are slugified by GitHub from the full heading text. Link
         // at the document root; the rule ID is grep-able inside the page.
-        helpLinkUri: "https://github.com/joslat/maf-autopilot/blob/main/.github/skills/maf-anti-pattern-scanner/SKILL.md");
+        helpLinkUri: "https://github.com/joslat/maf-doctor/blob/main/.github/skills/maf-anti-pattern-scanner/SKILL.md");
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
         ImmutableArray.Create(Rule);

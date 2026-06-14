@@ -31,7 +31,7 @@ public sealed class DefaultAzureCredentialAnalyzer : DiagnosticAnalyzer
         // Anchor fragments are slugified by GitHub from the full heading text, which
         // is fragile across heading edits. Link at the document root and rely on
         // the rule ID being grep-able inside the page.
-        helpLinkUri: "https://github.com/joslat/maf-autopilot/blob/main/.github/skills/maf-anti-pattern-scanner/SKILL.md");
+        helpLinkUri: "https://github.com/joslat/maf-doctor/blob/main/.github/skills/maf-anti-pattern-scanner/SKILL.md");
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
         ImmutableArray.Create(Rule);

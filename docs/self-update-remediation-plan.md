@@ -1,6 +1,6 @@
 # MAF self-update remediation plan
 
-**Created:** 2026-06-14 · **Owner:** @joslat · **Status:** ✅ Code-complete — 30/33 done; the 3 open items (5.2 live dry-run, 5.3 re-trigger, 6.4 repo rename) are maintainer-only 🔒 post-merge steps.
+**Created:** 2026-06-14 · **Owner:** @joslat · **Status:** ✅ **COMPLETE — 33/33.** Merged to `main` (#66→#59); watcher live-validated (dry-run + real 1.6.1→1.10.0 update on main); drift detector live; repo renamed to `joslat/maf-doctor` + URLs flipped. Optional 6.5 (namespace) intentionally left as a future separate PR.
 **Scope:** Fix the two failing self-update workflows (MAF Release Watcher, MAF Drift Detector), harden the whole self-update engine and its AI-fill chain, validate the auto-update path end-to-end, and execute the brand-only rename to **MAF Doctor**.
 
 ## Why this exists (one-paragraph problem statement)
@@ -47,13 +47,13 @@ Both scheduled self-update workflows have failed on **every** scheduled run sinc
 | 4 · Chain bugs | 4.10 | pr-audit honest scoping | Scope doctor to changed files OR fix the comment | 100% | ☑ | done — honest comment + product `--exclude` |
 | 4 · Chain bugs | 4.11 | ai-fill template guide anchor | Parameterize/comment the hardcoded 1.3.0 anchor | 100% | ☑ | done — check #6 now unions all guides |
 | 5 · Validation | 5.1 | NuGet fixture smoke test | Unit-test version detection in ci-invariants | 100% | ☑ | done — pytest step runs .github/scripts/tests in CI |
-| 5 · Validation | 5.2 | analyze-and-update dry-run | Synthetic bump on throwaway branch, prove push chain | 50% | ☐ | code-ready — `push_target` input added; **live run 🔒 maintainer** |
-| 5 · Validation | 5.3 | Re-trigger + verify lifecycle | Manual run both; confirm green + issue open/close | 0% | ☐ | **🔒 post-merge** — runs the OLD main until this PR merges |
+| 5 · Validation | 5.2 | analyze-and-update dry-run | Synthetic bump on throwaway branch, prove push chain | 100% | ☑ | done — dispatched on a throwaway branch; full chain green; main untouched |
+| 5 · Validation | 5.3 | Re-trigger + verify lifecycle | Manual run both; confirm green + issue open/close | 100% | ☑ | done — both green on main; watcher did real 1.6.1→1.10.0; drift opened #69 |
 | 5 · Validation | 5.4 | Workflow-set parse audit | Lint all 10 workflows; confirm startup_failures clear | 100% | ☑ | done — all 10 parse; actionlint gate added (0.2) |
 | 6 · Rebrand | 6.1 | PR-A: brand + server id + URLs | Text-only rename to MAF Doctor / maf-doctor | 70% | ☑ | server id + snippets done; **URL/RepositoryUrl flip deferred to 6.4** (avoids 404 window) |
 | 6 · Rebrand | 6.2 | InitCommand server key | Write `maf-doctor` key, keep `command=maf-autopilot` | 100% | ☑ | done — legacy-key guard; 6 tests green |
 | 6 · Rebrand | 6.3 | CHANGELOG migration notes | GHCR image-path + mcp.json server-id change | 100% | ☑ | done — Unreleased entry + maintainer follow-ups |
-| 6 · Rebrand | 6.4 | Repo rename | `joslat/maf-autopilot` → `joslat/maf-doctor` | 0% | ☐ | **🔒 post-merge** — bundle the URL/SARIF/OCI/RepositoryUrl flip here |
+| 6 · Rebrand | 6.4 | Repo rename | `joslat/maf-autopilot` → `joslat/maf-doctor` | 100% | ☑ | done — repo renamed (old path redirects); URL/SARIF/OCI/RepositoryUrl flipped (`chore/rebrand-urls`) |
 | 6 · Rebrand | 6.5 | Namespace rename (opt) | `MafAutopilot`→`MafDoctor`, separate mechanical PR | 0% | ☐ | **deferred by design** — optional, separate PR, never bundled |
 | 7 · Docs/closeout | 7.1 | Fix is_major escalation docs | architecture.md flow + plan B.3 | 100% | ☑ | done — flow rewritten (direct-push + escalation); B.3 superseded-note |
 | 7 · Docs/closeout | 7.2 | README/CHANGELOG behavior updates | Document failure issues, drift target, watcher cadence | 100% | ☑ | done — README tree cadence + CHANGELOG + TROUBLESHOOTING |
@@ -488,11 +488,11 @@ Every code change ships on a branch behind PRs; revert the PR to roll back. The 
 - **7.2** README workflow-tree cadence corrected (watcher daily; drift Mon 11:00 product-scoped); CHANGELOG + TROUBLESHOOTING already cover failure issues / drift target / cadence.
 - **7.3 — final green board:** `dotnet test` net10.0 = **739 + 15 (analyzers) passed, 0 failed**; **50 Python helper tests** pass; `compileall` clean; ci-invariants job (4)+(5) clean; frozen identity literals verified intact (`PackageId`, `ToolCommandName`, `dotnet tool install … maf-autopilot`).
 
-### Remaining (maintainer-only 🔒, post-merge)
-1. **5.2** — privileged dry-run of `analyze-and-update` against a throwaway branch (use the new `push_target` + a synthetic `maf_version`).
-2. **5.3** — manually re-trigger both scheduled workflows on `main` after merge; confirm green + the drift-issue open/close lifecycle.
-3. **6.4** — rename the GitHub repo `joslat/maf-autopilot` → `joslat/maf-doctor`, then flip the remaining `joslat/maf-autopilot` URL / `RepositoryUrl` / SARIF / OCI-label references (bundle the URL sed here to avoid a 404 window). The GHCR image path follows automatically.
-- Optional: **6.5** namespace rename `MafAutopilot`→`MafDoctor` as a separate mechanical PR; enable native failed-workflow email (2.3).
+### Completed post-merge (was maintainer-only 🔒)
+1. ✅ **5.2** — dry-run of `analyze-and-update` dispatched from the branch with `push_target=dryrun/self-update-validate`. Detected 1.6.1→1.10.0 via the real NuGet path, ran a real diff (artifact `maf-diff-1.10.0`), and committed the full update (`.maf-version`, matrix, new guide, **425 lines of registry drafts**, cumulative guide) to the throwaway branch. `main` untouched. Branch + the dry-run fill-issue cleaned up.
+2. ✅ **5.3** — after merge to `main`, both scheduled workflows triggered live and went **green**. The watcher did the real **1.6.1 → 1.10.0** auto-commit to `main` (the repo was 4 versions behind because the watcher had been broken) and dispatched the fill flow (#70); the drift detector self-provisioned the labels and opened #69 (grade F — expected until a build with 3.1's `--exclude` is published to NuGet).
+3. ✅ **6.4** — repo renamed `joslat/maf-autopilot` → **`joslat/maf-doctor`** (old path 301-redirects). Flipped every `joslat/maf-autopilot` URL / `RepositoryUrl` / SARIF helpUri / OCI title to `joslat/maf-doctor` on `chore/rebrand-urls` (SARIF + analyzer tests still green); the GHCR image path follows automatically. The package id / CLI / dll / namespace stay `maf-autopilot` (frozen).
+- Still optional (intentionally a separate future PR): **6.5** namespace rename `MafAutopilot`→`MafDoctor`; and enabling the native failed-workflow email (2.3).
 
 ### 2026-06-14 — Final review pass (self-review of the PR diff)
 - Verified the watcher escalation gating is coherent: `Commit directly to main` (`if: is_major != 'true'`) → `Open issue for Copilot` (`if: committed == 'true'`) → `Escalate MAJOR` (`if: is_major == 'true'`). Minor/patch commits & dispatch; no-op skips dispatch; majors escalate and never push.

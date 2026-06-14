@@ -117,7 +117,7 @@ maf-autopilot init
 cd C:\git\joslat\maf-autopilot
 
 # Create private repo on GitHub and push
-gh repo create joslat/maf-autopilot \
+gh repo create joslat/maf-doctor \
   --private \
   --description "AI-powered toolkit for Microsoft Agent Framework (MAF) migrations — agents, skills, MCP server, and self-updating guide" \
   --source . \
@@ -134,7 +134,7 @@ gh repo create joslat/maf-autopilot \
 6. Click **Create repository**
 7. In your local terminal:
    ```bash
-   git remote add origin https://github.com/joslat/maf-autopilot.git
+   git remote add origin https://github.com/joslat/maf-doctor.git
    git branch -M main
    git push -u origin main
    ```
@@ -156,11 +156,11 @@ To use the release watcher workflow and eventually publish the NuGet package, yo
 
 ### Option A — Use this repo directly
 
-If you are **joslat** (the repo owner): the repository is `github.com/joslat/maf-autopilot`. The workflow is already present. Skip to [adding secrets](#adding-github-secrets).
+If you are **joslat** (the repo owner): the repository is `github.com/joslat/maf-doctor`. The workflow is already present. Skip to [adding secrets](#adding-github-secrets).
 
 ### Option B — Fork for your own use
 
-1. Fork `joslat/maf-autopilot` on GitHub
+1. Fork `joslat/maf-doctor` on GitHub
 2. In your fork: **Settings → Actions → General → Allow all actions** (ensure Actions are enabled)
 3. Change the `.maf-version` file if you want to track a different baseline version
 

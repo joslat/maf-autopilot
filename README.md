@@ -105,7 +105,7 @@ VS Code picks up `.vscode/mcp.json` automatically and starts the MCP server. Cop
 If you'd rather not install the .NET SDK locally, pull the container instead:
 
 ```bash
-docker pull ghcr.io/joslat/maf-autopilot:latest
+docker pull ghcr.io/joslat/maf-doctor:latest
 ```
 
 Wire it into your IDE's `mcp.json`:
@@ -116,7 +116,7 @@ Wire it into your IDE's `mcp.json`:
     "maf-doctor": {
       "type": "stdio",
       "command": "docker",
-      "args": ["run", "--rm", "-i", "ghcr.io/joslat/maf-autopilot:latest"]
+      "args": ["run", "--rm", "-i", "ghcr.io/joslat/maf-doctor:latest"]
     }
   }
 }
@@ -130,7 +130,7 @@ Copy `.github/` from this repo into your .NET repository root. You get the agent
 
 ```powershell
 # In your MAF project root
-git clone https://github.com/joslat/maf-autopilot tmp-maf
+git clone https://github.com/joslat/maf-doctor tmp-maf
 Copy-Item tmp-maf/.github -Destination .github -Recurse
 Remove-Item tmp-maf -Recurse
 ```
@@ -204,7 +204,7 @@ maf-autopilot/
 │   ├── maf-autopilot.Analyzers/           # Roslyn analyzer package (MAF001/002/003 — separate NuGet)
 │   ├── maf-autopilot.Tests/               # 580 xUnit tests (× 3 TFMs = 1740 executions per run)
 │   └── maf-autopilot.Analyzers.Tests/     # 11 analyzer tests (× 3 TFMs = 33 executions)
-├── Dockerfile                             # multi-stage build → ghcr.io/joslat/maf-autopilot:latest
+├── Dockerfile                             # multi-stage build → ghcr.io/joslat/maf-doctor:latest
 ├── guides/
 │   ├── maf-current-migration-guide.md     # Cumulative — auto-generated, all versions concatenated (start here)
 │   ├── maf-1.3.0-migration-guide.md       # 21-section migration guide (hand-authored bootstrap)
