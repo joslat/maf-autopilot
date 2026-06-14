@@ -14,9 +14,9 @@ A toolkit that turns **GitHub Copilot Chat into a Microsoft Agent Framework (MAF
 
 It ships through **four channels**:
 
-1. **MCP server (NuGet tool)** — the main product. 17 [Model Context Protocol](https://modelcontextprotocol.io/) tools that Copilot can invoke during chats: anti-pattern scanner, fan-out validator, workflow simulator, scaffolders, PR auditor, etc.
+1. **MCP server (NuGet tool)** — the main product. 25 [Model Context Protocol](https://modelcontextprotocol.io/) tools that Copilot can invoke during chats: anti-pattern scanner, fan-out validator, workflow simulator, scaffolders, PR auditor, etc.
 2. **MCP server (Docker)** — same product, containerised on GHCR (multi-arch amd64+arm64), for users without a .NET SDK on the host.
-3. **Roslyn analyzer (separate NuGet)** — `maf-autopilot.Analyzers`. Ships 3 write-time rules (MAF001–003) into any consumer project's compiler. Independent of the MCP server.
+3. **Roslyn analyzer (separate NuGet)** — `maf-doctor.Analyzers`. Ships 3 write-time rules (MAF001–003) into any consumer project's compiler. Independent of the MCP server.
 4. **Skills + agents (GitHub-native)** — 12 SKILL.md files + 6 agent personas + 3 always-loaded instruction files. Loaded by GitHub Copilot Chat directly from `.github/`.
 
 The MCP server, the analyzer NuGet, and the skill bundle are independently shippable. A user can adopt any one, two, or all three.
@@ -87,9 +87,9 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 
 **What it does:**
 - Speaks MCP over stdio (when run as a tool) or stdio-in-container (when run via Docker).
-- Exposes **17 tools** (`[McpServerTool]`-decorated methods under `Tools/*.cs`).
-- Exposes **4 resources** (`maf://constraints`, `maf://guide`, `maf://registry`, `maf://rules`, `maf://skills?name=...`).
-- Exposes **3 prompts** (`maf-audit`, `maf-migrate`, `maf-cs0618-hunt`).
+- Exposes **25 tools** (`[McpServerTool]`-decorated methods under `Tools/*.cs`) — see the README for the live catalogue.
+- Exposes **6 resources** (`maf://guide`, `maf://constraints`, `maf://registry`, `maf://rules`, `maf://help`, `maf://skills?name=...`).
+- Exposes **7 prompts** (`maf-audit`, `maf-migrate`, `maf-cs0618-hunt`, `maf-review`, `maf-debug`, `maf-scaffold`, `maf-help`).
 - Provides **CLI subcommands**: `init` (wires `.vscode/mcp.json`), `doctor` (health grade), `new agent` / `new executor` (scaffolders), `registry-extract` (CI helper).
 
 **Embeds at build time** (via `<EmbeddedResource>`): the 12 SKILL.md files, the 3 instruction files, the obsolete-API registry YAML, the migration guide. This is why the runtime container only needs a single .dll — everything ships inline.

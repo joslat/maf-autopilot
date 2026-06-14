@@ -79,12 +79,12 @@ Run the MCP server locally to expose `maf://` resources and `/maf-*` prompts in 
 
 Install `maf-doctor` as a global .NET tool so any project can run `maf-doctor init` and use the MCP server without cloning this repo.
 
-**Prerequisites:** any of .NET 8 / .NET 9 / .NET 10 SDK. `maf-doctor` is published to NuGet as prereleases ([`1.3.0-alpha-5`](https://www.nuget.org/packages/maf-doctor) latest at time of writing). Stable 1.3.0 is gated on the Phase T MAF 1.3 sample dogfood (see [next-steps.md](./next-steps.md)).
+**Prerequisites:** any of .NET 8 / .NET 9 / .NET 10 SDK. Install the [latest published release](https://www.nuget.org/packages/maf-doctor) from NuGet — the toolkit keeps its own MAF knowledge current (see the README's "It updates itself").
 
 **Steps:**
 ```bash
 # Install once, globally
-dotnet tool install -g maf-doctor --prerelease
+dotnet tool install -g maf-doctor
 
 # In any MAF project folder:
 maf-doctor init
