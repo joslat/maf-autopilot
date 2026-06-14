@@ -1,10 +1,10 @@
 using System.ComponentModel;
 using System.Text;
-using MafAutopilot.Tools.Rewriters;
+using MafDoctor.Tools.Rewriters;
 using Microsoft.CodeAnalysis.CSharp;
 using ModelContextProtocol.Server;
 
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// MCP tool: <c>MafBeforeAfter</c>.

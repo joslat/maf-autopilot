@@ -1,9 +1,9 @@
 using System.Reflection;
-using MafAutopilot.Tools;
+using MafDoctor.Tools;
 using ModelContextProtocol.Server;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Tests for the `MafTour` discovery tool. The catalogue is hand-curated;

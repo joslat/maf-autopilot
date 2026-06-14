@@ -1,10 +1,10 @@
 using System.ComponentModel;
 using System.Text;
 using System.Text.RegularExpressions;
-using MafAutopilot.Scaffolding;
+using MafDoctor.Scaffolding;
 using ModelContextProtocol.Server;
 
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// MCP tools: MafNewAgent and MafNewExecutor

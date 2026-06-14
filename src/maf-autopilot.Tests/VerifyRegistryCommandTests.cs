@@ -1,8 +1,8 @@
-using MafAutopilot.Commands;
-using MafAutopilot.Data;
+using MafDoctor.Commands;
+using MafDoctor.Data;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// #5 polish — tests for <see cref="VerifyRegistryCommand"/>.

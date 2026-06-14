@@ -1,7 +1,7 @@
-using MafAutopilot.Tools;
+using MafDoctor.Tools;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Tests for the `MAF-AP-EXEC-001` anti-pattern rule — detects pre-1.3.0 executor

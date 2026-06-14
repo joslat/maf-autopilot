@@ -1,8 +1,8 @@
-using MafAutopilot.Tools.Rewriters;
+using MafDoctor.Tools.Rewriters;
 using Microsoft.CodeAnalysis.CSharp;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Idempotence property tests for every <c>IRuleRewriter</c>: applying a

@@ -1,8 +1,8 @@
-using MafAutopilot.Data;
-using MafAutopilot.Tools;
+using MafDoctor.Data;
+using MafDoctor.Tools;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Tests for the pure parser core of Cs0618HuntTool. The shell-out to `dotnet build`

@@ -1,7 +1,7 @@
-using MafAutopilot.Data;
+using MafDoctor.Data;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Tests for <see cref="RegistryService.ValidateOverridePath"/> — the

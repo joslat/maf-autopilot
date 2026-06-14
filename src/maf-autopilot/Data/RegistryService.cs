@@ -1,7 +1,7 @@
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
-namespace MafAutopilot.Data;
+namespace MafDoctor.Data;
 
 /// <summary>
 /// Loads and queries the MAF obsolete-API registry.

@@ -1,10 +1,10 @@
 using System.ComponentModel;
 using System.Reflection;
 using System.Text;
-using MafAutopilot.Tools;
+using MafDoctor.Tools;
 using ModelContextProtocol.Server;
 
-namespace MafAutopilot.Resources;
+namespace MafDoctor.Resources;
 
 /// <summary>
 /// MCP Resources — expose all MAF knowledge files at stable maf:// URIs.

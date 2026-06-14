@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace MafAutopilot;
+namespace MafDoctor;
 
 /// <summary>
 /// CLI init subcommand: `maf-autopilot init [--with-cursor]`

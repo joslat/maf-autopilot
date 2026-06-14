@@ -1,11 +1,11 @@
 using System.Text;
 using System.Text.RegularExpressions;
-using MafAutopilot.Data;
-using MafAutopilot.Tools;
+using MafDoctor.Data;
+using MafDoctor.Tools;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
-namespace MafAutopilot;
+namespace MafDoctor;
 
 /// <summary>
 /// CLI subcommand: <c>maf-autopilot registry-extract &lt;packageId&gt; &lt;oldVer&gt; &lt;newVer&gt;</c>.

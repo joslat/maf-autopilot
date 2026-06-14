@@ -9,7 +9,7 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
-    <RootNamespace>MafAutopilot.Analyzers</RootNamespace>
+    <RootNamespace>MafDoctor.Analyzers</RootNamespace>
     <AssemblyName>maf-autopilot.Analyzers</AssemblyName>
 
     <!-- NuGet packaging -->

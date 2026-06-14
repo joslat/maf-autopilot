@@ -1,7 +1,7 @@
-using MafAutopilot.Scaffolding;
-using MafAutopilot.Tools;
+using MafDoctor.Scaffolding;
+using MafDoctor.Tools;
 
-namespace MafAutopilot;
+namespace MafDoctor;
 
 /// <summary>
 /// CLI subcommand: <c>maf-autopilot new agent &lt;Name&gt;</c> or <c>new executor &lt;Name&gt;</c>.

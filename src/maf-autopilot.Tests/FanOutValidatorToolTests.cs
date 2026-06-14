@@ -1,7 +1,7 @@
-using MafAutopilot.Tools;
+using MafDoctor.Tools;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Tests for FanOutValidatorTool — pure Roslyn syntax-tree walking.

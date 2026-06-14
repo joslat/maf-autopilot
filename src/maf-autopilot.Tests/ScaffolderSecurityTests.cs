@@ -1,12 +1,12 @@
 using System.Diagnostics;
-using MafAutopilot.Data;
-using MafAutopilot.Scaffolding;
-using MafAutopilot.Tools;
+using MafDoctor.Data;
+using MafDoctor.Scaffolding;
+using MafDoctor.Tools;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Security regression tests for Phase N — one test (group) per finding from the

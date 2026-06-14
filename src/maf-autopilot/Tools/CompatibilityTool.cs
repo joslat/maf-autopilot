@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// MCP tool: MafCompatibility

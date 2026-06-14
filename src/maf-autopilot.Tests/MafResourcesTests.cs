@@ -1,7 +1,7 @@
-using MafAutopilot.Resources;
+using MafDoctor.Resources;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Tests for MafResources — the read-only knowledge surface exposed at maf:// URIs.
@@ -116,7 +116,7 @@ public class MafResourcesTests
         // rule that AntiPatternScannerTool.AllRules actually ships. If a future rule
         // is added without updating the catalog, this fails.
         var body = MafResources.GetRules();
-        foreach (var rule in MafAutopilot.Tools.AntiPatternScannerTool.AllRules)
+        foreach (var rule in MafDoctor.Tools.AntiPatternScannerTool.AllRules)
             Assert.Contains(rule.Id, body, StringComparison.Ordinal);
     }
 

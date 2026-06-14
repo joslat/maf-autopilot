@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// Length-cap guard for user-controlled string inputs entering an MCP tool.

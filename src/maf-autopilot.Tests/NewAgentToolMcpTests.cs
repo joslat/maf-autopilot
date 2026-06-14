@@ -1,12 +1,12 @@
-using MafAutopilot.Tools;
+using MafDoctor.Tools;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Direct tests of the `[McpServerTool]`-decorated entry points on
 /// <see cref="NewAgentTool"/>. The pure-function core
-/// (<see cref="MafAutopilot.Scaffolding.AgentScaffolder"/>) has its own
+/// (<see cref="MafDoctor.Scaffolding.AgentScaffolder"/>) has its own
 /// dedicated test class; this file exercises the file-writing + namespace-detection
 /// + path-validation glue that's only reached through the MCP method.
 ///

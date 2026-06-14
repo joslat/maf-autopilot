@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Text;
 using ModelContextProtocol.Server;
 
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// MCP tool: MafAuditPullRequest

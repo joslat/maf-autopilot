@@ -1,4 +1,4 @@
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// SARIF v2.1.0 emitter wrappers around the existing finding lists.

@@ -1,8 +1,8 @@
-using MafAutopilot.Scaffolding;
-using MafAutopilot.Tools;
+using MafDoctor.Scaffolding;
+using MafDoctor.Tools;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Tests for the scaffolder + the critical dogfooding check: code we generate

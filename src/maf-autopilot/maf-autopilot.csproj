@@ -5,7 +5,7 @@
     <!-- Multi-target: NuGet picks the best TFM at install time. Matches the
          AgentEval house style (see docs/architecture.md → "Multi-targeting"). -->
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
-    <RootNamespace>MafAutopilot</RootNamespace>
+    <RootNamespace>MafDoctor</RootNamespace>
     <AssemblyName>maf-autopilot</AssemblyName>
 
     <!-- .NET Global Tool packaging -->
