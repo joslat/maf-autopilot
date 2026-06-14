@@ -9,7 +9,7 @@
 # The container speaks MCP over stdio. Wire it up in your IDE's mcp.json with:
 #   {
 #     "servers": {
-#       "maf-autopilot": {
+#       "maf-doctor": {
 #         "type": "stdio",
 #         "command": "docker",
 #         "args": ["run", "--rm", "-i", "ghcr.io/joslat/maf-autopilot:latest"]

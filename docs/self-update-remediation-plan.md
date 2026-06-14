@@ -50,11 +50,11 @@ Both scheduled self-update workflows have failed on **every** scheduled run sinc
 | 5 · Validation | 5.2 | analyze-and-update dry-run | Synthetic bump on throwaway branch, prove push chain | 50% | ☐ | code-ready — `push_target` input added; **live run 🔒 maintainer** |
 | 5 · Validation | 5.3 | Re-trigger + verify lifecycle | Manual run both; confirm green + issue open/close | 0% | ☐ | **🔒 post-merge** — runs the OLD main until this PR merges |
 | 5 · Validation | 5.4 | Workflow-set parse audit | Lint all 10 workflows; confirm startup_failures clear | 100% | ☑ | done — all 10 parse; actionlint gate added (0.2) |
-| 6 · Rebrand | 6.1 | PR-A: brand + server id + URLs | Text-only rename to MAF Doctor / maf-doctor | 0% | ☐ | P2 · M |
-| 6 · Rebrand | 6.2 | InitCommand server key | Write `maf-doctor` key, keep `command=maf-autopilot` | 0% | ☐ | P2 · S · depends 6.1 |
-| 6 · Rebrand | 6.3 | CHANGELOG migration notes | GHCR image-path + mcp.json server-id change | 0% | ☐ | P3 · S |
-| 6 · Rebrand | 6.4 | Repo rename | `joslat/maf-autopilot` → `joslat/maf-doctor` | 0% | ☐ | 🔒 · S · do LAST |
-| 6 · Rebrand | 6.5 | Namespace rename (opt) | `MafAutopilot`→`MafDoctor`, separate mechanical PR | 0% | ☐ | P3 · L · optional |
+| 6 · Rebrand | 6.1 | PR-A: brand + server id + URLs | Text-only rename to MAF Doctor / maf-doctor | 70% | ☑ | server id + snippets done; **URL/RepositoryUrl flip deferred to 6.4** (avoids 404 window) |
+| 6 · Rebrand | 6.2 | InitCommand server key | Write `maf-doctor` key, keep `command=maf-autopilot` | 100% | ☑ | done — legacy-key guard; 6 tests green |
+| 6 · Rebrand | 6.3 | CHANGELOG migration notes | GHCR image-path + mcp.json server-id change | 100% | ☑ | done — Unreleased entry + maintainer follow-ups |
+| 6 · Rebrand | 6.4 | Repo rename | `joslat/maf-autopilot` → `joslat/maf-doctor` | 0% | ☐ | **🔒 post-merge** — bundle the URL/SARIF/OCI/RepositoryUrl flip here |
+| 6 · Rebrand | 6.5 | Namespace rename (opt) | `MafAutopilot`→`MafDoctor`, separate mechanical PR | 0% | ☐ | **deferred by design** — optional, separate PR, never bundled |
 | 7 · Docs/closeout | 7.1 | Fix is_major escalation docs | architecture.md:237 + plan B.3 | 0% | ☐ | depends 3.2 |
 | 7 · Docs/closeout | 7.2 | README/CHANGELOG behavior updates | Document failure issues, drift target, watcher cadence | 0% | ☐ | P3 · S |
 | 7 · Docs/closeout | 7.3 | Final verify + close plan | Green-board sign-off; update memory | 0% | ☐ | gate |
@@ -476,3 +476,9 @@ Every code change ships on a branch behind PRs; revert the PR to roll back. The 
 - **5.3** 🔒 — re-triggering the live scheduled workflows is only meaningful once this PR merges (the cron runs `main`'s copy). Post-merge: dispatch both with blank inputs and confirm green + the drift-issue open/close lifecycle.
 - **5.4** All 10 workflows parse; the actionlint gate (0.2) now guards the parse class on every workflow PR. The historical 0-second startup_failures self-clear once a valid workflow set lands on `main`.
 - **Regression gate: full `dotnet test` (net10.0) = 739 passed, 0 failed** — the Phase 3 C# changes (doctor `--exclude`) are clean.
+
+### 2026-06-14 — Phase 6 (brand-only rename to MAF Doctor)
+- **6.1/6.2** MCP server id → `maf-doctor` in `.vscode/mcp.json`, README/setup/workshop snippets, and `InitCommand` (which now writes `maf-doctor` while keeping `command=maf-autopilot`, and recognizes the legacy key to avoid duplicates). InitCommand tests updated; 6 green. **The frozen identity is untouched:** `<PackageId>maf-autopilot</PackageId>`, `ToolCommandName=maf-autopilot`, the dll, and `dotnet tool install --global maf-autopilot` all unchanged.
+- **6.3** CHANGELOG `[Unreleased]` entry documents the self-update fixes, the brand change, and the **post-merge maintainer follow-ups**.
+- **6.1 (URL portion) / 6.4 / 6.5 — deferred by design:** flipping `joslat/maf-autopilot` → `joslat/maf-doctor` across docs / `RepositoryUrl` / SARIF URLs / OCI labels is coupled to the GitHub repo rename (🔒 maintainer) — doing it pre-rename creates a 404 window and risks SARIF-URL test churn. Bundle it with 6.4. The namespace rename (6.5) is optional and explicitly a separate mechanical PR.
+- Build green; InitCommand + Doctor tests pass.

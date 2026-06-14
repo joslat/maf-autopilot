@@ -113,7 +113,7 @@ Wire it into your IDE's `mcp.json`:
 ```json
 {
   "servers": {
-    "maf-autopilot": {
+    "maf-doctor": {
       "type": "stdio",
       "command": "docker",
       "args": ["run", "--rm", "-i", "ghcr.io/joslat/maf-autopilot:latest"]
