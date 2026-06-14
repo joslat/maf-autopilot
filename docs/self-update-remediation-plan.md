@@ -1,6 +1,6 @@
 # MAF self-update remediation plan
 
-**Created:** 2026-06-14 · **Owner:** @joslat · **Status:** In progress — Phases 0–1 complete (5/33 tasks)
+**Created:** 2026-06-14 · **Owner:** @joslat · **Status:** In progress — Phases 0–2 complete (8/33 tasks)
 **Scope:** Fix the two failing self-update workflows (MAF Release Watcher, MAF Drift Detector), harden the whole self-update engine and its AI-fill chain, validate the auto-update path end-to-end, and execute the brand-only rename to **MAF Doctor**.
 
 ## Why this exists (one-paragraph problem statement)
@@ -26,9 +26,9 @@ Both scheduled self-update workflows have failed on **every** scheduled run sinc
 | 1 · Unblock (P0) | 1.1 | Extract watcher inline Python | NuGet filter → `get_latest_stable.py` (+12 tests) | 100% | ☑ | done — 12 tests green; root cause #1 fixed |
 | 1 · Unblock (P0) | 1.2 | Drift: self-provision labels | `gh label create --force` before issue create | 100% | ☑ | done — root cause #2 fixed |
 | 1 · Unblock (P0) | 1.3 | Drift: harden grade parse | `UNKNOWN` fallback; don't file blank-grade issues | 100% | ☑ | done — pipefail + `\|\| true` + UNKNOWN gate |
-| 2 · Observability | 2.1 | Watcher notify-on-failure | Terminal `if: failure()` job → tracking issue | 0% | ☐ | **P1** · S |
-| 2 · Observability | 2.2 | Drift notify-on-failure | Same pattern on drift detector | 0% | ☐ | P1 · S |
-| 2 · Observability | 2.3 | Document native fallback | Enable "failed workflow" email; note in README | 0% | ☐ | 🔒 · S |
+| 2 · Observability | 2.1 | Watcher notify-on-failure | Terminal `if: failure()` job → tracking issue | 100% | ☑ | done — rolling maf-release issue, exact-title dedupe |
+| 2 · Observability | 2.2 | Drift notify-on-failure | Same pattern on drift detector | 100% | ☑ | done |
+| 2 · Observability | 2.3 | Document native fallback | Enable "failed workflow" email; note in README | 100% | ☑ | doc in TROUBLESHOOTING.md; 🔒 toggle is maintainer opt-in |
 | 3 · Engine safety | 3.1 | Doctor self-scan exclusions | `--exclude` glob support; drift skips samples/tests | 0% | ☐ | P2 · L · makes grade meaningful |
 | 3 · Engine safety | 3.2 | `is_major` real gate (or kill) | Human gate for major bumps; or delete dead logic | 0% | ☐ | **P1** · M · safety of auto-push |
 | 3 · Engine safety | 3.3 | Cron stagger + concurrency | Drift 2h after watcher; `concurrency:` groups | 0% | ☐ | P2 · S |
@@ -441,3 +441,8 @@ Every code change ships on a branch behind PRs; revert the PR to roll back. The 
 - **1.1** Extracted the inline `python3 -c` NuGet version filter → `.github/scripts/get_latest_stable.py` with `tests/test_get_latest_stable.py` (**12 tests green** locally; pipe-through returns `1.6.1`). Root cause #1 (scheduled-run `IndentationError`) fixed.
 - **1.2** Drift Detector self-provisions `maf-drift` / `needs-review` labels via `gh label create --force` (idempotent, GITHUB_TOKEN) before the issue step. Root cause #2 (`could not add label`) fixed — no manual label creation needed.
 - **1.3** Drift grade parse hardened: `set -o pipefail`, `|| true` on the grep, empty→`UNKNOWN`, and the issue gate now skips `UNKNOWN` so a future doctor-output reword can't file a blank-grade issue.
+
+### 2026-06-14 — Phase 2 complete (observability)
+- **2.1 / 2.2** Added a terminal `notify-on-failure` job to both workflows (`if: failure()`, `needs:` all upstream jobs). On failure it opens or comments onto **one rolling** `maf-release`-labelled issue `🔴 Self-update workflow failed: <name>` (exact-title jq match, not flaky `--search`). github.* contexts flow via `env:` redirect to satisfy ci-invariants job (4).
+- **2.3** Documented the failure-notification behavior + the native "failed workflow" email fallback in `TROUBLESHOOTING.md`, and refreshed the stale "Release watcher" section (it still described the removed PR-based flow). The 🔒 native-email toggle is a maintainer opt-in (authorization checklist).
+- Validated: all three edited workflows parse; ci-invariants job (4) input-redirect and job (5) permissions checks pass locally.
