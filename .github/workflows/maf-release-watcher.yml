@@ -2,7 +2,7 @@ name: MAF Release Watcher
 
 on:
   schedule:
-    - cron: '0 9 * * *'   # Daily 09:00 UTC (task 3.6 — cuts detection latency 7d→1d; no-op path is cheap)
+    - cron: '0 6 * * 4'   # Thursday 06:00 UTC (~08:00 Europe/Zurich) — aligned with MAF's .NET Thursday-morning ship cadence. Manual workflow_dispatch covers off-cadence releases.
   workflow_dispatch:        # Manual trigger anytime
     inputs:
       maf_version:
