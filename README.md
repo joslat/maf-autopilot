@@ -6,7 +6,7 @@
 
 1. **An MCP server** — exposes 25 executable tools, 6 resources, and 7 prompts to GitHub Copilot / Claude Code / Cursor.
 2. **A CLI** — **doctor** for an A–F health letter, **autofix-all** for deterministic rewriters, **new agent** to scaffold, **init** to wire up your repo, and more.
-3. **A plugin** — init also drops 12 specialised skills, 7 specialist agents, and steering snippets so GitHub Copilot's agentic loops gain MAF-specific knowledge.
+3. **A plugin** — init drops steering snippets and wires the MCP server into both VS Code and Claude Code, so Copilot's and Claude's agentic loops gain MAF-specific knowledge (12 bundled skills + 7 specialist agents).
 
 Plus a separate **maf-doctor.Analyzers** NuGet package with 3 Roslyn analyzers (MAF001 / MAF002 / MAF003) for IDE write-time enforcement, and a curated, version-keyed **obsolete-API registry** that maps every known CS0618 warning to its exact replacement.
 
@@ -62,7 +62,7 @@ cd your-maf-project
 maf-doctor init
 ```
 
-VS Code picks up the MCP config automatically and starts the server; Copilot Chat gains live tool calls, resource reads, and structured prompts.
+init wires the MCP server into both **VS Code** (.vscode/mcp.json) and **Claude Code** (.mcp.json), and drops the steering files (CLAUDE.md, AGENTS.md, copilot-instructions.md). Your assistant picks the server up automatically and gains live tool calls, resource reads, and structured prompts.
 
 **First three commands to try:**
 
