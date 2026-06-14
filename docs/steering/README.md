@@ -11,9 +11,10 @@ different convention:
 | `agents.md` | `./AGENTS.md` | Cursor + any agentskills.io-respecting tool |
 | `cursor-rules.md` | `./.cursorrules` | Cursor (alternative format) |
 
-`maf-doctor init` drops all three into your repo automatically. If you
-already have these files, init *merges* — it appends a `## Using maf-autopilot`
-section rather than overwriting.
+`maf-doctor init` drops these into your repo automatically (and wires the MCP
+server into both `.vscode/mcp.json` for VS Code/Copilot and `.mcp.json` for
+Claude Code). If you already have these files, init *merges* — it appends the
+MAF Doctor steering section rather than overwriting.
 
 If you use multiple AI assistants, keep all three files — they don't
 collide.

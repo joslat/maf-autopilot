@@ -8,7 +8,8 @@ namespace MafDoctor;
 /// CLI init subcommand: `maf-doctor init [--with-cursor]`
 ///
 /// Configures a target repository for MAF migration:
-///   1. Writes (or merges) .vscode/mcp.json with the maf-doctor global-tool server entry.
+///   1. Writes (or merges) the maf-doctor global-tool server entry into both
+///      .vscode/mcp.json (VS Code / Copilot) and .mcp.json (Claude Code).
 ///   2. Creates .github/copilot-instructions.md (MAF hard constraints) — only if it doesn't exist.
 ///   3. Drops steering snippets: CLAUDE.md and AGENTS.md with merge-not-overwrite semantics.
 ///   4. With --with-cursor: also drops .cursorrules.
@@ -65,6 +66,7 @@ internal static class InitCommand
         Console.WriteLine();
 
         await WriteMcpJsonAsync(targetDir);
+        await WriteClaudeMcpJsonAsync(targetDir);
         await WriteCopilotInstructionsAsync(targetDir);
         await DropSteeringFileAsync(targetDir, "steering/copilot-instructions.md", ".github/copilot-instructions.md");
         await DropSteeringFileAsync(targetDir, "steering/claude-instructions.md", "CLAUDE.md");
@@ -76,9 +78,10 @@ internal static class InitCommand
         Console.WriteLine("Done. ⚡ Try these three commands first:");
         Console.WriteLine();
         Console.WriteLine("  maf-doctor doctor .            # instant A/B/C/F health letter");
-        Console.WriteLine("  maf-doctor new agent ChatBot   # scaffold a clean 1.3.0 agent");
+        Console.WriteLine("  maf-doctor new agent ChatBot   # scaffold a clean MAF agent");
         Console.WriteLine();
-        Console.WriteLine("Then open this folder in VS Code. In Copilot Chat:");
+        Console.WriteLine("The MCP server is now wired for both VS Code (.vscode/mcp.json) and");
+        Console.WriteLine("Claude Code (.mcp.json). In Copilot Chat or Claude Code:");
         Console.WriteLine("  @maf-auditor                      # pre-migration scan + plan");
         Console.WriteLine("  @maf-best-practice-reviewer       # steady-state best-practice audit");
         Console.WriteLine("  @maf-migration                    # execute a migration-plan.md");
@@ -95,19 +98,42 @@ internal static class InitCommand
 
     internal static async Task WriteMcpJsonAsync(string targetDir)
     {
-        var vscodeDir = Path.Combine(targetDir, ".vscode");
-        var mcpJsonPath = Path.Combine(vscodeDir, "mcp.json");
+        // VS Code reads .vscode/mcp.json with a top-level "servers" object.
+        await WriteMcpServerEntryAsync(
+            Path.Combine(targetDir, ".vscode", "mcp.json"),
+            serversKey: "servers",
+            label: ".vscode/mcp.json (VS Code / Copilot)");
+    }
 
-        Directory.CreateDirectory(vscodeDir);
+    internal static async Task WriteClaudeMcpJsonAsync(string targetDir)
+    {
+        // Claude Code reads .mcp.json at the repo root with a top-level "mcpServers" object.
+        await WriteMcpServerEntryAsync(
+            Path.Combine(targetDir, ".mcp.json"),
+            serversKey: "mcpServers",
+            label: ".mcp.json (Claude Code)");
+    }
 
-        // Read existing file if present. VS Code's mcp.json spec allows // and /* */
-        // comments and trailing commas (JSON-with-comments / JSONC), so use lenient
-        // parser options before deciding the file is malformed. On a true parse failure,
-        // back up the original so we never silently destroy other MCP-server entries.
-        // Security: cap the JSON read at 1 MB. A malicious or corrupt mcp.json (from a
+    /// <summary>
+    /// Adds the maf-doctor stdio server entry to an MCP config file, MERGING into any
+    /// existing config rather than overwriting. <paramref name="serversKey"/> is the
+    /// top-level object that holds server entries — "servers" for VS Code's
+    /// .vscode/mcp.json, "mcpServers" for Claude Code's .mcp.json. Recognizes the legacy
+    /// "maf-autopilot" server key so re-running init on a pre-rename repo never duplicates.
+    /// </summary>
+    private static async Task WriteMcpServerEntryAsync(string mcpJsonPath, string serversKey, string label)
+    {
+        var dir = Path.GetDirectoryName(mcpJsonPath);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+
+        // Read existing file if present. The mcp.json spec allows // and /* */ comments
+        // and trailing commas (JSONC), so use lenient parser options before deciding the
+        // file is malformed. On a true parse failure, back up the original so we never
+        // silently destroy other MCP-server entries.
+        // Security: cap the JSON read at 1 MB. A malicious or corrupt config (from a
         // template repo, a stale upstream, or a paste accident) could otherwise OOM the
-        // host on the very first `maf-doctor init` invocation. Real mcp.json files
-        // are kilobytes at most.
+        // host on the very first `maf-doctor init`. Real config files are kilobytes at most.
         const long McpJsonMaxBytes = 1 * 1024 * 1024;
         JsonObject root;
         if (File.Exists(mcpJsonPath))
@@ -116,7 +142,7 @@ internal static class InitCommand
             if (info.Length > McpJsonMaxBytes)
             {
                 var backupPath = CreateBackupWithRetry(mcpJsonPath);
-                Console.WriteLine($"  ⚠ .vscode/mcp.json is {info.Length / 1024} KB — exceeds the 1 MB safety cap.");
+                Console.WriteLine($"  ⚠ {label} is {info.Length / 1024} KB — exceeds the 1 MB safety cap.");
                 Console.WriteLine($"    Backed up to: {backupPath}");
                 Console.WriteLine($"    Starting fresh — restore any other server entries from the backup manually.");
                 root = new JsonObject();
@@ -131,7 +157,7 @@ internal static class InitCommand
                 catch
                 {
                     var backupPath = CreateBackupWithRetry(mcpJsonPath);
-                    Console.WriteLine($"  ⚠ .vscode/mcp.json exists but could not be parsed as JSON (even allowing // comments).");
+                    Console.WriteLine($"  ⚠ {label} exists but could not be parsed as JSON (even allowing // comments).");
                     Console.WriteLine($"    Backed up to: {backupPath}");
                     Console.WriteLine($"    Starting fresh — restore any other server entries from the backup manually.");
                     root = new JsonObject();
@@ -143,17 +169,17 @@ internal static class InitCommand
             root = new JsonObject();
         }
 
-        if (!root.ContainsKey("servers"))
-            root["servers"] = new JsonObject();
+        if (!root.ContainsKey(serversKey))
+            root[serversKey] = new JsonObject();
 
-        var servers = root["servers"]!.AsObject();
+        var servers = root[serversKey]!.AsObject();
 
         // Server key + command are both "maf-doctor" (full rename). Recognize the
         // LEGACY "maf-autopilot" server key too, so re-running init on a repo
         // configured by a pre-rename build doesn't add a duplicate entry.
         if (servers.ContainsKey("maf-doctor") || servers.ContainsKey("maf-autopilot"))
         {
-            Console.WriteLine("  ✓ .vscode/mcp.json — MAF Doctor server entry already present, no change");
+            Console.WriteLine($"  ✓ {label} — MAF Doctor server entry already present, no change");
             return;
         }
 
@@ -168,7 +194,7 @@ internal static class InitCommand
 
         var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(mcpJsonPath, json + Environment.NewLine);
-        Console.WriteLine("  ✓ .vscode/mcp.json — added MAF Doctor (maf-doctor) global-tool server entry");
+        Console.WriteLine($"  ✓ {label} — added MAF Doctor (maf-doctor) global-tool server entry");
     }
 
     // ------------------------------------------------------------------ //
@@ -272,13 +298,23 @@ internal static class InitCommand
         }
 
         var outputPath = Path.Combine(targetDir, outputRelativePath);
-        var markerText = "## Using maf-doctor";
+
+        // Idempotency markers — one per snippet family. Each snippet's first body
+        // heading is matched here so re-running init never appends a duplicate:
+        //   "## Using maf-doctor"           → copilot-instructions.md
+        //   "## Microsoft Agent Framework"  → claude-instructions.md + agents.md
+        //   "MAF Doctor is installed for MAF code" → cursor-rules.md (single-# heading)
+        string[] markers =
+        {
+            "## Using maf-doctor",
+            "## Microsoft Agent Framework",
+            "MAF Doctor is installed for MAF code",
+        };
 
         if (File.Exists(outputPath))
         {
             var existing = await File.ReadAllTextAsync(outputPath);
-            if (existing.Contains(markerText, StringComparison.OrdinalIgnoreCase)
-                || existing.Contains("## Microsoft Agent Framework", StringComparison.OrdinalIgnoreCase))
+            if (markers.Any(m => existing.Contains(m, StringComparison.OrdinalIgnoreCase)))
             {
                 Console.WriteLine($"  ✓ {outputRelativePath} — maf-doctor section already present, no change");
                 return;

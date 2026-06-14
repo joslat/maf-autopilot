@@ -180,4 +180,99 @@ public sealed class InitCommandTests : IDisposable
             "Non-servers top-level keys must survive the merge.");
         Assert.True(root["servers"]!.AsObject().ContainsKey("maf-doctor"));
     }
+
+    // -------------------------------------------------------------------------
+    // Claude Code .mcp.json (repo root, "mcpServers" key)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task WriteClaudeMcpJsonAsync_NoExistingFile_CreatesMcpServersEntry()
+    {
+        await InitCommand.WriteClaudeMcpJsonAsync(_tempDir);
+
+        var path = Path.Combine(_tempDir, ".mcp.json");
+        Assert.True(File.Exists(path));
+
+        var root = JsonNode.Parse(await File.ReadAllTextAsync(path))!.AsObject();
+        // Claude Code uses "mcpServers" (not VS Code's "servers").
+        var servers = root["mcpServers"]!.AsObject();
+        Assert.True(servers.ContainsKey("maf-doctor"));
+        Assert.Equal("stdio", servers["maf-doctor"]!["type"]!.GetValue<string>());
+        Assert.Equal("maf-doctor", servers["maf-doctor"]!["command"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task WriteClaudeMcpJsonAsync_IsIdempotent()
+    {
+        await InitCommand.WriteClaudeMcpJsonAsync(_tempDir);
+        var path = Path.Combine(_tempDir, ".mcp.json");
+        var first = await File.ReadAllTextAsync(path);
+
+        await InitCommand.WriteClaudeMcpJsonAsync(_tempDir);
+        var second = await File.ReadAllTextAsync(path);
+
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public async Task WriteClaudeMcpJsonAsync_PreservesUnrelatedServers()
+    {
+        var path = Path.Combine(_tempDir, ".mcp.json");
+        await File.WriteAllTextAsync(path, """
+            {
+              "mcpServers": {
+                "my-other-server": { "type": "stdio", "command": "node", "args": ["x.js"] }
+              }
+            }
+            """);
+
+        await InitCommand.WriteClaudeMcpJsonAsync(_tempDir);
+
+        var root = JsonNode.Parse(await File.ReadAllTextAsync(path))!.AsObject();
+        var servers = root["mcpServers"]!.AsObject();
+        Assert.True(servers.ContainsKey("my-other-server"), "Existing entries must be preserved.");
+        Assert.True(servers.ContainsKey("maf-doctor"), "maf-doctor entry must be added.");
+    }
+
+    [Fact]
+    public async Task WriteClaudeMcpJsonAsync_RecognizesLegacyMafAutopilotKey_NoDuplicate()
+    {
+        var path = Path.Combine(_tempDir, ".mcp.json");
+        await File.WriteAllTextAsync(path, """
+            {
+              "mcpServers": {
+                "maf-autopilot": { "type": "stdio", "command": "maf-autopilot" }
+              }
+            }
+            """);
+
+        await InitCommand.WriteClaudeMcpJsonAsync(_tempDir);
+
+        var root = JsonNode.Parse(await File.ReadAllTextAsync(path))!.AsObject();
+        var servers = root["mcpServers"]!.AsObject();
+        Assert.True(servers.ContainsKey("maf-autopilot"));
+        Assert.False(servers.ContainsKey("maf-doctor"),
+            "Legacy maf-autopilot key must be recognized so no duplicate maf-doctor entry is added.");
+    }
+
+    // -------------------------------------------------------------------------
+    // Steering merge idempotency — marker must match the snippet's actual header
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Regression: the merge-marker once read "## Using maf-doctor" while the rename left
+    /// the copilot snippet header at "## Using maf-autopilot (MAF Doctor)", so re-running
+    /// init appended a duplicate section. Headers + markers are now aligned.
+    /// </summary>
+    [Fact]
+    public async Task DropSteeringFile_CopilotInstructions_ReRun_DoesNotDuplicate()
+    {
+        await InitCommand.DropSteeringFileAsync(_tempDir, "steering/copilot-instructions.md", ".github/copilot-instructions.md");
+        await InitCommand.DropSteeringFileAsync(_tempDir, "steering/copilot-instructions.md", ".github/copilot-instructions.md");
+
+        var path = Path.Combine(_tempDir, ".github", "copilot-instructions.md");
+        var content = await File.ReadAllTextAsync(path);
+        var occurrences = content.Split("## Using maf-doctor").Length - 1;
+        Assert.Equal(1, occurrences);
+    }
 }

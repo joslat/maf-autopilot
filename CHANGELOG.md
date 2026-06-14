@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-06-14
+
+### Added
+
+- **`init` now wires the MCP server for Claude Code too.** It writes `.mcp.json` at the repo root (top-level `mcpServers`) alongside the existing `.vscode/mcp.json` (top-level `servers`) — so the `maf-doctor` tools are available natively in Claude Code, not just VS Code / Copilot. Same merge-not-overwrite + legacy-key-recognition + JSONC-safe behavior as the VS Code path. (CLAUDE.md / AGENTS.md steering were already written.)
+
+### Fixed
+
+- **Stale `maf-autopilot` text in the `init`-emitted steering snippets.** The embedded snippets dropped into a user's repo (CLAUDE.md, AGENTS.md, .github/copilot-instructions.md, .cursorrules) still told assistants to "defer to maf-autopilot's tools" / referenced the "maf-autopilot registry". Renamed the prose to maf-doctor (the MCP tool names like `MafDoctor` were already correct).
+- **Duplicate-append bug in `init`.** The merge idempotency marker (`## Using maf-doctor`) no longer matched the copilot snippet header after the rename, so re-running `init` appended a second steering section. Headers and markers are realigned, and the marker set now also covers the `.cursorrules` snippet. Added regression + Claude-path tests.
+
 ## [1.2.3] - 2026-06-14
 
 ### Changed (docs)
