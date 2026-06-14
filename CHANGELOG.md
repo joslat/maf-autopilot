@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-06-14
+
+### Changed (docs)
+
+- **Toned down inline-code density in the README.** NuGet.org styles inline `code` spans as red-on-pink, so the previous README (~50 inline-code spans) rendered as a wall of red on the package page (it looks fine on GitHub). Rewrote prose to use plain/bold text, keeping backticks only where monospace genuinely helps — the literal API transformations in "Why This Exists" and the one registry path a contributor edits (6 spans total). Fenced command blocks are unchanged.
+
 ## [1.2.2] - 2026-06-14
 
 ### Fixed (NuGet package metadata)
