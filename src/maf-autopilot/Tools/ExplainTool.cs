@@ -34,7 +34,7 @@ public sealed class ExplainTool
 
         Walks every type reference, invocation, and attribute in the snippet,
         cross-references the obsolete-API registry, and emits a structured
-        report: which pieces are canonical MAF 1.3.0 patterns, which are
+        report: which pieces are canonical MAF patterns, which are
         deprecated, and which guide section explains each.
 
         Input:
@@ -212,7 +212,7 @@ public sealed class ExplainTool
         "MessageHandler" or "MessageHandlerAttribute" =>
             "✅ Marks an executor method as a workflow handler. MUST return `Task<T>` or `ValueTask<T>` — `void` / non-generic causes silent fan-in starvation.",
         "ChatClientAgent" =>
-            "✅ The canonical 1.3.0 agent base. `Instructions` lives inside `ChatOptions`, not at the options top level.",
+            "✅ The canonical MAF agent base. `Instructions` lives inside `ChatOptions`, not at the options top level.",
         _ => null,
     };
 
