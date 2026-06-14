@@ -2,9 +2,7 @@
 
 > Diagnose, explain, prescribe, verify — for MAF agents and workflows.
 
-> **Naming:** the brand is **MAF Doctor**; the NuGet package + CLI are **`maf-doctor`**. (Pre-rename this shipped as `maf-autopilot` ≤ 1.2.0 — that package is deprecated in favor of `maf-doctor`. The internal `src/maf-autopilot/` project folder keeps its name; it's invisible to users.)
-
-**MAF Doctor** is a .NET global tool that does three things in one install:
+**MAF Doctor** is a **.NET global tool** — installed from NuGet with `dotnet tool install -g maf-doctor` — that does three things in one install:
 
 1. **An MCP server** — exposes 25 executable tools, 6 resources, and 7 prompts to GitHub Copilot / Claude Code / Cursor via `.vscode/mcp.json`.
 2. **A CLI** — `maf-doctor doctor` (A–F health letter), `maf-doctor autofix-all` (deterministic rewriters), `maf-doctor new agent <Name>`, `maf-doctor init` (drops MCP config + steering snippets into your repo), and more.
