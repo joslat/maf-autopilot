@@ -1,6 +1,6 @@
 # MAF self-update remediation plan
 
-**Created:** 2026-06-14 · **Owner:** @joslat · **Status:** In progress — Phases 0–4 + 5.1/5.4 complete; 5.2/5.3 await maintainer 🔒 (27.5/33)
+**Created:** 2026-06-14 · **Owner:** @joslat · **Status:** ✅ Code-complete — 30/33 done; the 3 open items (5.2 live dry-run, 5.3 re-trigger, 6.4 repo rename) are maintainer-only 🔒 post-merge steps.
 **Scope:** Fix the two failing self-update workflows (MAF Release Watcher, MAF Drift Detector), harden the whole self-update engine and its AI-fill chain, validate the auto-update path end-to-end, and execute the brand-only rename to **MAF Doctor**.
 
 ## Why this exists (one-paragraph problem statement)
@@ -55,9 +55,9 @@ Both scheduled self-update workflows have failed on **every** scheduled run sinc
 | 6 · Rebrand | 6.3 | CHANGELOG migration notes | GHCR image-path + mcp.json server-id change | 100% | ☑ | done — Unreleased entry + maintainer follow-ups |
 | 6 · Rebrand | 6.4 | Repo rename | `joslat/maf-autopilot` → `joslat/maf-doctor` | 0% | ☐ | **🔒 post-merge** — bundle the URL/SARIF/OCI/RepositoryUrl flip here |
 | 6 · Rebrand | 6.5 | Namespace rename (opt) | `MafAutopilot`→`MafDoctor`, separate mechanical PR | 0% | ☐ | **deferred by design** — optional, separate PR, never bundled |
-| 7 · Docs/closeout | 7.1 | Fix is_major escalation docs | architecture.md:237 + plan B.3 | 0% | ☐ | depends 3.2 |
-| 7 · Docs/closeout | 7.2 | README/CHANGELOG behavior updates | Document failure issues, drift target, watcher cadence | 0% | ☐ | P3 · S |
-| 7 · Docs/closeout | 7.3 | Final verify + close plan | Green-board sign-off; update memory | 0% | ☐ | gate |
+| 7 · Docs/closeout | 7.1 | Fix is_major escalation docs | architecture.md flow + plan B.3 | 100% | ☑ | done — flow rewritten (direct-push + escalation); B.3 superseded-note |
+| 7 · Docs/closeout | 7.2 | README/CHANGELOG behavior updates | Document failure issues, drift target, watcher cadence | 100% | ☑ | done — README tree cadence + CHANGELOG + TROUBLESHOOTING |
+| 7 · Docs/closeout | 7.3 | Final verify + close plan | Green-board sign-off; update memory | 100% | ☑ | 739+15 .NET + 50 py green; identity frozen |
 
 **Suggested PR grouping:** PR-1 = Phase 0+1 (unblock). PR-2 = Phase 2 (observability). PR-3 = Phase 3. PR-4 = Phase 4. PR-5 = Phase 5 artifacts. PR-6 = Phase 6.1–6.3 (rebrand text). Repo rename (6.4) + namespace (6.5) are standalone. Phases 0→2 can ship same-day; 3–4 are independent and parallelizable; 6 is orthogonal to 1–5 and can run in parallel.
 
@@ -482,3 +482,14 @@ Every code change ships on a branch behind PRs; revert the PR to roll back. The 
 - **6.3** CHANGELOG `[Unreleased]` entry documents the self-update fixes, the brand change, and the **post-merge maintainer follow-ups**.
 - **6.1 (URL portion) / 6.4 / 6.5 — deferred by design:** flipping `joslat/maf-autopilot` → `joslat/maf-doctor` across docs / `RepositoryUrl` / SARIF URLs / OCI labels is coupled to the GitHub repo rename (🔒 maintainer) — doing it pre-rename creates a 404 window and risks SARIF-URL test churn. Bundle it with 6.4. The namespace rename (6.5) is optional and explicitly a separate mechanical PR.
 - Build green; InitCommand + Doctor tests pass.
+
+### 2026-06-14 — Phase 7 (docs & closeout) — code-complete
+- **7.1** Rewrote `docs/architecture.md` "When MAF X.Y ships" flow to match reality (daily cron; majors escalate to an issue instead of auto-PR; direct-push-to-main; idempotent append; AI-fill dispatch; failure notifications). Added a superseded-note to `maf-migration-toolkit-plan.md` B.3.
+- **7.2** README workflow-tree cadence corrected (watcher daily; drift Mon 11:00 product-scoped); CHANGELOG + TROUBLESHOOTING already cover failure issues / drift target / cadence.
+- **7.3 — final green board:** `dotnet test` net10.0 = **739 + 15 (analyzers) passed, 0 failed**; **50 Python helper tests** pass; `compileall` clean; ci-invariants job (4)+(5) clean; frozen identity literals verified intact (`PackageId`, `ToolCommandName`, `dotnet tool install … maf-autopilot`).
+
+### Remaining (maintainer-only 🔒, post-merge)
+1. **5.2** — privileged dry-run of `analyze-and-update` against a throwaway branch (use the new `push_target` + a synthetic `maf_version`).
+2. **5.3** — manually re-trigger both scheduled workflows on `main` after merge; confirm green + the drift-issue open/close lifecycle.
+3. **6.4** — rename the GitHub repo `joslat/maf-autopilot` → `joslat/maf-doctor`, then flip the remaining `joslat/maf-autopilot` URL / `RepositoryUrl` / SARIF / OCI-label references (bundle the URL sed here to avoid a 404 window). The GHCR image path follows automatically.
+- Optional: **6.5** namespace rename `MafAutopilot`→`MafDoctor` as a separate mechanical PR; enable native failed-workflow email (2.3).
