@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-06-14
+
+### Fixed (NuGet package metadata)
+
+- **Corrected the published package descriptions.** Both `maf-doctor` and `maf-doctor.Analyzers` still carried the pre-rename blurb on nuget.org ("MAF autopilot MCP server … MAF 1.3.0 migrations" / "Pairs with the maf-autopilot MCP server"). They now describe MAF Doctor accurately and version-agnostically.
+- **Removed the README "Naming" note.** It explained the rename/deprecation of a package that was never publicly announced — pointless noise for a new reader. The intro now states plainly that `maf-doctor` is a **.NET global tool installed from NuGet** (`dotnet tool install -g maf-doctor`), with `maf-doctor.Analyzers` as a separate analyzer package.
+
 ## [1.2.1] - 2026-06-14
 
 **First release published under the `maf-doctor` package id** (and `maf-doctor.Analyzers`) — this is the version where the rename below actually reaches NuGet.
