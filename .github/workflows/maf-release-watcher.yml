@@ -2,17 +2,62 @@ name: MAF Release Watcher
 
 on:
   schedule:
-    - cron: '0 9 * * 1'   # Every Monday 9 AM UTC (weekly check)
+    - cron: '0 9 * * *'   # Daily 09:00 UTC (task 3.6 — cuts detection latency 7d→1d; no-op path is cheap)
   workflow_dispatch:        # Manual trigger anytime
     inputs:
       maf_version:
         description: 'Specific MAF version to process (leave blank for latest from NuGet)'
         required: false
         default: ''
+      push_target:
+        description: 'Branch to push watcher commits to (task 5.2 — set to a throwaway branch for a safe dry-run; default main)'
+        required: false
+        default: 'main'
 
+# Phase 3.3 — a run can never overlap itself (analyze-and-update pushes to main;
+# an overlap could double-apply registry edits). cancel-in-progress is false so
+# an in-flight real update is allowed to finish.
+concurrency:
+  group: maf-self-update-watcher
+  cancel-in-progress: false
 
 jobs:
+  # Phase 3.1 — validate workflow_dispatch input BEFORE any privileged step
+  # runs. The watcher has COPILOT_ASSIGN_PAT in scope on the main job; a
+  # malformed `maf_version` would otherwise template into shell-interpreted
+  # contexts downstream.
+  validate-inputs:
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Validate maf_version input shape
+        env:
+          INPUT: ${{ inputs.maf_version }}
+        run: |
+          if [ -z "$INPUT" ]; then
+            echo "No version input — will use latest stable from NuGet"
+            exit 0
+          fi
+          if ! echo "$INPUT" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$'; then
+            echo "::error::Invalid maf_version input shape: $INPUT (must be semver)"
+            exit 1
+          fi
+
+      - name: Validate push_target input shape
+        # Task 5.2 — push_target lets a maintainer dry-run analyze-and-update
+        # against a throwaway branch. Validate it's a plausible branch name
+        # (defense-in-depth; it's also env-redirected at the push site).
+        env:
+          PT: ${{ inputs.push_target }}
+        run: |
+          if [ -z "$PT" ]; then exit 0; fi
+          if ! echo "$PT" | grep -qE '^[A-Za-z0-9._/-]+$'; then
+            echo "::error::Invalid push_target: $PT (branch-name characters only)"
+            exit 1
+          fi
+
   check-for-new-maf-release:
+    needs: validate-inputs
     runs-on: ubuntu-latest
     outputs:
       new_version: ${{ steps.version-check.outputs.new_version }}
@@ -20,14 +65,18 @@ jobs:
       has_update: ${{ steps.version-check.outputs.has_update }}
       is_major: ${{ steps.version-check.outputs.is_major }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Check NuGet for new MAF version
         id: version-check
+        # Phase 3.2 — read inputs via env: redirect; reference $INPUT_VERSION as
+        # a shell variable. Eliminates template-injection surface in the script.
+        env:
+          INPUT_VERSION: ${{ inputs.maf_version }}
         run: |
           # Use explicit version if provided, otherwise query NuGet (latest STABLE)
-          if [ -n "${{ github.event.inputs.maf_version }}" ]; then
-            LATEST="${{ github.event.inputs.maf_version }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            LATEST="$INPUT_VERSION"
             echo "Using manually specified version: $LATEST"
           else
             # Filter out prereleases (`-alpha`, `-beta`, `-rc`, `-preview`) — we only
@@ -44,11 +93,13 @@ jobs:
               echo "has_update=false" >> $GITHUB_OUTPUT
               exit 0
             fi
-            LATEST=$(echo "$RAW" | python3 -c "
-            import sys, json, re
-            data = json.load(sys.stdin)
-            stable = [v for v in data.get('versions', []) if not re.search(r'-(alpha|beta|rc|preview)', v, re.IGNORECASE)]
-            print(stable[-1] if stable else '')")
+            # Filter to the latest STABLE version via a real module. Previously
+            # this was an inline `python3 -c "..."` whose code carried this
+            # shell block's indentation, so Python raised "IndentationError:
+            # unexpected indent" on EVERY scheduled run (the explicit-version
+            # dispatch path skips this branch, which is why manual runs worked).
+            # See docs/self-update-remediation-plan.md task 1.1.
+            LATEST=$(echo "$RAW" | python3 .github/scripts/get_latest_stable.py)
             if [ -z "$LATEST" ]; then
               echo "ℹ️ No stable version found on NuGet — only prereleases. Skipping."
               echo "has_update=false" >> $GITHUB_OUTPUT
@@ -90,12 +141,13 @@ jobs:
     permissions:
       contents: write           # commit the watcher's auto-generated registry/guide updates
       pull-requests: write      # (reserved for future PR-based flow)
+      issues: write             # Phase 3.2 — escalation issue for major bumps
       actions: write            # required for `gh workflow run maf-ai-fill-todos.yml` —
                                 # without this the cross-workflow dispatch fails with
                                 # HTTP 403 "Resource not accessible by integration".
                                 # Discovered 2026-05-17 during live-fire test of MAF 1.6.1.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           # Use the maintainer's PAT (admin), not the workflow's GITHUB_TOKEN,
           # so the final `git push origin HEAD:main` can bypass branch
@@ -107,13 +159,17 @@ jobs:
           # Commit identity is still github-actions[bot] (set explicitly via
           # `git config` below). The PAT is only used for the push auth header.
           #
-          # COPILOT_ASSIGN_PAT is scoped to this repo only, with Contents R/W
-          # — the minimum needed for pushing. Falls back to GITHUB_TOKEN if
-          # the secret isn't set, which will fail the push (loud, not silent).
+          # COPILOT_ASSIGN_PAT is a SHARED fine-grained PAT (this repo only). Its
+          # FULL required scope — Issues + Contents + Pull requests + Actions R/W
+          # — is documented in maf-ai-fill-todos.yml (which also uses it to assign
+          # the Coding Agent). The watcher only exercises the Contents R/W portion
+          # here (the push). Provision the full union, NOT Contents-only, or the
+          # fill workflow's assignment breaks. Falls back to GITHUB_TOKEN if unset,
+          # which will fail the push (loud, not silent). [task 3.5]
           token: ${{ secrets.COPILOT_ASSIGN_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
         with:
           # Net8 LTS — install-only; we just run the published tool here.
           dotnet-version: '8.0.x'
@@ -133,9 +189,14 @@ jobs:
       - name: Run diff — Microsoft.Agents.AI
         id: diff-core
         continue-on-error: true  # diff may fail if old version is too old
+        # Phase 7.G fixup — `needs.*.outputs.*` now redirected via env: instead
+        # of templated into the run: block. Same hardening pattern as Phase 3.2
+        # applied to `inputs.*`. Eliminates the template-injection surface even
+        # though the upstream values are already semver-validated.
+        env:
+          OLD: ${{ needs.check-for-new-maf-release.outputs.old_version }}
+          NEW: ${{ needs.check-for-new-maf-release.outputs.new_version }}
         run: |
-          OLD="${{ needs.check-for-new-maf-release.outputs.old_version }}"
-          NEW="${{ needs.check-for-new-maf-release.outputs.new_version }}"
           dotnet-inspect diff \
             --package "Microsoft.Agents.AI@${OLD}..${NEW}" \
             --source https://api.nuget.org/v3/index.json \
@@ -146,9 +207,11 @@ jobs:
       - name: Run diff — Microsoft.Agents.AI.Workflows
         id: diff-workflows
         continue-on-error: true
+        # Phase 7.G fixup — env-redirect (see diff-core above).
+        env:
+          OLD: ${{ needs.check-for-new-maf-release.outputs.old_version }}
+          NEW: ${{ needs.check-for-new-maf-release.outputs.new_version }}
         run: |
-          OLD="${{ needs.check-for-new-maf-release.outputs.old_version }}"
-          NEW="${{ needs.check-for-new-maf-release.outputs.new_version }}"
           dotnet-inspect diff \
             --package "Microsoft.Agents.AI.Workflows@${OLD}..${NEW}" \
             --source https://api.nuget.org/v3/index.json \
@@ -159,8 +222,16 @@ jobs:
       - name: Fetch release notes
         id: release-notes
         continue-on-error: true
+        # Phase 7.G fixup — env-redirect (see diff-core above). NOTE: this step
+        # previously had TWO `env:` keys (NEW here + GH_TOKEN below) — a YAML
+        # duplicate-key the GitHub workflow parser REJECTS (startup_failure: the
+        # 0-second push runs), and which PyYAML silently tolerated by keeping the
+        # LAST block, so `NEW` was dropped and release-notes fetched empty tags.
+        # Merged into one block. [final-review fix]
+        env:
+          NEW: ${{ needs.check-for-new-maf-release.outputs.new_version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          NEW="${{ needs.check-for-new-maf-release.outputs.new_version }}"
           # MAF releases are on github.com/microsoft/agent-framework (NOT microsoft/agents).
           # MAF release tags follow the form `dotnet-X.Y.Z` (e.g. `dotnet-1.3.0`), per the
           # canonical release links in guides/maf-1.3.0-migration-guide.md.
@@ -175,8 +246,6 @@ jobs:
             echo "ℹ️ Release notes not yet published on GitHub for $NEW — empty placeholder used." > release-notes.txt
           fi
           cat release-notes.txt
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update compatibility matrix
         env:
@@ -211,17 +280,21 @@ jobs:
             echo "" >> "$TMP_ENTRIES"
           done
 
-          # Only append if the extractor produced ENTRY rows. The extractor now indents
-          # entries by 2 spaces so they slot under the existing `entries:` block — so
-          # the check must be indentation-tolerant. (Pre-2026-05-12: anchor was `^- id:`
-          # which silently broke when the indent fix landed in RegistryExtractCommand.)
-          if grep -qE "^[[:space:]]*- id:" "$TMP_ENTRIES"; then
-            echo "" >> "$REGISTRY"
-            echo "# === Draft entries auto-appended by release-watcher on $(date -u +%Y-%m-%d). Review before merging. ===" >> "$REGISTRY"
-            cat "$TMP_ENTRIES" >> "$REGISTRY"
+          # Phase 3.4 — de-dupe extracted entries against the existing registry
+          # BEFORE appending. Re-runs (or the daily cron re-detecting the same
+          # version before .maf-version catches up) must not accrete duplicate
+          # draft entries. The helper prints only entry blocks whose `id:` is not
+          # already present (and de-dupes within the batch).
+          NEW_ENTRIES=$(python3 .github/scripts/dedupe_registry_entries.py "$REGISTRY" "$TMP_ENTRIES")
+          if [ -n "$NEW_ENTRIES" ]; then
+            {
+              echo ""
+              echo "# === Draft entries auto-appended by release-watcher on $(date -u +%Y-%m-%d). Review before merging. ==="
+              printf '%s\n' "$NEW_ENTRIES"
+            } >> "$REGISTRY"
             echo "✅ Draft registry entries appended."
           else
-            echo "ℹ️ No new draft registry candidates from this diff."
+            echo "ℹ️ No new draft registry candidates (all already present, or none extracted)."
           fi
 
       - name: Upload diff artifacts for reviewer
@@ -229,7 +302,7 @@ jobs:
         # reviewer can audit the breaking-change surface without re-running
         # dotnet-inspect locally. Cheap (~few KB), high signal-to-effort.
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: maf-diff-${{ needs.check-for-new-maf-release.outputs.new_version }}
           path: |
@@ -240,12 +313,19 @@ jobs:
           if-no-files-found: warn
 
       - name: Update .maf-version
+        # Phase 7.G fixup — env-redirect needs.*.outputs.* (same pattern as
+        # the diff-core / diff-workflows / release-notes steps above).
+        env:
+          NEW: ${{ needs.check-for-new-maf-release.outputs.new_version }}
         run: |
-          echo "${{ needs.check-for-new-maf-release.outputs.new_version }}" > .maf-version
-          echo "Updated .maf-version to ${{ needs.check-for-new-maf-release.outputs.new_version }}"
+          echo "$NEW" > .maf-version
+          echo "Updated .maf-version to $NEW"
 
       - name: Commit directly to main
         id: commit_to_main
+        # Phase 3.2 — minor/patch bumps auto-commit; MAJOR bumps are escalated
+        # to a human (see the escalation step below) instead of pushed to main.
+        if: needs.check-for-new-maf-release.outputs.is_major != 'true'
         # Trade-off (documented 2026-05-12): we previously used
         # `peter-evans/create-pull-request` to land changes via a PR for
         # human-review-gated merge. The maintainer chose direct-to-main commits
@@ -260,6 +340,9 @@ jobs:
           NEW_VERSION: ${{ needs.check-for-new-maf-release.outputs.new_version }}
           OLD_VERSION: ${{ needs.check-for-new-maf-release.outputs.old_version }}
           IS_MAJOR: ${{ needs.check-for-new-maf-release.outputs.is_major }}
+          # Task 5.2 — defaults to main on schedule (inputs context is empty);
+          # a manual dispatch can target a throwaway branch for a safe dry-run.
+          PUSH_TARGET: ${{ inputs.push_target || 'main' }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -290,10 +373,10 @@ jobs:
           python3 .github/scripts/build_watcher_commit_message.py \
             > "$RUNNER_TEMP/commit-msg.txt"
           git commit -F "$RUNNER_TEMP/commit-msg.txt"
-          git push origin HEAD:main
+          git push origin "HEAD:${PUSH_TARGET}"
 
           echo "committed=true" >> $GITHUB_OUTPUT
-          echo "✅ Pushed watcher updates directly to main."
+          echo "✅ Pushed watcher updates to ${PUSH_TARGET}."
 
       - name: Open issue for Copilot Coding Agent to fill TODOs
         if: ${{ steps.commit_to_main.outputs.committed == 'true' }}
@@ -316,6 +399,66 @@ jobs:
           else
             echo "⚠️ Couldn't dispatch fill workflow. Manual fallback:"
             echo "   gh workflow run maf-ai-fill-todos.yml -f target_version=$TARGET"
+          fi
+
+      - name: Escalate MAJOR version bump for manual review
+        # Phase 3.2 — major bumps (x.y → (x+1).0) carry the highest breaking-
+        # change risk, so they are NOT auto-committed to main. Detect + diff
+        # still ran (artifacts are attached to this run); here we open a single
+        # tracking issue and let a human drive the migration. is_major flows via
+        # env: redirect (ci-invariants job 4).
+        if: needs.check-for-new-maf-release.outputs.is_major == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW: ${{ needs.check-for-new-maf-release.outputs.new_version }}
+          OLD: ${{ needs.check-for-new-maf-release.outputs.old_version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create maf-release  --color 0E8A16 --force || true
+          gh label create needs-review --color FBCA04 --force || true
+          TITLE="🚨 MAJOR MAF bump ${OLD} → ${NEW} — manual review required"
+          NUM=$(gh issue list --label maf-release --state open --json number,title \
+            --jq ".[] | select(.title == \"${TITLE}\") | .number" | head -1)
+          if [ -n "$NUM" ]; then
+            echo "Major bump already tracked in issue #${NUM} — leaving as-is."
+          else
+            gh issue create --title "${TITLE}" --label "maf-release,needs-review" \
+              --body "A new **major** MAF release was detected: \`${OLD}\` → \`${NEW}\`. Major bumps are not auto-committed to main (breaking-change risk). The breaking-API diffs are attached as artifacts on the run: ${RUN_URL}. To process: review the diffs, then dispatch the watcher manually for this version or apply the changes by hand. See docs/self-update-remediation-plan.md (task 3.2)."
+            echo "Opened escalation issue for major bump ${OLD} → ${NEW}."
+          fi
+
+  # Phase 2.1 — surface ANY watcher failure as a GitHub notification. Scheduled
+  # runs failed silently for ~5 weeks because the only signal was a red X in the
+  # Actions tab. This opens (or de-dupes onto) a maf-release-labelled tracking
+  # issue so the maintainer actually hears about it. github.* contexts flow via
+  # env: redirect to satisfy ci-invariants job (4).
+  notify-on-failure:
+    needs: [validate-inputs, check-for-new-maf-release, analyze-and-update]
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update a failure tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WORKFLOW: ${{ github.workflow }}
+        run: |
+          gh label create maf-release --color 0E8A16 \
+            --description "Auto-generated by maf-release-watcher / fill workflows" --force || true
+          TITLE="🔴 Self-update workflow failed: ${WORKFLOW}"
+          # Exact-title match (not --search, which is flaky on emoji) so repeat
+          # failures update one rolling issue instead of spamming new ones.
+          NUM=$(gh issue list --label maf-release --state open --json number,title \
+            --jq ".[] | select(.title == \"${TITLE}\") | .number" | head -1)
+          if [ -n "$NUM" ]; then
+            gh issue comment "$NUM" --body "Failed again: ${RUN_URL}"
+            echo "Commented on existing failure issue #${NUM}"
+          else
+            gh issue create --title "${TITLE}" --label maf-release \
+              --body "The scheduled **${WORKFLOW}** workflow failed. Most recent failed run: ${RUN_URL}. Updated (not duplicated) on subsequent failures; close once fixed."
+            echo "Opened new failure issue"
           fi
 
 

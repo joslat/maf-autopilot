@@ -40,30 +40,65 @@ permissions:
   models: read
 
 jobs:
+  # Phase 3.1 — validate workflow_dispatch inputs BEFORE the semantic-review
+  # job runs. semantic-review has `pull-requests: write` + `models: read`; a
+  # malformed pr_number could otherwise trick `gh pr view` (mitigated by gh's
+  # own arg parsing today, but defense in depth) and a bogus model arg could
+  # waste quota or route to an unintended endpoint.
+  validate-inputs:
+    # Only run validation on the manual dispatch path; pull_request events
+    # carry no inputs to validate.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Validate inputs
+        env:
+          PR_NUM: ${{ inputs.pr_number }}
+          MODEL: ${{ inputs.model }}
+        run: |
+          if ! echo "$PR_NUM" | grep -qE '^[1-9][0-9]*$'; then
+            echo "::error::Invalid pr_number input shape: $PR_NUM (must be a positive integer)"
+            exit 1
+          fi
+          if [ -n "$MODEL" ]; then
+            case "$MODEL" in
+              openai/gpt-4o|openai/gpt-4o-mini|anthropic/claude-3-5-sonnet|anthropic/claude-3-5-haiku) ;;
+              *) echo "::error::Invalid model input: $MODEL (must be a known GitHub Models id)" ; exit 1 ;;
+            esac
+          fi
+
   semantic-review:
-    # Only run on PRs that look like ai-fill output — `ai-fill` label OR a
-    # head branch from one of the Coding Agent bots. Skip during draft
-    # iterations to avoid wasting model quota on every push.
+    # `needs` chain: validate-inputs only runs on workflow_dispatch, so we
+    # express "skip validation on pull_request" via `always() && (...)`. The
+    # pull_request path goes straight to semantic-review without validation
+    # (no inputs to validate). The workflow_dispatch path requires validate-inputs
+    # to have succeeded.
+    needs: [validate-inputs]
+    # Task 4.6 — scope is decided downstream by the build-prompt step (skip=true
+    # when no registry ENTRIES changed), NOT by a self-applied `ai-fill` label or
+    # a bot branch prefix. Relying on those silently skipped fill PRs that forgot
+    # the label / used an unexpected branch. Now ANY non-draft PR runs the job;
+    # non-registry PRs no-op cheaply before the (paid) AI inference step.
     if: >
-      github.event_name == 'workflow_dispatch' ||
+      always() &&
+      (needs.validate-inputs.result == 'success' || needs.validate-inputs.result == 'skipped') &&
       (
-        github.event.pull_request.draft == false &&
-        (
-          contains(github.event.pull_request.labels.*.name, 'ai-fill') ||
-          startsWith(github.head_ref, 'claude/') ||
-          startsWith(github.head_ref, 'copilot/') ||
-          startsWith(github.head_ref, 'codex/')
-        )
+        github.event_name == 'workflow_dispatch' ||
+        github.event.pull_request.draft == false
       )
     runs-on: ubuntu-latest
     steps:
       - name: Resolve PR coordinates
         id: pr
+        # Phase 3.2 — read inputs via env: redirect; reference $INPUT_PR_NUM
+        # as a shell variable. Eliminates template-injection surface.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_PR_NUM: ${{ inputs.pr_number }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            PR_NUM="${{ inputs.pr_number }}"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            PR_NUM="$INPUT_PR_NUM"
             # --repo so gh doesn't try to infer from a not-yet-existent git context
             # (this step runs before actions/checkout).
             DATA=$(gh pr view "$PR_NUM" --repo "$GITHUB_REPOSITORY" --json baseRefOid,headRefOid)
@@ -80,7 +115,7 @@ jobs:
           echo "Resolved: PR #$PR_NUM (base=$BASE head=$HEAD)"
 
       - name: Checkout main (so the scripts are present)
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           # Deliberately NOT checking out the PR head — the PR branch (created
           # by the filler bot) doesn't contain the rung-2 review scripts. We
@@ -107,7 +142,7 @@ jobs:
             echo "$SHA reachable."
           done
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: '3.12'
 
@@ -120,8 +155,8 @@ jobs:
           BASE_SHA: ${{ steps.pr.outputs.base }}
           HEAD_SHA: ${{ steps.pr.outputs.head }}
         run: |
-          python3 .github/scripts/ai_review_build_prompt.py > .ai-review-prompt.md
-          BYTES=$(wc -c < .ai-review-prompt.md | tr -d ' ')
+          python3 .github/scripts/ai_review_build_prompt.py > .ai-review-prompt.txt
+          BYTES=$(wc -c < .ai-review-prompt.txt | tr -d ' ')
           ENTRIES_COUNT=$(jq length < .ai-review-entries.json)
           echo "Prompt bytes: $BYTES; entries to review: $ENTRIES_COUNT"
           if [ "$ENTRIES_COUNT" = "0" ]; then
@@ -134,10 +169,10 @@ jobs:
       - name: AI inference (GitHub Models)
         if: steps.build.outputs.skip != 'true'
         id: ai
-        uses: actions/ai-inference@v1
+        uses: actions/ai-inference@b81b2afb8390ee6839b494a404766bef6493c7d9  # v1.2.8
         with:
           model: ${{ inputs.model != '' && inputs.model || 'openai/gpt-4o' }}
-          prompt-file: .ai-review-prompt.md
+          prompt-file: .ai-review-prompt.txt
           max-tokens: 4000
           # Auth is the workflow's GITHUB_TOKEN with models: read permission.
           # No additional inputs needed; the action picks up the token from

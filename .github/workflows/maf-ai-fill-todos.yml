@@ -26,6 +26,8 @@ name: MAF AI Auto-Fill TODOs
 #   (one of "Allow Copilot/Claude/Codex coding agent" must be ON).
 # - Secret COPILOT_ASSIGN_PAT: fine-grained PAT owned by a Copilot-enabled user,
 #   with Issues R/W + Contents R/W + PRs R/W + Actions R/W on this repo only.
+#   This SAME secret is reused by maf-release-watcher.yml (Contents R/W, to push
+#   to main) — provision the full union here, not a narrower scope. [task 3.5]
 #   This is REQUIRED for auto-assignment — see the long comment block on the
 #   "Open issue assigned to Copilot Coding Agent" step below for why
 #   GITHUB_TOKEN is unusable here. If the secret is missing the workflow still
@@ -57,10 +59,35 @@ permissions:
   issues: write
 
 jobs:
+  # Phase 3.1 — validate workflow_dispatch / workflow_call inputs BEFORE any
+  # privileged step runs. The `open-issue-for-copilot` job uses
+  # COPILOT_ASSIGN_PAT (an admin PAT). A malformed target_version (e.g.
+  # "1.4.0; rm -rf /") would otherwise hit the env-redirect at line 68 and
+  # the downstream shell var expansion would render it inert — but defense
+  # in depth: catch the bad shape upstream with a regex.
+  validate-inputs:
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Validate inputs
+        env:
+          TARGET: ${{ inputs.target_version }}
+          BOT: ${{ inputs.bot || 'claude' }}
+        run: |
+          if ! echo "$TARGET" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$'; then
+            echo "::error::Invalid target_version input shape: $TARGET (must be semver)"
+            exit 1
+          fi
+          case "$BOT" in
+            claude|copilot|codex) ;;
+            *) echo "::error::Invalid bot input: $BOT (must be claude|copilot|codex)" ; exit 1 ;;
+          esac
+
   open-issue-for-copilot:
+    needs: validate-inputs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Compute helper variables
         id: vars
@@ -169,9 +196,13 @@ jobs:
             -f repo="${GITHUB_REPOSITORY##*/}" \
             --jq ".data.repository.suggestedActors.nodes[] | select(.login==\"$NEEDLE\") | .id")
           if [ -z "$BOT_ID" ] || [ "$BOT_ID" = "null" ]; then
-            echo "::error::Could not find $NEEDLE in suggestedActors. Enable the agent at"
-            echo "::error::https://github.com/${GITHUB_REPOSITORY}/settings/copilot"
-            exit 1
+            # Task 4.9 — the issue was already created above, so failing to
+            # RESOLVE the bot id is non-critical: warn + skip auto-assignment
+            # instead of `exit 1`, which failed the whole job and made a
+            # successful dispatch look failed. Mirrors the best-effort assignment
+            # mutation below (warning, not hard failure).
+            echo "::warning title=Coding Agent not resolved::Could not find $NEEDLE in suggestedActors (first 25). Issue $ISSUE_URL was created but NOT auto-assigned — enable the agent at https://github.com/${GITHUB_REPOSITORY}/settings/copilot, then assign it manually."
+            exit 0
           fi
           echo "Resolved bot $BOT_NAME ($NEEDLE) -> $BOT_ID"
           # Keep COPILOT_BOT_ID name for back-compat with downstream messages.

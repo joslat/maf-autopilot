@@ -44,6 +44,7 @@ Plus a **separate `maf-autopilot.Analyzers` NuGet** with 3 Roslyn analyzers (`MA
 - 📖 **Self-updating knowledge** — a GitHub Actions workflow watches NuGet weekly, diffs the MAF API surface, and opens a PR updating the migration guide and compatibility matrix automatically when a new version ships.
 - 🧰 **Deterministic fixes, not guesses** — a machine-readable Obsolete API Registry maps every known CS0618 warning to its exact replacement pattern. No hallucinated fix patterns.
 - 🔄 **Keeps your code current** — as MAF evolves, re-run the auditor on your codebase. It cross-references the latest guide, flags anything that's now obsolete or has a better pattern, and tells you exactly what to change.
+- 🔐 **Hardened against the named MCP attack lattice** — v1.1 ships a comprehensive security pass: 5 critical-tier closures (path-escape, MCP annotation drift, scaffold-namespace code injection, supply-chain prompt injection via release notes, `workflow_dispatch` input injection), 11+ high-tier closures, defense-in-depth helpers (`LlmFencing`, `BoundedInput`, `PathGuard.ValidateContainment`), and `.github/workflows/ci-invariants.yml` enforcing 5 invariants in CI. Cisco mcp-scanner v4.6.0: 25/25 SAFE, 0 findings. See [`SECURITY.md`](SECURITY.md) for the vulnerability-disclosure policy + [`docs/security.md`](docs/security.md) for user-facing attack-class coverage.
 
 ## How It Works
 
@@ -112,7 +113,7 @@ Wire it into your IDE's `mcp.json`:
 ```json
 {
   "servers": {
-    "maf-autopilot": {
+    "maf-doctor": {
       "type": "stdio",
       "command": "docker",
       "args": ["run", "--rm", "-i", "ghcr.io/joslat/maf-autopilot:latest"]
@@ -193,11 +194,11 @@ maf-autopilot/
 │   └── workflows/                         # 7 GitHub Actions
 │       ├── release.yml                    # NuGet publish (test → pack → push) on v* tag
 │       ├── docker-publish.yml             # multi-arch GHCR image on tag push
-│       ├── maf-release-watcher.yml        # weekly (Monday 9 AM UTC) MAF version check
+│       ├── maf-release-watcher.yml        # daily (09:00 UTC) MAF version check; minors auto-commit, majors escalate
 │       ├── maf-ai-fill-todos.yml          # dispatches GitHub issue for Copilot Coding Agent to fill registry TODOs
 │       ├── maf-ai-fill-verify.yml         # PR-gate: runs verify-registry on AI-filled output before merge
 │       ├── maf-pr-audit.yml               # PR-scoped scan, posts a sticky comment
-│       └── maf-drift-detector.yml         # weekly MafDoctor; opens issue if grade < A
+│       └── maf-drift-detector.yml         # weekly (Mon 11:00 UTC) MafDoctor on product code; opens issue if grade < A
 ├── src/
 │   ├── maf-autopilot/                     # MCP server — 25 tools, 6 resources, 7 prompts; CLI binary
 │   ├── maf-autopilot.Analyzers/           # Roslyn analyzer package (MAF001/002/003 — separate NuGet)

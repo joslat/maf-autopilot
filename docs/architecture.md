@@ -232,16 +232,17 @@ The `maf-release-watcher` workflow runs weekly + on-demand, detecting new MAF re
 
 ### When MAF X.Y ships — the actual flow
 
-1. **Watcher fires** (weekly cron OR manual `gh workflow run maf-release-watcher.yml`).
+1. **Watcher fires** (daily cron OR manual `gh workflow run maf-release-watcher.yml`; a manual run can set `maf_version` for a specific version and `push_target` for a safe dry-run against a throwaway branch).
 2. **Detection step** compares NuGet's latest stable against `.maf-version`. If different, proceeds.
-3. **Major-version check** sets `is_major=true` for X.0 bumps — auto-PR title gets a 🚨 prefix + `major-version,needs-review` labels.
-4. **dotnet-inspect diff** runs for each MAF NuGet package; output captured.
-5. **`registry-extract` CLI** parses each diff, emits draft YAML entries to `tmp-entries.yaml`.
-6. **Append step** appends the drafts to the live `registry.yaml` via `>> $REGISTRY` (additive). A separator comment marks the auto-appended region for reviewer clarity.
-7. **Matrix update** appends a new row to `compatibility-matrix.md` (additive).
-8. **Guide generation** writes a per-version file `guides/maf-X.Y.0-migration-guide.md` (additive — new file, doesn't touch existing guides).
-9. **Auto-PR** opens with the cumulative diff, labels (`maf-release` + optional `major-version,needs-review`), and a body summarising what landed.
-10. **Human reviewer** fills in the TODO placeholders in the new registry entries (`replacement_signature`, `fix_description`, `example_after`, `guide_section`) and either merges or escalates.
+3. **Major-version check** sets `is_major=true` for X.0 bumps. **Majors are NOT auto-committed** — they escalate to a `maf-release,needs-review` tracking issue (with the breaking-API diffs attached as run artifacts) for human-driven migration. Minor/patch bumps continue automatically.
+4. **dotnet-inspect diff** runs for each MAF NuGet package; output captured (and uploaded as run artifacts for reviewer access).
+5. **`registry-extract` CLI** parses each diff, emits draft YAML entries; the append step de-dupes them against existing entry ids (idempotent on re-run).
+6. **Append step** appends the de-duplicated drafts to the live `registry.yaml`. A separator comment marks the auto-appended region.
+7. **Matrix update** inserts a new top row in `compatibility-matrix.md`.
+8. **Guide generation** writes a per-version file `guides/maf-X.Y.0-migration-guide.md` and regenerates the cumulative guide (existing per-version guides untouched).
+9. **Direct commit to `main`** (no PR gate — a deliberate solo-maintainer trade-off; majors are gated at step 3). The push uses the maintainer PAT so it bypasses branch protection.
+10. **AI-fill dispatch** kicks off `maf-ai-fill-todos.yml`, which opens an issue assigned to the GitHub Copilot Coding Agent; the agent fills the TODO placeholders (`replacement_signature`, `fix_description`, `example_after`, `guide_section`) and opens a PR, gated by the rung-1 `verify-registry` + rung-2 semantic-review checks.
+11. **On any failure**, a `notify-on-failure` job opens/updates a `maf-release` tracking issue so the maintainer is alerted (scheduled failures no longer pass silently).
 
 ### How additivity is engraved
 

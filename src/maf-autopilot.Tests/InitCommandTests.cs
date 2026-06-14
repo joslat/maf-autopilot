@@ -42,9 +42,10 @@ public sealed class InitCommandTests : IDisposable
 
         var root = JsonNode.Parse(await File.ReadAllTextAsync(mcpJsonPath))!.AsObject();
         var servers = root["servers"]!.AsObject();
-        Assert.True(servers.ContainsKey("maf-autopilot"));
-        Assert.Equal("stdio", servers["maf-autopilot"]!["type"]!.GetValue<string>());
-        Assert.Equal("maf-autopilot", servers["maf-autopilot"]!["command"]!.GetValue<string>());
+        Assert.True(servers.ContainsKey("maf-doctor"));
+        Assert.Equal("stdio", servers["maf-doctor"]!["type"]!.GetValue<string>());
+        // Brand key is maf-doctor; the command stays the frozen binary maf-autopilot.
+        Assert.Equal("maf-autopilot", servers["maf-doctor"]!["command"]!.GetValue<string>());
     }
 
     [Fact]
@@ -84,8 +85,8 @@ public sealed class InitCommandTests : IDisposable
         var servers = root["servers"]!.AsObject();
         Assert.True(servers.ContainsKey("my-other-server"),
             "Existing server entries must be preserved.");
-        Assert.True(servers.ContainsKey("maf-autopilot"),
-            "maf-autopilot entry must be added.");
+        Assert.True(servers.ContainsKey("maf-doctor"),
+            "maf-doctor entry must be added.");
     }
 
     // -------------------------------------------------------------------------
@@ -151,7 +152,7 @@ public sealed class InitCommandTests : IDisposable
         var root = JsonNode.Parse(await File.ReadAllTextAsync(mcpJsonPath))!.AsObject();
         var servers = root["servers"]!.AsObject();
         Assert.True(servers.ContainsKey("team-server"));
-        Assert.True(servers.ContainsKey("maf-autopilot"));
+        Assert.True(servers.ContainsKey("maf-doctor"));
     }
 
     /// <summary>
@@ -177,6 +178,6 @@ public sealed class InitCommandTests : IDisposable
         var root = JsonNode.Parse(await File.ReadAllTextAsync(mcpJsonPath))!.AsObject();
         Assert.True(root.ContainsKey("inputs"),
             "Non-servers top-level keys must survive the merge.");
-        Assert.True(root["servers"]!.AsObject().ContainsKey("maf-autopilot"));
+        Assert.True(root["servers"]!.AsObject().ContainsKey("maf-doctor"));
     }
 }

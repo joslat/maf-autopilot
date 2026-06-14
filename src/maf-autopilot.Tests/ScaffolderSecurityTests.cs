@@ -93,6 +93,101 @@ public sealed class ScaffolderSecurityTests
     }
 
     // -------------------------------------------------------------------------
+    // Phase 1.3 — C3: projectNamespace injection on ScaffoldAgent / ScaffoldExecutor.
+    //   Prior to the fix, projectNamespace flowed verbatim into the generated
+    //   `namespace {{ns}};` declaration. A crafted value like
+    //   `MyApp; class Evil { static int x = Process.Start("calc"); }` produces a
+    //   compilable file with attacker-controlled types in the user's project.
+    //   The fix is a Roslyn `ParseName` + roundtrip check, mirroring the
+    //   inputType/outputType defense.
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("MyApp")]
+    [InlineData("MyApp.Agents")]
+    [InlineData("My.Org.Agents.V2")]
+    [InlineData("Contoso.FraudReview.AI.Agents")]
+    public void IsValidNamespace_AcceptsLegitimateNamespaces(string input)
+    {
+        Assert.True(AgentScaffolder.IsValidNamespace(input),
+            $"'{input}' should be accepted — it is a valid C# namespace.");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("MyApp; class Evil { }")]                                  // statement-terminator break-out
+    [InlineData("MyApp.{Process.Start(\"calc\")}")]                       // expression injection
+    [InlineData("MyApp\nclass Evil { }")]                                  // newline-injected payload
+    [InlineData("MyApp`evil`")]                                            // backtick
+    [InlineData("MyApp; static Evil() => Process.Start(\"x\");")]          // full method
+    [InlineData("MyApp<T>")]                                               // generics — namespaces are never generic
+    [InlineData("MyApp.\"evil\"")]                                         // quote
+    [InlineData("MyApp = MyOtherApp")]                                     // assignment
+    public void IsValidNamespace_RejectsInjectionAttempts(string input)
+    {
+        Assert.False(AgentScaffolder.IsValidNamespace(input),
+            $"'{input}' should be rejected — it is not a clean C# namespace.");
+    }
+
+    [Fact]
+    public void IsValidNamespace_OverLengthCap_Rejected()
+    {
+        // 257-byte identifier (one over the 256 cap).
+        var oversized = new string('A', 257);
+        Assert.False(AgentScaffolder.IsValidNamespace(oversized));
+    }
+
+    [Fact]
+    public void ScaffoldAgent_NamespaceInjection_ThrowsArgumentException()
+    {
+        const string evilNs = "MyApp; static class Evil { static Evil() => System.Diagnostics.Process.Start(\"calc.exe\"); }";
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            AgentScaffolder.ScaffoldAgent(
+                agentName: "ChatBot",
+                projectNamespace: evilNs));
+        Assert.Equal("projectNamespace", ex.ParamName);
+    }
+
+    [Fact]
+    public void ScaffoldExecutor_NamespaceInjection_ThrowsArgumentException()
+    {
+        const string evilNs = "MyApp\nstatic class Evil { static Evil() => System.Diagnostics.Process.Start(\"calc.exe\"); }";
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            AgentScaffolder.ScaffoldExecutor(
+                executorName: "Reviewer",
+                projectNamespace: evilNs,
+                inputType: "string",
+                outputType: "string"));
+        Assert.Equal("projectNamespace", ex.ParamName);
+    }
+
+    [Fact]
+    public void ScaffoldAgent_EmptyNamespace_UsesSafeDefault()
+    {
+        // Empty/whitespace must NOT be rejected by validation — the scaffolder
+        // substitutes a safe default. This pins the API contract documented
+        // in the source comment.
+        var files = AgentScaffolder.ScaffoldAgent(
+            agentName: "ChatBot",
+            projectNamespace: "");
+        Assert.NotEmpty(files);
+        Assert.Contains(files, f => f.Content.Contains("namespace MyApp.Agents"));
+    }
+
+    [Fact]
+    public void ScaffoldExecutor_EmptyNamespace_UsesSafeDefault()
+    {
+        var files = AgentScaffolder.ScaffoldExecutor(
+            executorName: "Reviewer",
+            projectNamespace: "");
+        Assert.NotEmpty(files);
+        Assert.Contains(files, f => f.Content.Contains("namespace MyApp.Workflows"));
+    }
+
+    // -------------------------------------------------------------------------
     // N.10 — EscapeForCSharp false-positive guard.
     //   Agent A's H1 claimed `"` (Unicode escape for `"`) bypasses the
     //   escaper. The escaper's first replacement doubles every `\`, so any

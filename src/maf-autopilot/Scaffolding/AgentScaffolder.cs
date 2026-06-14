@@ -37,6 +37,17 @@ public static class AgentScaffolder
                 "Use PascalCase, letters/digits only, must start with a letter.",
                 nameof(agentName));
 
+        // Security (Phase 1.3, C3): projectNamespace flows VERBATIM into the
+        // generated file's `namespace {{ns}};` declaration. Without validation, a
+        // crafted value like `MyApp; class Evil { static int x = Process.Start("..."); }`
+        // produces a compilable file with attacker-controlled types in the user's
+        // project tree. Mirrors the inputType/outputType defense in ScaffoldExecutor.
+        // Empty/whitespace is permitted because the next line substitutes a safe default.
+        if (!string.IsNullOrWhiteSpace(projectNamespace) && !IsValidNamespace(projectNamespace))
+            throw new ArgumentException(
+                $"'{projectNamespace}' is not a valid C# namespace.",
+                nameof(projectNamespace));
+
         var className = NormalizeName(agentName);
         var ns = string.IsNullOrWhiteSpace(projectNamespace) ? "MyApp.Agents" : projectNamespace;
         var role = instructions ?? "You are a helpful assistant. Respond concisely.";
@@ -67,6 +78,14 @@ public static class AgentScaffolder
         if (!IsValidIdentifier(executorName))
             throw new ArgumentException(
                 $"'{executorName}' is not a valid C# identifier.", nameof(executorName));
+
+        // Security (Phase 1.3, C3): see ScaffoldAgent above for rationale. Same
+        // injection class — projectNamespace splices into a file-scoped namespace
+        // declaration that compiles into the user's project tree.
+        if (!string.IsNullOrWhiteSpace(projectNamespace) && !IsValidNamespace(projectNamespace))
+            throw new ArgumentException(
+                $"'{projectNamespace}' is not a valid C# namespace.",
+                nameof(projectNamespace));
 
         // Security: inputType / outputType flow VERBATIM into the generated C# source
         // (Task<{{outputType}}>, default({{outputType}})!, etc.). Without validation, a
@@ -303,7 +322,13 @@ public static class AgentScaffolder
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static readonly Regex IdentifierRegex = new(@"^[A-Za-z][A-Za-z0-9_]*$", RegexOptions.Compiled);
+    // Phase 7.G fixup — regex hygiene. Pattern is structurally backtracking-safe
+    // (anchored char-class) but the project-wide invariant requires
+    // NonBacktracking + MatchTimeout on every Regex declaration.
+    private static readonly Regex IdentifierRegex = new(
+        @"^[A-Za-z][A-Za-z0-9_]*$",
+        RegexOptions.Compiled | RegexOptions.NonBacktracking,
+        TimeSpan.FromMilliseconds(100));
 
     private static bool IsValidIdentifier(string s) =>
         !string.IsNullOrWhiteSpace(s) && IdentifierRegex.IsMatch(s);
@@ -367,5 +392,35 @@ public static class AgentScaffolder
         // If Roslyn silently dropped extra tokens (e.g. comments, statements after the type),
         // the printed form will differ. This is the actual injection gate.
         return typeSyntax.ToString().Trim() == s.Trim();
+    }
+
+    /// <summary>
+    /// True if <paramref name="s"/> parses as a single C# qualified-or-dotted name
+    /// with zero diagnostics and roundtrips identically. Used to gate
+    /// <see cref="ScaffoldAgent"/> and <see cref="ScaffoldExecutor"/>'s
+    /// <c>projectNamespace</c> parameter before it's spliced into a
+    /// file-scoped <c>namespace {{ns}};</c> declaration. Same shape as
+    /// <see cref="IsValidTypeExpression"/> — pre-reject obvious injection
+    /// characters, then require the parsed tree to print back identically.
+    ///
+    /// The pre-reject list includes <c>&lt;</c> and <c>&gt;</c> in addition to
+    /// the type-expression list: namespaces are never generic. Anything that
+    /// passes those filters and still wants to be malicious has to break the
+    /// roundtrip check.
+    /// </summary>
+    internal static bool IsValidNamespace(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return false;
+        if (s.Length > 256) return false;            // sanity cap; real namespaces fit
+        if (s.IndexOfAny(['{', '}', '(', ')', ';', '=', '<', '>', '\n', '\r', '\0', '"', '\'', '`', ' ', '\t']) >= 0)
+            return false;
+
+        // ParseName accepts qualified names (e.g. `Foo.Bar.Baz`) and simple
+        // identifiers. Anything richer (statement, expression, type with
+        // generics) is rejected by the pre-reject filter above, but the
+        // roundtrip check is the actual injection gate.
+        var nameSyntax = SyntaxFactory.ParseName(s);
+        if (nameSyntax.ContainsDiagnostics) return false;
+        return nameSyntax.ToString().Trim() == s.Trim();
     }
 }

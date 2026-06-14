@@ -59,7 +59,7 @@ Run the MCP server locally to expose `maf://` resources and `/maf-*` prompts in 
 1. Clone this repo
 2. Verify `.vscode/mcp.json` already points to the local build:
    ```json
-   "maf-autopilot": {
+   "maf-doctor": {
      "type": "stdio",
      "command": "dotnet",
      "args": ["run", "--project", "src/maf-autopilot/maf-autopilot.csproj", "--"]

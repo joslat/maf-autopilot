@@ -148,14 +148,19 @@ internal static class InitCommand
 
         var servers = root["servers"]!.AsObject();
 
-        if (servers.ContainsKey("maf-autopilot"))
+        // Brand-only rename (task 6.2): the server key is "maf-doctor" (the
+        // brand), but the command stays "maf-autopilot" (the frozen global-tool
+        // binary). Recognize the legacy "maf-autopilot" key too so re-running
+        // init on a repo configured by an older build doesn't add a duplicate.
+        if (servers.ContainsKey("maf-doctor") || servers.ContainsKey("maf-autopilot"))
         {
-            Console.WriteLine("  ✓ .vscode/mcp.json — maf-autopilot entry already present, no change");
+            Console.WriteLine("  ✓ .vscode/mcp.json — MAF Doctor server entry already present, no change");
             return;
         }
 
-        // Add the global-tool entry (not dotnet run — assumes `dotnet tool install -g maf-autopilot`)
-        servers["maf-autopilot"] = new JsonObject
+        // Add the global-tool entry (assumes `dotnet tool install -g maf-autopilot`).
+        // Key = brand (maf-doctor); command = frozen binary (maf-autopilot).
+        servers["maf-doctor"] = new JsonObject
         {
             ["type"] = "stdio",
             ["command"] = "maf-autopilot",
@@ -165,7 +170,7 @@ internal static class InitCommand
 
         var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(mcpJsonPath, json + Environment.NewLine);
-        Console.WriteLine("  ✓ .vscode/mcp.json — added maf-autopilot global-tool server entry");
+        Console.WriteLine("  ✓ .vscode/mcp.json — added MAF Doctor (maf-doctor) global-tool server entry");
     }
 
     // ------------------------------------------------------------------ //

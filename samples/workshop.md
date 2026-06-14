@@ -207,7 +207,7 @@ Create `.vscode/mcp.json` inside the sample folder:
 ```json
 {
   "servers": {
-    "maf-autopilot": {
+    "maf-doctor": {
       "type": "stdio",
       "command": "maf-autopilot",
       "args": []

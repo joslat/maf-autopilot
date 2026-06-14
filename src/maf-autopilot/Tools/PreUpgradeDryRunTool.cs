@@ -28,7 +28,11 @@ public sealed class PreUpgradeDryRunTool
         _registry = registry;
     }
 
-    [McpServerTool(ReadOnly = true, Destructive = false)]
+    // Annotation rationale: OpenWorld = true because dotnet-inspect reaches
+    // api.nuget.org to download the two MAF NuGet versions being diffed.
+    // ReadOnly = true is correct — only emits a report; the repo scan is
+    // grep-only, no writes.
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = true)]
     [Description("""
         Preview the impact of a MAF upgrade WITHOUT modifying any code.
 
@@ -141,7 +145,14 @@ public sealed class PreUpgradeDryRunTool
     private static IEnumerable<int> FindLines(string source, string symbol)
     {
         if (string.IsNullOrEmpty(symbol)) yield break;
-        var pattern = new Regex($@"\b{Regex.Escape(symbol)}\b", RegexOptions.Compiled);
+        // Phase 5.9 — ReDoS hygiene. Even though the pattern is bounded
+        // (Regex.Escape on an attacker-controlled `symbol` plus literal \b
+        // anchors), NonBacktracking + 100ms timeout cap any future drift
+        // (e.g. someone changing `Regex.Escape` to direct interpolation).
+        var pattern = new Regex(
+            $@"\b{Regex.Escape(symbol)}\b",
+            RegexOptions.Compiled | RegexOptions.NonBacktracking,
+            TimeSpan.FromMilliseconds(100));
         var lines = source.Split('\n');
         for (var i = 0; i < lines.Length; i++)
             if (pattern.IsMatch(lines[i])) yield return i + 1;

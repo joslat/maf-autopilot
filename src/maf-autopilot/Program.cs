@@ -26,8 +26,19 @@ if (args.Length >= 2 && args[0] == "new")
 }
 if (args.Length >= 1 && args[0] == "doctor")
 {
-    var path = args.Length >= 2 ? args[1] : Directory.GetCurrentDirectory();
-    var report = new MafAutopilot.Tools.DoctorTool().MafDoctor(path);
+    // Usage: maf-autopilot doctor [path] [--exclude <substr>]...
+    // Repeatable `--exclude` skips files whose repo-relative path contains the
+    // substring — used by the drift detector to scan product code only (skip
+    // samples/ + test fixtures). The first non-flag arg is the path (default cwd).
+    var excludes = new List<string>();
+    string? path = null;
+    for (int i = 1; i < args.Length; i++)
+    {
+        if (args[i] == "--exclude" && i + 1 < args.Length) { excludes.Add(args[++i]); continue; }
+        if (path is null && !args[i].StartsWith("--", StringComparison.Ordinal)) path = args[i];
+    }
+    path ??= Directory.GetCurrentDirectory();
+    var report = new MafAutopilot.Tools.DoctorTool().Run(path, "markdown", excludes);
     Console.WriteLine(report);
     Environment.Exit(0);
     return;

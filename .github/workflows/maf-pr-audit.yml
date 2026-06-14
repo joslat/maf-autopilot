@@ -1,7 +1,10 @@
 name: MAF PR Audit
 
-# PR-time check: run every MAF scanner scoped to the changed *.cs files,
-# post the report as a PR comment. The CI integration vector for plan #52.
+# PR-time check: run the MAF doctor over the repo (PRODUCT code — samples/ and
+# test fixtures excluded, like the drift detector) and post the report as a
+# sticky PR comment. The changed-file list is used only for the skip / compiler-
+# bomb gate below, NOT to scope the scan — this is a whole-repo (product) audit.
+# The CI integration vector for plan #52. [task 4.10]
 
 on:
   pull_request:
@@ -17,7 +20,7 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           # Need the base branch ref to compute the diff.
           fetch-depth: 0
@@ -43,13 +46,54 @@ jobs:
           if [ -z "$NON_SAMPLE" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
             echo "::notice title=MAF audit skipped::Only samples/ files changed — they're intentionally buggy demo corpora, not real code to audit."
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
+            exit 0
           fi
+
+          # Phase 5.11 (G6 in the hardening plan) — compiler-bomb cap.
+          # A malicious PR can submit a small number of .cs files that each
+          # exceed several MB (deeply-nested generics, multi-MB attributes,
+          # giant XML doc comments) and pin Roslyn-host memory on the runner.
+          # Cap the audit at: ≤ 200 changed .cs files AND ≤ 5 MB aggregate.
+          # Above either ceiling, skip the Roslyn-heavy audit and surface a
+          # warning — the PR can still merge, just without the per-file scan.
+          #
+          # Phase 5.G fixup — use NUL-separated `git diff -z` + `xargs -0` to
+          # handle filenames containing newlines / quotes / spaces (all legal
+          # on POSIX). The prior `xargs -I {} sh -c '... "{}"'` form is
+          # broken by a filename containing `"` (legal on Linux/macOS).
+          # We re-fetch the changed file list as NUL-separated bytes instead
+          # of parsing the already-newline-split list.
+          mapfile -d '' CHANGED_NUL < <(git diff -z --name-only "origin/$BASE_REF" HEAD -- '*.cs')
+          COUNT=${#CHANGED_NUL[@]}
+          # Strip trailing empty entry that mapfile may add on a NUL-terminated input.
+          if [ "$COUNT" -gt 0 ] && [ -z "${CHANGED_NUL[$((COUNT-1))]}" ]; then
+            unset 'CHANGED_NUL[$((COUNT-1))]'
+            COUNT=${#CHANGED_NUL[@]}
+          fi
+
+          if [ "$COUNT" -gt 0 ]; then
+            TOTAL_BYTES=0
+            for f in "${CHANGED_NUL[@]}"; do
+              if [ -f "$f" ]; then
+                # `stat -c %s --` is POSIX-friendly and never re-interprets the
+                # filename through a shell parser.
+                SZ=$(stat -c %s -- "$f" 2>/dev/null || echo 0)
+                TOTAL_BYTES=$((TOTAL_BYTES + SZ))
+              fi
+            done
+            echo "Compiler-bomb cap check: $COUNT .cs files, $TOTAL_BYTES bytes total."
+            if [ "$COUNT" -gt 200 ] || [ "$TOTAL_BYTES" -gt 5242880 ]; then
+              echo "skip=true" >> $GITHUB_OUTPUT
+              echo "::warning title=MAF audit skipped (compiler-bomb cap)::PR changes $COUNT .cs files / $TOTAL_BYTES bytes. Caps are 200 files / 5 MB. Roslyn-heavy audit skipped to protect the runner; CI-side scanners still run."
+              exit 0
+            fi
+          fi
+
+          echo "skip=false" >> $GITHUB_OUTPUT
 
       - name: Setup .NET
         if: steps.scope.outputs.skip != 'true'
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
         with:
           dotnet-version: '8.0.x'
 
@@ -70,7 +114,12 @@ jobs:
           # have the `doctor` CLI subcommand and fall back to MCP-server mode (which
           # writes its banner to stderr). `|| true` keeps the job alive on any error
           # so we still post a sticky comment with diagnostic content.
-          maf-autopilot doctor "$GITHUB_WORKSPACE" > pr-audit-full.md 2>&1 || true
+          # Product-scoped (task 4.10 / 3.1): exclude samples/ + test fixtures so
+          # the audit reflects product code, matching the drift detector. Older
+          # published builds ignore the extra --exclude args (forward-compatible).
+          maf-autopilot doctor "$GITHUB_WORKSPACE" \
+            --exclude samples/ --exclude .Tests/ --exclude find-the-bug/ \
+            > pr-audit-full.md 2>&1 || true
 
           # Defensive fallback: if the doctor invocation produced nothing (empty
           # file), write an explanatory message. Pre-alpha-4 NuGet builds didn't

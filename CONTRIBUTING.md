@@ -81,6 +81,66 @@ Agents are GitHub Copilot Chat agents (Markdown + YAML frontmatter). The three e
 4. **Tool name convention.** The SDK emits PascalCase from the C# method name (`MafApiSafety` → exposed as `MafApiSafety`). Use PascalCase in docs.
 5. **Tests.** Add `<ToolName>Tests.cs` in `src/maf-autopilot.Tests/`. Cover: empty input → friendly error; happy path; the regression case that motivated the tool.
 
+### Security rubric (every new tool MUST pass)
+
+Anchored to the [`docs/security.md`](docs/security.md) canon — MCP spec annotations, OWASP MCP Top 10, Keysight 2026 command-injection. The CI workflow `.github/workflows/ci-invariants.yml` enforces several of these mechanically; the others are a code-review gate. Reviewer rejects any tool PR that fails one of the below.
+
+1. **Path inputs route through `PathGuard`.** Use `PathGuard.ValidateRepoPath()` for any path that names the user's repository root, and `PathGuard.ValidateContainment(repoPath, candidate)` for any *secondary* path that must stay within that root (e.g. `specificFile`, `subPath`). Never `Path.Combine` user input without containment validation — see C1 in the v1.1 hardening plan.
+2. **Length caps on every user-controlled string input.** Call `BoundedInput.Validate(value, maxBytes, paramName)` at the top of the method. Use the named cap constants (`BoundedInput.PathBytes` = 4 KB; `BoundedInput.IdentifierBytes` = 256 B; `BoundedInput.ShortTextBytes` = 16 KB; `BoundedInput.SnippetBytes` = 256 KB; `BoundedInput.InstructionsBytes` = 64 KB; `BoundedInput.AggregateBytes` = 100 MB) rather than raw numbers. Failing this is the most common source of DoS surface.
+3. **`[McpServerTool]` annotation must match actual behavior.** This is the contract MCP clients consume to decide auto-invoke vs. user-consent — getting it wrong puts MCP-spec-compliant clients in a bad position:
+   - `ReadOnly = true` is allowed **only** if the tool does not write to disk, does not spawn a subprocess that compiles/builds/runs code, and does not mutate server state.
+   - `Destructive = true` is required if the tool writes any new file in the user's project tree (even when the writer skips-on-exist — the act of writing is destructive to "the empty state").
+   - `OpenWorld = true` is required if any code path reaches the network (HTTP, NuGet, DNS), directly or via subprocess.
+   - `Idempotent = true` is allowed only if invoking the tool a second time with the same arguments is observably equivalent.
+4. **Subprocess spawn discipline.** All `Process.Start` sites use `ProcessStartInfo.ArgumentList` (argv-style); the unsafe `Arguments` *string* property is forbidden — see [`docs/security.md` → "Command injection via tool arguments (Keysight, 2026)"](docs/security.md#command-injection-via-tool-arguments-keysight-2026). New spawn sites must be added to the `ci-invariants.yml` allowlist in the same PR.
+5. **LLM-bound user content is fenced.** Any string that ends up in **another LLM's context** (a sibling MCP tool's input, a Coding Agent's PR body, a `models: read` review prompt) must wrap user-controlled slots via `LlmFencing.Fence("label", value, maxBytes)`. For short non-LLM-bound contexts (a markdown title, a search URL) call `LlmFencing.StripHtmlComments(value)` — cheaper than a full fence and sufficient for the smuggle-vector defense. **Important:** do NOT fence inputs you only pass to Roslyn (`MafExplain`, `MafLintAgentPrompt`, the scanners) — those tools bound the attack surface by syntax-tree extraction; user-source-text never reaches a downstream LLM via their output paths.
+6. **Recursive file enumeration uses `SourceFileWalker`.** Custom `Directory.EnumerateFiles(..., SearchOption.AllDirectories)` calls follow symlinks by default and can be redirected by a hostile repo. Use the canonical walker, which sets `AttributesToSkip = ReparsePoint`.
+7. **Regex hygiene.** Every `new Regex(` declaration includes `RegexOptions.NonBacktracking` and `MatchTimeout = TimeSpan.FromMilliseconds(100)`. The CI invariant flags missing options.
+
+If your tool genuinely needs to violate one of the above (e.g. an in-repo developer-only override), discuss in the PR description first; the rubric is a default, not an absolute ban — but the burden of proof is on the contributor.
+
+### Helper composition — decision tree
+
+A new MCP tool with one or more user-controlled string parameters should follow this exact order. Skipping a step or running them out of order is the usual source of bugs surfaced during security review.
+
+```
+For every string parameter, at the TOP of the method body:
+  1. BoundedInput.Validate(value, BoundedInput.<Class>Bytes, nameof(value))
+     — always. Pick the class from the cap table (rule #2 above).
+
+For path-typed parameters specifically:
+  2a. PathGuard.ValidateRepoPath(repoPath)                   — if the input names a repo root.
+  2b. PathGuard.ValidateContainment(repoPath, candidatePath) — if the input is a secondary
+      path that must stay inside the repo root (e.g. `specificFile`, `subPath`).
+
+For string outputs that will reach ANOTHER LLM:
+  3a. LlmFencing.Fence("label", value, maxBytes)
+      — when the value is the entire field a downstream agent will read.
+        (Examples: MafDraftIssue body, MafPrompts.Debug template, registry `notes:` embed.)
+  3b. LlmFencing.StripHtmlComments(value)
+      — when the value is short and lives outside a fence (markdown title, search URL).
+        Cheaper than a full fence; sufficient for the smuggle-vector defense.
+
+For recursive .cs / .csproj walks:
+  4. SourceFileWalker.EnumerateCsFiles(repoRoot)
+     or SourceFileWalker.EnumerateCsprojFiles(repoRoot)
+     — never raw Directory.EnumerateFiles(..., SearchOption.AllDirectories).
+```
+
+**Do NOT fence inputs you only pass to Roslyn** (`MafExplain`, scanners). Those tools bound the attack surface by syntax-tree extraction — user-source-text never reaches a downstream LLM via their output paths, so fencing them adds noise without security benefit.
+
+### Error-contract convention
+
+Helpers throw exceptions; entry points convert exceptions to user-visible errors. Specifically:
+
+- **Helpers throw on input-validation failure** — `BoundedInput.Validate`, `PathGuard.ValidateContainment`, `AgentScaffolder.IsValidNamespace`, `AgentScaffolder.IsValidTypeExpression` throw `ArgumentException`. `SourceFileWalker.MakeRelative` and `RegistryService.ValidateOverridePath` throw `InvalidOperationException` (the failure indicates an upstream invariant violation, not a parameter mistake).
+- **Error messages never echo the offending input** — the helpers name the parameter class but never the value. Telemetry (now or future) must not leak input data. See `BoundedInput.Validate` xmldoc for the contract.
+- **Entry points catch + convert** — MCP tool methods (those decorated `[McpServerTool]`) catch the helper's exception and convert to the entry point's return shape:
+  - Markdown-returning tools (`MafDraftIssue`, `MafExplain`) → `"Error: …"` prefix on the first line.
+  - JSON-returning tools (`MafAutoFix`, `MafDoctor`) → `{ "error": "…" }` payload.
+  - `IList<PromptMessage>`-returning prompt methods (`MafPrompts.*`) → swallow the throw and substitute an empty/safe-default value (the method signature can't carry an error result).
+- **Helpers stay pure** — no helper calls into `Console.WriteLine`, `Logger`, or telemetry. The entry point owns observability.
+
 ## PR conventions
 
 - **Conventional commits** (`feat:`, `fix:`, `docs:`, `chore:`, `test:`).

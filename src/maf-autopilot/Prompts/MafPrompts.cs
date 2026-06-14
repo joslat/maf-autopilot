@@ -2,6 +2,10 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 using System.Text;
+// Cross-layer dep `Prompts → Tools` is intentional: LlmFencing and
+// BoundedInput are primitives (data-fencing + length-cap helpers), not
+// feature modules. See CONTRIBUTING.md "Helper composition — decision tree".
+using MafAutopilot.Tools;
 
 namespace MafAutopilot.Prompts;
 
@@ -25,12 +29,33 @@ public static class MafPrompts
         [Description("Path to the repository root or solution file to audit.")] string repoPath,
         [Description("Current MAF version in the codebase (e.g. 1.1.0, 1.2.0). Leave empty if unknown.")] string? fromVersion = null)
     {
+        // Phase 5.G fixup — DoS guard on each echoed input (length cap
+        // before LlmFencing.StripHtmlComments). Without this, a 1 GB
+        // `repoPath` flows into StringBuilder and the MCP wire response.
+        // Caps swallow the throw — prompt methods can't return error
+        // strings (they return a list of PromptMessage), so we treat
+        // oversized inputs as "treated as empty" rather than failing.
+        try { BoundedInput.Validate(repoPath,    BoundedInput.PathBytes,       nameof(repoPath)); }
+        catch (ArgumentException) { repoPath = string.Empty; }
+        try { BoundedInput.Validate(fromVersion, BoundedInput.IdentifierBytes, nameof(fromVersion)); }
+        catch (ArgumentException) { fromVersion = null; }
+
+        // Phase 2.G fixup (Finding 3) — strip HTML comments from user-echoed
+        // values. These prompts return a markdown body that the calling LLM
+        // renders as its next user turn, so an HTML-comment-disguised payload
+        // in a parameter would smuggle instructions into that turn. Defense-
+        // in-depth: the parameters are short identifier-like fields with
+        // low PI risk, but consistent treatment matches `Debug.errorOrSymptom`
+        // (Phase 2.5).
+        var safeRepoPath = LlmFencing.StripHtmlComments(repoPath);
+        var safeFromVersion = LlmFencing.StripHtmlComments(fromVersion);
+
         var sb = new StringBuilder();
         sb.AppendLine("You are the MAF Auditor Agent. Your task is to audit a .NET codebase and produce a ready-to-execute migration plan.");
         sb.AppendLine();
-        sb.AppendLine($"Repository: {repoPath}");
-        if (fromVersion is not null)
-            sb.AppendLine($"Current MAF version: {fromVersion}");
+        sb.AppendLine($"Repository: {safeRepoPath}");
+        if (!string.IsNullOrEmpty(safeFromVersion))
+            sb.AppendLine($"Current MAF version: {safeFromVersion}");
         sb.AppendLine("Target MAF version: 1.3.0");
         sb.AppendLine();
         sb.AppendLine("BEFORE STARTING:");
@@ -54,12 +79,22 @@ public static class MafPrompts
         [Description("Task row number(s) from migration-plan.md to execute. Single: '5'. Range: '5,6,7'.")] string taskIds,
         [Description("Path to the migration-plan.md file. Leave empty to let the agent locate it.")] string? planPath = null)
     {
+        // Phase 5.G fixup — length caps before sanitization. See Audit for rationale.
+        try { BoundedInput.Validate(taskIds,  BoundedInput.ShortTextBytes, nameof(taskIds)); }
+        catch (ArgumentException) { taskIds = string.Empty; }
+        try { BoundedInput.Validate(planPath, BoundedInput.PathBytes,      nameof(planPath)); }
+        catch (ArgumentException) { planPath = null; }
+
+        // Phase 2.G fixup (Finding 3) — see Audit for rationale.
+        var safeTaskIds = LlmFencing.StripHtmlComments(taskIds);
+        var safePlanPath = LlmFencing.StripHtmlComments(planPath);
+
         var sb = new StringBuilder();
         sb.AppendLine("You are the MAF Migration Agent. Execute the specified migration tasks.");
         sb.AppendLine();
-        sb.AppendLine($"Tasks to execute: {taskIds}");
-        if (planPath is not null)
-            sb.AppendLine($"Migration plan: {planPath}");
+        sb.AppendLine($"Tasks to execute: {safeTaskIds}");
+        if (!string.IsNullOrEmpty(safePlanPath))
+            sb.AppendLine($"Migration plan: {safePlanPath}");
         sb.AppendLine();
         sb.AppendLine("MANDATORY RULES (from maf://constraints — read it now):");
         sb.AppendLine("- NEVER add [StreamsMessage] or [YieldsMessage] attributes — they are removed in 1.3.0.");
@@ -93,8 +128,18 @@ public static class MafPrompts
         // `MafRunCs0618Hunt` now automates that AND registry-joins each finding to
         // its canonical fix. Telling the LLM to do it by hand is a footgun: it skips
         // the registry join and produces a noisier, less-actionable report.
+        // Phase 5.G fixup — length cap before sanitization. See Audit for rationale.
+        try { BoundedInput.Validate(projectPath, BoundedInput.PathBytes, nameof(projectPath)); }
+        catch (ArgumentException) { projectPath = string.Empty; }
+
+        // Phase 2.G fixup (Finding 3) — see Audit for rationale. projectPath
+        // is splashed inside a quoted argument; an embedded quote would still
+        // break out of the literal, but HTML-comment stripping defangs the
+        // smuggling vector our threat model targets here.
+        var safeProjectPath = LlmFencing.StripHtmlComments(projectPath);
+
         var sb = new StringBuilder();
-        sb.AppendLine($"Call `MafRunCs0618Hunt(projectPath: \"{projectPath}\")` to detect every CS0618 / CS0246 diagnostic in the project.");
+        sb.AppendLine($"Call `MafRunCs0618Hunt(projectPath: \"{safeProjectPath}\")` to detect every CS0618 / CS0246 diagnostic in the project.");
         sb.AppendLine();
         sb.AppendLine("The tool runs `dotnet build`, parses every diagnostic, and joins each one to its canonical fix in the obsolete-API registry. For each finding the tool returns:");
         sb.AppendLine();
@@ -128,11 +173,21 @@ public static class MafPrompts
         [Description("Path to the file or directory to review. A .cs file path, a project directory, or omit for the current context.")] string? target = null,
         [Description("Optional focus area: executors / sessions / fan-out / security / streaming / a2a. Omit for full sweep.")] string? focusArea = null)
     {
+        // Phase 5.G fixup — length caps before sanitization.
+        try { BoundedInput.Validate(target,    BoundedInput.PathBytes,       nameof(target)); }
+        catch (ArgumentException) { target = null; }
+        try { BoundedInput.Validate(focusArea, BoundedInput.IdentifierBytes, nameof(focusArea)); }
+        catch (ArgumentException) { focusArea = null; }
+
+        // Phase 2.G fixup (Finding 3) — see Audit for rationale.
+        var safeTarget = LlmFencing.StripHtmlComments(target);
+        var safeFocusArea = LlmFencing.StripHtmlComments(focusArea);
+
         var sb = new StringBuilder();
         sb.AppendLine("Review the supplied MAF 1.3.0 code for best-practice compliance. This is NOT a migration audit — focus on correctness + idiom for an already-migrated 1.3.0 codebase.");
         sb.AppendLine();
-        if (target is not null) sb.AppendLine($"Target: `{target}`");
-        if (focusArea is not null) sb.AppendLine($"Focus area: `{focusArea}`");
+        if (!string.IsNullOrEmpty(safeTarget)) sb.AppendLine($"Target: `{safeTarget}`");
+        if (!string.IsNullOrEmpty(safeFocusArea)) sb.AppendLine($"Focus area: `{safeFocusArea}`");
         sb.AppendLine();
         sb.AppendLine("**Suggested tool calls** (most-to-least lightweight):");
         sb.AppendLine();
@@ -171,10 +226,29 @@ public static class MafPrompts
         var sb = new StringBuilder();
         sb.AppendLine("You are diagnosing a MAF 1.3.0 issue. Identify the root cause and provide the exact fix (or recommend the right specialist agent).");
         sb.AppendLine();
-        if (errorOrSymptom is not null)
+        if (!string.IsNullOrWhiteSpace(errorOrSymptom))
         {
+            // Phase 5.1 — DoS guard. LlmFencing already caps content at its
+            // own maxBytes argument, but checking BEFORE the fence call lets
+            // us fail fast on an obvious abuse without copying the content.
+            try { BoundedInput.Validate(errorOrSymptom, BoundedInput.ShortTextBytes, nameof(errorOrSymptom)); }
+            catch (ArgumentException)
+            {
+                // Truncate-via-fence on cap miss is preferable to throwing
+                // out of a prompt method — the calling agent gets a usable
+                // (if truncated) prompt rather than an error.
+            }
+
+            // Phase 2.5 — fence the user-supplied error/symptom.
+            // Previously: `"> " + errorOrSymptom.Replace("\n", "\n> ")` — a
+            // single-line blockquote prefix per line, easily escaped by content
+            // containing a markdown heading, triple-backtick fence, or
+            // additional `>` lines. The fence wraps the whole block with
+            // BEGIN/END markers + "treat as data" framing so the model knows
+            // the content is not its own instructions.
+            // 16 KB cap — short user text class (see hardening plan §5.6).
             sb.AppendLine("**Error / Symptom:**");
-            sb.AppendLine("> " + errorOrSymptom.Replace("\n", "\n> "));
+            sb.Append(LlmFencing.Fence("user-error-or-symptom", errorOrSymptom, maxBytes: BoundedInput.ShortTextBytes));
             sb.AppendLine();
         }
         if (projectPath is not null) sb.AppendLine($"Project: `{projectPath}`");
@@ -220,6 +294,19 @@ public static class MafPrompts
         [Description("For executor only: incoming message type (default: string).")] string? inputType = null,
         [Description("For executor only: outgoing message type (default: string).")] string? outputType = null)
     {
+        // Phase 5.G fixup — length caps before sanitization.
+        try { BoundedInput.Validate(name,       BoundedInput.IdentifierBytes, nameof(name)); }
+        catch (ArgumentException) { name = null; }
+        try { BoundedInput.Validate(inputType,  BoundedInput.IdentifierBytes, nameof(inputType)); }
+        catch (ArgumentException) { inputType = null; }
+        try { BoundedInput.Validate(outputType, BoundedInput.IdentifierBytes, nameof(outputType)); }
+        catch (ArgumentException) { outputType = null; }
+
+        // Phase 2.G fixup (Finding 3) — see Audit for rationale.
+        var safeName = LlmFencing.StripHtmlComments(name);
+        var safeInputType = LlmFencing.StripHtmlComments(inputType);
+        var safeOutputType = LlmFencing.StripHtmlComments(outputType);
+
         var sb = new StringBuilder();
         var t = (template ?? "agent").Trim().ToLowerInvariant();
         sb.AppendLine("Scaffold MAF 1.3.0 boilerplate that passes every scanner and analyzer out of the box.");
@@ -228,7 +315,7 @@ public static class MafPrompts
         switch (t)
         {
             case "agent":
-                sb.AppendLine($"**Call:** `MafNewAgent(projectPath: \"<your-project>\", agentName: \"{name ?? "MyAgent"}\", instructions: \"<optional system prompt>\")`");
+                sb.AppendLine($"**Call:** `MafNewAgent(projectPath: \"<your-project>\", agentName: \"{(string.IsNullOrEmpty(safeName) ? "MyAgent" : safeName)}\", instructions: \"<optional system prompt>\")`");
                 sb.AppendLine();
                 sb.AppendLine("Generates:");
                 sb.AppendLine("- `Agents/<Name>.cs` — `ChatClientAgent`-based class with `UseOpenTelemetry`, `MaxOutputTokens = 1024`, `Instructions` inside `ChatOptions` (the correct 1.3.0 placement)");
@@ -237,7 +324,7 @@ public static class MafPrompts
                 sb.AppendLine("Generator contract: the output passes `MafScanAntiPatterns` + `MafValidateFanOut` + compile-validation on first run.");
                 break;
             case "executor":
-                sb.AppendLine($"**Call:** `MafNewExecutor(projectPath: \"<your-project>\", executorName: \"{name ?? "MyExecutor"}\", inputType: \"{inputType ?? "string"}\", outputType: \"{outputType ?? "string"}\")`");
+                sb.AppendLine($"**Call:** `MafNewExecutor(projectPath: \"<your-project>\", executorName: \"{(string.IsNullOrEmpty(safeName) ? "MyExecutor" : safeName)}\", inputType: \"{(string.IsNullOrEmpty(safeInputType) ? "string" : safeInputType)}\", outputType: \"{(string.IsNullOrEmpty(safeOutputType) ? "string" : safeOutputType)}\")`");
                 sb.AppendLine();
                 sb.AppendLine("Generates:");
                 sb.AppendLine("- `Workflows/<Name>Executor.cs` — `sealed partial class : Executor` with `[MessageHandler]` returning `Task<TOutput>` (fan-out-safe by construction)");

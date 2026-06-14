@@ -30,7 +30,18 @@ public sealed class Cs0618HuntTool
         _registry = registry;
     }
 
-    [McpServerTool(ReadOnly = true, Destructive = false)]
+    // Annotation rationale (see docs/security.md, threat-model.md §3.5):
+    //   ReadOnly  = false  → `dotnet build` executes user-supplied MSBuild targets
+    //                        (BeforeBuild, Exec tasks, source generators, NuGet
+    //                        restore scripts). This is code execution, not a read.
+    //                        Setting ReadOnly = true would let MCP-spec-compliant
+    //                        clients auto-invoke the tool without user consent —
+    //                        the exact opposite of what's safe.
+    //   OpenWorld = true   → `dotnet build` triggers NuGet restore, which reaches
+    //                        api.nuget.org (and any configured private feeds).
+    //   Destructive = false → the tool itself does not write to disk; the build's
+    //                        side-effects (obj/, bin/) are scoped to the project.
+    [McpServerTool(ReadOnly = false, Destructive = false, OpenWorld = true)]
     [Description("""
         Run a CS0618 / CS0246 hunt against a .NET project.
 
@@ -41,6 +52,10 @@ public sealed class Cs0618HuntTool
         Input:
           - Path to a .csproj or .sln file. If the path is a directory, the first .csproj
             or .sln inside it is used.
+
+        Security note: this tool spawns `dotnet build`, which compiles and executes the
+        target project's MSBuild targets, source generators, and NuGet restore scripts.
+        Do not invoke on untrusted repositories. Reaches the network via NuGet restore.
 
         Cost note: this runs `dotnet build`, which may take several seconds on a real project.
         """)]
@@ -72,9 +87,18 @@ public sealed class Cs0618HuntTool
 
     // Matches MSBuild's standard diagnostic line:
     //   <file>(line,col): warning|error CSnnnn: <message>
+    //
+    // Phase 5.G / 7.G fixup — ReDoS hygiene. The pattern is bounded (lazy
+    // `[^()\r\n]+?` between literal anchors) and `<file>` is attacker-
+    // influenced (source filenames in `dotnet build` output can contain
+    // odd characters from a hostile user repo). .NET 7+ allows
+    // `NonBacktracking | Multiline` to combine cleanly (the prior comment
+    // suggesting otherwise was wrong); we now apply both for consistency
+    // with the project-wide invariant.
     private static readonly Regex DiagRegex = new(
         @"^(?<file>[^()\r\n]+?)\((?<line>\d+),(?<col>\d+)\):\s+(?<severity>warning|error)\s+(?<code>CS\d{4}):\s+(?<msg>.+)$",
-        RegexOptions.Compiled | RegexOptions.Multiline);
+        RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.Multiline,
+        TimeSpan.FromMilliseconds(100));
 
     /// <summary>
     /// Parses MSBuild stdout for CS0618 / CS0246 diagnostics. Pure: no I/O.
@@ -142,7 +166,14 @@ public sealed class Cs0618HuntTool
         return null;
     }
 
-    private static readonly Regex FirstQuotedRegex = new(@"'([^']+)'", RegexOptions.Compiled);
+    // Phase 5.G fixup — NonBacktracking + 100ms timeout. The `[^']+` class
+    // is bounded by literal anchors so backtracking is structurally limited,
+    // but the pattern matches `dotnet build` diagnostic text which is
+    // attacker-influenced. Hygiene is cheap; we pay it.
+    private static readonly Regex FirstQuotedRegex = new(
+        @"'([^']+)'",
+        RegexOptions.Compiled | RegexOptions.NonBacktracking,
+        TimeSpan.FromMilliseconds(100));
 
     internal static string? ExtractObsoleteSymbol(string message)
     {

@@ -214,4 +214,62 @@ public class RegistryExtractCommandTests
         // is preserved bit-identical because there's no new text to append.
         Assert.Empty(drafts);
     }
+
+    // -------------------------------------------------------------------------
+    // Phase 2.6 — fence the dotnet-inspect diff body in the `notes:` field.
+    //
+    // entry.Body is attacker-controllable: a malicious upstream NuGet author
+    // can put anything in the public-API surface that gets diffed, and the
+    // resulting `notes:` field flows BOTH to the Coding Agent that fills the
+    // registry AND to every downstream LLM that calls MafRegistryLookup.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void ExtractDraftEntries_BodyContainsHtmlComment_StrippedFromNotes()
+    {
+        var body = "removed <!--SMUGGLED_NOTES_TOKEN--> a thing";
+        var parsed = new DiffParseResult(
+            Breaking: [new DiffEntry("MyType", body, DiffEntryKind.Removed, false)],
+            Additive: [],
+            NoChangesDetected: false);
+
+        var entries = RegistryExtractCommand.ExtractDraftEntries(parsed, "Microsoft.Agents.AI", "1.4.0");
+        var entry = Assert.Single(entries);
+
+        Assert.DoesNotContain("<!--", entry);
+        Assert.DoesNotContain("SMUGGLED_NOTES_TOKEN", entry);
+    }
+
+    [Fact]
+    public void ExtractDraftEntries_NotesFieldUsesDataFence()
+    {
+        var parsed = new DiffParseResult(
+            Breaking: [new DiffEntry("MyType", "removed a method", DiffEntryKind.Removed, false)],
+            Additive: [],
+            NoChangesDetected: false);
+
+        var entries = RegistryExtractCommand.ExtractDraftEntries(parsed, "Microsoft.Agents.AI", "1.4.0");
+        var entry = Assert.Single(entries);
+
+        // The fence markers must be present so any LLM later reading the
+        // `notes:` field sees the explicit "treat as data" framing.
+        Assert.Contains("BEGIN_USER_DATA_", entry);
+        Assert.Contains("END_USER_DATA_", entry);
+        Assert.Contains("dotnet-inspect-diff", entry, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ExtractDraftEntries_HugeBody_TruncatedInNotes()
+    {
+        var hugeBody = "removed a thing: " + new string('A', 16 * 1024);
+        var parsed = new DiffParseResult(
+            Breaking: [new DiffEntry("MyType", hugeBody, DiffEntryKind.Removed, false)],
+            Additive: [],
+            NoChangesDetected: false);
+
+        var entries = RegistryExtractCommand.ExtractDraftEntries(parsed, "Microsoft.Agents.AI", "1.4.0");
+        var entry = Assert.Single(entries);
+
+        Assert.Contains("[TRUNCATED]", entry);
+    }
 }

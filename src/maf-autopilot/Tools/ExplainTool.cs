@@ -50,6 +50,12 @@ public sealed class ExplainTool
         if (string.IsNullOrWhiteSpace(snippet))
             return "Error: snippet must not be empty.";
 
+        // Phase 5.1 — DoS guard: a 1 GB snippet would otherwise flow into
+        // Roslyn's parser without an upstream cap. 256 KB is the snippet-class
+        // ceiling from §5.6 — well above any realistic paste.
+        try { BoundedInput.Validate(snippet, BoundedInput.SnippetBytes, nameof(snippet)); }
+        catch (ArgumentException ex) { return $"Error: {ex.Message}"; }
+
         var findings = AnalyzeSnippet(snippet, _registry);
         return FormatReport(snippet, findings);
     }

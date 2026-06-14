@@ -103,13 +103,29 @@ public sealed class AntiPatternScannerTool
     // Rules
     // -------------------------------------------------------------------------
 
+    // Phase 5.9 — ReDoS hygiene on every rule pattern.
+    //
+    // All AntiPatternScanner regexes carry NonBacktracking + a 100ms
+    // MatchTimeout. The patterns are simple enough that catastrophic
+    // backtracking is unlikely in practice, but `MAF-AP-SEC-002` (the
+    // API-key matcher) and `MAF-AP-CONC-002` (the .Result/.Wait matcher)
+    // both have unbounded character classes adjacent to alternation —
+    // exactly the shape that can pin CPU on a crafted line in the
+    // surface-scanning rewriter. The shared options constant keeps the
+    // policy locally enforceable: future rules MUST be added with
+    // `RegexHygiene` and the CI invariant (ci-invariants.yml Job 2)
+    // confirms the contract.
+    private const RegexOptions RegexHygiene =
+        RegexOptions.Compiled | RegexOptions.NonBacktracking;
+    private static readonly TimeSpan RegexBudget = TimeSpan.FromMilliseconds(100);
+
     internal static readonly IReadOnlyList<AntiPatternRule> AllRules = new AntiPatternRule[]
     {
         new RegexRule(
             id: "MAF-AP-SEC-001",
             name: "DefaultAzureCredential in production code",
             severity: AntiPatternSeverity.Error,
-            pattern: new Regex(@"\bnew\s+DefaultAzureCredential\s*\(", RegexOptions.Compiled),
+            pattern: new Regex(@"\bnew\s+DefaultAzureCredential\s*\(", RegexHygiene, RegexBudget),
             skipInTestFiles: true),
 
         new RegexRule(
@@ -117,21 +133,21 @@ public sealed class AntiPatternScannerTool
             name: "Hard-coded API key literal",
             severity: AntiPatternSeverity.Error,
             // Matches "sk-XXXXXXXXXXXXXXXX" or "api-key=XXXXXXXXXXXXXXXX" style strings.
-            pattern: new Regex(@"""(?:sk-|api[-_]?key=)[A-Za-z0-9_\-]{16,}""", RegexOptions.Compiled | RegexOptions.IgnoreCase),
+            pattern: new Regex(@"""(?:sk-|api[-_]?key=)[A-Za-z0-9_\-]{16,}""", RegexHygiene | RegexOptions.IgnoreCase, RegexBudget),
             skipInTestFiles: false),
 
         new RegexRule(
             id: "MAF-AP-SEC-003",
             name: "EnableSensitiveData = true outside development",
             severity: AntiPatternSeverity.Error,
-            pattern: new Regex(@"EnableSensitiveData\s*=\s*true", RegexOptions.Compiled),
+            pattern: new Regex(@"EnableSensitiveData\s*=\s*true", RegexHygiene, RegexBudget),
             skipInTestFiles: true),
 
         new RegexRule(
             id: "MAF-AP-CONC-002",
             name: "Sync-over-async (.Result / .Wait())",
             severity: AntiPatternSeverity.Warning,
-            pattern: new Regex(@"\b\)\s*\.(Result|Wait)\s*(\(\))?", RegexOptions.Compiled),
+            pattern: new Regex(@"\b\)\s*\.(Result|Wait)\s*(\(\))?", RegexHygiene, RegexBudget),
             skipInTestFiles: true),
 
         new RegexRule(
@@ -379,13 +395,14 @@ public sealed class AntiPatternScannerTool
             name: "Pre-1.3.0 executor pattern (ReflectingExecutor / IMessageHandler / [StreamsMessage] / [YieldsMessage])",
             severity: AntiPatternSeverity.Error,
             // Matches any of the four legacy surfaces in one pass.
-            pattern: new Regex(@"\bReflectingExecutor\s*<|\bIMessageHandler\s*<|\[\s*StreamsMessage\s*\]|\[\s*YieldsMessage\s*\]", RegexOptions.Compiled),
+            pattern: new Regex(@"\bReflectingExecutor\s*<|\bIMessageHandler\s*<|\[\s*StreamsMessage\s*\]|\[\s*YieldsMessage\s*\]", RegexHygiene, RegexBudget),
             skipInTestFiles: false),
     };
 
     private static int FirstLineMatching(string source, string regex)
     {
-        var rx = new Regex(regex, RegexOptions.Compiled);
+        // Phase 5.9 — hygiene policy applies to scanner-internal regexes too.
+        var rx = new Regex(regex, RegexHygiene, RegexBudget);
         var lines = source.Split('\n');
         for (var i = 0; i < lines.Length; i++)
             if (rx.IsMatch(lines[i])) return i + 1;

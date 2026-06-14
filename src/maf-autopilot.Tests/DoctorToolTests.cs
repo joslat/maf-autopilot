@@ -280,4 +280,52 @@ public class DoctorToolTests
             Directory.Delete(tempDir, recursive: true);
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Phase 3.1 — path exclusion. The drift detector scans the repo, which
+    // ships intentional anti-pattern bait under samples/ + test fixtures.
+    // `Run(..., excludes)` must skip those so the grade reflects product code.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Run_ExcludedPaths_DoNotAffectGrade()
+    {
+        // NOTE: the AntiPatternScanner already self-skips `samples`/`tests` path
+        // segments for skipInTestFiles rules (SourceFileWalker isTestFile). The
+        // walker-level --exclude is BROADER — it drops files before ANY scanner
+        // (incl. fan-out / prompt / cost, which have no such skip). To exercise
+        // it cleanly we put the bait under a non-sample dir the scanner does NOT
+        // self-skip, then exclude that dir at the walker level.
+        var root = Path.Combine(Path.GetTempPath(), "maf-doctor-exclude-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "legacy"));
+        Directory.CreateDirectory(Path.Combine(root, "src"));
+        try
+        {
+            // Bait under legacy/ — DefaultAzureCredential (MAF-AP-SEC-001 error).
+            File.WriteAllText(Path.Combine(root, "legacy", "Bait.cs"), """
+                using Azure.Identity;
+                public class Bait
+                {
+                    public Bait() { var a = new DefaultAzureCredential(); }
+                }
+                """);
+            // Clean product code under src/.
+            File.WriteAllText(Path.Combine(root, "src", "Calc.cs"),
+                "public class Calc { public int Add(int a, int b) => a + b; }");
+
+            var tool = new DoctorTool();
+
+            // Unscoped: the legacy bait drags the grade off A.
+            using (var doc = JsonDocument.Parse(tool.Run(root, "json", excludes: null)))
+                Assert.NotEqual("A", doc.RootElement.GetProperty("verdict").GetString());
+
+            // Scoped: exclude legacy/ → only clean src/ remains → grade A.
+            using (var doc = JsonDocument.Parse(tool.Run(root, "json", new[] { "legacy/" })))
+                Assert.Equal("A", doc.RootElement.GetProperty("verdict").GetString());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
 }

@@ -206,8 +206,16 @@ public sealed class SimulateWorkflowTool
         return HandlerVerdict.UnusualReturnType;
     }
 
-    private static readonly Regex PascalIdentifierRegex = new(@"\b([A-Z][A-Za-z0-9_]*)\b", RegexOptions.Compiled);
-    private static readonly Regex AnyIdentifierRegex = new(@"\b([A-Za-z_][A-Za-z0-9_]*)\b", RegexOptions.Compiled);
+    // Phase 7.G fixup — regex hygiene. Identifier-class anchored regexes are
+    // backtracking-safe but the policy requires NonBacktracking + 100ms timeout.
+    private static readonly Regex PascalIdentifierRegex = new(
+        @"\b([A-Z][A-Za-z0-9_]*)\b",
+        RegexOptions.Compiled | RegexOptions.NonBacktracking,
+        TimeSpan.FromMilliseconds(100));
+    private static readonly Regex AnyIdentifierRegex = new(
+        @"\b([A-Za-z_][A-Za-z0-9_]*)\b",
+        RegexOptions.Compiled | RegexOptions.NonBacktracking,
+        TimeSpan.FromMilliseconds(100));
 
     private static void CollectEdges(
         SyntaxNode root,

@@ -1,0 +1,413 @@
+name: ci-invariants
+
+# Locks security invariants that the codebase relies on.
+#
+# Each job is a single grep-style check that fails the build if a forbidden
+# pattern appears or a required pattern is missing. New code that violates an
+# invariant is rejected at PR time, before review burden.
+#
+# Anchored to:
+#  - docs/security.md "Known MCP attack classes — coverage status"
+#  - docs/security.md "Known MCP attack classes" + docs/security/threat-model.md §3.7-3.11
+#
+# Jobs (1) blocks Keysight-class command injection at the source.
+# Job  (2) requires ReDoS hygiene on every Regex literal.
+# Job  (3) requires symlink-aware EnumerationOptions on every recursive walker.
+# Job  (4) requires workflow_dispatch inputs to flow via env: redirect, not
+#          ${{ inputs.* }} substitution inside run: blocks.
+# Job  (5) requires every workflow to declare an explicit permissions: scope.
+#
+# Allowlists are explicit and short. To add an entry, justify in the PR.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # (1) Block ProcessStartInfo.Arguments string property and unapproved Process.Start sites.
+  #
+  # Rationale: the singular Arguments *string* property triggers Windows
+  # shell-style re-parsing — a Keysight 2026 command-injection lane. The safe
+  # alternative is ArgumentList (List<string>, argv-style, no shell).
+  #
+  # Allowlist: the only files that may host Process.Start are listed below.
+  # AgentScaffolder.cs contains the literal text "Process.Start" inside a
+  # security-comment example; the regex below scopes to call-site syntax to
+  # avoid false positives on comments.
+  # ----------------------------------------------------------------------------
+  process-start-discipline:
+    name: Process.Start discipline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Block ProcessStartInfo.Arguments string property
+        run: |
+          set -e
+          if grep -rnE '\bArguments\s*=\s*[^=]' src/ --include='*.cs' | grep -v 'ArgumentList'; then
+            echo "::error::Unsafe ProcessStartInfo.Arguments (string) property detected."
+            echo "Use ArgumentList instead — see docs/security.md 'Command injection via tool arguments'."
+            exit 1
+          fi
+
+      - name: Allowlist Process.Start call sites
+        run: |
+          set -e
+          # Match real call-site syntax: identifier `Process.Start(` not preceded
+          # by `//` on the same line. The `^[^/]*` prefix excludes single-line
+          # comment lines (a `//` followed by anything cannot be a real call).
+          SITES=$(grep -rnE '^[^/]*\bProcess\.Start\(' src/ --include='*.cs' \
+            | grep -v 'src/maf-autopilot/Tools/ProcessRunner.cs' \
+            | grep -v 'src/maf-autopilot/Tools/PullRequestAuditTool.cs' \
+            | grep -v 'src/maf-autopilot.Tests/' || true)
+          if [ -n "$SITES" ]; then
+            echo "::error::Process.Start found outside the approved allowlist."
+            echo "Allowlist: ProcessRunner.cs, PullRequestAuditTool.cs (slated for ProcessRunner refactor), tests."
+            echo "Sites:"
+            echo "$SITES"
+            exit 1
+          fi
+
+  # ----------------------------------------------------------------------------
+  # (2) Regex hygiene — every `new Regex(` must specify both NonBacktracking
+  # and MatchTimeout (or one of the shared `RegexHygiene` / `RegexBudget`
+  # constants introduced by Phase 5.9). Without these, a hostile input can
+  # pin CPU via catastrophic backtracking. Required across all production
+  # code; tests are exempt because they synthesize fixture patterns that
+  # need to be expressively flexible.
+  #
+  # Phase 5.9 landed: AntiPatternScannerTool and PreUpgradeDryRunTool both
+  # retrofitted. Job is hard-fail going forward.
+  # ----------------------------------------------------------------------------
+  regex-hygiene:
+    name: Regex hygiene (NonBacktracking + MatchTimeout)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Check Regex declarations
+        run: |
+          set -e
+          # Collect every `new Regex(` line (file:line:content) outside test dirs.
+          # For each match, read up to 4 lines from that line and ensure both
+          # NonBacktracking and MatchTimeout appear in the declaration body.
+          VIOLATIONS=$(python3 - <<'PY'
+          import os, re, sys
+          # Phase 7.G fixup — also match the target-typed form
+          # `Regex IdentifierName = new(...)`. Without this branch, 9 declarations
+          # using `private static readonly Regex X = new(...)` escaped detection
+          # (caught by the Phase 7.G final Opus review).
+          decl_classical = re.compile(r'\bnew\s+Regex\s*\(')
+          decl_targettyped = re.compile(r'\bRegex\s+\w+\s*=\s*new\s*\(')
+          violations = []
+          for root, _, files in os.walk('src'):
+              if 'maf-autopilot.Tests' in root or '/bin/' in root or '/obj/' in root:
+                  continue
+              for f in files:
+                  if not f.endswith('.cs'):
+                      continue
+                  path = os.path.join(root, f)
+                  with open(path, encoding='utf-8') as fh:
+                      lines = fh.readlines()
+                  for i, line in enumerate(lines):
+                      if decl_classical.search(line) or decl_targettyped.search(line):
+                          # Capture this line + up to 4 following lines as the declaration block.
+                          block = ''.join(lines[i:i+5])
+                          # Phase 5.9 introduced shared `RegexHygiene` /
+                          # `HygieneOptions` and `RegexBudget` constants.
+                          # Accept the raw `NonBacktracking` + `MatchTimeout`
+                          # tokens OR any of the constant names.
+                          has_options = ('NonBacktracking' in block) or ('RegexHygiene' in block) or ('HygieneOptions' in block)
+                          has_timeout = ('MatchTimeout' in block) or ('RegexBudget' in block) or ('TimeSpan.FromMilliseconds' in block)
+                          if not has_options or not has_timeout:
+                              violations.append(f"{path}:{i+1}: {line.rstrip()}")
+          if violations:
+              print('\n'.join(violations))
+              sys.exit(1)
+          PY
+          )
+          if [ -n "$VIOLATIONS" ]; then
+            echo "::error::Regex declaration(s) missing NonBacktracking and/or MatchTimeout."
+            echo "Add RegexOptions.NonBacktracking and MatchTimeout = TimeSpan.FromMilliseconds(100)."
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+
+  # ----------------------------------------------------------------------------
+  # (3) Recursive-enumeration discipline — any Directory.EnumerateFiles /
+  # GetFiles that uses SearchOption.AllDirectories must also pass EnumerationOptions
+  # so we can set AttributesToSkip = ReparsePoint. Default options follow
+  # symlinks, which combined with a path-escape in a tool parameter would let a
+  # hostile repo redirect reads. Non-recursive enumeration (single-level lookup
+  # of `*.sln` / `*.csproj` next to a path) is low-risk and skipped.
+  #
+  # Phase 5.G fixup landed: DraftIssueTool.cs and FanOutValidatorTool.cs both
+  # migrated to SourceFileWalker.EnumerateCsFiles / EnumerateCsprojFiles which
+  # carry the reparse-point-skip options. Job is hard-fail going forward.
+  # ----------------------------------------------------------------------------
+  enumeration-options:
+    name: EnumerationOptions on recursive walkers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Require EnumerationOptions on recursive enumerators
+        run: |
+          set -e
+          VIOLATIONS=$(python3 - <<'PY'
+          import os, re, sys
+          # Only fail on calls that use SearchOption.AllDirectories without
+          # EnumerationOptions. Non-recursive (one-level) lookups are out of
+          # scope — they cannot fan a symlink into a recursive walk.
+          # Comment lines (// or *) are skipped so historical-migration
+          # comments referencing the old call shape don't false-positive.
+          call = re.compile(r'Directory\.(?:EnumerateFiles|GetFiles)\s*\(')
+          comment = re.compile(r'^\s*(?://|\*)')
+          ok_tokens = ('EnumerationOptions', ', options', ', opts', ', enumerationOptions')
+          violations = []
+          allow_basenames = ('SourceFileWalker.cs',)  # owner; canonical safe walker
+          for root, _, files in os.walk('src'):
+              if 'maf-autopilot.Tests' in root or os.sep + 'bin' + os.sep in root or os.sep + 'obj' + os.sep in root:
+                  continue
+              for f in files:
+                  if not f.endswith('.cs'):
+                      continue
+                  if f in allow_basenames:
+                      continue
+                  path = os.path.join(root, f)
+                  with open(path, encoding='utf-8') as fh:
+                      lines = fh.readlines()
+                  for i, line in enumerate(lines):
+                      if comment.match(line):
+                          continue
+                      if call.search(line):
+                          block = ''.join(lines[i:i+3])
+                          # Only flag recursive enumeration without options.
+                          if 'SearchOption.AllDirectories' in block and not any(t in block for t in ok_tokens):
+                              violations.append(f"{path}:{i+1}: {line.rstrip()}")
+          if violations:
+              print('\n'.join(violations))
+              sys.exit(1)
+          PY
+          )
+          if [ -n "$VIOLATIONS" ]; then
+            echo "::error::Recursive Directory enumeration without EnumerationOptions."
+            echo "Pass EnumerationOptions with AttributesToSkip = ReparsePoint | Hidden | System,"
+            echo "or migrate to SourceFileWalker.EnumerateCsFiles."
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+
+  # ----------------------------------------------------------------------------
+  # (4) Workflow templating discipline — no `${{ … }}` substitution inside
+  # `run:` blocks for any of the following second-order sources:
+  #   - `inputs.X` / `github.event.inputs.X` (workflow_dispatch input)
+  #   - `needs.<job>.outputs.X` (cross-job output, attacker-influenced if the
+  #     upstream job's regex/source is widened)
+  #   - `steps.<step>.outputs.X` (intra-job output, same threat shape)
+  # All three must flow via `env:` redirect so downstream shell sees only
+  # shell-variable expansions, not template substitutions.
+  #
+  # Phase 3.2 landed: all five previously-noncompliant workflows now use the
+  # env: redirect pattern for `inputs.*`. Phase 7.G review broadened the rule
+  # to also cover `needs.*.outputs.*` and `steps.*.outputs.*` — five
+  # additional sites in maf-release-watcher / release / docker-publish were
+  # surfaced and fixed. Job is hard-fail going forward.
+  # ----------------------------------------------------------------------------
+  workflow-input-redirect:
+    name: Workflow inputs flow via env redirect
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: "Block inputs.* templates inside run blocks"
+        run: |
+          set -e
+          VIOLATIONS=$(python3 - <<'PY'
+          import os, re, sys
+          violations = []
+          # Match any of the three template families inside a `run:` block.
+          # Tracking the run: block by indentation: a `run: |` / `run: >`
+          # opens a multi-line shell script; nested indented lines belong
+          # to the block until we see a sibling key at the same indent.
+          tpl = re.compile(
+              r'\$\{\{\s*(?:'
+              r'inputs\.'
+              r'|github\.event\.inputs\.'
+              r'|needs\.[^.]+\.outputs\.'
+              r'|steps\.[^.]+\.outputs\.'
+              r')'
+          )
+          # Self-exclude ci-invariants.yml — this meta-workflow names the
+          # forbidden pattern in its own comments and error messages, so its
+          # text necessarily contains the literal we are detecting.
+          SELF = 'ci-invariants.yml'
+          for root, _, files in os.walk('.github/workflows'):
+              for f in files:
+                  if not (f.endswith('.yml') or f.endswith('.yaml')):
+                      continue
+                  if f == SELF:
+                      continue
+                  path = os.path.join(root, f)
+                  in_run = False
+                  run_indent = -1
+                  with open(path, encoding='utf-8') as fh:
+                      for i, line in enumerate(fh, start=1):
+                          stripped = line.rstrip('\n')
+                          # Detect run: |  or run: >  block start
+                          m = re.match(r'^(\s*)run\s*:\s*[|>]', stripped)
+                          if m:
+                              in_run = True
+                              run_indent = len(m.group(1))
+                              continue
+                          # End of run: block when indentation drops to or below run_indent and line isn't blank
+                          if in_run and stripped.strip() != '':
+                              cur_indent = len(line) - len(line.lstrip(' '))
+                              if cur_indent <= run_indent:
+                                  in_run = False
+                                  run_indent = -1
+                          if in_run and tpl.search(stripped):
+                              violations.append(f"{path}:{i}: {stripped.strip()}")
+          if violations:
+              print('\n'.join(violations))
+              sys.exit(1)
+          PY
+          )
+          if [ -n "$VIOLATIONS" ]; then
+            echo "::error::workflow_dispatch input templated directly inside a run: block."
+            echo "Redirect via env: { NAME: \${{ inputs.X }} } at the step level; reference \$NAME in the script."
+            echo "See docs/security/threat-model.md §3.11 for the pattern (env: redirect, not run:-block template)."
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+
+  # ----------------------------------------------------------------------------
+  # (5) Every workflow declares an explicit permissions: scope (top-level or
+  # per-job). The default GITHUB_TOKEN scope is repo-wide write — this gate
+  # enforces least-privilege.
+  # ----------------------------------------------------------------------------
+  permissions-required:
+    name: Workflow permissions block required
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: "Require a permissions block on every workflow"
+        run: |
+          set -e
+          MISSING=$(python3 - <<'PY'
+          import os, sys
+          missing = []
+          for root, _, files in os.walk('.github/workflows'):
+              for f in files:
+                  if not (f.endswith('.yml') or f.endswith('.yaml')):
+                      continue
+                  path = os.path.join(root, f)
+                  with open(path, encoding='utf-8') as fh:
+                      content = fh.read()
+                  # Either a top-level `permissions:` (column 0) or a per-job
+                  # `permissions:` (indented under a job). The grep is generous
+                  # because YAML allows both.
+                  if 'permissions:' not in content:
+                      missing.append(path)
+          if missing:
+              print('\n'.join(missing))
+              sys.exit(1)
+          PY
+          )
+          if [ -n "$MISSING" ]; then
+            echo "::error::Workflow(s) missing an explicit permissions: block."
+            echo "Add a top-level or per-job permissions: scope (default is write-all — too broad)."
+            echo "$MISSING"
+            exit 1
+          fi
+
+  # ----------------------------------------------------------------------------
+  # (6) Workflow + helper-script lint. Guards against the class of failure that
+  # silently broke the self-update workflows for weeks:
+  #   - YAML parse check (BLOCKING): every workflow must parse. This is the
+  #     startup_failure guard — an unparseable workflow at a commit is exactly
+  #     what produced the 0-second "workflow file issue" runs.
+  #   - actionlint (ADVISORY): deeper schema + `${{ }}` expression checks.
+  #     Non-blocking until a clean baseline is confirmed, so it can't red-gate a
+  #     PR on a pre-existing nit; shellcheck/pyflakes off to avoid shell noise.
+  #   - compileall (BLOCKING): syntax-checks every .github/scripts/*.py — the
+  #     guard that catches an indented first statement (the IndentationError
+  #     that killed the watcher) now that the inline python3 -c is a real module.
+  # ----------------------------------------------------------------------------
+  lint-workflows-and-scripts:
+    name: Lint workflows + helper scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Validate every workflow YAML parses (startup_failure guard)
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check pyyaml
+          python3 - <<'PY'
+          import glob, sys, yaml
+
+          # GitHub's workflow parser REJECTS duplicate mapping keys (e.g. two
+          # `env:` blocks in one step) — a startup_failure (the 0-second "workflow
+          # file issue" runs). PyYAML tolerates them by default (last wins), so we
+          # use a loader that errors on duplicates to catch that class here.
+          class StrictLoader(yaml.SafeLoader):
+              pass
+
+          def _no_dup(loader, node, deep=False):
+              seen = set()
+              for k, _ in node.value:
+                  key = loader.construct_object(k, deep=deep)
+                  if key in seen:
+                      raise yaml.YAMLError(f"duplicate key {key!r}")
+                  seen.add(key)
+              return loader.construct_mapping(node, deep=deep)
+
+          StrictLoader.add_constructor(
+              yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _no_dup)
+
+          bad = []
+          for f in glob.glob('.github/workflows/*.yml') + glob.glob('.github/workflows/*.yaml'):
+              try:
+                  with open(f, encoding='utf-8') as fh:
+                      yaml.load(fh, StrictLoader)
+              except Exception as e:
+                  bad.append(f"{f}: {e}")
+          if bad:
+              print("::error::Invalid workflow YAML (would cause a startup_failure):")
+              print("\n".join(bad)); sys.exit(1)
+          print("All workflow YAML files parse (no duplicate keys).")
+          PY
+
+      - name: actionlint (schema + expressions — advisory)
+        continue-on-error: true
+        # shellcheck/pyflakes off (= empty) — schema/expression focus. Advisory
+        # until a clean baseline is confirmed; promote to blocking afterwards.
+        # Two known false positives are suppressed via -ignore so the advisory
+        # output stays signal-only:
+        #   - `models: read` is a valid permission actionlint 1.7.7 doesn't know.
+        #   - `property "x" is not defined` comes from THIS meta-workflow's own
+        #     regex strings (it deliberately contains `${{ inputs.* }}` text).
+        # TODO: digest-pin the image; drop the model-ignore once actionlint ships
+        # the `models` scope.
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            rhysd/actionlint:1.7.7 -color -shellcheck= -pyflakes= \
+            -ignore 'permission scope "models"' \
+            -ignore 'property "x" is not defined' || true
+
+      - name: Compile-check Python helper scripts
+        run: python3 -m compileall -q .github/scripts
+
+      - name: Run helper-script unit tests
+        # Task 5.1 — runs .github/scripts/tests (incl. the NuGet version-detection
+        # fixture for get_latest_stable.py) so the watcher's detection logic and
+        # the verify/dedupe/guide helpers can't silently regress.
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check pytest pyyaml
+          python3 -m pytest .github/scripts/tests -q

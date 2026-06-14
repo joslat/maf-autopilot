@@ -1,6 +1,6 @@
 {
   "servers": {
-    "maf-autopilot": {
+    "maf-doctor": {
       "type": "stdio",
       "command": "dotnet",
       "args": [
@@ -12,7 +12,7 @@
       ],
       "env": {}
     },
-    "maf-autopilot-custom-registry": {
+    "maf-doctor-custom-registry": {
       "type": "stdio",
       "command": "dotnet",
       "args": [
