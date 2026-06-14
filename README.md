@@ -194,7 +194,7 @@ maf-autopilot/
 │   └── workflows/                         # 7 GitHub Actions
 │       ├── release.yml                    # NuGet publish (test → pack → push) on v* tag
 │       ├── docker-publish.yml             # multi-arch GHCR image on tag push
-│       ├── maf-release-watcher.yml        # daily (09:00 UTC) MAF version check; minors auto-commit, majors escalate
+│       ├── maf-release-watcher.yml        # Thu 06:00 UTC MAF version check (MAF .NET ship day); minors auto-commit, majors escalate
 │       ├── maf-ai-fill-todos.yml          # dispatches GitHub issue for Copilot Coding Agent to fill registry TODOs
 │       ├── maf-ai-fill-verify.yml         # PR-gate: runs verify-registry on AI-filled output before merge
 │       ├── maf-pr-audit.yml               # PR-scoped scan, posts a sticky comment
