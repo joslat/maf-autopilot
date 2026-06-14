@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// Shared, hardened external-process invocation for tools that shell out to

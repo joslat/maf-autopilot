@@ -1,10 +1,10 @@
 using System.Text.Json;
-using MafAutopilot.Tools;
-using MafAutopilot.Tools.Rewriters;
+using MafDoctor.Tools;
+using MafDoctor.Tools.Rewriters;
 using Microsoft.CodeAnalysis.CSharp;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Phase W.6 — tests for <see cref="AutoFixTool"/> + each rewriter.

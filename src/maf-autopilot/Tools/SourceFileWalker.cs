@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// Shared file-enumeration + relative-path helpers used by every scanner that

@@ -1,11 +1,11 @@
-using MafAutopilot;
-using MafAutopilot.Data;
-using MafAutopilot.Tools;
+using MafDoctor;
+using MafDoctor.Data;
+using MafDoctor.Tools;
 using Xunit;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 public class RegistryExtractCommandTests
 {

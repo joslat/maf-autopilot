@@ -1,8 +1,8 @@
 using System.Text.Json.Nodes;
-using MafAutopilot;
+using MafDoctor;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Tests for `maf-autopilot init` — specifically the .vscode/mcp.json merge logic.
@@ -33,7 +33,7 @@ public sealed class InitCommandTests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task WriteMcpJsonAsync_NoExistingFile_CreatesWithMafAutopilotEntry()
+    public async Task WriteMcpJsonAsync_NoExistingFile_CreatesWithMafDoctorEntry()
     {
         await InitCommand.WriteMcpJsonAsync(_tempDir);
 

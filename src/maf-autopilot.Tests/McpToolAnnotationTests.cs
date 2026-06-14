@@ -1,9 +1,9 @@
 using System.Reflection;
-using MafAutopilot.Tools;
+using MafDoctor.Tools;
 using ModelContextProtocol.Server;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Locks the <c>[McpServerTool]</c> annotation contract for tools whose hints

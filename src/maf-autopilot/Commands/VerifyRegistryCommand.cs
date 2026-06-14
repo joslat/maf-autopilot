@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
-using MafAutopilot.Data;
+using MafDoctor.Data;
 
-namespace MafAutopilot.Commands;
+namespace MafDoctor.Commands;
 
 /// <summary>
 /// CLI: <c>maf-autopilot verify-registry</c>.

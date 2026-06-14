@@ -1,9 +1,9 @@
 using System.ComponentModel;
 using System.Text;
-using MafAutopilot.Data;
+using MafDoctor.Data;
 using ModelContextProtocol.Server;
 
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// MCP tool: <c>MafGenerateRegressionPlan</c>.

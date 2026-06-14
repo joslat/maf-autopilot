@@ -2,7 +2,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis.CSharp;
 
-namespace MafAutopilot.Scaffolding;
+namespace MafDoctor.Scaffolding;
 
 /// <summary>
 /// Generates clean MAF 1.3.0 agent code that passes the anti-pattern scanner

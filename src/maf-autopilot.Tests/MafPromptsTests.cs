@@ -1,8 +1,8 @@
-using MafAutopilot.Prompts;
+using MafDoctor.Prompts;
 using ModelContextProtocol.Protocol;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Tests for the MCP Prompts in <see cref="MafPrompts"/>. The focus is the

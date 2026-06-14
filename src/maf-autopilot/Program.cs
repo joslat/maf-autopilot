@@ -1,6 +1,6 @@
-using MafAutopilot;
-using MafAutopilot.Data;
-using MafAutopilot.Tools;
+using MafDoctor;
+using MafDoctor.Data;
+using MafDoctor.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -38,7 +38,7 @@ if (args.Length >= 1 && args[0] == "doctor")
         if (path is null && !args[i].StartsWith("--", StringComparison.Ordinal)) path = args[i];
     }
     path ??= Directory.GetCurrentDirectory();
-    var report = new MafAutopilot.Tools.DoctorTool().Run(path, "markdown", excludes);
+    var report = new MafDoctor.Tools.DoctorTool().Run(path, "markdown", excludes);
     Console.WriteLine(report);
     Environment.Exit(0);
     return;
@@ -49,7 +49,7 @@ if (args.Length >= 1 && args[0] == "badge")
     // host the JSON output (X.4) and reference it from shields.io URLs like
     // https://img.shields.io/endpoint?url=<your-hosted-json>.
     var path = args.Length >= 2 ? args[1] : Directory.GetCurrentDirectory();
-    var badge = MafAutopilot.Commands.BadgeCommand.Build(path);
+    var badge = MafDoctor.Commands.BadgeCommand.Build(path);
     Console.WriteLine(badge);
     Environment.Exit(0);
     return;
@@ -62,7 +62,7 @@ if (args.Length >= 1 && args[0] == "autofix-all")
     var positional = args.Skip(1).Where(a => !a.StartsWith("--")).ToList();
     var path = positional.Count > 0 ? positional[0] : Directory.GetCurrentDirectory();
     var dryRun = args.Contains("--dry-run");
-    var report = new MafAutopilot.Tools.AutoFixTool().MafAutoFixAll(path, dryRun: dryRun);
+    var report = new MafDoctor.Tools.AutoFixTool().MafAutoFixAll(path, dryRun: dryRun);
     Console.WriteLine(report);
     Environment.Exit(0);
     return;
@@ -72,7 +72,7 @@ if (args.Length >= 1 && args[0] == "verify-registry")
     // #5 polish (2026-05-13) — verification gate for the AI-fill flow. The
     // PR-triggered workflow maf-ai-fill-verify.yml runs this command against
     // the AI-filled registry.yaml. Exit code 1 blocks the PR's auto-merge.
-    var exitCode = MafAutopilot.Commands.VerifyRegistryCommand.Run();
+    var exitCode = MafDoctor.Commands.VerifyRegistryCommand.Run();
     Environment.Exit(exitCode);
     return;
 }

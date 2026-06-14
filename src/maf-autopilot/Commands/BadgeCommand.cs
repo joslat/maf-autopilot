@@ -1,8 +1,8 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using MafAutopilot.Tools;
+using MafDoctor.Tools;
 
-namespace MafAutopilot.Commands;
+namespace MafDoctor.Commands;
 
 /// <summary>
 /// Phase W.13 — `maf-autopilot badge &lt;repoPath&gt;` subcommand.

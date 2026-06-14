@@ -5,9 +5,9 @@ using System.Text;
 // Cross-layer dep `Prompts → Tools` is intentional: LlmFencing and
 // BoundedInput are primitives (data-fencing + length-cap helpers), not
 // feature modules. See CONTRIBUTING.md "Helper composition — decision tree".
-using MafAutopilot.Tools;
+using MafDoctor.Tools;
 
-namespace MafAutopilot.Prompts;
+namespace MafDoctor.Prompts;
 
 /// <summary>
 /// MCP Prompts — pre-built starting prompts for common MAF migration workflows.

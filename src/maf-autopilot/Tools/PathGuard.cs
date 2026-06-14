@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// Shared input-validation for path parameters that come from the LLM.

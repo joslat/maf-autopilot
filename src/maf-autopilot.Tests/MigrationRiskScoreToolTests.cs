@@ -1,8 +1,8 @@
 using System.Text.Json;
-using MafAutopilot.Tools;
+using MafDoctor.Tools;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Phase W.11 — tests for <see cref="MigrationRiskScoreTool"/>.

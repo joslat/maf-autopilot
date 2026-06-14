@@ -1,16 +1,16 @@
 using Microsoft.CodeAnalysis.CSharp.Testing;
 using Microsoft.CodeAnalysis.Testing;
-using MafAutopilot.Analyzers;
+using MafDoctor.Analyzers;
 using Xunit;
 
-namespace MafAutopilot.Analyzers.Tests;
+namespace MafDoctor.Analyzers.Tests;
 
 using DacVerify = Microsoft.CodeAnalysis.CSharp.Testing.CSharpAnalyzerTest<
-    MafAutopilot.Analyzers.DefaultAzureCredentialAnalyzer,
+    MafDoctor.Analyzers.DefaultAzureCredentialAnalyzer,
     Microsoft.CodeAnalysis.Testing.DefaultVerifier>;
 
 using SdVerify = Microsoft.CodeAnalysis.CSharp.Testing.CSharpAnalyzerTest<
-    MafAutopilot.Analyzers.SensitiveDataAnalyzer,
+    MafDoctor.Analyzers.SensitiveDataAnalyzer,
     Microsoft.CodeAnalysis.Testing.DefaultVerifier>;
 
 public class DefaultAzureCredentialAnalyzerTests

@@ -1,8 +1,8 @@
 using System.Text;
-using MafAutopilot.Tools;
+using MafDoctor.Tools;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Tests for <see cref="LlmFencing"/>. Parity tests for the Python sibling

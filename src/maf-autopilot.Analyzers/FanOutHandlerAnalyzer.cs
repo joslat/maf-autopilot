@@ -5,7 +5,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
 
-namespace MafAutopilot.Analyzers;
+namespace MafDoctor.Analyzers;
 
 /// <summary>
 /// MAF001 — fan-out handler must return Task&lt;T&gt; or ValueTask&lt;T&gt;.

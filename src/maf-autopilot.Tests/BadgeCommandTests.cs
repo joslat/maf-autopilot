@@ -1,7 +1,7 @@
-using MafAutopilot.Commands;
+using MafDoctor.Commands;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Phase W.13 — tests for <see cref="BadgeCommand"/>.
