@@ -9,7 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed (self-update reliability — branch `fix/self-update`)
+## [1.2.0] - 2026-06-14
+
+### Added
+
+- **MAF 1.10.0 support** — 22 registry entries (obsolete/changed APIs), the compatibility-matrix row (`Microsoft.Extensions.AI >= 10.6.0`), and the `1.6.1 → 1.10.0` migration guide. Auto-detected by the now-fixed release watcher; migration content authored by the Copilot coding agent and verified by the registry gates. _(AI-authored migration guidance — review against the upstream `microsoft/agent-framework` changelog when convenient.)_
+
+### Fixed (self-update reliability)
 
 The scheduled **MAF Release Watcher** and **MAF Drift Detector** had failed on
 **every** scheduled run since creation, for two unrelated reasons (full report +
