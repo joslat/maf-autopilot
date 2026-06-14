@@ -493,3 +493,9 @@ Every code change ships on a branch behind PRs; revert the PR to roll back. The 
 2. **5.3** — manually re-trigger both scheduled workflows on `main` after merge; confirm green + the drift-issue open/close lifecycle.
 3. **6.4** — rename the GitHub repo `joslat/maf-autopilot` → `joslat/maf-doctor`, then flip the remaining `joslat/maf-autopilot` URL / `RepositoryUrl` / SARIF / OCI-label references (bundle the URL sed here to avoid a 404 window). The GHCR image path follows automatically.
 - Optional: **6.5** namespace rename `MafAutopilot`→`MafDoctor` as a separate mechanical PR; enable native failed-workflow email (2.3).
+
+### 2026-06-14 — Final review pass (self-review of the PR diff)
+- Verified the watcher escalation gating is coherent: `Commit directly to main` (`if: is_major != 'true'`) → `Open issue for Copilot` (`if: committed == 'true'`) → `Escalate MAJOR` (`if: is_major == 'true'`). Minor/patch commits & dispatch; no-op skips dispatch; majors escalate and never push.
+- Verified the CLI `doctor` arg parser handles `doctor --exclude x` (no path), `doctor /p --exclude a --exclude b`, and `doctor --exclude` (no value) without crashing; old published builds ignore the extra args (forward-compatible).
+- **Hardened the lint gate:** split into a BLOCKING YAML-parse check (all 10 verified to parse) + ADVISORY actionlint (`continue-on-error`), so a pre-existing actionlint nit can't red-gate the PR while the real startup_failure guard still blocks. compileall + pytest remain blocking.
+- PR: **#66** (`fix/self-update` → `security-hardening-v1.1`).

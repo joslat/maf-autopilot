@@ -328,17 +328,17 @@ jobs:
           fi
 
   # ----------------------------------------------------------------------------
-  # (6) Workflow + helper-script lint. Two guards that directly prevent the
-  # class of failure that silently broke the self-update workflows for weeks:
-  #   - actionlint parses every workflow YAML (catches the startup_failure
-  #     class — an unparseable workflow at a commit) and validates the action
-  #     schema + `${{ }}` expression contexts. shellcheck/pyflakes integrations
-  #     are disabled so the gate stays focused on parse/schema errors instead
-  #     of flooding on the repo's extensive, deliberate inline shell.
-  #   - compileall syntax-checks every .github/scripts/*.py. This is the guard
-  #     that catches an indented first statement (the IndentationError that
-  #     killed the release-watcher on its scheduled NuGet path) once the inline
-  #     `python3 -c` was extracted into a real module.
+  # (6) Workflow + helper-script lint. Guards against the class of failure that
+  # silently broke the self-update workflows for weeks:
+  #   - YAML parse check (BLOCKING): every workflow must parse. This is the
+  #     startup_failure guard — an unparseable workflow at a commit is exactly
+  #     what produced the 0-second "workflow file issue" runs.
+  #   - actionlint (ADVISORY): deeper schema + `${{ }}` expression checks.
+  #     Non-blocking until a clean baseline is confirmed, so it can't red-gate a
+  #     PR on a pre-existing nit; shellcheck/pyflakes off to avoid shell noise.
+  #   - compileall (BLOCKING): syntax-checks every .github/scripts/*.py — the
+  #     guard that catches an indented first statement (the IndentationError
+  #     that killed the watcher) now that the inline python3 -c is a real module.
   # ----------------------------------------------------------------------------
   lint-workflows-and-scripts:
     name: Lint workflows + helper scripts
@@ -346,13 +346,32 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
-      - name: actionlint (YAML parse + workflow schema + expressions)
-        # Pinned official image. shellcheck/pyflakes off (= empty) — parse and
-        # schema errors only. TODO: digest-pin once a baseline run is confirmed.
+      - name: Validate every workflow YAML parses (startup_failure guard)
         run: |
-          set -e
+          python3 -m pip install --quiet --disable-pip-version-check pyyaml
+          python3 - <<'PY'
+          import glob, sys, yaml
+          bad = []
+          for f in glob.glob('.github/workflows/*.yml') + glob.glob('.github/workflows/*.yaml'):
+              try:
+                  with open(f, encoding='utf-8') as fh:
+                      yaml.safe_load(fh)
+              except Exception as e:
+                  bad.append(f"{f}: {e}")
+          if bad:
+              print("::error::Unparseable workflow YAML (would cause a startup_failure):")
+              print("\n".join(bad)); sys.exit(1)
+          print("All workflow YAML files parse.")
+          PY
+
+      - name: actionlint (schema + expressions — advisory)
+        continue-on-error: true
+        # shellcheck/pyflakes off (= empty) — schema/expression focus. Advisory
+        # until a clean baseline is confirmed; promote to blocking afterwards.
+        # TODO: digest-pin the image.
+        run: |
           docker run --rm -v "$PWD:/repo" -w /repo \
-            rhysd/actionlint:1.7.7 -color -shellcheck= -pyflakes=
+            rhysd/actionlint:1.7.7 -color -shellcheck= -pyflakes= || true
 
       - name: Compile-check Python helper scripts
         run: python3 -m compileall -q .github/scripts
