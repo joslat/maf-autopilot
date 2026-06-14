@@ -11,7 +11,7 @@ namespace MafDoctor.Tools;
 /// <summary>
 /// MCP tool: MafSimulateWorkflow
 ///
-/// In-vitro topology analysis of a MAF 1.3.0 workflow. Walks every WorkflowBuilder
+/// In-vitro topology analysis of a MAF workflow. Walks every WorkflowBuilder
 /// invocation in the codebase, traces .AddEdge / .AddFanOutEdge / .AddFanInBarrierEdge
 /// calls into a directed graph, cross-checks each executor's [MessageHandler] return
 /// type, and proves whether the workflow can complete without silent fan-in starvation.
@@ -24,7 +24,7 @@ public sealed class SimulateWorkflowTool
 {
     [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
-        Statically analyze a MAF 1.3.0 workflow's topology — proves whether it
+        Statically analyze a MAF workflow's topology — proves whether it
         can complete without silent fan-in starvation. Walks WorkflowBuilder
         invocations, traces AddEdge / AddFanOutEdge / AddFanInBarrierEdge calls,
         cross-checks every [MessageHandler] return type, and emits a Mermaid
@@ -261,7 +261,7 @@ public sealed class SimulateWorkflowTool
             if (resolved.Count == 0) continue;
 
             // Convention: for AddFanInBarrierEdge the LAST argument is the target;
-            // the rest are sources (canonical 1.3.0 form is `(sources, target)`).
+            // the rest are sources (canonical form is `(sources, target)`).
             // For AddEdge / AddFanOutEdge the FIRST argument is the source.
             string source;
             string target;

@@ -78,7 +78,7 @@ public sealed class TourTool
     internal static readonly IReadOnlyList<ToolEntry> ToolCatalogue = new ToolEntry[]
     {
         // — Registry / lookup —
-        new("MafApiSafety", "Registry lookup", "Is this MAF API call safe in 1.3.0? Returns the registry entry if the symbol is known-obsolete; SAFE otherwise. Pure read."),
+        new("MafApiSafety", "Registry lookup", "Is this MAF API call safe in the latest MAF version? Returns the registry entry if the symbol is known-obsolete; SAFE otherwise. Pure read."),
         new("MafRegistryLookup", "Registry lookup", "Pull the full registry entry by ID (e.g. `MAF130-THREAD-001`). Use after `MafApiSafety` finds a hit."),
         new("MafRegistryList", "Registry lookup", "Enumerate every registry entry ID. Useful for discovery and CI auditing."),
 
@@ -132,7 +132,7 @@ public sealed class TourTool
         new("@maf", "Primary triage. Picks the right tool / specialist for the user's intent. NEVER auto-handoffs — always recommends. Start here.", IsPrimary: true),
         new("@maf-migration", "Build-verified task-by-task MAF version migration. Loads the plan, executes one row at a time, gates on `dotnet build` green."),
         new("@maf-auditor", "Pre-migration plan generator. Scans the codebase, cross-references the registry + constraints, produces `migration-plan.md`."),
-        new("@maf-best-practice-reviewer", "Steady-state audit on a clean 1.3.0 codebase. Produces `audit-report.md`. Use post-migration."),
+        new("@maf-best-practice-reviewer", "Steady-state audit on a clean MAF codebase. Produces `audit-report.md`. Use post-migration."),
         new("@maf-incident-responder", "Production failure → MAF pattern responsible → deterministic fix. Maps symptom (silent exit / auth failure / cost spike) to known-bad pattern."),
         new("@maf-rollback", "Surgical 1.3.0 → 1.2.0 retreat. Inverse of migration. Preserves unrelated work that landed on top."),
         new("@maf-onboarding", "Personalised codebase tour for a new dev. Topology + top-touched files + dialect."),
@@ -141,7 +141,7 @@ public sealed class TourTool
     internal static readonly IReadOnlyList<(string Uri, string Description)> ResourceCatalogue = new[]
     {
         ("maf://constraints", "Hard constraints + breaking-changes table. Always-loaded by every agent."),
-        ("maf://guide", "Full MAF 1.3.0 migration guide (21 sections). Read on demand."),
+        ("maf://guide", "Full MAF migration guide (21 sections). Read on demand."),
         ("maf://registry", "Machine-readable obsolete-API registry YAML."),
         ("maf://rules", "Live rule catalogue — anti-pattern + prompt-lint + analyzer + cross-references. Auto-generated from runtime data."),
         ("maf://help", "Same content as `MafTour()` but as a resource — useful for static discovery without a tool call."),

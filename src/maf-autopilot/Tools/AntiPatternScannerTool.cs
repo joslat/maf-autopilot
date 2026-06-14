@@ -10,7 +10,7 @@ namespace MafDoctor.Tools;
 /// <summary>
 /// MCP tool: MafScanAntiPatterns
 ///
-/// Walks a MAF 1.3.0 codebase looking for known anti-patterns AFTER migration is complete.
+/// Walks a MAF codebase looking for known anti-patterns AFTER migration is complete.
 /// Rules canonical: see <c>.github/skills/maf-anti-pattern-scanner/SKILL.md</c>.
 ///
 /// This is the **identity-unlock** tool — it materialises the "co-pilot beyond migration"
@@ -22,9 +22,9 @@ public sealed class AntiPatternScannerTool
 {
     [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
-        Scan a MAF 1.3.0 codebase for known anti-patterns (security, concurrency,
+        Scan a MAF codebase for known anti-patterns (security, concurrency,
         observability, identity, topology). Distinct from migration tooling —
-        this checks idiom and configuration on code that's already on 1.3.0.
+        this checks idiom and configuration on code that's already on a recent MAF release.
 
         Input:
           - repoPath: absolute path to the repo root. All *.cs files are scanned recursively
@@ -481,7 +481,7 @@ public sealed class AntiPatternScannerTool
         AppendSection(sb, "ℹ️ Info (consider)", infos);
 
         if (findings.Count == 0)
-            sb.AppendLine("✅ No anti-patterns detected. Codebase follows current MAF 1.3.0 best practices for the scanned ruleset.");
+            sb.AppendLine("✅ No anti-patterns detected. Codebase follows current MAF best practices for the scanned ruleset.");
 
         sb.AppendLine();
         sb.AppendLine("**Rule list source:** `maf://skills?name=maf-anti-pattern-scanner`");

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.6] - 2026-06-14
+
+### Fixed (stop pinning MAF 1.3.0 in served text)
+
+- **Removed hardcoded `MAF 1.3.0` version pins from the tool's user-facing output** — MCP prompt bodies, resource titles/descriptions, tool descriptions, and scaffolder comments said things like "Target MAF version: 1.3.0", "MAF 1.3.0 Hard Constraints", "scaffold MAF 1.3.0 boilerplate". Reworded to version-agnostic phrasing ("MAF", "the latest stable release") so they don't go stale as MAF ships. Audited all 19 served-source files (75 references); fixed 37 display/command pins, deliberately kept the ~38 that are historical facts ("removed in 1.3.0"), per-version data (the compatibility matrix's `1.3.0` row), registry version keys, or user-supplied version-argument examples (diff/migration-path tools).
+- **`maf-doctor new agent` no longer prints stale install commands.** `NewCommand` told users to run `dotnet add package Microsoft.Agents.AI --version 1.3.0` (and the Workflows/Generators packages) — pinning a years-old MAF. Dropped the `--version 1.3.0` so NuGet installs the latest stable.
+- All 749 + 15 tests pass across net8/9/10 (no behavior change — text only).
+
 ## [1.2.5] - 2026-06-14
 
 ### Changed (`init` steering layout — no longer merges into your own files)

@@ -9,7 +9,7 @@ using ModelContextProtocol.Server;
 // CLI mode: short-circuit before Host.CreateApplicationBuilder so stdin/stdout remain clean.
 // Supported subcommands:
 //   maf-doctor init                       — scaffold .vscode/mcp.json + copilot-instructions
-//   maf-doctor new agent <Name>           — generate a MAF 1.3.0 agent + smoke test
+//   maf-doctor new agent <Name>           — generate a MAF agent + smoke test
 //   maf-doctor new executor <Name> [In] [Out]  — generate a workflow executor + smoke test
 //   maf-doctor doctor [path]              — one-command repo health report (A/B/C/F grade)
 if (args.Length > 0 && args[0] == "init")

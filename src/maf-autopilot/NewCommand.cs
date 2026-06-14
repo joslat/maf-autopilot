@@ -81,7 +81,7 @@ internal static class NewCommand
         Console.WriteLine("Next steps:");
         Console.WriteLine();
         Console.WriteLine("  0. If your project doesn't reference MAF yet, add the packages:");
-        Console.WriteLine("       dotnet add package Microsoft.Agents.AI --version 1.3.0");
+        Console.WriteLine("       dotnet add package Microsoft.Agents.AI");
         Console.WriteLine("       dotnet add package Microsoft.Extensions.AI --version 10.5.*");
         Console.WriteLine("       dotnet add package Azure.AI.OpenAI");
         Console.WriteLine("       dotnet add package Azure.Identity");
@@ -97,8 +97,8 @@ internal static class NewCommand
         Console.WriteLine("Next steps:");
         Console.WriteLine();
         Console.WriteLine("  0. If your project doesn't reference MAF Workflows yet, add the packages:");
-        Console.WriteLine("       dotnet add package Microsoft.Agents.AI.Workflows --version 1.3.0");
-        Console.WriteLine("       dotnet add package Microsoft.Agents.AI.Workflows.Generators --version 1.3.0");
+        Console.WriteLine("       dotnet add package Microsoft.Agents.AI.Workflows");
+        Console.WriteLine("       dotnet add package Microsoft.Agents.AI.Workflows.Generators");
         Console.WriteLine();
         Console.WriteLine("  1. Wire into your workflow's AddFanOutEdge / AddFanInBarrierEdge calls.");
         Console.WriteLine("  2. dotnet build && dotnet test");

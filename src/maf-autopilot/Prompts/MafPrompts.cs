@@ -56,7 +56,7 @@ public static class MafPrompts
         sb.AppendLine($"Repository: {safeRepoPath}");
         if (!string.IsNullOrEmpty(safeFromVersion))
             sb.AppendLine($"Current MAF version: {safeFromVersion}");
-        sb.AppendLine("Target MAF version: 1.3.0");
+        sb.AppendLine("Target MAF version: the latest stable release (confirm with the MafCompatibility tool or maf://registry)");
         sb.AppendLine();
         sb.AppendLine("BEFORE STARTING:");
         sb.AppendLine("1. Read the hard constraints at maf://constraints — these must never be violated.");
@@ -166,7 +166,7 @@ public static class MafPrompts
     [McpServerPrompt(Name = "maf-review",
         Title = "MAF Review: Best-Practices Code Review")]
     [Description(
-        "Starter prompt for a MAF 1.3.0 best-practices code review (not migration). " +
+        "Starter prompt for a MAF best-practices code review (not migration). " +
         "Useful for day-to-day development, PR review, and post-migration validation. " +
         "Covers executors, sessions, fan-out topology, security, streaming, A2A.")]
     public static IList<PromptMessage> Review(
@@ -184,7 +184,7 @@ public static class MafPrompts
         var safeFocusArea = LlmFencing.StripHtmlComments(focusArea);
 
         var sb = new StringBuilder();
-        sb.AppendLine("Review the supplied MAF 1.3.0 code for best-practice compliance. This is NOT a migration audit — focus on correctness + idiom for an already-migrated 1.3.0 codebase.");
+        sb.AppendLine("Review the supplied MAF code for best-practice compliance. This is NOT a migration audit — focus on correctness + idiom for an already-migrated codebase.");
         sb.AppendLine();
         if (!string.IsNullOrEmpty(safeTarget)) sb.AppendLine($"Target: `{safeTarget}`");
         if (!string.IsNullOrEmpty(safeFocusArea)) sb.AppendLine($"Focus area: `{safeFocusArea}`");
@@ -198,7 +198,7 @@ public static class MafPrompts
         sb.AppendLine("- `MafEstimateCost(repoPath)` — token-cost auditor (missing `MaxOutputTokens` cap).");
         sb.AppendLine("- `MafExplain(snippet)` — annotate a suspicious snippet inline.");
         sb.AppendLine();
-        sb.AppendLine("**Review checklist (MAF 1.3.0):**");
+        sb.AppendLine("**Review checklist (MAF):**");
         sb.AppendLine("1. Executors: `sealed partial class : Executor` + `[MessageHandler]` on handlers. NO `ReflectingExecutor<T>`, NO `IMessageHandler<>`, NO `[StreamsMessage]` / `[YieldsMessage]`.");
         sb.AppendLine("2. Sessions: `AgentSession` via `CreateSessionAsync` (NOT `AgentThread.GetNewThread()`). State in `ProviderSessionState<T>`, NEVER instance fields on providers.");
         sb.AppendLine("3. Fan-out / fan-in: handlers MUST return `Task<T>` / `ValueTask<T>` / `IAsyncEnumerable<T>` (void or non-generic Task starves the barrier). `AddFanInBarrierEdge(sources, target)` — sources first.");
@@ -224,7 +224,7 @@ public static class MafPrompts
         [Description("Path to the .NET project or solution, if relevant.")] string? projectPath = null)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("You are diagnosing a MAF 1.3.0 issue. Identify the root cause and provide the exact fix (or recommend the right specialist agent).");
+        sb.AppendLine("You are diagnosing a MAF issue. Identify the root cause and provide the exact fix (or recommend the right specialist agent).");
         sb.AppendLine();
         if (!string.IsNullOrWhiteSpace(errorOrSymptom))
         {
@@ -284,9 +284,9 @@ public static class MafPrompts
     }
 
     [McpServerPrompt(Name = "maf-scaffold",
-        Title = "MAF Scaffold: Generate MAF 1.3.0 Boilerplate")]
+        Title = "MAF Scaffold: Generate MAF Boilerplate")]
     [Description(
-        "Starter prompt for scaffolding MAF 1.3.0 boilerplate. Routes to the right " +
+        "Starter prompt for scaffolding MAF boilerplate. Routes to the right " +
         "scaffolder MCP tool based on what you want to build.")]
     public static IList<PromptMessage> Scaffold(
         [Description("What to scaffold: \"agent\" (chat-client agent class) or \"executor\" (workflow message handler).")] string template = "agent",
@@ -309,7 +309,7 @@ public static class MafPrompts
 
         var sb = new StringBuilder();
         var t = (template ?? "agent").Trim().ToLowerInvariant();
-        sb.AppendLine("Scaffold MAF 1.3.0 boilerplate that passes every scanner and analyzer out of the box.");
+        sb.AppendLine("Scaffold MAF boilerplate that passes every scanner and analyzer out of the box.");
         sb.AppendLine();
 
         switch (t)
@@ -318,7 +318,7 @@ public static class MafPrompts
                 sb.AppendLine($"**Call:** `MafNewAgent(projectPath: \"<your-project>\", agentName: \"{(string.IsNullOrEmpty(safeName) ? "MyAgent" : safeName)}\", instructions: \"<optional system prompt>\")`");
                 sb.AppendLine();
                 sb.AppendLine("Generates:");
-                sb.AppendLine("- `Agents/<Name>.cs` — `ChatClientAgent`-based class with `UseOpenTelemetry`, `MaxOutputTokens = 1024`, `Instructions` inside `ChatOptions` (the correct 1.3.0 placement)");
+                sb.AppendLine("- `Agents/<Name>.cs` — `ChatClientAgent`-based class with `UseOpenTelemetry`, `MaxOutputTokens = 1024`, `Instructions` inside `ChatOptions` (the correct placement)");
                 sb.AppendLine("- `Tests/<Name>Tests.cs` — hermetic xUnit smoke test using a `ScriptedChatClient` mock (zero LLM cost)");
                 sb.AppendLine();
                 sb.AppendLine("Generator contract: the output passes `MafScanAntiPatterns` + `MafValidateFanOut` + compile-validation on first run.");
@@ -358,8 +358,8 @@ public static class MafPrompts
         sb.AppendLine("You are `@maf` triaging a new user. Walk them through the **3-question intake**:");
         sb.AppendLine();
         sb.AppendLine("**Q1.** What's the current MAF state in your codebase?");
-        sb.AppendLine("- *(a)* Already on MAF 1.3.0 — clean build, no CS0618 warnings.");
-        sb.AppendLine("- *(b)* Pre-1.3.0 (on 1.0/1.1/1.2) and want to upgrade.");
+        sb.AppendLine("- *(a)* Already on a current MAF version — clean build, no CS0618 warnings.");
+        sb.AppendLine("- *(b)* On an older MAF (e.g. 1.0 / 1.1 / 1.2) and want to upgrade.");
         sb.AppendLine("- *(c)* Greenfield — no MAF code yet, planning a new project.");
         sb.AppendLine("- *(d)* I don't know — help me find out.");
         sb.AppendLine();
