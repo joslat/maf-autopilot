@@ -91,19 +91,89 @@ This list of changes was [auto generated](https://msdata.visualstudio.com/Vienna
 
 ## Breaking Changes (requires human verification)
 
-<!-- TODO: Review the diff above and list breaking changes here -->
+> ⚠️ Auto-generated stub. Review before relying on it for migrations.
+
+The following breaking changes were identified from the 1.6.1 → 1.10.0 diff and release notes:
+
+1. **Skill property removal** (`AgentSkill`, `AgentFileSkill`, `AgentInlineSkill`, `AgentClassSkill<T>`): The `Content`, `Resources`, and `Scripts` properties were removed from all skill types as part of a skill schema restructuring (#6343). Define skill content via the XML schema files instead.
+
+2. **`AgentFileSkillsSourceOptions` member removal**: `ScriptDirectories` and `ResourceDirectories` properties were removed. Update skill source configuration accordingly.
+
+3. **`ToolApprovalAgent` constructor signature changed**: The second parameter changed from `JsonSerializerOptions? jsonSerializerOptions` to `ToolApprovalAgentOptions? options`. Replace any `new ToolApprovalAgent(agent, jsonOptions)` call with `new ToolApprovalAgent(agent, new ToolApprovalAgentOptions { ... })`.
+
+4. **`ToolApprovalAgentBuilderExtensions.UseToolApproval` signature changed**: Same `JsonSerializerOptions?` → `ToolApprovalAgentOptions?` change applies to the builder extension method.
+
+5. **Sub-agent types removed**: `SubAgentsProvider`, `SubAgentsProviderOptions`, `SubTaskInfo`, and `SubTaskStatus` were removed. This is related to the GitHub Copilot SDK v1.0.0 migration (#6381).
+
+6. **Workflow builder metadata methods removed**: `GroupChatWorkflowBuilder.WithName`, `GroupChatWorkflowBuilder.WithDescription`, `MagenticWorkflowBuilder.WithName`, and `MagenticWorkflowBuilder.WithDescription` were removed. Remove these calls from your workflow construction code.
+
+7. **Microsoft.Extensions.AI bumped to 10.6.0**: The transitive floor moved from `≥ 10.5.1` to `≥ 10.6.0`.
 
 ## New Patterns
 
-<!-- TODO: Document any new recommended patterns from release notes -->
+> ⚠️ Auto-generated stub. Review before relying on it for migrations.
+
+### ToolApprovalAgentOptions
+
+A new `ToolApprovalAgentOptions` class is available for configuring `ToolApprovalAgent` behavior. The class supports auto-approval heuristics via `EnableNonApprovalRequiredFunctionBypassing`:
+
+```csharp
+// 1.10.0 — use ToolApprovalAgentOptions instead of JsonSerializerOptions
+var agent = new ToolApprovalAgent(
+    innerAgent,
+    new ToolApprovalAgentOptions
+    {
+        EnableNonApprovalRequiredFunctionBypassing = true
+    });
+
+// Or via builder:
+builder.UseToolApproval(new ToolApprovalAgentOptions
+{
+    EnableNonApprovalRequiredFunctionBypassing = true
+});
+```
+
+### Skill Content via XML Schema
+
+With the removal of `Content`, `Resources`, and `Scripts` properties from skill types, all skill definitions must now be expressed through the skill XML schema files rather than set programmatically at runtime.
 
 ## Obsolete APIs Added
 
-<!-- TODO: Use MafRunCs0618Hunt against a project pinned to 1.10.0 and document findings -->
+> ⚠️ Auto-generated stub. Review before relying on it for migrations.
+
+The following APIs were removed (CS0246) or their signatures changed (CS0618) in 1.10.0. Run `MafRunCs0618Hunt` against a project pinned to 1.10.0 for authoritative output:
+
+| ID | Type | Member | Change |
+|----|------|--------|--------|
+| MAF110-AGENT-001 | `AgentClassSkill<T>` | `Content` | Member removed (CS0246) |
+| MAF110-AGENT-002 | `AgentFileSkill` | `Content` | Member removed (CS0246) |
+| MAF110-AGENT-003 | `AgentFileSkill` | `Resources` | Member removed (CS0246) |
+| MAF110-AGENT-004 | `AgentFileSkill` | `Scripts` | Member removed (CS0246) |
+| MAF110-OPTIONS-001 | `AgentFileSkillsSourceOptions` | `ScriptDirectories` | Member removed (CS0246) |
+| MAF110-OPTIONS-002 | `AgentFileSkillsSourceOptions` | `ResourceDirectories` | Member removed (CS0246) |
+| MAF110-AGENT-005 | `AgentInlineSkill` | `Content` | Member removed (CS0246) |
+| MAF110-AGENT-006 | `AgentInlineSkill` | `Resources` | Member removed (CS0246) |
+| MAF110-AGENT-007 | `AgentInlineSkill` | `Scripts` | Member removed (CS0246) |
+| MAF110-AGENT-008 | `AgentSkill` | `Content` | Member removed (CS0246) |
+| MAF110-AGENT-009 | `AgentSkill` | `Resources` | Member removed (CS0246) |
+| MAF110-AGENT-010 | `AgentSkill` | `Scripts` | Member removed (CS0246) |
+| MAF110-PROVIDER-001 | `SubAgentsProvider` | (entire type) | Type removed (CS0246) |
+| MAF110-OPTIONS-003 | `SubAgentsProviderOptions` | (entire type) | Type removed (CS0246) |
+| MAF110-SUB-001 | `SubTaskInfo` | (entire type) | Type removed (CS0246) |
+| MAF110-SUB-002 | `SubTaskStatus` | (entire type) | Type removed (CS0246) |
+| MAF110-TOOL-001 | `ToolApprovalAgent` | `.ctor` | Signature changed — `JsonSerializerOptions?` → `ToolApprovalAgentOptions?` (CS0618) |
+| MAF110-EXTENSIO-001 | `ToolApprovalAgentBuilderExtensions` | `UseToolApproval` | Signature changed — `JsonSerializerOptions?` → `ToolApprovalAgentOptions?` (CS0618) |
+| MAF110-BUILDER-001 | `GroupChatWorkflowBuilder` | `WithName` | Member removed (CS0246) |
+| MAF110-BUILDER-002 | `GroupChatWorkflowBuilder` | `WithDescription` | Member removed (CS0246) |
+| MAF110-BUILDER-003 | `MagenticWorkflowBuilder` | `WithName` | Member removed (CS0246) |
+| MAF110-BUILDER-004 | `MagenticWorkflowBuilder` | `WithDescription` | Member removed (CS0246) |
 
 ## Known Misalignments
 
-<!-- TODO: Document any discrepancies between official docs and assembly behavior -->
+> ⚠️ Auto-generated stub. Review before relying on it for migrations.
+
+- The diff summary data in this guide is truncated (first 120 lines only). Run `MafRunCs0618Hunt` against a real 1.10.0 project for the authoritative full list of breaking changes.
+- Sub-agent type replacements (`SubAgentsProvider`, `SubTaskInfo`, `SubTaskStatus`) were not documented in the upstream release notes. Verify the replacement pattern with `dotnet-inspect type` against `Microsoft.Agents.AI 1.10.0` before migrating code that uses the sub-agent orchestration surface.
 
 <!-- AUTO-GENERATED END -->
 
