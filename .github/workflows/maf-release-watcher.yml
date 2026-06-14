@@ -70,11 +70,13 @@ jobs:
               echo "has_update=false" >> $GITHUB_OUTPUT
               exit 0
             fi
-            LATEST=$(echo "$RAW" | python3 -c "
-            import sys, json, re
-            data = json.load(sys.stdin)
-            stable = [v for v in data.get('versions', []) if not re.search(r'-(alpha|beta|rc|preview)', v, re.IGNORECASE)]
-            print(stable[-1] if stable else '')")
+            # Filter to the latest STABLE version via a real module. Previously
+            # this was an inline `python3 -c "..."` whose code carried this
+            # shell block's indentation, so Python raised "IndentationError:
+            # unexpected indent" on EVERY scheduled run (the explicit-version
+            # dispatch path skips this branch, which is why manual runs worked).
+            # See docs/self-update-remediation-plan.md task 1.1.
+            LATEST=$(echo "$RAW" | python3 .github/scripts/get_latest_stable.py)
             if [ -z "$LATEST" ]; then
               echo "ℹ️ No stable version found on NuGet — only prereleases. Skipping."
               echo "has_update=false" >> $GITHUB_OUTPUT

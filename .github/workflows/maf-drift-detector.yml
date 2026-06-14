@@ -32,11 +32,19 @@ jobs:
       - name: Run MafDoctor against repo
         id: doctor
         run: |
+          set -o pipefail
           REPORT=$(maf-autopilot doctor "$GITHUB_WORKSPACE")
           echo "$REPORT" > maf-doctor-report.md
-          # Extract grade (first line contains the bold letter).
-          GRADE=$(echo "$REPORT" | grep -oP 'health grade: \*\*\K[A-F]' | head -1)
-          echo "grade=$GRADE" >> $GITHUB_OUTPUT
+          # Extract grade (first line: "## <emoji> MAF health grade: **X**").
+          # Tolerate a grep miss with `|| true` — otherwise a future reword of
+          # the doctor headline yields an empty grade, which is != 'A' and would
+          # file a blank-grade issue. Empty -> UNKNOWN, which the issue gate skips.
+          GRADE=$(echo "$REPORT" | grep -oP 'health grade: \*\*\K[A-F]' | head -1 || true)
+          if [ -z "$GRADE" ]; then
+            echo "::warning::Could not parse health grade from doctor output — treating as UNKNOWN."
+            GRADE="UNKNOWN"
+          fi
+          echo "grade=$GRADE" >> "$GITHUB_OUTPUT"
           echo "Detected MAF health grade: $GRADE"
 
       - name: Upload report as artifact
@@ -45,8 +53,21 @@ jobs:
           name: maf-doctor-report
           path: maf-doctor-report.md
 
+      - name: Ensure drift labels exist
+        if: steps.doctor.outputs.grade != 'A' && steps.doctor.outputs.grade != 'UNKNOWN'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # `gh issue create --label X` hard-fails ("could not add label: 'X'
+          # not found") when the label is absent — this is exactly why every
+          # scheduled drift run failed. Self-provision the labels idempotently
+          # (`--force` upserts) so the workflow never depends on a human having
+          # created them. Runs under GITHUB_TOKEN (issues: write).
+          gh label create "maf-drift"    --color B60205 --description "MafDoctor grade dropped below A" --force || true
+          gh label create "needs-review" --color FBCA04 --description "Awaiting maintainer triage"        --force || true
+
       - name: Open or update drift issue (if grade != A)
-        if: steps.doctor.outputs.grade != 'A'
+        if: steps.doctor.outputs.grade != 'A' && steps.doctor.outputs.grade != 'UNKNOWN'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GRADE: ${{ steps.doctor.outputs.grade }}

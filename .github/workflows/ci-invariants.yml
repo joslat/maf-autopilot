@@ -326,3 +326,33 @@ jobs:
             echo "$MISSING"
             exit 1
           fi
+
+  # ----------------------------------------------------------------------------
+  # (6) Workflow + helper-script lint. Two guards that directly prevent the
+  # class of failure that silently broke the self-update workflows for weeks:
+  #   - actionlint parses every workflow YAML (catches the startup_failure
+  #     class — an unparseable workflow at a commit) and validates the action
+  #     schema + `${{ }}` expression contexts. shellcheck/pyflakes integrations
+  #     are disabled so the gate stays focused on parse/schema errors instead
+  #     of flooding on the repo's extensive, deliberate inline shell.
+  #   - compileall syntax-checks every .github/scripts/*.py. This is the guard
+  #     that catches an indented first statement (the IndentationError that
+  #     killed the release-watcher on its scheduled NuGet path) once the inline
+  #     `python3 -c` was extracted into a real module.
+  # ----------------------------------------------------------------------------
+  lint-workflows-and-scripts:
+    name: Lint workflows + helper scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: actionlint (YAML parse + workflow schema + expressions)
+        # Pinned official image. shellcheck/pyflakes off (= empty) — parse and
+        # schema errors only. TODO: digest-pin once a baseline run is confirmed.
+        run: |
+          set -e
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            rhysd/actionlint:1.7.7 -color -shellcheck= -pyflakes=
+
+      - name: Compile-check Python helper scripts
+        run: python3 -m compileall -q .github/scripts
