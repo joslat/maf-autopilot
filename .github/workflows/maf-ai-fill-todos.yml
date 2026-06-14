@@ -196,9 +196,13 @@ jobs:
             -f repo="${GITHUB_REPOSITORY##*/}" \
             --jq ".data.repository.suggestedActors.nodes[] | select(.login==\"$NEEDLE\") | .id")
           if [ -z "$BOT_ID" ] || [ "$BOT_ID" = "null" ]; then
-            echo "::error::Could not find $NEEDLE in suggestedActors. Enable the agent at"
-            echo "::error::https://github.com/${GITHUB_REPOSITORY}/settings/copilot"
-            exit 1
+            # Task 4.9 — the issue was already created above, so failing to
+            # RESOLVE the bot id is non-critical: warn + skip auto-assignment
+            # instead of `exit 1`, which failed the whole job and made a
+            # successful dispatch look failed. Mirrors the best-effort assignment
+            # mutation below (warning, not hard failure).
+            echo "::warning title=Coding Agent not resolved::Could not find $NEEDLE in suggestedActors (first 25). Issue $ISSUE_URL was created but NOT auto-assigned — enable the agent at https://github.com/${GITHUB_REPOSITORY}/settings/copilot, then assign it manually."
+            exit 0
           fi
           echo "Resolved bot $BOT_NAME ($NEEDLE) -> $BOT_ID"
           # Keep COPILOT_BOT_ID name for back-compat with downstream messages.

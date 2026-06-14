@@ -49,32 +49,24 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
-          # In scope if: PR is labelled `ai-fill` OR head branch is a Coding
-          # Agent bot's, AND the PR diff touches registry.yaml OR the migration
-          # guide OR compatibility-matrix.md (any file the watcher touches).
+          # Task 4.6 — in scope iff the PR DIFF touches a watcher-managed file
+          # (registry.yaml / compatibility-matrix.md / a per-version migration
+          # guide / .maf-version). Scope is driven by the diff ALONE — NOT by a
+          # self-applied `ai-fill` label or a bot branch prefix. Relying on those
+          # let a fill PR that forgot the label (or used an unexpected branch
+          # prefix) silently report success while verifying NOTHING. Any edit to
+          # these files deserves the structural verification.
           git fetch origin "$BASE_REF":"refs/heads/$BASE_REF" --depth=50 || true
           DIFF_FILES=$(git diff --name-only "origin/$BASE_REF" HEAD || true)
           echo "Files changed in PR:"
           echo "$DIFF_FILES" | sed 's/^/  /'
 
-          TOUCHES_WATCHER_FILES=false
           if echo "$DIFF_FILES" | grep -qE '^(\.github/skills/maf-obsolete-api-registry/registry\.yaml|docs/compatibility-matrix\.md|guides/maf-.*-migration-guide\.md|\.maf-version)$'; then
-            TOUCHES_WATCHER_FILES=true
-          fi
-
-          LABEL_OR_BOT="${{
-            (contains(github.event.pull_request.labels.*.name, 'ai-fill') ||
-             startsWith(github.head_ref, 'claude/') ||
-             startsWith(github.head_ref, 'copilot/') ||
-             startsWith(github.head_ref, 'codex/')) && 'true' || 'false'
-          }}"
-
-          if [ "$TOUCHES_WATCHER_FILES" = "true" ] && [ "$LABEL_OR_BOT" = "true" ]; then
             echo "in_scope=true" >> $GITHUB_OUTPUT
-            echo "::notice title=verify-registry in scope::Running full rung-1 verification."
+            echo "::notice title=verify-registry in scope::PR touches watcher-managed files — running full rung-1 verification."
           else
             echo "in_scope=false" >> $GITHUB_OUTPUT
-            echo "::notice title=verify-registry trivially passes::PR doesn't touch watcher-managed files OR isn't from a fill bot — reporting success."
+            echo "::notice title=verify-registry trivially passes::PR doesn't touch watcher-managed files — reporting success."
           fi
 
       - name: Setup .NET
@@ -132,13 +124,12 @@ jobs:
           } >> $GITHUB_OUTPUT
           exit $EXIT
 
-      - name: Comment on PR if any check failed
+      - name: Build failure comment
         if: |
           steps.scope.outputs.in_scope == 'true' &&
           (steps.verify.outputs.exit_code != '0' ||
            steps.crossfile.outputs.exit_code != '0')
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERIFY_OUTPUT: ${{ steps.verify.outputs.output }}
           CROSSFILE_OUTPUT: ${{ steps.crossfile.outputs.output }}
           VERIFY_EXIT: ${{ steps.verify.outputs.exit_code }}
@@ -171,7 +162,28 @@ jobs:
             echo "- duplicate version row -> UPDATE the watcher placeholder, do NOT add a row."
             echo "- Version Tracking section stale -> bump 'Current tracked version' to match .maf-version."
           } > /tmp/comment.md
-          gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/comment.md
+
+      # Task 4.8 — sticky comment (one comment updated by header) instead of
+      # `gh pr comment`, which stacked a NEW duplicate on every push/label event.
+      - name: Post sticky failure comment
+        if: |
+          steps.scope.outputs.in_scope == 'true' &&
+          (steps.verify.outputs.exit_code != '0' ||
+           steps.crossfile.outputs.exit_code != '0')
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0  # v2.9.2
+        with:
+          header: maf-ai-fill-verify
+          path: /tmp/comment.md
+
+      - name: Clear sticky comment on success
+        if: |
+          steps.scope.outputs.in_scope == 'true' &&
+          steps.verify.outputs.exit_code == '0' &&
+          steps.crossfile.outputs.exit_code == '0'
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0  # v2.9.2
+        with:
+          header: maf-ai-fill-verify
+          message: "✅ AI-fill verification passed (registry + cross-file checks)."
 
       - name: Final status (fail if any check failed)
         if: |

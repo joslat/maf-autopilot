@@ -1,6 +1,6 @@
 # MAF self-update remediation plan
 
-**Created:** 2026-06-14 · **Owner:** @joslat · **Status:** In progress — Phases 0–3 complete (14/33 tasks)
+**Created:** 2026-06-14 · **Owner:** @joslat · **Status:** In progress — Phases 0–4 complete (25/33 tasks)
 **Scope:** Fix the two failing self-update workflows (MAF Release Watcher, MAF Drift Detector), harden the whole self-update engine and its AI-fill chain, validate the auto-update path end-to-end, and execute the brand-only rename to **MAF Doctor**.
 
 ## Why this exists (one-paragraph problem statement)
@@ -35,17 +35,17 @@ Both scheduled self-update workflows have failed on **every** scheduled run sinc
 | 3 · Engine safety | 3.4 | Idempotent registry append | Dedupe draft entries by id on re-run | 100% | ☑ | done — dedupe_registry_entries.py (+5 tests) |
 | 3 · Engine safety | 3.5 | Reconcile PAT scope docs | Align the two conflicting COPILOT_ASSIGN_PAT comments | 100% | ☑ | doc reconciled both files; 🔒 live-scope check still maintainer |
 | 3 · Engine safety | 3.6 | Daily poll cadence (opt) | Weekly → daily cron to cut detection latency | 100% | ☑ | done — watcher cron 0 9 * * * |
-| 4 · Chain bugs | 4.1 | gen_guide_section prerelease fix | Tolerate `-rc1` in version sort key (+test) | 0% | ☐ | P2 · S · manual-dispatch crash |
-| 4 · Chain bugs | 4.2 | verify_crossfile per-version guides | Validate section IDs vs all guides, not just 1.3.0 | 0% | ☐ | P2 · S |
-| 4 · Chain bugs | 4.3 | verify_crossfile staleness → warn | 30-day matrix-date check warn-not-fail | 0% | ☐ | P2 · S |
-| 4 · Chain bugs | 4.4 | compat-matrix placeholder gate | Fail if `>= unknown` / `Auto-detected` reaches main | 0% | ☐ | P2 · S |
-| 4 · Chain bugs | 4.5 | gen_guide_section human-block anchor | Anchor preserve-region to `AUTO_END` sentinel | 0% | ☐ | P3 · S · injection hardening |
-| 4 · Chain bugs | 4.6 | AI-chain scope robustness | Stop relying on bot self-labeling; assert loudly | 0% | ☐ | **P1** · M · silent no-op |
-| 4 · Chain bugs | 4.7 | semantic-review prompt extension | `.ai-review-prompt.md` → `.txt` | 0% | ☐ | P2 · S |
-| 4 · Chain bugs | 4.8 | ai-fill-verify sticky comment | Update one sticky comment, not stack duplicates | 0% | ☐ | P3 · S |
-| 4 · Chain bugs | 4.9 | ai-fill-todos bot-id non-fatal | Warn+skip on empty BOT_ID instead of `exit 1` | 0% | ☐ | P2 · S |
-| 4 · Chain bugs | 4.10 | pr-audit honest scoping | Scope doctor to changed files OR fix the comment | 0% | ☐ | P2 · M |
-| 4 · Chain bugs | 4.11 | ai-fill template guide anchor | Parameterize/comment the hardcoded 1.3.0 anchor | 0% | ☐ | P3 · S |
+| 4 · Chain bugs | 4.1 | gen_guide_section prerelease fix | Tolerate `-rc1` in version sort key (+test) | 100% | ☑ | done — `_semver_key`; +2 tests |
+| 4 · Chain bugs | 4.2 | verify_crossfile per-version guides | Validate section IDs vs all guides, not just 1.3.0 | 100% | ☑ | done — `collect_all_guide_sections` union (+tests) |
+| 4 · Chain bugs | 4.3 | verify_crossfile staleness → warn | 30-day matrix-date check warn-not-fail | 100% | ☑ | done — `::warning`, not a finding |
+| 4 · Chain bugs | 4.4 | compat-matrix placeholder gate | Fail if `>= unknown` / `Auto-detected` reaches main | 100% | ☑ | done — top-row placeholder check (+tests) |
+| 4 · Chain bugs | 4.5 | gen_guide_section human-block anchor | Anchor preserve-region to `AUTO_END` sentinel | 100% | ☑ | done — AUTO_END anchor; injection test |
+| 4 · Chain bugs | 4.6 | AI-chain scope robustness | Stop relying on bot self-labeling; assert loudly | 100% | ☑ | done — verify diff-driven; semantic-review entries-driven |
+| 4 · Chain bugs | 4.7 | semantic-review prompt extension | `.ai-review-prompt.md` → `.txt` | 100% | ☑ | done |
+| 4 · Chain bugs | 4.8 | ai-fill-verify sticky comment | Update one sticky comment, not stack duplicates | 100% | ☑ | done — marocchino sticky + success-clear |
+| 4 · Chain bugs | 4.9 | ai-fill-todos bot-id non-fatal | Warn+skip on empty BOT_ID instead of `exit 1` | 100% | ☑ | done — warn + `exit 0` |
+| 4 · Chain bugs | 4.10 | pr-audit honest scoping | Scope doctor to changed files OR fix the comment | 100% | ☑ | done — honest comment + product `--exclude` |
+| 4 · Chain bugs | 4.11 | ai-fill template guide anchor | Parameterize/comment the hardcoded 1.3.0 anchor | 100% | ☑ | done — check #6 now unions all guides |
 | 5 · Validation | 5.1 | NuGet fixture smoke test | Unit-test version detection in ci-invariants | 0% | ☐ | P1 · M · depends 1.1 |
 | 5 · Validation | 5.2 | analyze-and-update dry-run | Synthetic bump on throwaway branch, prove push chain | 0% | ☐ | **P1** · M · 🔒 |
 | 5 · Validation | 5.3 | Re-trigger + verify lifecycle | Manual run both; confirm green + issue open/close | 0% | ☐ | P1 · S · 🔒 |
@@ -455,3 +455,17 @@ Every code change ships on a branch behind PRs; revert the PR to roll back. The 
 - **3.5** Reconciled the conflicting `COPILOT_ASSIGN_PAT` scope comments: the watcher comment now points to the full shared union (Issues+Contents+PRs+Actions R/W) documented in `maf-ai-fill-todos.yml`, so no one provisions a Contents-only PAT that breaks assignment. (🔒 verifying the live secret's scopes remains a maintainer step.)
 - **3.6** Watcher cron weekly→daily (`0 9 * * *`) to cut detection latency 7d→1d.
 - Validated: all workflows parse; concurrency groups present; 17 Python helper tests green; compileall clean; ci-invariants job (4) clean.
+
+### 2026-06-14 — Phase 4 complete (latent chain bugs)
+- **4.1** `gen_guide_section.py` `_semver_key()` parses the release core (`2.0.0-rc1`→`(2,0,0)`) so a manual prerelease dispatch no longer crashes the chain-banner sort. (+test)
+- **4.2** `verify_crossfile_consistency.py` `collect_all_guide_sections()` validates `guide_section` IDs against the **union** of all per-version guides (cumulative excluded), not just 1.3.0. Failure messages de-hardcoded. (+tests)
+- **4.3** Matrix `last-updated` >30d is now a `::warning`, not a blocking finding (MAF cadence is irregular).
+- **4.4** New top-row placeholder gate fails if `>= unknown` / `Auto-detected — verify` reaches the current matrix row. (+tests)
+- **4.5** Human-additions preservation anchors to the `AUTO_END` sentinel (fence strips HTML comments, so it can't be injected) on BOTH the existing file and the fresh `auto_body` — injected `## Human additions` can no longer hijack the boundary. (+injection test)
+- **4.6** Silent no-op closed: `maf-ai-fill-verify` scope is now **diff-driven** (touches watcher files), and `maf-ai-semantic-review` runs on any non-draft PR with the entries-count step gating the paid inference — neither depends on a self-applied `ai-fill` label / bot branch prefix.
+- **4.7** Semantic-review prompt artifact `.ai-review-prompt.md`→`.txt` (the `actions/ai-inference` `prompt-file` supports `.txt`/`.prompt.yml`, not `.md`).
+- **4.8** `maf-ai-fill-verify` uses the marocchino sticky comment (header `maf-ai-fill-verify`) instead of `gh pr comment` (which stacked a new comment every push), plus a success-path that clears the sticky to a ✅.
+- **4.9** `maf-ai-fill-todos` bot-id resolution: warn + `exit 0` (skip assignment) instead of `exit 1` — a resolution miss no longer fails a job that already created the issue.
+- **4.10** `maf-pr-audit` comment corrected (whole-repo product audit, not per-changed-file) and the doctor call now passes `--exclude samples/ .Tests/ find-the-bug/`.
+- **4.11** The issue-template's check #6 now unions all per-version guides (matches the 4.2 CI gate) instead of grepping only the 1.3.0 guide.
+- Validated: all 10 workflows parse; ci-invariants job (4)+(5) clean; **50 Python tests green**; compileall clean.

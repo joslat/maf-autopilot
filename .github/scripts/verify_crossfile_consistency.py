@@ -104,6 +104,42 @@ def collect_guide_sections(guide_path: Path) -> set[str]:
     return set(GUIDE_SECTION_HEADING_RE.findall(text))
 
 
+def collect_all_guide_sections(guides_dir: Path) -> set[str]:
+    """Union of section IDs across EVERY per-version migration guide.
+
+    The watcher now emits per-version guides (1.4.0 / 1.5.0 / …). A guide_section
+    that legitimately points at a section in a newer guide must not be flagged
+    'invented' just because it's absent from the 1.3.0 guide (task 4.2).
+    """
+    sections: set[str] = set()
+    if not guides_dir.is_dir():
+        return sections
+    for guide in guides_dir.glob("maf-*-migration-guide.md"):
+        if guide.name == "maf-current-migration-guide.md":
+            continue  # cumulative file is a regenerated superset of the others
+        sections |= collect_guide_sections(guide)
+    return sections
+
+
+# Watcher placeholder cells the fill bot must replace before merge (task 4.4).
+MATRIX_PLACEHOLDERS = (">= unknown", "Auto-detected — verify")
+
+
+def top_row_line(text: str) -> str | None:
+    """Return the full markdown line of the top `**X.Y.Z**` data row, or None."""
+    for line in text.splitlines():
+        if VERSION_ROW_RE.search(line):
+            return line
+    return None
+
+
+def unreplaced_placeholders(top_line: str | None) -> list[str]:
+    """Watcher placeholders still present in the current (top) matrix row."""
+    if not top_line:
+        return []
+    return [p for p in MATRIX_PLACEHOLDERS if p in top_line]
+
+
 def check_invented_guide_sections(
     registry_path: Path,
     valid_sections: set[str],
@@ -144,17 +180,17 @@ def check_invented_guide_sections(
         if gs_str.upper() in ("TODO", "TBD"):
             findings.append(
                 f"{eid}: guide_section is '{gs_str}' — must be a real section "
-                f"ID from guides/maf-1.3.0-migration-guide.md OR the literal "
-                f"'N/A'."
+                f"ID from one of the migration guides (guides/maf-*-migration-"
+                f"guide.md) OR the literal 'N/A'."
             )
             continue
         if gs_str not in valid_sections:
             findings.append(
                 f"{eid}: guide_section '{gs_str}' is not a section heading in "
-                f"guides/maf-1.3.0-migration-guide.md. Either use a real "
-                f"section ID from that guide, or use 'N/A' (when the change "
-                f"touches a surface that didn't exist in 1.3.0). NEVER "
-                f"invent section numbers."
+                f"any migration guide (guides/maf-*-migration-guide.md). Either "
+                f"use a real section ID from one of those guides, or use 'N/A' "
+                f"(when the change touches a surface that didn't exist yet). "
+                f"NEVER invent section numbers."
             )
     print(
         f"Validated guide_section on {scoped_count} entries with id prefix "
@@ -201,6 +237,20 @@ def main() -> int:
                 f"be at the top of the table."
             )
 
+        # Task 4.4 — the watcher inserts placeholder cells (`>= unknown`,
+        # `Auto-detected — verify…`) that the fill bot must replace. Nothing
+        # else verified they were replaced, so a literal placeholder could reach
+        # main and silently defeat the matrix. Fail if the current (top) row
+        # still carries them.
+        leftover = unreplaced_placeholders(top_row_line(text))
+        if leftover:
+            findings.append(
+                f"compatibility-matrix.md top row still contains watcher "
+                f"placeholder(s) {leftover} — replace `>= unknown` with the real "
+                f"minimum versions and the `Auto-detected — verify…` note with a "
+                f"real note before merging."
+            )
+
         tracked = version_tracking_current(text)
         if tracked is None:
             print(
@@ -224,11 +274,14 @@ def main() -> int:
             today = dt.date.today()
             age = (today - last_upd).days
             if age > MAX_LAST_UPDATED_AGE_DAYS:
-                findings.append(
-                    f"compatibility-matrix.md 'last-updated:' date is "
-                    f"{last_upd.isoformat()} — {age} days old (max allowed "
-                    f"{MAX_LAST_UPDATED_AGE_DAYS}). Update the date to "
-                    f"{today.isoformat()} (today UTC)."
+                # Task 4.3 — WARN, do not fail. MAF's release cadence is irregular;
+                # a structurally-correct release must not be blocked just because
+                # the previous matrix touch was >30d ago (the same fill cycle fixes
+                # the date). Surfaced as a warning annotation, not a blocking finding.
+                print(
+                    f"::warning::compatibility-matrix.md 'last-updated:' date is "
+                    f"{last_upd.isoformat()} — {age} days old (max {MAX_LAST_UPDATED_AGE_DAYS}). "
+                    f"Consider updating it to {today.isoformat()}."
                 )
 
     guide_file = GUIDES_DIR / f"maf-{current}-migration-guide.md"
@@ -240,14 +293,14 @@ def main() -> int:
     # Check for invented guide_section values in registry entries from
     # the CURRENT release cycle (older entries' TODOs are tech debt to
     # be cleaned up in dedicated PRs, not blockers for new fills).
-    valid_sections = collect_guide_sections(GUIDE_1_3_0)
+    valid_sections = collect_all_guide_sections(GUIDES_DIR)
     if not valid_sections:
         print(
-            f"Note: could not extract section IDs from {GUIDE_1_3_0} — "
-            "skipping guide_section validity check."
+            "Note: could not extract section IDs from any guides/maf-*-migration-"
+            "guide.md — skipping guide_section validity check."
         )
     else:
-        print(f"1.3.0 guide section IDs available: {sorted(valid_sections)}")
+        print(f"Guide section IDs available (all per-version guides): {sorted(valid_sections)}")
         section_findings = check_invented_guide_sections(
             REGISTRY, valid_sections, current
         )

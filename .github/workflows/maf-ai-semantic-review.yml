@@ -75,20 +75,17 @@ jobs:
     # (no inputs to validate). The workflow_dispatch path requires validate-inputs
     # to have succeeded.
     needs: [validate-inputs]
+    # Task 4.6 — scope is decided downstream by the build-prompt step (skip=true
+    # when no registry ENTRIES changed), NOT by a self-applied `ai-fill` label or
+    # a bot branch prefix. Relying on those silently skipped fill PRs that forgot
+    # the label / used an unexpected branch. Now ANY non-draft PR runs the job;
+    # non-registry PRs no-op cheaply before the (paid) AI inference step.
     if: >
       always() &&
       (needs.validate-inputs.result == 'success' || needs.validate-inputs.result == 'skipped') &&
       (
         github.event_name == 'workflow_dispatch' ||
-        (
-          github.event.pull_request.draft == false &&
-          (
-            contains(github.event.pull_request.labels.*.name, 'ai-fill') ||
-            startsWith(github.head_ref, 'claude/') ||
-            startsWith(github.head_ref, 'copilot/') ||
-            startsWith(github.head_ref, 'codex/')
-          )
-        )
+        github.event.pull_request.draft == false
       )
     runs-on: ubuntu-latest
     steps:
@@ -158,8 +155,8 @@ jobs:
           BASE_SHA: ${{ steps.pr.outputs.base }}
           HEAD_SHA: ${{ steps.pr.outputs.head }}
         run: |
-          python3 .github/scripts/ai_review_build_prompt.py > .ai-review-prompt.md
-          BYTES=$(wc -c < .ai-review-prompt.md | tr -d ' ')
+          python3 .github/scripts/ai_review_build_prompt.py > .ai-review-prompt.txt
+          BYTES=$(wc -c < .ai-review-prompt.txt | tr -d ' ')
           ENTRIES_COUNT=$(jq length < .ai-review-entries.json)
           echo "Prompt bytes: $BYTES; entries to review: $ENTRIES_COUNT"
           if [ "$ENTRIES_COUNT" = "0" ]; then
@@ -175,7 +172,7 @@ jobs:
         uses: actions/ai-inference@b81b2afb8390ee6839b494a404766bef6493c7d9  # v1.2.8
         with:
           model: ${{ inputs.model != '' && inputs.model || 'openai/gpt-4o' }}
-          prompt-file: .ai-review-prompt.md
+          prompt-file: .ai-review-prompt.txt
           max-tokens: 4000
           # Auth is the workflow's GITHUB_TOKEN with models: read permission.
           # No additional inputs needed; the action picks up the token from

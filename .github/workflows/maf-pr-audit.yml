@@ -1,7 +1,10 @@
 name: MAF PR Audit
 
-# PR-time check: run every MAF scanner scoped to the changed *.cs files,
-# post the report as a PR comment. The CI integration vector for plan #52.
+# PR-time check: run the MAF doctor over the repo (PRODUCT code — samples/ and
+# test fixtures excluded, like the drift detector) and post the report as a
+# sticky PR comment. The changed-file list is used only for the skip / compiler-
+# bomb gate below, NOT to scope the scan — this is a whole-repo (product) audit.
+# The CI integration vector for plan #52. [task 4.10]
 
 on:
   pull_request:
@@ -111,7 +114,12 @@ jobs:
           # have the `doctor` CLI subcommand and fall back to MCP-server mode (which
           # writes its banner to stderr). `|| true` keeps the job alive on any error
           # so we still post a sticky comment with diagnostic content.
-          maf-autopilot doctor "$GITHUB_WORKSPACE" > pr-audit-full.md 2>&1 || true
+          # Product-scoped (task 4.10 / 3.1): exclude samples/ + test fixtures so
+          # the audit reflects product code, matching the drift detector. Older
+          # published builds ignore the extra --exclude args (forward-compatible).
+          maf-autopilot doctor "$GITHUB_WORKSPACE" \
+            --exclude samples/ --exclude .Tests/ --exclude find-the-bug/ \
+            > pr-audit-full.md 2>&1 || true
 
           # Defensive fallback: if the doctor invocation produced nothing (empty
           # file), write an explanatory message. Pre-alpha-4 NuGet builds didn't
