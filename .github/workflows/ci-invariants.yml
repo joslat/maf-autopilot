@@ -351,17 +351,37 @@ jobs:
           python3 -m pip install --quiet --disable-pip-version-check pyyaml
           python3 - <<'PY'
           import glob, sys, yaml
+
+          # GitHub's workflow parser REJECTS duplicate mapping keys (e.g. two
+          # `env:` blocks in one step) — a startup_failure (the 0-second "workflow
+          # file issue" runs). PyYAML tolerates them by default (last wins), so we
+          # use a loader that errors on duplicates to catch that class here.
+          class StrictLoader(yaml.SafeLoader):
+              pass
+
+          def _no_dup(loader, node, deep=False):
+              seen = set()
+              for k, _ in node.value:
+                  key = loader.construct_object(k, deep=deep)
+                  if key in seen:
+                      raise yaml.YAMLError(f"duplicate key {key!r}")
+                  seen.add(key)
+              return loader.construct_mapping(node, deep=deep)
+
+          StrictLoader.add_constructor(
+              yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _no_dup)
+
           bad = []
           for f in glob.glob('.github/workflows/*.yml') + glob.glob('.github/workflows/*.yaml'):
               try:
                   with open(f, encoding='utf-8') as fh:
-                      yaml.safe_load(fh)
+                      yaml.load(fh, StrictLoader)
               except Exception as e:
                   bad.append(f"{f}: {e}")
           if bad:
-              print("::error::Unparseable workflow YAML (would cause a startup_failure):")
+              print("::error::Invalid workflow YAML (would cause a startup_failure):")
               print("\n".join(bad)); sys.exit(1)
-          print("All workflow YAML files parse.")
+          print("All workflow YAML files parse (no duplicate keys).")
           PY
 
       - name: actionlint (schema + expressions — advisory)

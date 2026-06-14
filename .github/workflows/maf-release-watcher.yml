@@ -222,9 +222,15 @@ jobs:
       - name: Fetch release notes
         id: release-notes
         continue-on-error: true
-        # Phase 7.G fixup — env-redirect (see diff-core above).
+        # Phase 7.G fixup — env-redirect (see diff-core above). NOTE: this step
+        # previously had TWO `env:` keys (NEW here + GH_TOKEN below) — a YAML
+        # duplicate-key the GitHub workflow parser REJECTS (startup_failure: the
+        # 0-second push runs), and which PyYAML silently tolerated by keeping the
+        # LAST block, so `NEW` was dropped and release-notes fetched empty tags.
+        # Merged into one block. [final-review fix]
         env:
           NEW: ${{ needs.check-for-new-maf-release.outputs.new_version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # MAF releases are on github.com/microsoft/agent-framework (NOT microsoft/agents).
           # MAF release tags follow the form `dotnet-X.Y.Z` (e.g. `dotnet-1.3.0`), per the
@@ -240,8 +246,6 @@ jobs:
             echo "ℹ️ Release notes not yet published on GitHub for $NEW — empty placeholder used." > release-notes.txt
           fi
           cat release-notes.txt
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update compatibility matrix
         env:
