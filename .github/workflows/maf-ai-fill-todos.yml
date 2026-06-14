@@ -41,9 +41,9 @@ on:
         description: 'MAF version to fill TODOs for (e.g. 1.4.0, 1.5.0)'
         required: true
       bot:
-        description: 'Which Coding Agent to assign (claude|copilot|codex). Default: claude — empirically better at structured-instruction following and catching duplicates than Copilot for this task.'
+        description: 'Coding Agent to assign (copilot|claude|codex). Default: copilot — the claude integrator''s model was deprecated (2026-06: "model not available for integrator claude-code"), so copilot/gpt-4.1 is the proven-working path. Repoint the claude agent at claude-opus-4.8 to use claude again.'
         required: false
-        default: 'claude'
+        default: 'copilot'
   workflow_call:
     inputs:
       target_version:
@@ -52,7 +52,7 @@ on:
       bot:
         type: string
         required: false
-        default: 'claude'
+        default: 'copilot'
 
 permissions:
   contents: read
@@ -168,23 +168,33 @@ jobs:
             -F num="$ISSUE_NUM" \
             --jq '.data.repository.issue.id')
 
-          # Resolve the chosen bot's GraphQL node ID dynamically via
-          # suggestedActors. Avoids hardcoded constants that can rotate when
-          # GitHub re-provisions bot accounts. Bot login names are stable:
-          #   copilot -> copilot-swe-agent
-          #   claude  -> anthropic-code-agent
-          #   codex   -> openai-code-agent
-          case "$BOT_NAME" in
-            copilot) NEEDLE="copilot-swe-agent" ;;
-            claude)  NEEDLE="anthropic-code-agent" ;;
-            codex)   NEEDLE="openai-code-agent" ;;
-            *) echo "::error::Unknown bot '$BOT_NAME' — expected copilot|claude|codex"; exit 1 ;;
-          esac
+          # Resolve a coding-agent GraphQL node ID via suggestedActors. Login
+          # names are stable: copilot->copilot-swe-agent, claude->anthropic-code-
+          # agent, codex->openai-code-agent.
+          #
+          # Bot-FALLBACK (self-heal): try the requested bot first, then the others
+          # in priority order, and use the first one that is ASSIGNABLE — so the
+          # fill still gets assigned if the preferred agent isn't enabled here.
+          #
+          # CAVEAT it can NOT fix: a bot that IS assignable but whose LLM model was
+          # deprecated (the 2026-06 "model not available for integrator claude-code"
+          # failure). That happens later, inside the agent's own async run, with no
+          # signal back to this workflow. If a fill PR dies on a model error,
+          # re-dispatch with a different bot or repoint that integrator's model
+          # (claude -> claude-opus-4.8). The default bot is `copilot` because its
+          # model is the currently proven-working one.
+          needle_for() {
+            case "$1" in
+              copilot) echo "copilot-swe-agent" ;;
+              claude)  echo "anthropic-code-agent" ;;
+              codex)   echo "openai-code-agent" ;;
+            esac
+          }
 
-          BOT_ID=$(gh api graphql -f query='
+          ACTORS_JSON=$(gh api graphql -f query='
             query($owner: String!, $repo: String!) {
               repository(owner: $owner, name: $repo) {
-                suggestedActors(capabilities: [CAN_BE_ASSIGNED], first: 25) {
+                suggestedActors(capabilities: [CAN_BE_ASSIGNED], first: 50) {
                   nodes {
                     ... on Bot { id login }
                     ... on User { id login }
@@ -193,18 +203,32 @@ jobs:
               }
             }' \
             -f owner="${GITHUB_REPOSITORY%%/*}" \
-            -f repo="${GITHUB_REPOSITORY##*/}" \
-            --jq ".data.repository.suggestedActors.nodes[] | select(.login==\"$NEEDLE\") | .id")
-          if [ -z "$BOT_ID" ] || [ "$BOT_ID" = "null" ]; then
-            # Task 4.9 — the issue was already created above, so failing to
-            # RESOLVE the bot id is non-critical: warn + skip auto-assignment
-            # instead of `exit 1`, which failed the whole job and made a
-            # successful dispatch look failed. Mirrors the best-effort assignment
-            # mutation below (warning, not hard failure).
-            echo "::warning title=Coding Agent not resolved::Could not find $NEEDLE in suggestedActors (first 25). Issue $ISSUE_URL was created but NOT auto-assigned — enable the agent at https://github.com/${GITHUB_REPOSITORY}/settings/copilot, then assign it manually."
+            -f repo="${GITHUB_REPOSITORY##*/}")
+
+          # Priority: requested bot first, then the rest (order-preserving dedupe).
+          ORDER=$(printf '%s\n' "$BOT_NAME" copilot claude codex | awk '!seen[$0]++')
+          BOT_ID=""; RESOLVED_BOT=""
+          for cand in $ORDER; do
+            NEEDLE=$(needle_for "$cand")
+            [ -z "$NEEDLE" ] && continue
+            ID=$(echo "$ACTORS_JSON" | jq -r ".data.repository.suggestedActors.nodes[] | select(.login==\"$NEEDLE\") | .id" | head -1)
+            if [ -n "$ID" ] && [ "$ID" != "null" ]; then
+              BOT_ID="$ID"; RESOLVED_BOT="$cand"
+              break
+            fi
+            echo "Coding agent '$cand' ($NEEDLE) not assignable — trying next."
+          done
+
+          if [ -z "$BOT_ID" ]; then
+            # Task 4.9 — issue already created; not resolving ANY agent is non-
+            # critical: warn + skip auto-assignment, never fail the job.
+            echo "::warning title=Coding Agent not resolved::No coding agent (copilot/claude/codex) is assignable on this repo. Issue $ISSUE_URL created but NOT auto-assigned — enable one at https://github.com/${GITHUB_REPOSITORY}/settings/copilot, then assign manually."
             exit 0
           fi
-          echo "Resolved bot $BOT_NAME ($NEEDLE) -> $BOT_ID"
+          if [ "$RESOLVED_BOT" != "$BOT_NAME" ]; then
+            echo "::notice title=Coding Agent fallback::Requested '$BOT_NAME' not assignable; fell back to '$RESOLVED_BOT'."
+          fi
+          echo "Resolved bot $RESOLVED_BOT -> $BOT_ID"
           # Keep COPILOT_BOT_ID name for back-compat with downstream messages.
           COPILOT_BOT_ID="$BOT_ID"
 
