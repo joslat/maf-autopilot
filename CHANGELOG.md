@@ -9,13 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-06-14
+
+**First release published under the `maf-doctor` package id** (and `maf-doctor.Analyzers`) — this is the version where the rename below actually reaches NuGet.
+
 ### Changed (BREAKING — full rename to `maf-doctor`)
 
 - **The NuGet package + CLI are renamed `maf-autopilot` → `maf-doctor`** (and `maf-autopilot.Analyzers` → `maf-doctor.Analyzers`). The brand, repo, MCP server id, and C# namespace were already MAF Doctor; this completes the rename so the package/command match. Done pre-public-announcement, so the break is acceptable.
   - **For users:** `dotnet tool uninstall -g maf-autopilot && dotnet tool install -g maf-doctor`; the command is now `maf-doctor …`. Re-run `maf-doctor init` (it recognizes a legacy `maf-autopilot` mcp.json server entry and won't duplicate). The Docker image runs `maf-doctor.dll`.
   - The old `maf-autopilot` package (≤ 1.2.0) will be **deprecated on nuget.org** with a pointer to `maf-doctor`.
   - The internal `src/maf-autopilot/` project folder + `.csproj`/`.sln` filenames are unchanged (invisible to users; avoids high-churn path rewrites).
-  - _Note: publishing `maf-doctor` to NuGet requires the maintainer's NuGet API key on the new package id; until then, the install-based scheduled workflows (drift / pr-audit / verify) will fail at the install step — by design._
+
+### Docs
+
+- **README leaned to the essentials** — removed the Project Structure tree, the Skill Orchestration catalog, and the dated distribution block; deduplicated the `dotnet-inspect` notes; trimmed the companion-MCP recommendation to **Microsoft Learn MCP** (we don't wire Context7/DeepWiki/Serena); added an **"It updates itself"** section explaining how and when the self-update watcher runs (Thursday 06:00 UTC; minors auto-commit, majors escalate); and dropped hardcoded version pins so the docs stop going stale as MAF ships.
+- Fixed stale tool/resource/prompt counts and the `maf-autopilot.Analyzers` id in `docs/architecture.md`, and a stale "current release `1.3.0-alpha-5`" claim in `docs/setup.md`. The unrendered demo-cast `<img>` tags were removed (the `.tape` sources + `scripts/make-cast` remain — re-add once rendered).
 
 ## [1.2.0] - 2026-06-14
 
