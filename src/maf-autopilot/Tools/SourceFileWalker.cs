@@ -66,12 +66,35 @@ internal static class SourceFileWalker
     /// path via <see cref="PathGuard.ValidateRepoPath"/>.
     /// </summary>
     public static IEnumerable<string> EnumerateCsFiles(string repoRoot)
+        => EnumerateCsFiles(repoRoot, excludes: null);
+
+    /// <summary>
+    /// Overload that additionally skips any file whose <em>repo-relative</em>
+    /// path contains one of <paramref name="excludes"/>. Used by callers that
+    /// want to scan product code only — e.g. the drift detector excluding
+    /// <c>samples/</c> and test fixtures so the health grade isn't dominated by
+    /// the repo's intentional anti-pattern bait. Matching is plain substring
+    /// (not glob) by design: simple, no edge cases, and the <em>relative</em>
+    /// path is tested (not the absolute one) so the repo's on-disk location
+    /// can't accidentally match an exclude token.
+    /// </summary>
+    public static IEnumerable<string> EnumerateCsFiles(string repoRoot, IReadOnlyList<string>? excludes)
     {
+        var skip = (excludes ?? [])
+            .Where(e => !string.IsNullOrWhiteSpace(e))
+            .Select(e => e.Replace('\\', '/'))
+            .ToArray();
+
         foreach (var path in Directory.EnumerateFiles(repoRoot, "*.cs", RecursiveCsOptions))
         {
             var n = path.Replace('\\', '/');
             if (n.Contains("/bin/", StringComparison.Ordinal)) continue;
             if (n.Contains("/obj/", StringComparison.Ordinal)) continue;
+            if (skip.Length > 0)
+            {
+                var rel = MakeRelative(repoRoot, path);
+                if (skip.Any(s => rel.Contains(s, PathComparison))) continue;
+            }
             yield return path;
         }
     }

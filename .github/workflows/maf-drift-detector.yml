@@ -7,12 +7,17 @@ name: MAF Drift Detector
 
 on:
   schedule:
-    - cron: '0 9 * * 1'   # Every Monday 09:00 UTC
+    - cron: '0 11 * * 1'  # Monday 11:00 UTC — 2h after the watcher (task 3.3) so the doctor grades a settled main
   workflow_dispatch:        # Manual trigger anytime
 
 permissions:
   contents: read
   issues: write             # Required to open / update the drift issue
+
+# Phase 3.3 — prevent self-overlap (staggered 2h after the watcher above).
+concurrency:
+  group: maf-self-update-drift
+  cancel-in-progress: false
 
 jobs:
   doctor:
@@ -33,7 +38,13 @@ jobs:
         id: doctor
         run: |
           set -o pipefail
-          REPORT=$(maf-autopilot doctor "$GITHUB_WORKSPACE")
+          # Scan PRODUCT code only — exclude samples/ and test fixtures, which
+          # ship intentional anti-pattern bait that would otherwise force grade
+          # F regardless of real health. `--exclude` is honored by maf-autopilot
+          # builds carrying task 3.1; older published builds ignore the extra
+          # args (forward-compatible). See docs/self-update-remediation-plan.md.
+          REPORT=$(maf-autopilot doctor "$GITHUB_WORKSPACE" \
+            --exclude samples/ --exclude .Tests/ --exclude find-the-bug/)
           echo "$REPORT" > maf-doctor-report.md
           # Extract grade (first line: "## <emoji> MAF health grade: **X**").
           # Tolerate a grep miss with `|| true` — otherwise a future reword of

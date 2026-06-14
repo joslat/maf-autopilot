@@ -26,6 +26,8 @@ name: MAF AI Auto-Fill TODOs
 #   (one of "Allow Copilot/Claude/Codex coding agent" must be ON).
 # - Secret COPILOT_ASSIGN_PAT: fine-grained PAT owned by a Copilot-enabled user,
 #   with Issues R/W + Contents R/W + PRs R/W + Actions R/W on this repo only.
+#   This SAME secret is reused by maf-release-watcher.yml (Contents R/W, to push
+#   to main) — provision the full union here, not a narrower scope. [task 3.5]
 #   This is REQUIRED for auto-assignment — see the long comment block on the
 #   "Open issue assigned to Copilot Coding Agent" step below for why
 #   GITHUB_TOKEN is unusable here. If the secret is missing the workflow still

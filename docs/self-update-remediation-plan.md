@@ -1,6 +1,6 @@
 # MAF self-update remediation plan
 
-**Created:** 2026-06-14 · **Owner:** @joslat · **Status:** In progress — Phases 0–2 complete (8/33 tasks)
+**Created:** 2026-06-14 · **Owner:** @joslat · **Status:** In progress — Phases 0–3 complete (14/33 tasks)
 **Scope:** Fix the two failing self-update workflows (MAF Release Watcher, MAF Drift Detector), harden the whole self-update engine and its AI-fill chain, validate the auto-update path end-to-end, and execute the brand-only rename to **MAF Doctor**.
 
 ## Why this exists (one-paragraph problem statement)
@@ -29,12 +29,12 @@ Both scheduled self-update workflows have failed on **every** scheduled run sinc
 | 2 · Observability | 2.1 | Watcher notify-on-failure | Terminal `if: failure()` job → tracking issue | 100% | ☑ | done — rolling maf-release issue, exact-title dedupe |
 | 2 · Observability | 2.2 | Drift notify-on-failure | Same pattern on drift detector | 100% | ☑ | done |
 | 2 · Observability | 2.3 | Document native fallback | Enable "failed workflow" email; note in README | 100% | ☑ | doc in TROUBLESHOOTING.md; 🔒 toggle is maintainer opt-in |
-| 3 · Engine safety | 3.1 | Doctor self-scan exclusions | `--exclude` glob support; drift skips samples/tests | 0% | ☐ | P2 · L · makes grade meaningful |
-| 3 · Engine safety | 3.2 | `is_major` real gate (or kill) | Human gate for major bumps; or delete dead logic | 0% | ☐ | **P1** · M · safety of auto-push |
-| 3 · Engine safety | 3.3 | Cron stagger + concurrency | Drift 2h after watcher; `concurrency:` groups | 0% | ☐ | P2 · S |
-| 3 · Engine safety | 3.4 | Idempotent registry append | Dedupe draft entries by id on re-run | 0% | ☐ | P2 · M |
-| 3 · Engine safety | 3.5 | Reconcile PAT scope docs | Align the two conflicting COPILOT_ASSIGN_PAT comments | 0% | ☐ | 🔒 · S |
-| 3 · Engine safety | 3.6 | Daily poll cadence (opt) | Weekly → daily cron to cut detection latency | 0% | ☐ | P3 · S |
+| 3 · Engine safety | 3.1 | Doctor self-scan exclusions | `--exclude` substr support; drift skips samples/tests | 100% | ☑ | done — walker+CLI+test (16 green); substr not glob (simpler) |
+| 3 · Engine safety | 3.2 | `is_major` real gate (or kill) | Human gate for major bumps; or delete dead logic | 100% | ☑ | done — Option A: majors escalate to issue, no auto-push |
+| 3 · Engine safety | 3.3 | Cron stagger + concurrency | Drift 2h after watcher; `concurrency:` groups | 100% | ☑ | done — drift 11:00 Mon; both have concurrency groups |
+| 3 · Engine safety | 3.4 | Idempotent registry append | Dedupe draft entries by id on re-run | 100% | ☑ | done — dedupe_registry_entries.py (+5 tests) |
+| 3 · Engine safety | 3.5 | Reconcile PAT scope docs | Align the two conflicting COPILOT_ASSIGN_PAT comments | 100% | ☑ | doc reconciled both files; 🔒 live-scope check still maintainer |
+| 3 · Engine safety | 3.6 | Daily poll cadence (opt) | Weekly → daily cron to cut detection latency | 100% | ☑ | done — watcher cron 0 9 * * * |
 | 4 · Chain bugs | 4.1 | gen_guide_section prerelease fix | Tolerate `-rc1` in version sort key (+test) | 0% | ☐ | P2 · S · manual-dispatch crash |
 | 4 · Chain bugs | 4.2 | verify_crossfile per-version guides | Validate section IDs vs all guides, not just 1.3.0 | 0% | ☐ | P2 · S |
 | 4 · Chain bugs | 4.3 | verify_crossfile staleness → warn | 30-day matrix-date check warn-not-fail | 0% | ☐ | P2 · S |
@@ -446,3 +446,12 @@ Every code change ships on a branch behind PRs; revert the PR to roll back. The 
 - **2.1 / 2.2** Added a terminal `notify-on-failure` job to both workflows (`if: failure()`, `needs:` all upstream jobs). On failure it opens or comments onto **one rolling** `maf-release`-labelled issue `🔴 Self-update workflow failed: <name>` (exact-title jq match, not flaky `--search`). github.* contexts flow via `env:` redirect to satisfy ci-invariants job (4).
 - **2.3** Documented the failure-notification behavior + the native "failed workflow" email fallback in `TROUBLESHOOTING.md`, and refreshed the stale "Release watcher" section (it still described the removed PR-based flow). The 🔒 native-email toggle is a maintainer opt-in (authorization checklist).
 - Validated: all three edited workflows parse; ci-invariants job (4) input-redirect and job (5) permissions checks pass locally.
+
+### 2026-06-14 — Phase 3 complete (engine correctness & safety)
+- **3.1** Added `EnumerateCsFiles(repoRoot, excludes)` overload to `SourceFileWalker`, threaded through `DoctorTool.Run`/`AnalyzeRepo`, exposed CLI `doctor [path] --exclude <substr>…`, and the drift workflow now passes `--exclude samples/ .Tests/ find-the-bug/`. **Implementation note:** substring (not glob) matching on the *repo-relative* path — simpler, no edge cases. **Discovery:** the AntiPatternScanner already self-skips `samples`/`tests` segments for `skipInTestFiles` rules, so the walker exclude is the *broader* belt-and-suspenders (covers fan-out/prompt/cost scanners + `skipInTestFiles:false` rules). New test `Run_ExcludedPaths_DoNotAffectGrade`; **16 DoctorTool tests green**. Forward-compatible: old published builds ignore the extra CLI args.
+- **3.2** Option A (human gate): the watcher's `Commit directly to main` step is now gated `if: is_major != 'true'`; a new `Escalate MAJOR version bump` step opens a single `maf-release,needs-review` tracking issue (diffs attached as run artifacts) and does NOT push. Added `issues: write` to the job. Patches/minors unchanged.
+- **3.3** Drift cron moved to Mon 11:00 (2h after watcher); both workflows got `concurrency:` groups (`cancel-in-progress: false`) so a run can't overlap itself.
+- **3.4** New `dedupe_registry_entries.py` (+5 tests) filters extractor output against existing registry ids (and within-batch) before append — re-runs / daily re-detection no longer duplicate draft entries.
+- **3.5** Reconciled the conflicting `COPILOT_ASSIGN_PAT` scope comments: the watcher comment now points to the full shared union (Issues+Contents+PRs+Actions R/W) documented in `maf-ai-fill-todos.yml`, so no one provisions a Contents-only PAT that breaks assignment. (🔒 verifying the live secret's scopes remains a maintainer step.)
+- **3.6** Watcher cron weekly→daily (`0 9 * * *`) to cut detection latency 7d→1d.
+- Validated: all workflows parse; concurrency groups present; 17 Python helper tests green; compileall clean; ci-invariants job (4) clean.

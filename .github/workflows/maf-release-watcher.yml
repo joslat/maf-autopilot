@@ -2,7 +2,7 @@ name: MAF Release Watcher
 
 on:
   schedule:
-    - cron: '0 9 * * 1'   # Every Monday 9 AM UTC (weekly check)
+    - cron: '0 9 * * *'   # Daily 09:00 UTC (task 3.6 — cuts detection latency 7d→1d; no-op path is cheap)
   workflow_dispatch:        # Manual trigger anytime
     inputs:
       maf_version:
@@ -10,6 +10,12 @@ on:
         required: false
         default: ''
 
+# Phase 3.3 — a run can never overlap itself (analyze-and-update pushes to main;
+# an overlap could double-apply registry edits). cancel-in-progress is false so
+# an in-flight real update is allowed to finish.
+concurrency:
+  group: maf-self-update-watcher
+  cancel-in-progress: false
 
 jobs:
   # Phase 3.1 — validate workflow_dispatch input BEFORE any privileged step
@@ -118,6 +124,7 @@ jobs:
     permissions:
       contents: write           # commit the watcher's auto-generated registry/guide updates
       pull-requests: write      # (reserved for future PR-based flow)
+      issues: write             # Phase 3.2 — escalation issue for major bumps
       actions: write            # required for `gh workflow run maf-ai-fill-todos.yml` —
                                 # without this the cross-workflow dispatch fails with
                                 # HTTP 403 "Resource not accessible by integration".
@@ -135,9 +142,13 @@ jobs:
           # Commit identity is still github-actions[bot] (set explicitly via
           # `git config` below). The PAT is only used for the push auth header.
           #
-          # COPILOT_ASSIGN_PAT is scoped to this repo only, with Contents R/W
-          # — the minimum needed for pushing. Falls back to GITHUB_TOKEN if
-          # the secret isn't set, which will fail the push (loud, not silent).
+          # COPILOT_ASSIGN_PAT is a SHARED fine-grained PAT (this repo only). Its
+          # FULL required scope — Issues + Contents + Pull requests + Actions R/W
+          # — is documented in maf-ai-fill-todos.yml (which also uses it to assign
+          # the Coding Agent). The watcher only exercises the Contents R/W portion
+          # here (the push). Provision the full union, NOT Contents-only, or the
+          # fill workflow's assignment breaks. Falls back to GITHUB_TOKEN if unset,
+          # which will fail the push (loud, not silent). [task 3.5]
           token: ${{ secrets.COPILOT_ASSIGN_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Setup .NET
@@ -248,17 +259,21 @@ jobs:
             echo "" >> "$TMP_ENTRIES"
           done
 
-          # Only append if the extractor produced ENTRY rows. The extractor now indents
-          # entries by 2 spaces so they slot under the existing `entries:` block — so
-          # the check must be indentation-tolerant. (Pre-2026-05-12: anchor was `^- id:`
-          # which silently broke when the indent fix landed in RegistryExtractCommand.)
-          if grep -qE "^[[:space:]]*- id:" "$TMP_ENTRIES"; then
-            echo "" >> "$REGISTRY"
-            echo "# === Draft entries auto-appended by release-watcher on $(date -u +%Y-%m-%d). Review before merging. ===" >> "$REGISTRY"
-            cat "$TMP_ENTRIES" >> "$REGISTRY"
+          # Phase 3.4 — de-dupe extracted entries against the existing registry
+          # BEFORE appending. Re-runs (or the daily cron re-detecting the same
+          # version before .maf-version catches up) must not accrete duplicate
+          # draft entries. The helper prints only entry blocks whose `id:` is not
+          # already present (and de-dupes within the batch).
+          NEW_ENTRIES=$(python3 .github/scripts/dedupe_registry_entries.py "$REGISTRY" "$TMP_ENTRIES")
+          if [ -n "$NEW_ENTRIES" ]; then
+            {
+              echo ""
+              echo "# === Draft entries auto-appended by release-watcher on $(date -u +%Y-%m-%d). Review before merging. ==="
+              printf '%s\n' "$NEW_ENTRIES"
+            } >> "$REGISTRY"
             echo "✅ Draft registry entries appended."
           else
-            echo "ℹ️ No new draft registry candidates from this diff."
+            echo "ℹ️ No new draft registry candidates (all already present, or none extracted)."
           fi
 
       - name: Upload diff artifacts for reviewer
@@ -287,6 +302,9 @@ jobs:
 
       - name: Commit directly to main
         id: commit_to_main
+        # Phase 3.2 — minor/patch bumps auto-commit; MAJOR bumps are escalated
+        # to a human (see the escalation step below) instead of pushed to main.
+        if: needs.check-for-new-maf-release.outputs.is_major != 'true'
         # Trade-off (documented 2026-05-12): we previously used
         # `peter-evans/create-pull-request` to land changes via a PR for
         # human-review-gated merge. The maintainer chose direct-to-main commits
@@ -357,6 +375,32 @@ jobs:
           else
             echo "⚠️ Couldn't dispatch fill workflow. Manual fallback:"
             echo "   gh workflow run maf-ai-fill-todos.yml -f target_version=$TARGET"
+          fi
+
+      - name: Escalate MAJOR version bump for manual review
+        # Phase 3.2 — major bumps (x.y → (x+1).0) carry the highest breaking-
+        # change risk, so they are NOT auto-committed to main. Detect + diff
+        # still ran (artifacts are attached to this run); here we open a single
+        # tracking issue and let a human drive the migration. is_major flows via
+        # env: redirect (ci-invariants job 4).
+        if: needs.check-for-new-maf-release.outputs.is_major == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW: ${{ needs.check-for-new-maf-release.outputs.new_version }}
+          OLD: ${{ needs.check-for-new-maf-release.outputs.old_version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create maf-release  --color 0E8A16 --force || true
+          gh label create needs-review --color FBCA04 --force || true
+          TITLE="🚨 MAJOR MAF bump ${OLD} → ${NEW} — manual review required"
+          NUM=$(gh issue list --label maf-release --state open --json number,title \
+            --jq ".[] | select(.title == \"${TITLE}\") | .number" | head -1)
+          if [ -n "$NUM" ]; then
+            echo "Major bump already tracked in issue #${NUM} — leaving as-is."
+          else
+            gh issue create --title "${TITLE}" --label "maf-release,needs-review" \
+              --body "A new **major** MAF release was detected: \`${OLD}\` → \`${NEW}\`. Major bumps are not auto-committed to main (breaking-change risk). The breaking-API diffs are attached as artifacts on the run: ${RUN_URL}. To process: review the diffs, then dispatch the watcher manually for this version or apply the changes by hand. See docs/self-update-remediation-plan.md (task 3.2)."
+            echo "Opened escalation issue for major bump ${OLD} → ${NEW}."
           fi
 
   # Phase 2.1 — surface ANY watcher failure as a GitHub notification. Scheduled
