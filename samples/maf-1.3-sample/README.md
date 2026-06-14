@@ -115,8 +115,8 @@ dotnet run --project src/maf-autopilot --framework net10.0 -- doctor samples/maf
 
 # Full anti-pattern scan
 dotnet run --project src/maf-autopilot --framework net10.0 -- ...  # via MCP, or use the published tool:
-dotnet tool install -g maf-autopilot --prerelease
-maf-autopilot doctor samples/maf-1.3-sample
+dotnet tool install -g maf-doctor --prerelease
+maf-doctor doctor samples/maf-1.3-sample
 ```
 
 Expected output (current state, 2026-05-13):

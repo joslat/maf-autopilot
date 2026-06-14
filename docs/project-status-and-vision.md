@@ -95,7 +95,7 @@ The canonical truth is `docs/maf-migration-toolkit-plan.md` (32-row tracking tab
 
 ### README ↔ plan contradictions (must fix)
 
-1. **Install command is wrong for prereleases.** README lines 5 + 155 + 31–40 show `dotnet tool install --global maf-autopilot`. NuGet has only prereleases (`1.3.0-alpha-3` latest). Plain command **fails** without `--prerelease` flag or explicit `--version 1.3.0-alpha-3`. First user following Mode 1 hits an "no compatible packages" error.
+1. **Install command is wrong for prereleases.** README lines 5 + 155 + 31–40 show `dotnet tool install --global maf-doctor`. NuGet has only prereleases (`1.3.0-alpha-3` latest). Plain command **fails** without `--prerelease` flag or explicit `--version 1.3.0-alpha-3`. First user following Mode 1 hits an "no compatible packages" error.
 2. **csproj version drift.** `maf-autopilot.csproj:15` reads `<Version>1.3.0-tool.1</Version>` — never actually pushed. Real history on nuget.org is `1.3.0-alpha-1/2/3`. release.yml's `workflow_dispatch` input overrides the csproj, masking the drift.
 3. **Roadmap divergence.** README ticks "version-keyed guide sections" inconsistently; plan + guide confirm done.
 4. **Under-reported open work.** README's roadmap lists 4 pending items; plan tracks 7+ (missing: #25 stable release, #26, #27, #30, #31).
@@ -211,7 +211,7 @@ This single split materializes the "co-pilot, not just migration tool" identity 
 ### P0 — blockers, must do before anything else
 
 - **P0.1 — Bump `dotnet-inspect` 0.7.6 → 0.7.8 in 21 places.** Fix author attribution (`filipw` → `richlander`). Rewrite the "Obsolete caveat" paragraphs everywhere. Treated in §3. *This is the single highest-leverage change in the whole plan — it changes the design of `cs0618-hunter`, `nuget-diff-analyzer`, the watcher's registry-update step (#30), and the `maf-visualize` "gold" idea (which becomes free via `--mermaid`).*
-- **P0.2 — Fix the install command + version drift.** README's `dotnet tool install --global maf-autopilot` fails today because all three published versions are alphas. Two parallel actions: (a) update README install command to `dotnet tool install --global maf-autopilot --prerelease` (and link the [nuget.org/packages/maf-autopilot/1.3.0-alpha-3](https://www.nuget.org/packages/maf-autopilot/1.3.0-alpha-3) page); (b) bump `maf-autopilot.csproj:15` `<Version>` to the next release (`1.3.0-alpha-4` or `1.3.0`) so the csproj stops lying about what's been shipped.
+- **P0.2 — Fix the install command + version drift.** README's `dotnet tool install --global maf-doctor` fails today because all three published versions are alphas. Two parallel actions: (a) update README install command to `dotnet tool install --global maf-doctor --prerelease` (and link the [nuget.org/packages/maf-doctor/1.3.0-alpha-3](https://www.nuget.org/packages/maf-doctor/1.3.0-alpha-3) page); (b) bump `maf-autopilot.csproj:15` `<Version>` to the next release (`1.3.0-alpha-4` or `1.3.0`) so the csproj stops lying about what's been shipped.
 - **P0.3 — Add a tests project for the MCP server.** Cover the field-by-field bugs that have already shipped (the `AgentThread` regression in commit `393b7a2` would have been caught by one test).
 
 ### P1 — critical path to credible beta
@@ -233,7 +233,7 @@ This single split materializes the "co-pilot, not just migration tool" identity 
 - **P2.5** — Merge `fan-out-validator` + `fan-in-static-analyzer` into one skill with a "policy" + "procedure" structure.
 
 ### P3 — close the gap to "the repo upgrades itself"
-- **P3.0** — Cut the first stable `1.3.0` (non-prerelease) NuGet release once P0 + P1 + P2 are green. Today the only versions on NuGet are alphas; until a stable ships, the README's plain `--global maf-autopilot` install will keep failing.
+- **P3.0** — Cut the first stable `1.3.0` (non-prerelease) NuGet release once P0 + P1 + P2 are green. Today the only versions on NuGet are alphas; until a stable ships, the README's plain `--global maf-doctor` install will keep failing.
 - **P3.1** — Implement plan #30 (registry.yaml auto-update). With v0.7.8 this is now a 1-day job: ask `dotnet-inspect` to list `[Obsolete]` members in the new MAF version, diff against the existing registry, append YAML rows.
 - **P3.2** — Fix the watcher: wrong GitHub repo (`microsoft/agents` → `microsoft/agent-framework`); hard-coded `1.3.0` regex anchor in `update_compat_matrix.py`; missing prerelease filter; missing rate-limit retry; missing idempotency on guide appends.
 - **P3.3** — Per-version guide files. Stop appending to `maf-1.3.0-migration-guide.md`; create `guides/maf-1.4.0-migration-guide.md` per new minor; update the migration-guide skill to version-route lookups.
@@ -266,13 +266,13 @@ This single split materializes the "co-pilot, not just migration tool" identity 
 2. **Fix author attribution.** README §Acknowledgements: `filipw/dotnet-inspect` → `richlander/dotnet-inspect`.
 3. **Rewrite "Obsolete caveat" text** in README, dotnet-inspect SKILL.md, copilot-instructions.md, maf-constraints.instructions.md, migration guide. Reframe as: "as of `dotnet-inspect` v0.7.8 the gap is closed; `cs0618-hunter` is retained as the compiler ground-truth path."
 4. **Fix install command + version drift** (P0.2):
-   - README: change `dotnet tool install --global maf-autopilot` → `dotnet tool install --global maf-autopilot --prerelease` and note "Currently published as alpha; stable 1.3.0 coming once the P0–P2 items below are green." Link `https://www.nuget.org/packages/maf-autopilot`.
+   - README: change `dotnet tool install --global maf-doctor` → `dotnet tool install --global maf-doctor --prerelease` and note "Currently published as alpha; stable 1.3.0 coming once the P0–P2 items below are green." Link `https://www.nuget.org/packages/maf-doctor`.
    - `maf-autopilot.csproj:15`: bump `<Version>` to `1.3.0-alpha-4` (next prerelease) so csproj stops lying.
    - Also update the install snippet in `docs/setup.md`.
 5. **Reconcile README roadmap with plan.** Either delete the README roadmap or regenerate it from the plan's tracking table.
 
 ### Day 2 — Cut alpha-4 + identity
-6. **Cut `1.3.0-alpha-4` to NuGet.** Trigger `release.yml` via `workflow_dispatch` with `version=1.3.0-alpha-4`. Verify `dotnet tool install --global maf-autopilot --prerelease` works on a clean machine.
+6. **Cut `1.3.0-alpha-4` to NuGet.** Trigger `release.yml` via `workflow_dispatch` with `version=1.3.0-alpha-4`. Verify `dotnet tool install --global maf-doctor --prerelease` works on a clean machine.
 7. **Decide on rename.** If yes: rename to `maf-keeper` (recommended) — package ID + repo + tool command. Provide a deprecated `maf-autopilot` shim package that points users to the new ID for one minor version. **If renaming, do it before stable 1.3.0** — much cheaper than renaming after.
 
 ### Day 3–4 — Tests + bug fixes
@@ -314,9 +314,9 @@ This single split materializes the "co-pilot, not just migration tool" identity 
 
 These go beyond the current plan. Pick 3.
 
-1. **`maf-doctor` subcommand.** `maf-autopilot doctor` runs every analyzer and emits a single health-score (`A`/`B`/`C`/`F`) with the top three improvements. One command, instant value, perfect demo.
+1. **`maf-doctor` subcommand.** `maf-doctor doctor` runs every analyzer and emits a single health-score (`A`/`B`/`C`/`F`) with the top three improvements. One command, instant value, perfect demo.
 
-2. **`maf-new` — agent/workflow scaffolder.** `maf-autopilot new agent ChatBot` generates a clean MAF 1.3.0 agent with executor class, `[MessageHandler]`, fan-in/fan-out, sample smoke test, OTel wired, `ManagedIdentityCredential` defaulted. Today the toolkit assumes legacy code exists; this addresses greenfield projects.
+2. **`maf-new` — agent/workflow scaffolder.** `maf-doctor new agent ChatBot` generates a clean MAF 1.3.0 agent with executor class, `[MessageHandler]`, fan-in/fan-out, sample smoke test, OTel wired, `ManagedIdentityCredential` defaulted. Today the toolkit assumes legacy code exists; this addresses greenfield projects.
 
 3. **Roslyn analyzer companion** (plan #29 — promote priority). Flags fan-out `void` handlers at write-time in the IDE. Live red-squigglies for the bug class the README highlights as the killer feature.
 

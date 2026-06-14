@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (BREAKING — full rename to `maf-doctor`)
+
+- **The NuGet package + CLI are renamed `maf-autopilot` → `maf-doctor`** (and `maf-autopilot.Analyzers` → `maf-doctor.Analyzers`). The brand, repo, MCP server id, and C# namespace were already MAF Doctor; this completes the rename so the package/command match. Done pre-public-announcement, so the break is acceptable.
+  - **For users:** `dotnet tool uninstall -g maf-autopilot && dotnet tool install -g maf-doctor`; the command is now `maf-doctor …`. Re-run `maf-doctor init` (it recognizes a legacy `maf-autopilot` mcp.json server entry and won't duplicate). The Docker image runs `maf-doctor.dll`.
+  - The old `maf-autopilot` package (≤ 1.2.0) will be **deprecated on nuget.org** with a pointer to `maf-doctor`.
+  - The internal `src/maf-autopilot/` project folder + `.csproj`/`.sln` filenames are unchanged (invisible to users; avoids high-churn path rewrites).
+  - _Note: publishing `maf-doctor` to NuGet requires the maintainer's NuGet API key on the new package id; until then, the install-based scheduled workflows (drift / pr-audit / verify) will fail at the install step — by design._
+
 ## [1.2.0] - 2026-06-14
 
 ### Added

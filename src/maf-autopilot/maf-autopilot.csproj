@@ -6,12 +6,12 @@
          AgentEval house style (see docs/architecture.md → "Multi-targeting"). -->
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <RootNamespace>MafDoctor</RootNamespace>
-    <AssemblyName>maf-autopilot</AssemblyName>
+    <AssemblyName>maf-doctor</AssemblyName>
 
     <!-- .NET Global Tool packaging -->
     <PackAsTool>true</PackAsTool>
-    <ToolCommandName>maf-autopilot</ToolCommandName>
-    <PackageId>maf-autopilot</PackageId>
+    <ToolCommandName>maf-doctor</ToolCommandName>
+    <PackageId>maf-doctor</PackageId>
     <!-- Version policy: decoupled from MAF's version progression.
          1.0.0 = first stable release; supports MAF 1.0 / 1.2 / 1.3 simultaneously.
          When cutting a new release, bump this AND push the workflow_dispatch

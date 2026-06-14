@@ -4,7 +4,7 @@ using MafDoctor.Data;
 namespace MafDoctor.Commands;
 
 /// <summary>
-/// CLI: <c>maf-autopilot verify-registry</c>.
+/// CLI: <c>maf-doctor verify-registry</c>.
 ///
 /// **#5 polish (2026-05-13)** — the verification gate for the AI-fill flow.
 /// After GitHub Copilot Coding Agent fills the TODO placeholders in
@@ -78,7 +78,7 @@ public static class VerifyRegistryCommand
             foreach (var issue in issues)
                 Console.Error.WriteLine($"  • {issue}");
             Console.Error.WriteLine();
-            Console.Error.WriteLine("Fix locally and re-run `maf-autopilot verify-registry`.");
+            Console.Error.WriteLine("Fix locally and re-run `maf-doctor verify-registry`.");
             return 1;
         }
 

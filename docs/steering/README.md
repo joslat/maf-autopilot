@@ -11,7 +11,7 @@ different convention:
 | `agents.md` | `./AGENTS.md` | Cursor + any agentskills.io-respecting tool |
 | `cursor-rules.md` | `./.cursorrules` | Cursor (alternative format) |
 
-`maf-autopilot init` drops all three into your repo automatically. If you
+`maf-doctor init` drops all three into your repo automatically. If you
 already have these files, init *merges* — it appends a `## Using maf-autopilot`
 section rather than overwriting.
 

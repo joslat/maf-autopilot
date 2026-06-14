@@ -125,7 +125,7 @@ public class RegressionPlanToolTests
         Assert.Contains("## Migration graph", result);
         Assert.Contains("## Per-step changes", result);
         Assert.Contains("To execute this plan", result);
-        Assert.Contains("maf-autopilot doctor", result);
+        Assert.Contains("maf-doctor doctor", result);
         Assert.Contains("MafAutoFix", result);
     }
 }

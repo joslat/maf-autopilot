@@ -20,7 +20,7 @@ public sealed class TourTool
 {
     [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
-        List every maf-autopilot capability — MCP tools, agents, resources, prompts —
+        List every maf-doctor capability — MCP tools, agents, resources, prompts —
         with a one-line "when to use" each. Use this when a new user asks "what can
         this thing do?". For the same content as a static resource, read maf://help.
 
@@ -50,7 +50,7 @@ public sealed class TourTool
     private static string BuildCatalogue(string section)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("# 🗺️ maf-autopilot — capability tour");
+        sb.AppendLine("# 🗺️ maf-doctor — capability tour");
         sb.AppendLine();
         sb.AppendLine("> Single-page catalogue of what this MCP server exposes. Use this to answer \"what tool / agent fits my task?\".");
         sb.AppendLine();

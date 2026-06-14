@@ -49,7 +49,7 @@ Pass `format: "json"` to get machine-readable output.
 
 ```bash
 # Get JSON output and check verdict
-OUTPUT=$(maf-autopilot doctor . --format json 2>/dev/null || \
+OUTPUT=$(maf-doctor doctor . --format json 2>/dev/null || \
   dotnet run --project src/maf-autopilot/ -- doctor . --format json)
 
 VERDICT=$(echo "$OUTPUT" | jq -r '.verdict')

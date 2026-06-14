@@ -82,4 +82,4 @@ RUN groupadd -r maf && useradd -r -u 1001 -g maf -d /nonexistent -s /usr/sbin/no
     && chown -R maf:maf /app
 USER maf
 
-ENTRYPOINT ["dotnet", "/app/maf-autopilot.dll"]
+ENTRYPOINT ["dotnet", "/app/maf-doctor.dll"]

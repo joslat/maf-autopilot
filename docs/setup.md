@@ -1,8 +1,8 @@
-# maf-autopilot — Setup Guide
+# maf-doctor — Setup Guide
 
 > Last updated: 2026-05-13 — Phase S landed: multi-target nupkg + central package management. The toolkit installs on **.NET 8, .NET 9, OR .NET 10** runtimes (NuGet picks the matching TFM at install time).
 
-This guide explains what you need to do — as a human — to use and maintain `maf-autopilot`. It covers three usage modes, repository setup, the CI workflow, and answers the "Copilot Coding Agent vs. shell scripts" architecture question.
+This guide explains what you need to do — as a human — to use and maintain `maf-doctor`. It covers three usage modes, repository setup, the CI workflow, and answers the "Copilot Coding Agent vs. shell scripts" architecture question.
 
 ---
 
@@ -16,7 +16,7 @@ The toolkit code is fully implemented through step #24. Here is the current stat
 | #21 | MCP server MVP (3 tools) | ✅ Done | — |
 | #22 | MCP Resources (`maf://constraints`, etc.) | ✅ Done | — |
 | #23 | MCP Prompts (`/maf-audit`, `/maf-migrate`, etc.) | ✅ Done | — |
-| #24 | `maf-autopilot init` CLI command | ✅ Done | — |
+| #24 | `maf-doctor init` CLI command | ✅ Done | — |
 | **#25** | **NuGet publish** | **❌ You must do this** | See [Section 3](#3-publishing-to-nugetorg-step-25) |
 | #26–#29 | Sampling tools, full analysis tools, Docker | ❌ Future work | — |
 | **#30** | **`registry.yaml` CI auto-update** | **❌ You must do this** | See [Section 4](#4-enabling-registry-auto-update-step-30) |
@@ -77,20 +77,20 @@ Run the MCP server locally to expose `maf://` resources and `/maf-*` prompts in 
 
 ### Mode C — MCP Server (global tool, any project)
 
-Install `maf-autopilot` as a global .NET tool so any project can run `maf-autopilot init` and use the MCP server without cloning this repo.
+Install `maf-doctor` as a global .NET tool so any project can run `maf-doctor init` and use the MCP server without cloning this repo.
 
-**Prerequisites:** any of .NET 8 / .NET 9 / .NET 10 SDK. `maf-autopilot` is published to NuGet as prereleases ([`1.3.0-alpha-5`](https://www.nuget.org/packages/maf-autopilot) latest at time of writing). Stable 1.3.0 is gated on the Phase T MAF 1.3 sample dogfood (see [next-steps.md](./next-steps.md)).
+**Prerequisites:** any of .NET 8 / .NET 9 / .NET 10 SDK. `maf-doctor` is published to NuGet as prereleases ([`1.3.0-alpha-5`](https://www.nuget.org/packages/maf-doctor) latest at time of writing). Stable 1.3.0 is gated on the Phase T MAF 1.3 sample dogfood (see [next-steps.md](./next-steps.md)).
 
 **Steps:**
 ```bash
 # Install once, globally
-dotnet tool install -g maf-autopilot --prerelease
+dotnet tool install -g maf-doctor --prerelease
 
 # In any MAF project folder:
-maf-autopilot init
+maf-doctor init
 ```
 
-`maf-autopilot init` will:
+`maf-doctor init` will:
 - Add the MCP server entry to `.vscode/mcp.json` (idempotent — safe to re-run)
 - Write `.github/copilot-instructions.md` with the MAF hard constraint rules (skips if already exists)
 
@@ -104,7 +104,7 @@ maf-autopilot init
 
 | Field | Value |
 |-------|-------|
-| **Name** | `maf-autopilot` |
+| **Name** | `maf-doctor` |
 | **Owner** | your GitHub username or org (e.g. `joslat`) |
 | **Visibility** | **Private** (start here — you can make it public later) |
 | **Description** | AI-powered toolkit for Microsoft Agent Framework (MAF) migrations — agents, skills, MCP server, and self-updating guide |
@@ -114,7 +114,7 @@ maf-autopilot init
 
 **Option 1 — GitHub CLI (fastest):**
 ```bash
-cd C:\git\joslat\maf-autopilot
+cd C:\git\joslat\maf-doctor
 
 # Create private repo on GitHub and push
 gh repo create joslat/maf-doctor \
@@ -127,7 +127,7 @@ gh repo create joslat/maf-doctor \
 
 **Option 2 — GitHub web UI + manual push:**
 1. Go to [github.com/new](https://github.com/new)
-2. Repository name: `maf-autopilot`
+2. Repository name: `maf-doctor`
 3. Description: `AI-powered toolkit for Microsoft Agent Framework (MAF) migrations — agents, skills, MCP server, and self-updating guide`
 4. Visibility: **Private**
 5. Leave "Initialize this repository" unchecked (you already have local files)
@@ -146,7 +146,7 @@ gh repo create joslat/maf-doctor \
 - **Verify the workflow is visible:** Actions tab → you should see "MAF Release Watcher" listed (no runs yet — that's expected)
 - **Add `NUGET_API_KEY` secret** when ready to publish (see [Publishing to NuGet.org](#publishing-to-nugetorg-step-25))
 
-> **When to go public:** Once `maf-autopilot init` is end-to-end testable (after #25 NuGet publish), flip visibility to public under Settings → Danger Zone → Change repository visibility.
+> **When to go public:** Once `maf-doctor init` is end-to-end testable (after #25 NuGet publish), flip visibility to public under Settings → Danger Zone → Change repository visibility.
 
 ---
 
@@ -166,7 +166,7 @@ If you are **joslat** (the repo owner): the repository is `github.com/joslat/maf
 
 ### Option C — New repo (bring your own guide)
 
-1. `gh repo create your-org/maf-autopilot --private` (or public)
+1. `gh repo create your-org/maf-doctor --private` (or public)
 2. Push this codebase: `git remote add origin <url> && git push -u origin main`
 3. Enable Actions (Settings → Actions → General)
 
@@ -183,7 +183,7 @@ The release watcher workflow needs one secret **if you want to publish the NuGet
 **How to add:**
 1. GitHub repo → **Settings → Secrets and variables → Actions → New repository secret**
 2. Name: `NUGET_API_KEY`
-3. Value: your NuGet.org API key (scope: push, package: `maf-autopilot`, or all packages)
+3. Value: your NuGet.org API key (scope: push, package: `maf-doctor`, or all packages)
 
 > The `GITHUB_TOKEN` secret is automatically provided by GitHub Actions — no setup needed.
 
@@ -209,7 +209,7 @@ The file `.github/workflows/maf-release-watcher.yml` is already in the repo. Git
 
 ## Publishing to NuGet.org (Step #25)
 
-This is the next required user action. Once done, anyone can `dotnet tool install -g maf-autopilot --prerelease`.
+This is the next required user action. Once done, anyone can `dotnet tool install -g maf-doctor --prerelease`.
 
 ### Prerequisites
 - NuGet.org account (free at [nuget.org](https://www.nuget.org/users/account/LogOn))
@@ -227,12 +227,12 @@ This is the next required user action. Once done, anyone can `dotnet tool instal
 ```powershell
 cd src/maf-autopilot
 dotnet pack -c Release -o ./nupkg
-dotnet nuget push ./nupkg/maf-autopilot.*.nupkg --api-key YOUR_KEY --source https://api.nuget.org/v3/index.json
+dotnet nuget push ./nupkg/maf-doctor.*.nupkg --api-key YOUR_KEY --source https://api.nuget.org/v3/index.json
 ```
 
 ### After publishing
 - The package appears on NuGet.org within ~15 minutes
-- Users can then `dotnet tool install -g maf-autopilot --prerelease` and `maf-autopilot init`
+- Users can then `dotnet tool install -g maf-doctor --prerelease` and `maf-doctor init`
 - The workflow's `publish-mcp-release` job handles all future releases automatically
 
 ---
@@ -334,7 +334,7 @@ Here is an honest comparison:
 ## Prerequisite Chain Summary
 
 ```
-You want: dotnet tool install -g maf-autopilot --prerelease
+You want: dotnet tool install -g maf-doctor --prerelease
   └─ Requires: #25 NuGet publish
        └─ Requires: NuGet.org account + API key
             └─ Action: Add NUGET_API_KEY to GitHub repo secrets
@@ -362,7 +362,7 @@ You want: maf_open_feedback_issue tool
 |-----------|-----------|-------|
 | Agents / skills / instructions | VS Code Copilot Chat (host-side) | VS Code + Copilot |
 | MCP server (local dev) | Your machine | .NET 8 / 9 / 10 SDK (any one) |
-| MCP server (global tool) | Your machine | .NET 8 / 9 / 10 runtime (any one) + `dotnet tool install -g maf-autopilot --prerelease` |
+| MCP server (global tool) | Your machine | .NET 8 / 9 / 10 runtime (any one) + `dotnet tool install -g maf-doctor --prerelease` |
 | Release watcher workflow | GitHub Actions | GitHub repo |
 | NuGet publish | GitHub Actions | `NUGET_API_KEY` secret |
 | Registry auto-update | GitHub Actions | Copilot Enterprise or LLM API key (#30) |

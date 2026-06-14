@@ -21,7 +21,7 @@
 Three 20-line C# snippets. Each has ONE subtle MAF anti-pattern. You have 30 seconds to spot all three — no compiling, no looking things up. Then run the toolkit:
 
 ```bash
-maf-autopilot doctor samples/find-the-bug/
+maf-doctor doctor samples/find-the-bug/
 ```
 
 It finds them in ~850 ms. See the [answer key](./find-the-bug/answer-key.md) for what each bug is and how the toolkit catches it.
@@ -59,10 +59,10 @@ You need exactly two things:
 dotnet --version          # should print 8.x, 9.x, or 10.x
 
 # 2. The maf-autopilot global tool:
-dotnet tool install -g maf-autopilot
+dotnet tool install -g maf-doctor
 
 # Verify:
-maf-autopilot --version
+maf-doctor --version
 ```
 
 If you don't have a clone of this repo handy, also:
@@ -80,10 +80,10 @@ Run these in your terminal, one beat at a time. Each beat is 30-60 seconds with 
 |---|---|---|---|
 | **1** | `cd samples/maf-1.3-sample` | — | _"This is a real MAF 1.3.0 codebase. A small fraud-claims triage workflow. Looks fine. Let's see if it is."_ |
 | **2** | `dotnet build` | 4 Warning(s), 0 Error(s) — 1 × `CS0618` + 3 × `MAF001` | _"Builds clean — well, with 4 warnings the developer probably dismissed. The analyzer's already firing on three executor methods. We'll see why in a second."_ |
-| **3** | `maf-autopilot doctor .` | 🔴 **Grade F** — 10 errors + 3 silent-starvation risks | _"The toolkit grades it: F. Ten anti-pattern errors. Three of them are silent-starvation risks — these compile clean and BREAK at runtime. No build warning. No exception. Just silently wrong output."_ |
-| **4** | `maf-autopilot autofix-all . --dry-run` | JSON: 6 files would change across 5 rule families | _"This is what would change — preview only. Six files, five rule families. Deterministic. No LLM in this loop."_ |
-| **5** | `maf-autopilot autofix-all .` | JSON: 6 files changed | _"Apply for real. Roslyn rewriters under the hood — same code path you'd trust in a Microsoft refactor extension."_ |
-| **6** | `maf-autopilot doctor .` | 🟢 **Grade A** — 0 errors | _"And we're at grade A. Zero errors. The whole audit-fix-verify loop just ran in under 30 seconds, deterministically, on a real broken MAF codebase. That's what the toolkit does."_ |
+| **3** | `maf-doctor doctor .` | 🔴 **Grade F** — 10 errors + 3 silent-starvation risks | _"The toolkit grades it: F. Ten anti-pattern errors. Three of them are silent-starvation risks — these compile clean and BREAK at runtime. No build warning. No exception. Just silently wrong output."_ |
+| **4** | `maf-doctor autofix-all . --dry-run` | JSON: 6 files would change across 5 rule families | _"This is what would change — preview only. Six files, five rule families. Deterministic. No LLM in this loop."_ |
+| **5** | `maf-doctor autofix-all .` | JSON: 6 files changed | _"Apply for real. Roslyn rewriters under the hood — same code path you'd trust in a Microsoft refactor extension."_ |
+| **6** | `maf-doctor doctor .` | 🟢 **Grade A** — 0 errors | _"And we're at grade A. Zero errors. The whole audit-fix-verify loop just ran in under 30 seconds, deterministically, on a real broken MAF codebase. That's what the toolkit does."_ |
 
 ### Visual bonus beat (~30 seconds, optional but high impact)
 
@@ -121,7 +121,7 @@ git restore samples/maf-1.3-sample/
 | **VS Code Insiders** (or stable) | MCP server + Copilot Chat client | https://code.visualstudio.com/insiders/ |
 | **GitHub Copilot subscription** | needed to use `@maf-*` agents and `/maf-*` prompts | any Copilot tier |
 | **.NET 8 SDK or later** | builds the sample (sample targets `net8.0`) | https://dotnet.microsoft.com/download |
-| **`maf-autopilot` global tool** | the MCP server itself | `dotnet tool install -g maf-autopilot` |
+| **`maf-autopilot` global tool** | the MCP server itself | `dotnet tool install -g maf-doctor` |
 | _(optional)_ Azure OpenAI deployment | only needed for `--run` mode of the sample; not needed for the workshop | https://portal.azure.com |
 
 Verify the tool is on PATH — install only if missing:
@@ -130,10 +130,10 @@ Verify the tool is on PATH — install only if missing:
 
 ```bash
 if ! command -v maf-autopilot >/dev/null 2>&1; then
-  dotnet tool install -g maf-autopilot
+  dotnet tool install -g maf-doctor
   # If PATH still misses after install: export PATH="$HOME/.dotnet/tools:$PATH"
 fi
-maf-autopilot --version
+maf-doctor --version
 # → maf-autopilot 1.0.0 (or later)
 ```
 
@@ -141,12 +141,12 @@ maf-autopilot --version
 
 ```powershell
 if (-not (Get-Command maf-autopilot -ErrorAction SilentlyContinue)) {
-    dotnet tool install -g maf-autopilot
+    dotnet tool install -g maf-doctor
 }
-maf-autopilot --version
+maf-doctor --version
 ```
 
-> **Already installed?** `dotnet tool update -g maf-autopilot` for the latest alpha.
+> **Already installed?** `dotnet tool update -g maf-doctor` for the latest alpha.
 
 ### Where the workshop fits in the docs
 
@@ -209,7 +209,7 @@ Create `.vscode/mcp.json` inside the sample folder:
   "servers": {
     "maf-doctor": {
       "type": "stdio",
-      "command": "maf-autopilot",
+      "command": "maf-doctor",
       "args": []
     }
   }
@@ -222,7 +222,7 @@ VS Code Insiders auto-detects this file. After saving, open Copilot Chat and ver
 - The `/maf-audit`, `/maf-migrate`, `/maf-cs0618-hunt` slash commands appear in `/`-completions.
 - `maf://constraints`, `maf://guide`, `maf://registry`, `maf://rules`, `maf://skills?name=…` are referenceable as resources.
 
-> **Troubleshooting:** if no MCP is detected, check `View → Output → MCP` for the server log. Most commonly: `maf-autopilot` is not on PATH — re-run `dotnet tool install -g maf-autopilot` and reopen VS Code.
+> **Troubleshooting:** if no MCP is detected, check `View → Output → MCP` for the server log. Most commonly: `maf-autopilot` is not on PATH — re-run `dotnet tool install -g maf-doctor` and reopen VS Code.
 
 ---
 
@@ -375,7 +375,7 @@ git restore samples/maf-1.3-sample/
 Then run the batch auto-fixer from the terminal:
 
 ```bash
-maf-autopilot autofix-all .
+maf-doctor autofix-all .
 ```
 
 Expected JSON output:
@@ -404,7 +404,7 @@ Expected JSON output:
 Re-run the doctor:
 
 ```bash
-maf-autopilot doctor .
+maf-doctor doctor .
 ```
 
 Should report **grade A** — auto-fix handled all 5 mechanical rule families.
@@ -631,24 +631,24 @@ The first two are **automatable** (just run the `.tape` scripts). The last two a
    them are silent-starvation risks — we'll see what that means."
 
 [1:30 — 3:00]  Beat 3 — the doctor
-  maf-autopilot doctor .
+  maf-doctor doctor .
   "Grade F. Ten anti-pattern errors. Three silent-starvation risks.
    These compile clean and break at runtime. No build warning, no
    exception, just silently wrong output. The toolkit found them all
    in 850 milliseconds."
 
 [3:00 — 4:00]  Beat 4 — preview
-  maf-autopilot autofix-all . --dry-run
+  maf-doctor autofix-all . --dry-run
   "This is what would change — preview only. Six files, five rule
    families. Deterministic — no LLM in this loop."
 
 [4:00 — 5:00]  Beat 5 — fix for real
-  maf-autopilot autofix-all .
+  maf-doctor autofix-all .
   "Apply for real. Roslyn rewriters — same machinery a Microsoft refactor
    extension would use."
 
 [5:00 — 6:00]  Beat 6 — verify
-  maf-autopilot doctor .
+  maf-doctor doctor .
   "Grade A. Zero errors. The audit-fix-verify loop just ran in under
    30 seconds, deterministically, on a real broken MAF codebase."
 
@@ -682,7 +682,7 @@ The first two are **automatable** (just run the `.tape` scripts). The last two a
 | **Before state** | Slide 1: "maf-autopilot Workshop — From Zero to Migrated Codebase" + your name. |
 | **What to do** | Walk through Phase A → B → C → D → E in order. Stop after each Phase for Q&A (~2 min each). Total: ~40 min content + ~10 min Q&A. |
 | **What to say** | The "Talk-track" callout boxes throughout the workshop sections. They're written as one-liners you can read verbatim or paraphrase. |
-| **After state** | Final slide: "Try it: `dotnet tool install -g maf-autopilot`; github.com/joslat/maf-doctor; questions?" |
+| **After state** | Final slide: "Try it: `dotnet tool install -g maf-doctor`; github.com/joslat/maf-doctor; questions?" |
 | **Where it goes** | YouTube / conference recording platform. |
 
 **Tip:** if recording over 50 minutes, plan **deliberate dead air at chapter transitions** (between Phase A → B, B → C, etc.) so your editor can cut cleanly. ~3 seconds of silent screen between phases makes editing 10× easier.
@@ -696,7 +696,7 @@ The first two are **automatable** (just run the `.tape` scripts). The last two a
 | **A clean shell theme** (dark Dracula or similar) | R1, R2, R3, R4 | Configure your terminal app before any recording |
 | **A presentation-mode `code-insiders` window** (large font, hidden minimap) | R3, R4 | VS Code: `Ctrl+,` → Zen Mode + font size 18+ |
 | **Sample's broken state confirmed** (`git status` is clean, `dotnet build` shows the 4 warnings) | R3, R4 | Once per recording session |
-| **`maf-autopilot --version` shows the right alpha** | R1, R3, R4 | Once per recording session |
+| **`maf-doctor --version` shows the right alpha** | R1, R3, R4 | Once per recording session |
 | **A clean recording folder** with no other tabs/notifications/dock icons visible | R3, R4 | OS-level setup |
 
 ---

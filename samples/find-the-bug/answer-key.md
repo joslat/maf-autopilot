@@ -112,7 +112,7 @@ under 100 ms.
 
 ## Toolkit run output
 
-Expected when you run `maf-autopilot doctor samples/find-the-bug/` (verified 2026-05-13):
+Expected when you run `maf-doctor doctor samples/find-the-bug/` (verified 2026-05-13):
 
 ```
 🟠 MAF health grade: C

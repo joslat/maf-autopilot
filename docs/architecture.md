@@ -82,7 +82,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 
 **Path:** `/src/maf-autopilot/`
 **Target frameworks:** `net8.0;net9.0;net10.0` (multi-target — NuGet picks the best TFM at install time)
-**Output:** a single executable (`maf-autopilot.dll`) packaged as a dotnet global tool + a Docker image (Dockerfile uses `net8.0` base for smallest container).
+**Output:** a single executable (`maf-doctor.dll`) packaged as a dotnet global tool + a Docker image (Dockerfile uses `net8.0` base for smallest container).
 **Dependencies:** `ModelContextProtocol` 1.2.0, `Microsoft.CodeAnalysis.CSharp` 4.11.0, `YamlDotNet` 16.2.1, `Microsoft.Extensions.Hosting` 10.0.7 (the 10.0.x line internally ships net8/net9/net10 TFM assemblies). Versions pinned centrally in `Directory.Packages.props`.
 
 **What it does:**
@@ -201,8 +201,8 @@ This pattern matches the sibling [`AgentEval`](https://github.com/joslat/AgentEv
 
 | Channel | What ships | Who consumes | Where |
 |---|---|---|---|
-| NuGet (server) | `maf-autopilot` .NET global tool | Developers installing via `dotnet tool install` | `nuget.org/packages/maf-autopilot` |
-| NuGet (analyzer) | `maf-autopilot.Analyzers` analyzer | Consumer .csproj `<PackageReference>` | `nuget.org/packages/maf-autopilot.Analyzers` |
+| NuGet (server) | `maf-autopilot` .NET global tool | Developers installing via `dotnet tool install` | `nuget.org/packages/maf-doctor` |
+| NuGet (analyzer) | `maf-autopilot.Analyzers` analyzer | Consumer .csproj `<PackageReference>` | `nuget.org/packages/maf-doctor.Analyzers` |
 | Docker | Multi-arch image (amd64+arm64) | Developers without .NET SDK on host | `ghcr.io/joslat/maf-doctor:<semver>` |
 | Skills-only | The `.github/` directory copied into a consumer repo | Users wanting agents+skills without the MCP server | `git clone` |
 
@@ -216,7 +216,7 @@ The `maf-release-watcher` workflow runs weekly + on-demand, detecting new MAF re
 
 | Surface | Additive? | How it's enforced |
 |---|---|---|
-| `.github/skills/maf-obsolete-api-registry/registry.yaml` | ✅ | `maf-autopilot registry-extract` emits draft entries; watcher appends via `>> $REGISTRY`. **Pinned by test** `RegistryExtractCommandTests.Additivity_DraftEntries_AppendedToExistingRegistry_PreserveAllOriginalEntries`. |
+| `.github/skills/maf-obsolete-api-registry/registry.yaml` | ✅ | `maf-doctor registry-extract` emits draft entries; watcher appends via `>> $REGISTRY`. **Pinned by test** `RegistryExtractCommandTests.Additivity_DraftEntries_AppendedToExistingRegistry_PreserveAllOriginalEntries`. |
 | `docs/compatibility-matrix.md` | ✅ | `.github/scripts/update_compat_matrix.py` inserts at top of data section; checks for duplicate version rows (no-op on re-run). Idempotency documented in the script's docstring. |
 | `guides/maf-<NEW-VERSION>-migration-guide.md` | ✅ | `.github/scripts/gen_guide_section.py` writes a NEW per-version file. If the file already exists, the AUTO-GENERATED region is overwritten but the `## Human additions` heading and everything below it is preserved. The 1.3.0 guide is never touched. |
 | `.maf-version` (tracked version pointer) | ✅ (overwritten cleanly) | One-line file; the watcher writes the new latest version. The old value is replaced — but the old version's registry/matrix/guide data stays intact (rows above). |
