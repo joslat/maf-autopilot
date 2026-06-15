@@ -44,7 +44,7 @@ jobs:
     name: Process.Start discipline
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
 
       - name: Block ProcessStartInfo.Arguments string property
         run: |
@@ -88,7 +88,7 @@ jobs:
     name: Regex hygiene (NonBacktracking + MatchTimeout)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
 
       - name: Check Regex declarations
         run: |
@@ -154,7 +154,7 @@ jobs:
     name: EnumerationOptions on recursive walkers
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
 
       - name: Require EnumerationOptions on recursive enumerators
         run: |
@@ -223,7 +223,7 @@ jobs:
     name: Workflow inputs flow via env redirect
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
 
       - name: "Block inputs.* templates inside run blocks"
         run: |
@@ -295,7 +295,7 @@ jobs:
     name: Workflow permissions block required
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
 
       - name: "Require a permissions block on every workflow"
         run: |
@@ -344,7 +344,7 @@ jobs:
     name: Lint workflows + helper scripts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
 
       - name: Validate every workflow YAML parses (startup_failure guard)
         run: |
