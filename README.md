@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/joslat/maf-doctor/main/assets/MAFDoctorLogoTransparent.png" alt="MAF Doctor" width="320" />
+  <img src="https://raw.githubusercontent.com/joslat/maf-doctor/main/assets/MAFDoctorLogo.png" alt="MAF Doctor" width="320" />
 </p>
 
 # MAF Doctor — a toolkit for Microsoft Agent Framework
