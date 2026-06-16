@@ -6,7 +6,6 @@ Prints, to stdout, only the entry blocks from <new-entries.yaml> whose `id:` is
 NOT already present in <registry.yaml> (and not duplicated within the batch).
 Used by the release watcher so re-runs — or the daily cron re-detecting the same
 version before .maf-version catches up — don't append duplicate draft entries.
-See docs/self-update-remediation-plan.md (task 3.4).
 """
 from __future__ import annotations
 

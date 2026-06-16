@@ -19,8 +19,7 @@
 
 A small but realistic multi-agent **Microsoft Agent Framework 1.3.0** codebase
 that deliberately embeds anti-patterns the `maf-autopilot` toolkit was built to
-find. Used as **Phase T — the A.8 migration-dogfood unblocker** in
-[`docs/next-steps.md`](../../docs/next-steps.md).
+find. Used as **Phase T — the A.8 migration-dogfood unblocker**.
 
 **Want a guided run?** See [`samples/workshop.md`](../workshop.md) — a ~50-minute
 hands-on walkthrough that opens this sample standalone in VS Code Insiders,

@@ -98,7 +98,6 @@ jobs:
             # shell block's indentation, so Python raised "IndentationError:
             # unexpected indent" on EVERY scheduled run (the explicit-version
             # dispatch path skips this branch, which is why manual runs worked).
-            # See docs/self-update-remediation-plan.md task 1.1.
             LATEST=$(echo "$RAW" | python3 .github/scripts/get_latest_stable.py)
             if [ -z "$LATEST" ]; then
               echo "ℹ️ No stable version found on NuGet — only prereleases. Skipping."
@@ -423,7 +422,7 @@ jobs:
             echo "Major bump already tracked in issue #${NUM} — leaving as-is."
           else
             gh issue create --title "${TITLE}" --label "maf-release,needs-review" \
-              --body "A new **major** MAF release was detected: \`${OLD}\` → \`${NEW}\`. Major bumps are not auto-committed to main (breaking-change risk). The breaking-API diffs are attached as artifacts on the run: ${RUN_URL}. To process: review the diffs, then dispatch the watcher manually for this version or apply the changes by hand. See docs/self-update-remediation-plan.md (task 3.2)."
+              --body "A new **major** MAF release was detected: \`${OLD}\` → \`${NEW}\`. Major bumps are not auto-committed to main (breaking-change risk). The breaking-API diffs are attached as artifacts on the run: ${RUN_URL}. To process: review the diffs, then dispatch the watcher manually for this version or apply the changes by hand."
             echo "Opened escalation issue for major bump ${OLD} → ${NEW}."
           fi
 

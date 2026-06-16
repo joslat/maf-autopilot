@@ -153,7 +153,6 @@ maf-doctor --version
 The workshop is the **doing** part. For background, refer back to:
 - [`/README.md`](../README.md) — the 30-second pitch + animated demos.
 - [`/docs/architecture.md`](../docs/architecture.md) — how the 4 .NET projects fit together.
-- [`/docs/next-steps.md`](../docs/next-steps.md) — Phase X has the 1.0 launch checklist.
 
 ---
 
@@ -544,7 +543,6 @@ rm -f samples/maf-1.3-sample/docs/migration-plan.md
 - **Try the analyzer NuGet** in your own project: `dotnet add package maf-autopilot.Analyzers`.
 - **Read the MAF migration guides** in [`/guides/`](../guides/) — `maf-1.3.0`, `maf-1.4.0`, `maf-1.5.0`, plus `maf-current-migration-guide.md` (auto-regenerated).
 - **Browse the 7 Copilot Chat agents:** `@maf`, `@maf-auditor`, `@maf-migration`, `@maf-best-practice-reviewer`, `@maf-incident-responder`, `@maf-rollback`, `@maf-onboarding`.
-- **See [`/docs/next-steps.md` Phase X](../docs/next-steps.md#phase-x--things-only-you-can-do-follow-along-guide)** for the 1.0 launch checklist + post-1.0 roadmap.
 
 ---
 
@@ -569,7 +567,7 @@ The first two are **automatable** (just run the `.tape` scripts). The last two a
 
 ### R1 — `install-cast.gif` (the README's first impression)
 
-**Status.** Source artifact already shipped (Phase W.4). Rendering is Phase X.3 — see [`/docs/next-steps.md` Phase X.3](../docs/next-steps.md#x3--render-the-readme-animated-casts-both-install-cast--migration-cast).
+**Status.** Source artifact already shipped (Phase W.4). Rendering is Phase X.3.
 
 | Aspect | Detail |
 |---|---|

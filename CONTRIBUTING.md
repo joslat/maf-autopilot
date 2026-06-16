@@ -7,8 +7,7 @@ See [`AGENTS.md`](./AGENTS.md) for the full repo layout and location of every so
 ## Before you start
 
 1. Read **[`AGENTS.md`](./AGENTS.md)** — repo layout: where tools, skills, agents, workflows, registry, and samples all live.
-2. Read **[`docs/project-status-and-vision.md`](docs/project-status-and-vision.md)** — stage assessment + broader vision. New work should advance the prioritised plan, not start a parallel track.
-3. **Check upstream before designing workarounds.** The single biggest project lesson (2026-05-11): `dotnet-inspect`'s `[Obsolete]`-overload limitation — the gap this toolkit was originally built to work around — was closed in upstream v0.7.8, and we kept pinning v0.7.6 for months. **Always check the upstream tool's release notes before designing a skill around a limitation.**
+2. **Check upstream before designing workarounds.** The single biggest project lesson (2026-05-11): `dotnet-inspect`'s `[Obsolete]`-overload limitation — the gap this toolkit was originally built to work around — was closed in upstream v0.7.8, and we kept pinning v0.7.6 for months. **Always check the upstream tool's release notes before designing a skill around a limitation.**
 
 ## Setup
 
@@ -144,8 +143,6 @@ Helpers throw exceptions; entry points convert exceptions to user-visible errors
 ## PR conventions
 
 - **Conventional commits** (`feat:`, `fix:`, `docs:`, `chore:`, `test:`).
-- **Update the plan tracking table** in the same commit. If your work fits an existing row, update its status. If not, add a new row.
-- **Update the doc set:** every change to skills/agents/MCP code should at minimum sync the row in `maf-migration-toolkit-plan.md`. Larger changes also touch `project-status-and-vision.md`.
 - **Tests must pass.** No `[Fact(Skip = ...)]` to bypass CI.
 - **Don't bypass git hooks** (`--no-verify`, `--no-gpg-sign`, `--amend` on shared commits).
 
