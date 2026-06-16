@@ -1,4 +1,4 @@
-# vhs script for the maf-autopilot migration demo.
+# vhs script for the maf-doctor migration demo.
 #
 # Companion to install-cast.tape. While that cast shows install + audit,
 # THIS cast shows the auto-fix loop: a broken codebase migrates to

@@ -91,8 +91,11 @@ maf-doctor init
 ```
 
 `maf-doctor init` will:
-- Add the MCP server entry to `.vscode/mcp.json` (idempotent — safe to re-run)
-- Write `.github/copilot-instructions.md` with the MAF hard constraint rules (skips if already exists)
+- Wire the MCP server for **VS Code** (`.vscode/mcp.json`) and **Claude Code** (`.mcp.json`) — idempotent, safe to re-run
+- Write overwrite-on-reinit steering **sidecars** (never merged into your own instruction files): `.github/instructions/maf-doctor.instructions.md` (Copilot), `.claude/maf-doctor.md` + a one-line `@import` in `CLAUDE.md` and an `AGENTS.md` managed block (Claude Code / AGENTS-aware tools)
+- With `--with-cursor`: also write `.cursor/rules/maf-doctor.mdc`
+
+See [init-reference.md](./init-reference.md) for exactly what's written and why.
 
 **Then open VS Code** — the MCP server starts automatically.
 

@@ -57,12 +57,14 @@ With a subcommand, the same binary runs as a CLI tool — see Quick Start below.
 # 1. Install the MCP server as a .NET global tool
 dotnet tool install --global maf-doctor
 
-# 2. In your MAF project — writes .vscode/mcp.json + .github/copilot-instructions.md
+# 2. In your MAF project — wires MCP + steering for VS Code, Copilot & Claude Code
 cd your-maf-project
 maf-doctor init
 ```
 
 init wires the MCP server into both **VS Code** (.vscode/mcp.json) and **Claude Code** (.mcp.json), and drops auto-loaded steering in each tool's convention dir — .github/instructions/ for Copilot, .claude/ plus a one-line CLAUDE.md import for Claude Code, and an AGENTS.md managed block. These are refreshed on every re-run and never merged into your own files. Your assistant picks the server up automatically and gains live tool calls, resource reads, and structured prompts.
+
+> 📖 **Going deeper:** [what `init` installs (and why)](docs/init-reference.md) · [using MAF Doctor — prompts, tools, agents & natural-language steering](docs/usage.md) · [hands-on workshop](samples/workshop.md).
 
 **First three commands to try:**
 

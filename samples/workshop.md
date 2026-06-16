@@ -1,4 +1,4 @@
-# maf-autopilot Workshop — From Zero to Migrated Codebase
+# maf-doctor Workshop — From Zero to Migrated Codebase
 
 > **Four entry points:**
 >
@@ -32,10 +32,10 @@ It finds them in ~850 ms. See the [answer key](./find-the-bug/answer-key.md) for
 
 ## What is this? (the 30-second preamble)
 
-You're looking at a workshop for **maf-autopilot** — an AI co-pilot toolkit for the **Microsoft Agent Framework (MAF)**. Three concepts:
+You're looking at a workshop for **maf-doctor** — an AI co-pilot toolkit for the **Microsoft Agent Framework (MAF)**. Three concepts:
 
 - **MAF** is Microsoft's .NET framework for building multi-agent AI workflows (agents that talk to each other, plus a workflow runtime that orchestrates them). Current stable: 1.3.0; previews up to 1.5.0.
-- **maf-autopilot** is a toolkit (MCP server + Roslyn analyzer NuGet + GitHub Copilot agents + skills) that **audits** MAF code for the silent-failure patterns that compile clean but break at runtime, AND **auto-fixes** the mechanical issues without an LLM in the loop.
+- **maf-doctor** is a toolkit (MCP server + Roslyn analyzer NuGet + GitHub Copilot agents + skills) that **audits** MAF code for the silent-failure patterns that compile clean but break at runtime, AND **auto-fixes** the mechanical issues without an LLM in the loop.
 - **`samples/maf-1.3-sample/`** is a deliberately-broken FraudClaimsTriage workflow we use to dogfood the toolkit. Every "broken" pattern is on purpose — the workshop walks you through finding + fixing all of them.
 
 **Why a workshop instead of a README:** the toolkit's value is invisible until you watch it find a bug nobody else catches. The workshop is "show, don't tell."
@@ -58,7 +58,7 @@ You need exactly two things:
 # 1. .NET 8 SDK or later — check:
 dotnet --version          # should print 8.x, 9.x, or 10.x
 
-# 2. The maf-autopilot global tool:
+# 2. The maf-doctor global tool:
 dotnet tool install -g maf-doctor
 
 # Verify:
@@ -69,7 +69,7 @@ If you don't have a clone of this repo handy, also:
 
 ```bash
 git clone https://github.com/joslat/maf-doctor
-cd maf-autopilot
+cd maf-doctor
 ```
 
 ### The 6-beat speedrun (~5 minutes)
@@ -112,7 +112,7 @@ git restore samples/maf-1.3-sample/
 
 > **Audience:** workshop attendees + maintainers running the toolkit end-to-end on a real MAF 1.3.0 codebase. Covers the agent-driven flow (`@maf-auditor` / `@maf-migration`), the multi-agent surface, and the post-migration tooling.
 >
-> **What you'll do:** open the `maf-1.3-sample/` codebase standalone in VS Code Insiders, wire up the `maf-autopilot` MCP server, walk through each of the 22 MCP tools at least once, run the full migration loop, and finish with a multi-version regression plan.
+> **What you'll do:** open the `maf-1.3-sample/` codebase standalone in VS Code Insiders, wire up the `maf-doctor` MCP server, walk through each of the 22 MCP tools at least once, run the full migration loop, and finish with a multi-version regression plan.
 
 ### Prerequisites
 
@@ -121,7 +121,7 @@ git restore samples/maf-1.3-sample/
 | **VS Code Insiders** (or stable) | MCP server + Copilot Chat client | https://code.visualstudio.com/insiders/ |
 | **GitHub Copilot subscription** | needed to use `@maf-*` agents and `/maf-*` prompts | any Copilot tier |
 | **.NET 8 SDK or later** | builds the sample (sample targets `net8.0`) | https://dotnet.microsoft.com/download |
-| **`maf-autopilot` global tool** | the MCP server itself | `dotnet tool install -g maf-doctor` |
+| **`maf-doctor` global tool** | the MCP server itself | `dotnet tool install -g maf-doctor` |
 | _(optional)_ Azure OpenAI deployment | only needed for `--run` mode of the sample; not needed for the workshop | https://portal.azure.com |
 
 Verify the tool is on PATH — install only if missing:
@@ -129,18 +129,18 @@ Verify the tool is on PATH — install only if missing:
 **bash / zsh:**
 
 ```bash
-if ! command -v maf-autopilot >/dev/null 2>&1; then
+if ! command -v maf-doctor >/dev/null 2>&1; then
   dotnet tool install -g maf-doctor
   # If PATH still misses after install: export PATH="$HOME/.dotnet/tools:$PATH"
 fi
 maf-doctor --version
-# → maf-autopilot 1.0.0 (or later)
+# → maf-doctor 1.0.0 (or later)
 ```
 
 **PowerShell:**
 
 ```powershell
-if (-not (Get-Command maf-autopilot -ErrorAction SilentlyContinue)) {
+if (-not (Get-Command maf-doctor -ErrorAction SilentlyContinue)) {
     dotnet tool install -g maf-doctor
 }
 maf-doctor --version
@@ -162,7 +162,7 @@ This phase gets a sample folder open in VS Code with the MCP server wired up. Af
 
 #### Step 1 — Open the sample STANDALONE in VS Code Insiders
 
-The workshop opens **only the sample folder**, not the full maf-autopilot repo. This mirrors how a real customer would experience the toolkit — they don't have the source on their machine, just the installed global tool.
+The workshop opens **only the sample folder**, not the full maf-doctor repo. This mirrors how a real customer would experience the toolkit — they don't have the source on their machine, just the installed global tool.
 
 ```bash
 # From wherever you cloned this repo:
@@ -221,7 +221,7 @@ VS Code Insiders auto-detects this file. After saving, open Copilot Chat and ver
 - The `/maf-audit`, `/maf-migrate`, `/maf-cs0618-hunt` slash commands appear in `/`-completions.
 - `maf://constraints`, `maf://guide`, `maf://registry`, `maf://rules`, `maf://skills?name=…` are referenceable as resources.
 
-> **Troubleshooting:** if no MCP is detected, check `View → Output → MCP` for the server log. Most commonly: `maf-autopilot` is not on PATH — re-run `dotnet tool install -g maf-doctor` and reopen VS Code.
+> **Troubleshooting:** if no MCP is detected, check `View → Output → MCP` for the server log. Most commonly: `maf-doctor` is not on PATH — re-run `dotnet tool install -g maf-doctor` and reopen VS Code.
 
 ---
 
@@ -290,10 +290,10 @@ Each row below is one Copilot Chat prompt. Run them sequentially — each surfac
 
 #### Step 5b — Watch the analyzer fire at WRITE time
 
-The toolkit ships TWO products: the MCP server (scan-time) and a separate **`maf-autopilot.Analyzers` NuGet** (write-time). The sample's csproj already references it:
+The toolkit ships TWO products: the MCP server (scan-time) and a separate **`maf-doctor.Analyzers` NuGet** (write-time). The sample's csproj already references it:
 
 ```xml
-<PackageReference Include="maf-autopilot.Analyzers" Version="1.0.0">
+<PackageReference Include="maf-doctor.Analyzers" Version="1.0.0">
   <IncludeAssets>analyzers; build</IncludeAssets>
   <PrivateAssets>all</PrivateAssets>
 </PackageReference>
@@ -540,7 +540,7 @@ rm -f samples/maf-1.3-sample/docs/migration-plan.md
 ### Where to go next
 
 - **Fork the sample.** Add your own anti-patterns + re-run the workshop to test new toolkit rules.
-- **Try the analyzer NuGet** in your own project: `dotnet add package maf-autopilot.Analyzers`.
+- **Try the analyzer NuGet** in your own project: `dotnet add package maf-doctor.Analyzers`.
 - **Read the MAF migration guides** in [`/guides/`](../guides/) — `maf-1.3.0`, `maf-1.4.0`, `maf-1.5.0`, plus `maf-current-migration-guide.md` (auto-regenerated).
 - **Browse the 7 Copilot Chat agents:** `@maf`, `@maf-auditor`, `@maf-migration`, `@maf-best-practice-reviewer`, `@maf-incident-responder`, `@maf-rollback`, `@maf-onboarding`.
 
@@ -571,8 +571,8 @@ The first two are **automatable** (just run the `.tape` scripts). The last two a
 
 | Aspect | Detail |
 |---|---|
-| **Preparation** | (a) vhs + ffmpeg + ttyd installed. (b) `maf-autopilot` global tool installed on your machine. (c) The repo cloned. |
-| **Before state** | Terminal at repo root, no maf-autopilot installed (or version unverified). |
+| **Preparation** | (a) vhs + ffmpeg + ttyd installed. (b) `maf-doctor` global tool installed on your machine. (c) The repo cloned. |
+| **Before state** | Terminal at repo root, no maf-doctor installed (or version unverified). |
 | **What to do** | `bash scripts/make-cast.sh install` |
 | **What to say** | _(no narration — the .tape file is autonomous)_ |
 | **After state** | `docs/assets/install-cast.gif` rendered (~500 KB - 2 MB). |
@@ -656,7 +656,7 @@ The first two are **automatable** (just run the `.tape` scripts). The last two a
    before they save the file. Shift-left baked in."
 
 [7:00 — 7:30]  Close
-  "maf-autopilot 1.3.0 on NuGet. Install with one command. Audits any
+  "maf-doctor 1.3.0 on NuGet. Install with one command. Audits any
    MAF codebase. github.com/joslat/maf-doctor."
 ```
 
@@ -677,7 +677,7 @@ The first two are **automatable** (just run the `.tape` scripts). The last two a
 | **Audience** | Conference attendees, technical training, university course |
 | **Tools needed** | Same as R3 + a presentation slide deck for chapter transitions |
 | **Preparation (~30 min)** | (a) Render R1 + R2 first — embed them as intro before live demo starts. (b) Set up VS Code Insiders + Copilot Chat with valid subscription. (c) Test the agent loop end-to-end at least twice to catch flakes. (d) Have the [Full Workshop](#full-workshop-50-minutes) section open as your speaker notes. |
-| **Before state** | Slide 1: "maf-autopilot Workshop — From Zero to Migrated Codebase" + your name. |
+| **Before state** | Slide 1: "maf-doctor Workshop — From Zero to Migrated Codebase" + your name. |
 | **What to do** | Walk through Phase A → B → C → D → E in order. Stop after each Phase for Q&A (~2 min each). Total: ~40 min content + ~10 min Q&A. |
 | **What to say** | The "Talk-track" callout boxes throughout the workshop sections. They're written as one-liners you can read verbatim or paraphrase. |
 | **After state** | Final slide: "Try it: `dotnet tool install -g maf-doctor`; github.com/joslat/maf-doctor; questions?" |

@@ -1,4 +1,4 @@
-# vhs script for the maf-autopilot install + audit demo.
+# vhs script for the maf-doctor install + audit demo.
 #
 # Render locally:
 #   bash scripts/make-cast.sh           # produces docs/assets/install-cast.gif
@@ -21,7 +21,7 @@ Set TypingSpeed 50ms
 Set Shell "bash"
 
 # ───────── beat 1: install ─────────
-Type "# Install maf-autopilot as a global .NET tool"
+Type "# Install maf-doctor as a global .NET tool"
 Enter
 Sleep 800ms
 

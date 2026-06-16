@@ -1,4 +1,4 @@
-# Contributing to maf-autopilot (MAF Doctor)
+# Contributing to maf-doctor (MAF Doctor)
 
 Thanks for considering a contribution. This guide covers the four most common contribution shapes — a registry entry, a skill, an agent change, and an MCP server tool — plus the project-wide conventions that keep them coherent.
 
@@ -17,7 +17,7 @@ See [`AGENTS.md`](./AGENTS.md) for the full repo layout and location of every so
 
 ```bash
 git clone https://github.com/joslat/maf-doctor
-cd maf-autopilot
+cd maf-doctor
 dotnet restore maf-autopilot.sln
 dotnet build maf-autopilot.sln           # builds net8.0 + net9.0 + net10.0 + netstandard2.0 (analyzer)
 dotnet test maf-autopilot.sln            # 474 tests × 3 TFMs = 1422 test executions

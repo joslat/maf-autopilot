@@ -8,7 +8,7 @@
 ║   This codebase is a DELIBERATE collection of MAF anti-patterns, pinned to   ║
 ║   MAF 1.2.0 (the version BEFORE the 1.3 obsoletion wave). Every "broken"     ║
 ║   pattern is on purpose. Do NOT copy any of this code into a real project    ║
-║   — it's bait for the maf-autopilot toolkit to find and fix.                 ║
+║   — it's bait for the maf-doctor toolkit to find and fix.                    ║
 ║                                                                              ║
 ║   This sample exists alongside maf-1.3-sample/ and maf-1.0-sample/ as a      ║
 ║   version-parity fixture: same anti-patterns, different MAF pin, so the      ║
