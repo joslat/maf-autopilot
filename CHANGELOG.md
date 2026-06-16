@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.9] - 2026-06-16
+
+### Changed (branding)
+
+- **README logo → white-background `MAFDoctorLogo.png`.** The transparent logo's dark artwork disappeared on dark backgrounds (GitHub dark theme); the white-background version renders consistently everywhere. Republished so the nuget.org package page (README is baked per-version) gets the fix too.
+
 ## [1.2.8] - 2026-06-16
 
 ### Added (branding)
