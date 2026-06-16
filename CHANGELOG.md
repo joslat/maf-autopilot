@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.8] - 2026-06-16
+
+### Added (branding)
+
+- **README now leads with the MAF Doctor logo** (`assets/MAFDoctorLogoTransparent.png`, referenced by absolute raw URL so it renders on both GitHub and the nuget.org package page).
+- **Both NuGet packages ship a package icon** (`MAFDoctorIcon.png`) — `maf-doctor` and `maf-doctor.Analyzers` now show the brand icon on nuget.org.
+- **The MCP server advertises its icon** via the 2025-11 spec's `icons` field on `serverInfo` (`Implementation.Icons`, supported by ModelContextProtocol 1.3.0) — clients that support server icons can render it; older clients ignore it.
+
 ## [1.2.7] - 2026-06-16
 
 ### Added

@@ -5,6 +5,7 @@ using MafDoctor.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 // CLI mode: short-circuit before Host.CreateApplicationBuilder so stdin/stdout remain clean.
@@ -137,7 +138,32 @@ builder.Logging.AddConsole(options =>
 // Load the registry once at startup and register as a singleton shared by all tools.
 builder.Services
     .AddSingleton<RegistryService>()
-    .AddMcpServer()
+    .AddMcpServer(options =>
+    {
+        // Advertise the server's identity + icon (MCP 2025-11 `icons` on the
+        // Implementation). Clients that support it render the icon; older clients
+        // ignore it. Source points at the asset on `main` so it tracks the brand.
+        var v = Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "1.0.0";
+        var plus = v.IndexOf('+');
+        if (plus >= 0) v = v[..plus];
+        options.ServerInfo = new Implementation
+        {
+            Name = "maf-doctor",
+            Title = "MAF Doctor",
+            Version = v,
+            WebsiteUrl = "https://github.com/joslat/maf-doctor",
+            Icons =
+            [
+                new Icon
+                {
+                    Source = "https://raw.githubusercontent.com/joslat/maf-doctor/main/assets/MAFDoctorIcon.png",
+                    MimeType = "image/png",
+                    Sizes = ["any"],
+                },
+            ],
+        };
+    })
     .WithStdioServerTransport()
     .WithToolsFromAssembly(typeof(Program).Assembly)
     .WithResourcesFromAssembly(typeof(Program).Assembly)
