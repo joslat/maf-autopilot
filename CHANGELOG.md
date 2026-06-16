@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.7] - 2026-06-16
+
+### Added
+
+- **`maf-doctor --version` / `-v` and `--help` / `-h`.** The CLI had no version or help command, so any non-subcommand argument fell through to MCP-server mode — meaning `maf-doctor --version` (which the quickstart told users to run) just hung on stdio. Both now print and exit cleanly.
+
+### Fixed
+
+- **Claude Code couldn't see the MCP server that `init` wired.** The `.mcp.json` (Claude Code) entry carried a `"type": "stdio"` field that some Claude Code builds don't recognize. Dropped `type` from the Claude entry — stdio is the implied default — while VS Code's `.vscode/mcp.json` keeps it. `init` now emits a `.mcp.json` Claude Code reads cleanly.
+- Added a project-root `.mcp.json` to **this** repo (it previously had only the VS-Code-format `.vscode/mcp.json`), so Claude Code picks up maf-doctor when developing the toolkit itself.
+
 ## [1.2.6] - 2026-06-14
 
 ### Fixed (stop pinning MAF 1.3.0 in served text)

@@ -1,3 +1,4 @@
+using System.Reflection;
 using MafDoctor;
 using MafDoctor.Data;
 using MafDoctor.Tools;
@@ -12,6 +13,49 @@ using ModelContextProtocol.Server;
 //   maf-doctor new agent <Name>           — generate a MAF agent + smoke test
 //   maf-doctor new executor <Name> [In] [Out]  — generate a workflow executor + smoke test
 //   maf-doctor doctor [path]              — one-command repo health report (A/B/C/F grade)
+// --version / --help — short-circuit before anything else (and before the
+// no-subcommand fall-through to MCP-server mode, which would otherwise hang
+// waiting on stdio when a user runs `maf-doctor --version`).
+if (args.Length > 0 && (args[0] is "--version" or "-v" or "version"))
+{
+    var raw = Assembly.GetExecutingAssembly()
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+        ?? "unknown";
+    // InformationalVersion can carry build metadata (e.g. "1.2.7+abc123") — trim it.
+    var plus = raw.IndexOf('+');
+    Console.WriteLine($"maf-doctor {(plus >= 0 ? raw[..plus] : raw)}");
+    Environment.Exit(0);
+    return;
+}
+if (args.Length > 0 && (args[0] is "--help" or "-h" or "help"))
+{
+    Console.WriteLine(
+        """
+        maf-doctor — a toolkit for Microsoft Agent Framework (MAF)
+
+        Usage: maf-doctor [command] [options]
+
+        With NO command, runs as an MCP server over stdio (for VS Code / Claude Code / Cursor).
+
+        Commands:
+          init [--with-cursor]              Wire the MCP server + steering into the current repo
+                                            (.vscode/mcp.json, .mcp.json, instructions, agents).
+          doctor [path] [--exclude <s>]...  Health report with an A/B/C/F grade.
+          autofix-all [path] [--dry-run]    Apply deterministic Roslyn fixes.
+          new agent <Name>                  Scaffold a MAF agent + smoke test.
+          new executor <Name> [In] [Out]    Scaffold a workflow executor + smoke test.
+          badge [path]                      Emit a shields.io health-badge JSON payload.
+          verify-registry                   Validate the obsolete-API registry (CI gate).
+          registry-extract                  Extract registry entries (CI helper).
+          --version, -v                     Print the installed version.
+          --help, -h                        Show this help.
+
+        Docs: https://github.com/joslat/maf-doctor
+        """);
+    Environment.Exit(0);
+    return;
+}
 if (args.Length > 0 && args[0] == "init")
 {
     var exitCode = await InitCommand.RunAsync(args);
