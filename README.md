@@ -134,12 +134,7 @@ The .NET upgrade-assistant handles package version bumps. MAF Doctor handles eve
 
 The MCP tools are called automatically by Copilot during these steps — you don't invoke them directly.
 
-## Roadmap & Status
-
-For an evidence-anchored view of what's done, in progress, and pending:
-
-- **[docs/maf-migration-toolkit-plan.md](docs/maf-migration-toolkit-plan.md)** — phased roadmap + the tracking table (single source of truth)
-- **[docs/project-status-and-vision.md](docs/project-status-and-vision.md)** — stage assessment + the broader vision
+## Distribution
 
 Distribution: **NuGet** (maf-doctor + maf-doctor.Analyzers), **Docker GHCR** (multi-arch amd64 + arm64, semver tags), and the self-updating knowledge base described above. Security model: [docs/security.md](docs/security.md).
 

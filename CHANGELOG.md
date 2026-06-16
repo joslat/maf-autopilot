@@ -77,8 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed (self-update reliability)
 
 The scheduled **MAF Release Watcher** and **MAF Drift Detector** had failed on
-**every** scheduled run since creation, for two unrelated reasons (full report +
-living tracker in [`docs/self-update-remediation-plan.md`](docs/self-update-remediation-plan.md)):
+**every** scheduled run since creation, for two unrelated reasons:
 - **Watcher** — the NuGet version filter was an inline `python3 -c` whose code
   inherited the shell block's indentation → `IndentationError` on every
   scheduled run (only an explicit-version manual dispatch bypassed it). Extracted

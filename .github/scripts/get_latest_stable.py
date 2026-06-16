@@ -8,8 +8,7 @@ Extracted from an inline `python3 -c "..."` heredoc in
 surrounding shell-block indentation into the code string, so Python raised
 `IndentationError: unexpected indent` on every scheduled run (the NuGet-query
 path). A real module cannot inherit that indentation, and it is unit-testable
-and covered by the compile-check CI gate. See docs/self-update-remediation-plan.md
-(task 1.1).
+and covered by the compile-check CI gate.
 """
 from __future__ import annotations
 

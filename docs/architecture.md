@@ -4,8 +4,6 @@
 
 This document explains what each piece of `maf-autopilot` is, how the pieces fit together, and where the structural choices were deliberate (vs. accidental).
 
-For *what's pending*, see [`next-steps.md`](./next-steps.md). For history of decisions, see [`maf-migration-toolkit-plan.md`](./maf-migration-toolkit-plan.md).
-
 ---
 
 ## What is `maf-autopilot`?
