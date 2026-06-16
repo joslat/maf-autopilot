@@ -27,7 +27,7 @@ cd samples/maf-1.3-sample      # or: cd your-own-maf-project
 maf-doctor init
 ```
 
-`init` writes `.vscode/mcp.json` (wires the MCP server for your IDE) and `.github/copilot-instructions.md` (MAF hard-constraint rules), and drops the skills/agents bundle. Idempotent — safe to re-run.
+`init` wires the MCP server for VS Code (`.vscode/mcp.json`) and Claude Code (`.mcp.json`), and drops auto-loaded steering sidecars (Copilot / Claude / Cursor / AGENTS.md) — refreshed on re-run, never merged into your own files. The 12 skills are served by the MCP server, not written as files. Idempotent — safe to re-run. (details: [init-reference.md](./init-reference.md)).
 
 > 🎙️ *"`init` makes any repo MAF-aware: MCP config for the IDE, plus steering rules and 12 skills for Copilot's agent loop."*
 

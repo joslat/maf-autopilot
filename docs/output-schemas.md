@@ -1,4 +1,4 @@
-# maf-autopilot output schemas
+# maf-doctor output schemas
 
 Tools that emit structured output document their schemas here. JSON outputs are stable within a major version (`schema_version` field tracks evolution).
 

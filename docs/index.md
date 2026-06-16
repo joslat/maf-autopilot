@@ -12,7 +12,7 @@ Every document below is canonical for one slice of the project. **One concept, o
 
 | If you want to… | Read |
 |---|---|
-| Understand what `maf-autopilot` *is* and how the .NET projects fit together | [`architecture.md`](./architecture.md) |
+| Understand what `maf-doctor` *is* and how the .NET projects fit together | [`architecture.md`](./architecture.md) |
 | Look up MAF version ↔ dependency versions | [`compatibility-matrix.md`](./compatibility-matrix.md) |
 | Install + configure the toolkit | [`setup.md`](./setup.md) |
 | Install / run troubleshooting | [`/TROUBLESHOOTING.md`](../TROUBLESHOOTING.md) (repo root) |
@@ -25,7 +25,7 @@ Every document below is canonical for one slice of the project. **One concept, o
 
 ### 🏛️ [`architecture.md`](./architecture.md)
 
-**Purpose.** Component map. What is `maf-autopilot` vs `maf-autopilot.Analyzers` vs the two test projects? How do they relate? What does each one ship? Plus the multi-targeting strategy (`net8.0;net9.0;net10.0` nupkg + `Directory.Packages.props` CPM), and the rationale for the `/src/` layout and `.github/scripts/` placement (under "Structural decisions — closed").
+**Purpose.** Component map. What is `maf-doctor` vs `maf-doctor.Analyzers` vs the two test projects? How do they relate? What does each one ship? Plus the multi-targeting strategy (`net8.0;net9.0;net10.0` nupkg + `Directory.Packages.props` CPM), and the rationale for the `/src/` layout and `.github/scripts/` placement (under "Structural decisions — closed").
 
 **Status.** Current as of 2026-05-13 (Phase S landed).
 

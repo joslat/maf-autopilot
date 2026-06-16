@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 maf-autopilot sample.
+// Copyright (c) 2026 maf-doctor sample.
 //
 // FraudClaimsTriage — a multi-agent MAF 1.3.0 workflow that deliberately
-// embeds the 1.3-era anti-patterns the maf-autopilot toolkit was built to find
+// embeds the 1.3-era anti-patterns the maf-doctor toolkit was built to find
 // and fix. Pinned to MAF 1.3.0 exactly so the migration toolkit can be
 // dogfooded end-to-end (Phase T → A.8 unblocker).
 //
@@ -33,7 +33,7 @@ if (dryRun)
     Console.WriteLine();
 }
 
-// Build the chat client even in dry-run mode — the maf-autopilot scanners
+// Build the chat client even in dry-run mode — the maf-doctor scanners
 // inspect the SOURCE not the runtime, and we want the construction code path
 // to be present and discoverable by the scanner.
 var chatClient = ChatClientFactory.CreateChatClient();
@@ -83,7 +83,7 @@ static void PrintBanner()
     Console.ForegroundColor = ConsoleColor.Cyan;
     Console.WriteLine("  ╔══════════════════════════════════════════════════════════════════════╗");
     Console.WriteLine("  ║   MAF 1.3.0 FraudClaimsTriage Sample — Migration Dogfood Fixture     ║");
-    Console.WriteLine("  ║   Deliberate anti-patterns; consumed by the maf-autopilot toolkit    ║");
+    Console.WriteLine("  ║   Deliberate anti-patterns; consumed by the maf-doctor toolkit       ║");
     Console.WriteLine("  ╚══════════════════════════════════════════════════════════════════════╝");
     Console.ResetColor();
     Console.WriteLine();

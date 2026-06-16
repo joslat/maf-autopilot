@@ -1,8 +1,8 @@
-# maf-autopilot threat model (v1.0.0)
+# maf-doctor threat model (v1.0.0)
 
-> **Audience:** users deciding whether to install maf-autopilot in a security-sensitive context. Maintainers verifying mitigations are in place.
+> **Audience:** users deciding whether to install maf-doctor in a security-sensitive context. Maintainers verifying mitigations are in place.
 >
-> **Scope:** what maf-autopilot reads, what it writes, what attack surfaces exist, what we mitigate, what we don't.
+> **Scope:** what maf-doctor reads, what it writes, what attack surfaces exist, what we mitigate, what we don't.
 
 ## 1. Data read
 
@@ -22,7 +22,7 @@
 | `.cs` files in user repo (rewriters) | `--dry-run` default opt-in; explicit `dryRun: false` to write |
 | Generated scaffolds (`Agents/*.cs`, `Workflows/*Executor.cs`) | Idempotent — skips existing files; logs `already exists` |
 | `.vscode/mcp.json` (via `init`) | User invokes `init` deliberately |
-| `.github/copilot-instructions.md`, `CLAUDE.md`, `AGENTS.md` (via `init`) | Merge-not-overwrite; existing files appended only if maf-autopilot section is absent |
+| Steering sidecars (via `init`): `.github/instructions/maf-doctor.instructions.md`, `.claude/maf-doctor.md` + a one-line `CLAUDE.md` import, `AGENTS.md` managed block | Overwrite-on-reinit sidecars only; init never merges into the user's own instruction files |
 | Embedded registry path | Not writable from MCP tools — registry maintenance is via `registry-extract` + AI-fill PR-flow |
 
 ## 3. Attack surfaces
@@ -63,7 +63,7 @@ A Roslyn rewriter bug could corrupt user `.cs` files. **Mitigations** (strengthe
 
 ### 3.5 `dotnet build` shell-out
 
-`MafRunCs0618Hunt` shells `dotnet build`, which executes the user's project file. If the project has malicious MSBuild targets, those run. **Acceptable, but explicitly annotated** (v1.1) — `[McpServerTool(ReadOnly = false, OpenWorld = true)]` so MCP-spec-compliant clients prompt the user for consent before invoking. The tool description warns about untrusted repos. Users running maf-autopilot on untrusted projects should sandbox the process.
+`MafRunCs0618Hunt` shells `dotnet build`, which executes the user's project file. If the project has malicious MSBuild targets, those run. **Acceptable, but explicitly annotated** (v1.1) — `[McpServerTool(ReadOnly = false, OpenWorld = true)]` so MCP-spec-compliant clients prompt the user for consent before invoking. The tool description warns about untrusted repos. Users running maf-doctor on untrusted projects should sandbox the process.
 
 ### 3.6 Type-expression input in `MafNewExecutor`
 
@@ -130,7 +130,7 @@ All third-party GitHub Actions are SHA-pinned (9 distinct actions × 23 call sit
 
 ## 5. Acknowledged residual gaps after 1.1
 
-- ❌ **No sandbox around `dotnet build`** — `MafRunCs0618Hunt` now correctly annotated `ReadOnly=false, OpenWorld=true` so MCP-spec-compliant clients prompt before invoking. True OS sandboxing remains out of scope for an OSS .NET CLI. Users running maf-autopilot on untrusted repos should sandbox externally (devcontainer, AppArmor, etc.).
+- ❌ **No sandbox around `dotnet build`** — `MafRunCs0618Hunt` now correctly annotated `ReadOnly=false, OpenWorld=true` so MCP-spec-compliant clients prompt before invoking. True OS sandboxing remains out of scope for an OSS .NET CLI. Users running maf-doctor on untrusted repos should sandbox externally (devcontainer, AppArmor, etc.).
 - ❌ **Direct-to-main commits by `maf-release-watcher.yml`** — intentional design tradeoff documented at watcher line 249 (dated 2026-05-12). Acceptable for solo-maintainer state; revisit if external maintainers join.
 - ❌ **Rewriter pure-syntax matching** — `DefaultAzureCredentialRewriter`/`FanInArgOrderRewriter` semantic-model upgrade deferred to v1.2.x (significant refactor; bounded by `--dry-run` default + idempotence tests).
 - ❌ **`ProcessRunner` env scrubbing + streaming output cap** — deferred to v1.2.x. 5 MB post-allocation cap remains.
