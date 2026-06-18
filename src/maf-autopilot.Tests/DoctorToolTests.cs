@@ -965,6 +965,149 @@ public class DoctorToolTests
     }
 
     [Fact]
+    public void AutofixAll_Rewrites_ResultInAsyncLambdaInsideLock()
+    {
+        // Round-8 regression: an async lambda is its OWN await context, so a
+        // `.Result` inside `async () => {}` nested in a `lock` is await-legal and
+        // SHOULD be rewritten. The old unconditional lock pre-pass over-skipped it
+        // and injected a factually wrong "cannot await inside a lock" comment.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002lamblock-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "LamLock.cs");
+            File.WriteAllText(file, """
+                using System;
+                using System.Threading.Tasks;
+                public class C {
+                  readonly object _lock = new();
+                  static Task<int> Foo() => Task.FromResult(1);
+                  public async Task M() {
+                    lock (_lock) { Func<Task> a = async () => { var x = Foo().Result; }; }
+                    await Task.Yield();
+                  }
+                }
+                """);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var after = File.ReadAllText(file);
+            Assert.Contains("(await Foo", after, StringComparison.Ordinal);          // rewritten in the async lambda
+            Assert.DoesNotContain("cannot await inside a lock", after, StringComparison.Ordinal); // no false comment
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void AutofixAll_Rewrites_ResultInAsyncLocalFunctionInsideLock()
+    {
+        // Round-8 regression: same boundary rule for an async LOCAL FUNCTION nested
+        // in a lock — its body is its own await context.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002lflock-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "LfLock.cs");
+            File.WriteAllText(file, """
+                using System.Threading.Tasks;
+                public class C {
+                  readonly object _lock = new();
+                  static Task<int> Foo() => Task.FromResult(1);
+                  public void M() {
+                    lock (_lock) { async Task Inner() { var x = Foo().Result; } _ = Inner(); }
+                  }
+                }
+                """);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var after = File.ReadAllText(file);
+            Assert.Contains("(await Foo", after, StringComparison.Ordinal);
+            Assert.DoesNotContain("cannot await inside a lock", after, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void AutofixAll_DoesNotCorrupt_ResultInAsyncLambdaInsideUnsafe()
+    {
+        // Round-8 boundary check: UNLIKE lock, an unsafe context propagates into a
+        // nested async lambda (CS4004), so it must STILL be skipped there.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002lambunsafe-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "LamUnsafe.cs");
+            File.WriteAllText(file, """
+                using System;
+                using System.Threading.Tasks;
+                public class C {
+                  static Task<int> Foo() => Task.FromResult(1);
+                  public async Task M() {
+                    unsafe { Func<Task> a = async () => { var x = Foo().Result; }; }
+                    await Task.Yield();
+                  }
+                }
+                """);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var after = File.ReadAllText(file);
+            Assert.DoesNotContain("(await Foo", after, StringComparison.Ordinal);
+            Assert.Contains(".Result", after, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void AutofixAll_DoesNotCorrupt_ParameterDefault()
+    {
+        // Round-8 (signature-position guard): a `.Result` in a parameter default is
+        // await-illegal even inside an async method (it needs a compile-time
+        // constant), so the whitelist must skip before reaching the async boundary.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002paramdef-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "ParamDef.cs");
+            File.WriteAllText(file, """
+                using System.Threading.Tasks;
+                public class C {
+                  static int Foo() => 1;
+                  public async Task M(int x = Foo().Result) { await Task.Yield(); }
+                }
+                """);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var after = File.ReadAllText(file);
+            Assert.DoesNotContain("(await Foo", after, StringComparison.Ordinal);
+            Assert.Contains(".Result", after, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void AutofixAll_DoesNotCorrupt_AttributeArgument()
+    {
+        // Round-8 (signature-position guard): a `.Result` in an attribute argument
+        // is await-illegal even on an async method.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002attrarg-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "AttrArg.cs");
+            File.WriteAllText(file, """
+                using System;
+                using System.Threading.Tasks;
+                public class MyAttr : Attribute { public MyAttr(int v) { } }
+                public class C {
+                  static Task<int> Foo() => null!;
+                  [MyAttr(Foo().Result)]
+                  public async Task M() { await Task.Yield(); }
+                }
+                """);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var after = File.ReadAllText(file);
+            Assert.DoesNotContain("(await Foo", after, StringComparison.Ordinal);
+            Assert.Contains(".Result", after, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
     public void ScanAntiPatterns_SarifOutput_RedactsSecret()
     {
         // Round-3 regression: the SARIF surface must redact the SEC-002 secret too.

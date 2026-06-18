@@ -77,10 +77,14 @@ internal sealed class ExecutorSealedRewriter : CSharpSyntaxRewriter, IRuleRewrit
     }
 
     /// <summary>
-    /// Attach a leading-trivia comment to the class declaration explaining why
-    /// the rewriter skipped it. Returns the node unchanged otherwise — the
-    /// caller's `MafAutoFix` flow will record "no change" for this file, which
-    /// is the right answer: we'd rather emit nothing than emit garbage.
+    /// Prepend a leading-trivia comment to the class declaration explaining why the
+    /// rewriter cannot apply the fix — the safe alternative to emitting uncompilable
+    /// <c>sealed abstract</c>. This DOES change the node, so the caller's
+    /// <c>MafAutoFix</c>/<c>MafBeforeAfter</c> flow counts the file as changed and
+    /// writes the breadcrumb to disk. That is a deliberate trade-off (surface the
+    /// manual-fix guidance) rather than a silent no-op: the scanner skips abstract
+    /// Executors, so this path is only reached when autofix visits one directly.
+    /// Behaviour is pinned by tests.
     ///
     /// Idempotent — dedup by scanning the class's source text for the same
     /// comment. Roslyn re-parses can shift trivia between adjacent tokens,
@@ -101,9 +105,11 @@ internal sealed class ExecutorSealedRewriter : CSharpSyntaxRewriter, IRuleRewrit
 
     private static bool IsExecutorWithMessageHandler(ClassDeclarationSyntax cls)
     {
+        // Shared predicate with the WF-001 scanner rule — matches plain `Executor`,
+        // generic `Executor<…>`, and qualified forms — so detector and rewriter stay
+        // in lockstep (no "flagged as fixable but silently not rewritten" parity gap).
         var derivesFromExecutor = cls.BaseList?.Types
-            .Select(t => t.Type.ToString())
-            .Any(b => b == "Executor" || b.EndsWith(".Executor", StringComparison.Ordinal)) ?? false;
+            .Any(t => AntiPatternScannerTool.IsExecutorBaseType(t.Type)) ?? false;
         if (!derivesFromExecutor) return false;
 
         return cls.Members.OfType<MethodDeclarationSyntax>().Any(m =>

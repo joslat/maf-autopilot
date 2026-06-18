@@ -88,41 +88,12 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
     /// </summary>
     private static bool ShouldSkipForContext(SyntaxNode node, out string reason)
     {
-        // (a) Any ancestor lock-statement makes `await` here a CS1996.
-        foreach (var ancestor in node.Ancestors())
-        {
-            if (ancestor is LockStatementSyntax)
-            {
-                reason = "// MAF-AP-CONC-002: cannot await inside a lock block — refactor to SemaphoreSlim.WaitAsync or restructure.";
-                return true;
-            }
-        }
-
-        // (a2) LINQ query clause (CS1995): `await` is legal ONLY in the initial
-        // `from` source and a `join … in` source — never in let/where/select/
-        // orderby/group/secondary-from. Skip those (default-safe direction).
-        var query = node.FirstAncestorOrSelf<QueryExpressionSyntax>();
-        if (query is not null && !IsInAwaitableQuerySource(node, query))
-        {
-            reason = "// MAF-AP-CONC-002: cannot await inside this query clause — materialize the awaited value before the query.";
-            return true;
-        }
-
-        // (a3) Catch filter (CS7094): `await` is illegal in a `catch when (...)`
-        // filter expression. The catch BODY is still awaitable, so we guard the
-        // filter clause specifically (FirstAncestorOrSelf<CatchFilterClauseSyntax>
-        // matches only the `when (...)` expression, never the handler block).
-        if (node.FirstAncestorOrSelf<CatchFilterClauseSyntax>() is not null)
-        {
-            reason = "// MAF-AP-CONC-002: cannot await inside a catch filter (`when (...)`) — hoist the awaited value into a variable before the try/catch.";
-            return true;
-        }
-
-        // (a4) Unsafe context (CS4004): `await` is illegal wherever an unsafe
-        // context is in effect — inside an `unsafe { }` or `fixed ( )` block, OR
-        // under the `unsafe` modifier on the enclosing method / local function /
-        // any enclosing type (the modifier makes the whole declaration unsafe,
-        // including nested types and members).
+        // (UNBOUNDED) Unsafe context (CS4004): `await` is illegal wherever an
+        // unsafe context is in effect — inside an `unsafe { }` or `fixed ( )` block,
+        // OR under the `unsafe` modifier on the enclosing method / local function /
+        // any enclosing type. Unlike lock/query/catch-filter below, an unsafe
+        // context PROPAGATES lexically into nested async lambdas, so it is checked
+        // across ALL ancestors here, before the bounded walk.
         foreach (var ancestor in node.Ancestors())
         {
             if (ancestor is UnsafeStatementSyntax or FixedStatementSyntax
@@ -135,20 +106,51 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
             }
         }
 
-        // (b) WHITELIST, not blacklist. Walk outward and rewrite ONLY when we
-        // positively land in an async-capable scope: an `async` method / local
-        // function / lambda, or a top-level statement (the generated entry point is
-        // async). If we instead reach a type-declaration body or the compilation-unit
-        // root WITHOUT finding one, the `.Result` sits in a context that can never be
-        // `async` (property / field / operator / conversion / primary-ctor base /
-        // attribute / …), so we SKIP. Defaulting to skip closes the entire
-        // await-into-non-async corruption class in one place, instead of trying to
-        // enumerate every non-async member kind (we kept missing some — operators,
-        // then C# 12 primary-constructor base initializers).
+        // SINGLE BOUNDED WALK — walk outward, FIRST match wins. This unifies two
+        // concerns and makes their interaction correct:
+        //
+        //   * lock (CS1996) / LINQ non-source query clause (CS1995) / catch filter
+        //     (CS7094) make awaiting illegal — but ONLY when they sit between the
+        //     node and its nearest enclosing async function. An async lambda /
+        //     local function is its OWN await context, so an OUTER lock / query /
+        //     catch-filter does not reach across it. Because these cases share this
+        //     walk with the async-boundary cases below, hitting an async lambda
+        //     FIRST correctly returns "rewrite" before an outer lock is ever seen
+        //     (pre-fix the unconditional pre-passes over-skipped that legal code and
+        //     injected a factually wrong "cannot await inside a lock" comment).
+        //
+        //   * The async WHITELIST: rewrite ONLY when we positively reach an `async`
+        //     method / local function / lambda, or a top-level statement. Reaching a
+        //     type body or the compilation-unit root first means the `.Result` sits
+        //     in a context that can never be `async` (property / field / operator /
+        //     conversion / primary-ctor base / …), so we SKIP — closing the entire
+        //     await-into-non-async corruption class in one place rather than
+        //     enumerating every non-async member kind.
+        //
+        //   * Parameter defaults and attribute arguments are await-illegal even
+        //     inside an async function (they require a compile-time constant), so
+        //     they SKIP before the walk reaches the async boundary.
         foreach (var ancestor in node.Ancestors())
         {
             switch (ancestor)
             {
+                // Await-illegal sub-contexts — only reached while still inside the
+                // nearest enclosing async scope (see note above).
+                case LockStatementSyntax:
+                    reason = "// MAF-AP-CONC-002: cannot await inside a lock block — refactor to SemaphoreSlim.WaitAsync or restructure.";
+                    return true;
+                case QueryExpressionSyntax q when !IsInAwaitableQuerySource(node, q):
+                    reason = "// MAF-AP-CONC-002: cannot await inside this query clause — materialize the awaited value before the query.";
+                    return true;
+                case CatchFilterClauseSyntax:
+                    reason = "// MAF-AP-CONC-002: cannot await inside a catch filter (`when (...)`) — hoist the awaited value into a variable before the try/catch.";
+                    return true;
+                case ParameterSyntax:
+                case AttributeSyntax:
+                    reason = "// MAF-AP-CONC-002: cannot await in a parameter default / attribute argument — these require a compile-time constant.";
+                    return true;
+
+                // Async-scope boundaries — these END the bounded walk.
                 case MethodDeclarationSyntax m:
                     if (m.Modifiers.Any(mod => mod.IsKind(SyntaxKind.AsyncKeyword))) { reason = string.Empty; return false; }
                     reason = "// MAF-AP-CONC-002: enclosing method is not async — mark `async` (and adjust return type) or refactor before applying this rule.";

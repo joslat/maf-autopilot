@@ -318,6 +318,22 @@ public class AutoFixToolTests
         Assert.Equal(input, output.TrimEnd());
     }
 
+    [Fact]
+    public void ExecutorSealedRewriter_GenericExecutorBase_AddsSealedPartial()
+    {
+        // Round-8 parity: a generic `Executor<…>` base must be sealed/partial'd too,
+        // matching the now generic-aware WF-001 scanner (shared IsExecutorBaseType).
+        var input = """
+            public class MyExec : Microsoft.Agents.AI.Workflows.Executor<string, int>
+            {
+                [MessageHandler]
+                public Task<int> Handle(string s) => Task.FromResult(0);
+            }
+            """;
+        var output = ApplyRewriter(new ExecutorSealedRewriter(), input);
+        Assert.Contains("sealed partial class MyExec", output);
+    }
+
     // -------------------------------------------------------------------------
     // FanInArgOrderRewriter (MAF130-FAN-IN-001)
     // -------------------------------------------------------------------------
@@ -376,6 +392,54 @@ public class AutoFixToolTests
         // Named labels stripped + args reordered.
         Assert.DoesNotContain("target:", output);
         Assert.DoesNotContain("sources:", output);
+    }
+
+    [Fact]
+    public void FanInArgOrderRewriter_DoesNotDropInterArgComment()
+    {
+        // Round-8 regression: a comment carried on the separator (between the two
+        // arguments) must survive the swap — the old SeparatedList(values) discarded
+        // the original separator and lost it.
+        var input = """
+            class C
+            {
+                void F(object builder, object target, object s1, object s2)
+                {
+                    builder.AddFanInBarrierEdge(
+                        target,            // the join node
+                        new[] { s1, s2 });
+                }
+            }
+            """;
+        var output = ApplyRewriter(new FanInArgOrderRewriter(), input);
+        Assert.Contains("// the join node", output); // preserved, not dropped
+    }
+
+    [Fact]
+    public void FanInArgOrderRewriter_KeepsEachValuesOwnTrailingComment()
+    {
+        // Round-8 regression: each argument's own trailing comment travels with its
+        // VALUE, not its slot. Pre-fix WithTriviaFrom swapped them onto wrong args.
+        var input = """
+            class C
+            {
+                void F(object builder, object targetNode, object s1, object s2)
+                {
+                    builder.AddFanInBarrierEdge(targetNode /*T*/, new[] { s1, s2 } /*S*/);
+                }
+            }
+            """;
+        var output = ApplyRewriter(new FanInArgOrderRewriter(), input);
+        // New order: `new[] { s1, s2 } /*S*/, targetNode /*T*/`.
+        var idxArray = output.IndexOf("new[]", StringComparison.Ordinal);
+        var idxS = output.IndexOf("/*S*/", StringComparison.Ordinal);
+        var callStart = output.IndexOf("AddFanInBarrierEdge", StringComparison.Ordinal);
+        var idxTargetInCall = output.IndexOf("targetNode", callStart, StringComparison.Ordinal);
+        var idxT = output.IndexOf("/*T*/", StringComparison.Ordinal);
+        Assert.Contains("/*T*/", output);
+        Assert.Contains("/*S*/", output);
+        Assert.True(idxArray < idxS && idxS < idxTargetInCall, $"/*S*/ must stay with the array. Output:\n{output}");
+        Assert.True(idxTargetInCall < idxT, $"/*T*/ must stay with targetNode. Output:\n{output}");
     }
 
     // -------------------------------------------------------------------------
