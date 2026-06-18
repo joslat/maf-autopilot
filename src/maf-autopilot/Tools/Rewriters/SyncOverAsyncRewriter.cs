@@ -96,10 +96,17 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
         // across ALL ancestors here, before the bounded walk.
         foreach (var ancestor in node.Ancestors())
         {
+            // `MemberDeclarationSyntax` is the common base for method / property /
+            // indexer / operator / conversion / constructor / event / field / type
+            // declarations — every member kind that can carry the `unsafe` modifier.
+            // (Local functions are statements, not members, so they need their own
+            // check.) The modifier establishes an unsafe context that propagates
+            // lexically into nested async lambdas, so one uniform check here closes
+            // the whole class — enumerating only method/localfn/type previously missed
+            // `unsafe` properties / indexers / operators / conversions / constructors.
             if (ancestor is UnsafeStatementSyntax or FixedStatementSyntax
-                || (ancestor is MethodDeclarationSyntax um && um.Modifiers.Any(mod => mod.IsKind(SyntaxKind.UnsafeKeyword)))
-                || (ancestor is LocalFunctionStatementSyntax ulf && ulf.Modifiers.Any(mod => mod.IsKind(SyntaxKind.UnsafeKeyword)))
-                || (ancestor is BaseTypeDeclarationSyntax ut && ut.Modifiers.Any(mod => mod.IsKind(SyntaxKind.UnsafeKeyword))))
+                || (ancestor is MemberDeclarationSyntax umd && umd.Modifiers.Any(mod => mod.IsKind(SyntaxKind.UnsafeKeyword)))
+                || (ancestor is LocalFunctionStatementSyntax ulf && ulf.Modifiers.Any(mod => mod.IsKind(SyntaxKind.UnsafeKeyword))))
             {
                 reason = "// MAF-AP-CONC-002: cannot await in an unsafe context — move the awaited call out of the `unsafe`/`fixed` scope or drop the `unsafe` modifier.";
                 return true;

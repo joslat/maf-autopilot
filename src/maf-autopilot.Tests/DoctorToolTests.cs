@@ -1122,6 +1122,32 @@ public class DoctorToolTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
+    [Theory]
+    // Round-9 regression: the `unsafe` modifier on a NON-method member establishes an
+    // unsafe context that propagates into a nested async lambda — so a `.Result` there
+    // must be skipped (CS4004). The old guard only checked method/local-fn/type.
+    [InlineData("public unsafe int P { get { System.Func<System.Threading.Tasks.Task> f = async () => { var x = Foo().Result; }; return 0; } }")]
+    [InlineData("public unsafe int this[int i] { get { System.Func<System.Threading.Tasks.Task> f = async () => { var x = Foo().Result; }; return 0; } }")]
+    [InlineData("public static unsafe C operator +(C a, C b) { System.Func<System.Threading.Tasks.Task> f = async () => { var x = Foo().Result; }; return a; }")]
+    [InlineData("public static unsafe implicit operator int(C c) { System.Func<System.Threading.Tasks.Task> f = async () => { var x = Foo().Result; }; return 0; }")]
+    [InlineData("public unsafe C() { System.Func<System.Threading.Tasks.Task> f = async () => { var x = Foo().Result; }; }")]
+    public void AutofixAll_DoesNotCorrupt_UnsafeMemberWithNestedAsyncLambda(string member)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002unsafemem-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "UnsafeMember.cs");
+            File.WriteAllText(file,
+                "using System.Threading.Tasks;\npublic class C {\n  static Task<int> Foo() => Task.FromResult(1);\n  " + member + "\n}\n");
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var after = File.ReadAllText(file);
+            Assert.DoesNotContain("(await Foo", after, StringComparison.Ordinal);
+            Assert.Contains(".Result", after, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
     [Fact]
     public void AutofixAll_DoesNotCorrupt_ParameterDefault()
     {
