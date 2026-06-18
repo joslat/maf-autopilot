@@ -42,8 +42,10 @@ public sealed class DoctorTool
     public string MafDoctor(
         [Description("Absolute path to the repository root.")] string repoPath,
         [Description("Output format: 'markdown' (default, human-readable) or 'json' (machine-readable for CI/dashboards).")]
-        string format = "markdown")
-        => RunCore(repoPath, format, excludes: null);
+        string format = "markdown",
+        [Description("When true, list EVERY finding (one line each) instead of only the top 3 fixes. Use for full triage / CI.")]
+        bool full = false)
+        => RunCore(repoPath, format, excludes: null, full: full);
 
     /// <summary>
     /// CLI entry point. Identical to <see cref="MafDoctor"/> but accepts
@@ -53,10 +55,10 @@ public sealed class DoctorTool
     /// bait. Deliberately NOT an MCP tool — keeping it off the tool surface
     /// preserves the stable MafDoctor schema for clients.
     /// </summary>
-    internal string Run(string repoPath, string format, IReadOnlyList<string>? excludes)
-        => RunCore(repoPath, format, excludes);
+    internal string Run(string repoPath, string format, IReadOnlyList<string>? excludes, bool full = false)
+        => RunCore(repoPath, format, excludes, full);
 
-    private string RunCore(string repoPath, string format, IReadOnlyList<string>? excludes)
+    private string RunCore(string repoPath, string format, IReadOnlyList<string>? excludes, bool full = false)
     {
         if (PathGuard.ValidateRepoPath(repoPath) is { } err) return err;
 
@@ -64,11 +66,11 @@ public sealed class DoctorTool
 
         if (format.Equals("json", StringComparison.OrdinalIgnoreCase))
         {
-            var result = BuildJsonResult(repoPath, summary);
+            var result = BuildJsonResult(repoPath, summary, full);
             return JsonSerializer.Serialize(result, DoctorJsonContext.Default.DoctorJsonResult);
         }
 
-        return FormatReport(repoPath, summary);
+        return FormatReport(repoPath, summary, full);
     }
 
     // -------------------------------------------------------------------------
@@ -132,7 +134,7 @@ public sealed class DoctorTool
 
         // Top 3 fixes: prioritise silent-starvation risks, then errors (anti-pattern + prompt),
         // then warnings (anti-pattern + prompt + cost).
-        var topFixes = handlers
+        var allFixes = handlers
             .Where(h => h.Verdict == FanOutVerdict.SilentStarvationRisk
                      || h.Verdict == FanOutVerdict.LikelyInvalid)
             .Select(h => new DoctorRecommendation(
@@ -194,7 +196,6 @@ public sealed class DoctorTool
                     FixDescription: GetAntiPatternFix(a.RuleId),
                     AutoFixable: IsAutoFixable(a.RuleId))))
             .OrderBy(r => r.Priority)
-            .Take(3)
             .ToList();
 
         return new DoctorSummary(
@@ -209,17 +210,18 @@ public sealed class DoctorTool
             PromptWarnings: promptWarnings,
             UnboundedCostSites: unboundedCostSites,
             AgentCallSitesChecked: costFindings.Count,
-            TopFixes: topFixes);
+            TopFixes: allFixes.Take(3).ToList(),
+            AllFixes: allFixes);
     }
 
     // -------------------------------------------------------------------------
     // JSON output support
     // -------------------------------------------------------------------------
 
-    private static DoctorJsonResult BuildJsonResult(string repoPath, DoctorSummary s)
+    private static DoctorJsonResult BuildJsonResult(string repoPath, DoctorSummary s, bool full = false)
     {
-        var markdownSummary = FormatReport(repoPath, s);
-        var findings = s.TopFixes
+        var markdownSummary = FormatReport(repoPath, s, full);
+        var findings = (full ? s.AllFixes : s.TopFixes)
             .Select(f => new DoctorJsonFinding(
                 RuleId: f.RuleId,
                 Severity: f.Priority switch { 1 => "starvation_risk", 2 => "error", _ => "warning" },
@@ -308,7 +310,7 @@ public sealed class DoctorTool
     private static string MakeRelative(string root, string file)
         => SourceFileWalker.MakeRelative(root, file);
 
-    private static string FormatReport(string repoPath, DoctorSummary s)
+    private static string FormatReport(string repoPath, DoctorSummary s, bool full = false)
     {
         var sb = new StringBuilder();
         var emoji = s.Grade switch
@@ -338,17 +340,25 @@ public sealed class DoctorTool
         sb.AppendLine($"| `RunAsync` / `RunStreamingAsync` sites inspected | {s.AgentCallSitesChecked} |");
         sb.AppendLine();
 
-        if (s.TopFixes.Count > 0)
+        var fixes = full ? s.AllFixes : s.TopFixes;
+        if (fixes.Count > 0)
         {
-            sb.AppendLine("### Top fixes (ordered by impact)");
+            sb.AppendLine(full
+                ? $"### All findings ({fixes.Count}, ordered by impact)"
+                : "### Top fixes (ordered by impact)");
             sb.AppendLine();
             var i = 1;
-            foreach (var fix in s.TopFixes)
+            foreach (var fix in fixes)
             {
                 sb.AppendLine($"{i}. **[{fix.Source}]** {fix.Description}");
                 i++;
             }
             sb.AppendLine();
+            if (!full && s.AllFixes.Count > s.TopFixes.Count)
+            {
+                sb.AppendLine($"_…and {s.AllFixes.Count - s.TopFixes.Count} more. Run with `--all` (CLI) or `full: true` (MafDoctor) for every finding._");
+                sb.AppendLine();
+            }
         }
         else
         {
@@ -380,7 +390,8 @@ public sealed record DoctorSummary(
     int PromptWarnings,
     int UnboundedCostSites,
     int AgentCallSitesChecked,
-    IReadOnlyList<DoctorRecommendation> TopFixes);
+    IReadOnlyList<DoctorRecommendation> TopFixes,
+    IReadOnlyList<DoctorRecommendation> AllFixes);
 
 public sealed record DoctorRecommendation(
     int Priority,

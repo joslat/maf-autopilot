@@ -42,7 +42,7 @@ if (args.Length > 0 && (args[0] is "--help" or "-h" or "help"))
         Commands:
           init [--with-cursor]              Wire the MCP server + steering into the current repo
                                             (.vscode/mcp.json, .mcp.json, instructions, agents).
-          doctor [path] [--exclude <s>]...  Health report with an A/B/C/F grade.
+          doctor [path] [--exclude <s>] [--all]  A/B/C/F health report (--all = every finding, not just top 3).
           autofix-all [path] [--dry-run]    Apply deterministic Roslyn fixes.
           new agent <Name>                  Scaffold a MAF agent + smoke test.
           new executor <Name> [In] [Out]    Scaffold a workflow executor + smoke test.
@@ -75,15 +75,18 @@ if (args.Length >= 1 && args[0] == "doctor")
     // Repeatable `--exclude` skips files whose repo-relative path contains the
     // substring — used by the drift detector to scan product code only (skip
     // samples/ + test fixtures). The first non-flag arg is the path (default cwd).
+    // `--all` / `--full` lists EVERY finding (one line each) instead of the top 3.
     var excludes = new List<string>();
     string? path = null;
+    var full = false;
     for (int i = 1; i < args.Length; i++)
     {
         if (args[i] == "--exclude" && i + 1 < args.Length) { excludes.Add(args[++i]); continue; }
+        if (args[i] is "--all" or "--full") { full = true; continue; }
         if (path is null && !args[i].StartsWith("--", StringComparison.Ordinal)) path = args[i];
     }
     path ??= Directory.GetCurrentDirectory();
-    var report = new MafDoctor.Tools.DoctorTool().Run(path, "markdown", excludes);
+    var report = new MafDoctor.Tools.DoctorTool().Run(path, "markdown", excludes, full);
     Console.WriteLine(report);
     Environment.Exit(0);
     return;
