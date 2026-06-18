@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.11] - 2026-06-18
+
+### Added
+
+- **`doctor --all` / `--full` lists every finding.** The health report ranks all findings by impact but only printed the top 3, with the rest invisible. The new flag prints every finding (anti-pattern, fan-out, prompt-lint, cost) — one line each, ordered by impact — so you can see the full backlog in one pass. Default output is unchanged (top 3) and now ends with a "…and N more. Run with `--all`" hint when findings are hidden. The MCP `MafDoctor` tool gains a matching `full` parameter (`MafDoctor(full: true)`), and the JSON format includes the full `findings` array when `--all` is set.
+
 ## [1.2.10] - 2026-06-18
 
 ### Fixed

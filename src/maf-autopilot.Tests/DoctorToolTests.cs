@@ -106,6 +106,22 @@ public class DoctorToolTests
             .ToList();
         var summary = DoctorTool.Grade(antiPatterns, []);
         Assert.Equal(3, summary.TopFixes.Count);
+        // --all / full surfaces EVERY finding, not just the top 3.
+        Assert.Equal(10, summary.AllFixes.Count);
+    }
+
+    [Fact]
+    public void Full_ReportListsEveryFinding()
+    {
+        // 6 distinct anti-pattern errors → default shows 3, full shows all 6.
+        var antiPatterns = Enumerable.Range(0, 6)
+            .Select(i => new AntiPatternFinding($"MAF-AP-R{i}", $"rule {i}", AntiPatternSeverity.Error, $"File{i}.cs", i + 1, "m"))
+            .ToList();
+        var summary = DoctorTool.Grade(antiPatterns, []);
+        Assert.Equal(3, summary.TopFixes.Count);
+        Assert.Equal(6, summary.AllFixes.Count);
+        // Every finding carries a one-line Description (what the --all report prints).
+        Assert.All(summary.AllFixes, f => Assert.False(string.IsNullOrWhiteSpace(f.Description)));
     }
 
     // -------------------------------------------------------------------------
