@@ -806,6 +806,165 @@ public class DoctorToolTests
     }
 
     [Fact]
+    public void AutofixAll_DoesNotCorrupt_CatchFilter()
+    {
+        // Round-6 regression: `await` is illegal in a `catch when (...)` filter
+        // (CS7094) even inside an async method — must skip the filter expression.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002catch-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "Catch.cs");
+            File.WriteAllText(file, """
+                using System.Threading.Tasks;
+                public class C {
+                  static Task<int> Foo() => Task.FromResult(1);
+                  public async Task M() {
+                    try { await Task.Yield(); }
+                    catch (System.Exception) when (Foo().Result > 0) { }
+                  }
+                }
+                """);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var after = File.ReadAllText(file);
+            Assert.DoesNotContain("(await", after, StringComparison.Ordinal); // no `await` in the filter
+            Assert.Contains(".Result", after, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void AutofixAll_StillRewrites_ResultInsideCatchBody()
+    {
+        // No over-skip: the catch BODY is await-legal in an async method, so the
+        // filter guard must not suppress a rewrite there.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002catchbody-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "CatchBody.cs");
+            File.WriteAllText(file, """
+                using System.Threading.Tasks;
+                public class C {
+                  static Task<int> Foo() => Task.FromResult(1);
+                  public async Task M() {
+                    try { await Task.Yield(); }
+                    catch (System.Exception) { var x = Foo().Result; }
+                  }
+                }
+                """);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var after = File.ReadAllText(file);
+            Assert.Contains("(await Foo", after, StringComparison.Ordinal); // rewritten in the catch body
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void AutofixAll_DoesNotCorrupt_UnsafeBlock()
+    {
+        // Round-6 regression: `await` is illegal in an unsafe context (CS4004) —
+        // an `unsafe { }` block must be skipped even inside an async method.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002unsafe-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "Unsafe.cs");
+            File.WriteAllText(file, """
+                using System.Threading.Tasks;
+                public class C {
+                  static Task<int> Foo() => Task.FromResult(1);
+                  public async Task M() {
+                    unsafe { var x = Foo().Result; }
+                  }
+                }
+                """);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var after = File.ReadAllText(file);
+            Assert.DoesNotContain("(await", after, StringComparison.Ordinal);
+            Assert.Contains(".Result", after, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void AutofixAll_DoesNotCorrupt_FixedBlock()
+    {
+        // Round-6 regression: a `fixed ( )` block is an unsafe context (CS4004).
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002fixed-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "Fixed.cs");
+            File.WriteAllText(file, """
+                using System.Threading.Tasks;
+                public class C {
+                  static Task<int> Foo() => Task.FromResult(1);
+                  public async Task M() {
+                    int[] arr = { 1 };
+                    unsafe { fixed (int* p = arr) { var x = Foo().Result; } }
+                  }
+                }
+                """);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var after = File.ReadAllText(file);
+            Assert.DoesNotContain("(await", after, StringComparison.Ordinal);
+            Assert.Contains(".Result", after, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void AutofixAll_DoesNotCorrupt_AsyncUnsafeMethod()
+    {
+        // Round-6 regression: the `unsafe` modifier on the enclosing method makes
+        // its whole body an unsafe context — `await` is illegal even with `async`.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002unsafemethod-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "UnsafeMethod.cs");
+            File.WriteAllText(file, """
+                using System.Threading.Tasks;
+                public class C {
+                  static Task<int> Foo() => Task.FromResult(1);
+                  public async unsafe Task M() { var x = Foo().Result; }
+                }
+                """);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var after = File.ReadAllText(file);
+            Assert.DoesNotContain("(await", after, StringComparison.Ordinal);
+            Assert.Contains(".Result", after, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void AutofixAll_DoesNotCorrupt_UnsafeType()
+    {
+        // Round-6 regression: the `unsafe` modifier on the enclosing TYPE makes
+        // every member body an unsafe context — walk all type ancestors for it.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002unsafetype-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "UnsafeType.cs");
+            File.WriteAllText(file, """
+                using System.Threading.Tasks;
+                public unsafe class C {
+                  static Task<int> Foo() => Task.FromResult(1);
+                  public async Task M() { var x = Foo().Result; }
+                }
+                """);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var after = File.ReadAllText(file);
+            Assert.DoesNotContain("(await", after, StringComparison.Ordinal);
+            Assert.Contains(".Result", after, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
     public void ScanAntiPatterns_SarifOutput_RedactsSecret()
     {
         // Round-3 regression: the SARIF surface must redact the SEC-002 secret too.

@@ -11,15 +11,24 @@ namespace MafDoctor.Tools.Rewriters;
 /// Also handles <c>SomeAsync().Wait()</c> → <c>await SomeAsync()</c>.
 ///
 /// <para><b>Corruption guard (Phase 4.1b).</b> Before rewriting, the visitor
-/// walks ancestors. Skip with a TODO comment if:</para>
+/// walks ancestors and skips with a TODO comment in every position where the
+/// C# spec makes <c>await</c> illegal (otherwise the rewrite emits uncompilable
+/// source). These are the finite await-illegal contexts:</para>
 /// <list type="bullet">
-///   <item>Any ancestor is a <c>lock</c> block — <c>await</c> inside <c>lock</c>
-///         is a C# compile error.</item>
-///   <item>The enclosing function (method / local function / lambda) is not
-///         marked <c>async</c> — <c>await</c> in a synchronous body is also
-///         a compile error.</item>
+///   <item>Inside a <c>lock</c> block (CS1996).</item>
+///   <item>Inside a LINQ query clause other than the initial <c>from</c> /
+///         <c>join … in</c> source (CS1995).</item>
+///   <item>Inside a <c>catch when (...)</c> filter expression (CS7094) — the
+///         catch body itself remains rewritable.</item>
+///   <item>Inside an unsafe context (CS4004): an <c>unsafe</c>/<c>fixed</c>
+///         block, or under the <c>unsafe</c> modifier on the enclosing
+///         method / local function / type.</item>
+///   <item>Outside any <c>async</c> function — the enclosing method / local
+///         function / lambda must be <c>async</c> (whitelist walk), else the
+///         <c>.Result</c> sits in a context that can never be async
+///         (property / field / operator / primary-ctor base / …) (CS4032/CS4033).</item>
 /// </list>
-/// Pre-fix the rewriter happily inserted <c>await</c> in either case and
+/// Pre-fix the rewriter happily inserted <c>await</c> in these cases and
 /// produced uncompilable user code. Now we surface a comment and leave the
 /// expression unchanged so the developer can refactor manually.
 /// </summary>
@@ -97,6 +106,33 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
         {
             reason = "// MAF-AP-CONC-002: cannot await inside this query clause — materialize the awaited value before the query.";
             return true;
+        }
+
+        // (a3) Catch filter (CS7094): `await` is illegal in a `catch when (...)`
+        // filter expression. The catch BODY is still awaitable, so we guard the
+        // filter clause specifically (FirstAncestorOrSelf<CatchFilterClauseSyntax>
+        // matches only the `when (...)` expression, never the handler block).
+        if (node.FirstAncestorOrSelf<CatchFilterClauseSyntax>() is not null)
+        {
+            reason = "// MAF-AP-CONC-002: cannot await inside a catch filter (`when (...)`) — hoist the awaited value into a variable before the try/catch.";
+            return true;
+        }
+
+        // (a4) Unsafe context (CS4004): `await` is illegal wherever an unsafe
+        // context is in effect — inside an `unsafe { }` or `fixed ( )` block, OR
+        // under the `unsafe` modifier on the enclosing method / local function /
+        // any enclosing type (the modifier makes the whole declaration unsafe,
+        // including nested types and members).
+        foreach (var ancestor in node.Ancestors())
+        {
+            if (ancestor is UnsafeStatementSyntax or FixedStatementSyntax
+                || (ancestor is MethodDeclarationSyntax um && um.Modifiers.Any(mod => mod.IsKind(SyntaxKind.UnsafeKeyword)))
+                || (ancestor is LocalFunctionStatementSyntax ulf && ulf.Modifiers.Any(mod => mod.IsKind(SyntaxKind.UnsafeKeyword)))
+                || (ancestor is BaseTypeDeclarationSyntax ut && ut.Modifiers.Any(mod => mod.IsKind(SyntaxKind.UnsafeKeyword))))
+            {
+                reason = "// MAF-AP-CONC-002: cannot await in an unsafe context — move the awaited call out of the `unsafe`/`fixed` scope or drop the `unsafe` modifier.";
+                return true;
+            }
         }
 
         // (b) WHITELIST, not blacklist. Walk outward and rewrite ONLY when we
