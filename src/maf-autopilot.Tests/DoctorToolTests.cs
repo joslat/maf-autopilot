@@ -540,6 +540,124 @@ public class DoctorToolTests
     }
 
     // -------------------------------------------------------------------------
+    // Tier 3 — `--plan` / format:"plan": an ordered, checkboxed remediation plan.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Plan_MixedFindings_HasBothPhasesAndCheckboxes()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-plan-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            // Auto-fixable (SEC-001, SEC-003, WF-001) + semantic (SEC-002 key, fan-out void).
+            File.WriteAllText(Path.Combine(tempDir, "Bad.cs"), """
+                using Azure.Identity;
+                public class Inv : Executor
+                {
+                    const string K = "sk-ABCDEF0123456789abcdef";
+                    public Inv()
+                    {
+                        var c = new DefaultAzureCredential();
+                        var o = new O { EnableSensitiveData = true };
+                    }
+                    [MessageHandler]
+                    public void HandleAsync(string m) { }
+                }
+                """);
+            var output = new DoctorTool().Run(tempDir, "plan", excludes: null);
+
+            Assert.Contains("remediation plan", output, StringComparison.Ordinal);
+            Assert.Contains("## Phase 1", output, StringComparison.Ordinal);
+            Assert.Contains("## Phase 2", output, StringComparison.Ordinal);
+            Assert.Contains("autofix-all", output, StringComparison.Ordinal);
+            Assert.Contains("- [ ]", output, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(tempDir, recursive: true); }
+    }
+
+    [Fact]
+    public void Plan_DoesNotEchoSecret()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-plan-secret-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            File.WriteAllText(Path.Combine(tempDir, "Keys.cs"),
+                "public class Keys { const string K = \"sk-ABCDEF0123456789abcdef\"; }");
+            var output = new DoctorTool().Run(tempDir, "plan", excludes: null);
+
+            Assert.Contains("MAF-AP-SEC-002", output, StringComparison.Ordinal); // the task is listed
+            Assert.DoesNotContain("sk-ABCDEF0123456789abcdef", output, StringComparison.Ordinal); // but never the secret
+            // SEC-002 is NOT auto-fixable → Phase-2-only: Phase 1 must be absent.
+            Assert.DoesNotContain("## Phase 1", output, StringComparison.Ordinal);
+            Assert.Contains("## Phase 2", output, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(tempDir, recursive: true); }
+    }
+
+    [Fact]
+    public void Plan_AllAutoFixable_HasPhase1Only()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-plan-p1-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            // Lone DefaultAzureCredential (SEC-001) — auto-fixable → Phase 1 only.
+            File.WriteAllText(Path.Combine(tempDir, "Bad.cs"), """
+                using Azure.Identity;
+                public class Bad { public Bad() { var c = new DefaultAzureCredential(); } }
+                """);
+            var output = new DoctorTool().Run(tempDir, "plan", excludes: null);
+
+            Assert.Contains("## Phase 1", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("## Phase 2", output, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(tempDir, recursive: true); }
+    }
+
+    [Fact]
+    public void Plan_IgnoresFullFlag()
+    {
+        // `full` is documented as ignored for format "plan" (always covers all).
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-plan-full-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            File.WriteAllText(Path.Combine(tempDir, "Bad.cs"), """
+                using Azure.Identity;
+                public class Inv : Executor
+                {
+                    public Inv() { var c = new DefaultAzureCredential(); }
+                    [MessageHandler]
+                    public void HandleAsync(string m) { }
+                }
+                """);
+            var tool = new DoctorTool();
+            var withFull = tool.Run(tempDir, "plan", excludes: null, full: true);
+            var withoutFull = tool.Run(tempDir, "plan", excludes: null, full: false);
+            Assert.Equal(withoutFull, withFull);
+        }
+        finally { Directory.Delete(tempDir, recursive: true); }
+    }
+
+    [Fact]
+    public void Plan_CleanRepo_SaysNothingToDo()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-plan-clean-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            File.WriteAllText(Path.Combine(tempDir, "Clean.cs"),
+                "public class Clean { public int Add(int a, int b) => a + b; }");
+            var output = new DoctorTool().Run(tempDir, "plan", excludes: null);
+            Assert.Contains("Nothing to do", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("## Phase", output, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(tempDir, recursive: true); }
+    }
+
+    // -------------------------------------------------------------------------
     // Tier 1 — doctor CLI arg parsing (extracted to DoctorCli for testability)
     // -------------------------------------------------------------------------
 
@@ -548,6 +666,21 @@ public class DoctorToolTests
     {
         var (_, format, _, _) = MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--json" });
         Assert.Equal("json", format);
+    }
+
+    [Fact]
+    public void DoctorCli_Parse_PlanFlag_SetsPlanFormat()
+    {
+        var (_, format, _, _) = MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--plan" });
+        Assert.Equal("plan", format);
+    }
+
+    [Fact]
+    public void DoctorCli_Parse_LastFormatFlagWins()
+    {
+        // Documented contract: the last format flag wins.
+        Assert.Equal("plan", MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--json", "--plan" }).Format);
+        Assert.Equal("json", MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--plan", "--json" }).Format);
     }
 
     [Fact]

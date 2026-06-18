@@ -5,7 +5,7 @@ namespace MafDoctor.Commands;
 /// Program.cs top-level statements so it can be unit-tested without spawning a
 /// process (the analysis itself lives in <c>DoctorTool</c>).
 ///
-/// Grammar: <c>doctor [path] [--exclude &lt;substr&gt;]... [--all|--full] [--json]</c>
+/// Grammar: <c>doctor [path] [--exclude &lt;substr&gt;]... [--all|--full] [--json|--plan]</c>
 /// <list type="bullet">
 ///   <item>The first non-flag token is the path (default: current directory at
 ///         the call site — left null here so the caller decides the default).</item>
@@ -13,7 +13,8 @@ namespace MafDoctor.Commands;
 ///         repo-relative path contains the substring (used by the drift detector
 ///         to scan product code only).</item>
 ///   <item><c>--all</c> / <c>--full</c> lists every finding (grouped) vs the top 3.</item>
-///   <item><c>--json</c> emits machine-readable output instead of markdown.</item>
+///   <item><c>--json</c> emits machine-readable output; <c>--plan</c> emits an
+///         ordered, checkboxed remediation plan. Last format flag wins.</item>
 /// </list>
 /// </summary>
 internal static class DoctorCli
@@ -31,6 +32,7 @@ internal static class DoctorCli
             if (args[i] == "--exclude" && i + 1 < args.Length) { excludes.Add(args[++i]); continue; }
             if (args[i] is "--all" or "--full") { full = true; continue; }
             if (args[i] is "--json") { format = "json"; continue; }
+            if (args[i] is "--plan") { format = "plan"; continue; }
             // First non-flag token is the path. The `--` guard means a flag that
             // appears before the path (e.g. `doctor --json .`) is never mistaken
             // for the path.

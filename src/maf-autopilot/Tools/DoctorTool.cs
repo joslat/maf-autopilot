@@ -33,18 +33,21 @@ public sealed class DoctorTool
 
         Input:
           - repoPath: absolute path to the repository root.
-          - format: output format — 'markdown' (default, human-readable) or 'json'
-            (machine-readable for CI/dashboards). JSON output follows the schema
-            documented in docs/output-schemas.md.
+          - format: output format — 'markdown' (default, human-readable), 'json'
+            (machine-readable for CI/dashboards; schema in docs/output-schemas.md),
+            or 'plan' (an ordered, checkboxed remediation plan covering every
+            finding — Phase 1 batches the auto-fixable ones into one autofix-all
+            command, Phase 2 lists the semantic fixes as impact-ordered tasks).
           - full: when true, list EVERY finding (grouped by rule, ordered by
-            impact) instead of only the top 3 — full triage / CI.
+            impact) instead of only the top 3 — full triage / CI. (Ignored for
+            format 'plan', which always covers everything.)
 
         Returns a markdown report (default) or JSON. Treat as advisory — fix the
         top items, re-run.
         """)]
     public string MafDoctor(
         [Description("Absolute path to the repository root.")] string repoPath,
-        [Description("Output format: 'markdown' (default, human-readable) or 'json' (machine-readable for CI/dashboards).")]
+        [Description("Output format: 'markdown' (default, human-readable), 'json' (machine-readable for CI/dashboards), or 'plan' (an ordered, checkboxed remediation plan to drop into a GitHub issue).")]
         string format = "markdown",
         [Description("When true, list EVERY finding (grouped by rule, ordered by impact) instead of only the top 3 fixes. Use for full triage / CI.")]
         bool full = false)
@@ -72,6 +75,9 @@ public sealed class DoctorTool
             var result = BuildJsonResult(repoPath, summary, full);
             return JsonSerializer.Serialize(result, DoctorJsonContext.Default.DoctorJsonResult);
         }
+
+        if (format.Equals("plan", StringComparison.OrdinalIgnoreCase))
+            return FormatPlan(repoPath, summary); // always covers every finding
 
         return FormatReport(repoPath, summary, full);
     }
@@ -410,6 +416,7 @@ public sealed class DoctorTool
         sb.AppendLine();
         sb.AppendLine("- Every finding (full triage): `--all` (CLI) or `full: true` (MafDoctor MCP).");
         sb.AppendLine("- Machine-readable JSON (CI / dashboards): `--json` (CLI) or `format: \"json\"` (MafDoctor MCP).");
+        sb.AppendLine("- Ordered, checkboxed remediation plan (drop into a GitHub issue): `--plan` (CLI) or `format: \"plan\"` (MafDoctor MCP).");
         sb.AppendLine("- Deep-dive ONE finding (offending code in context + why + fix): `MafExplainFinding(repoPath, file, line)` or the `maf-explain-finding` prompt (MCP clients).");
         sb.AppendLine("- Deeper per-area analysis in your MCP client (Copilot / Claude / Cursor): `MafScanAntiPatterns`, `MafValidateFanOut`, `MafSimulateWorkflow`, `MafRunCs0618Hunt` — the anti-pattern + fan-out scanners also emit SARIF (`format: \"sarif\"`).");
 
@@ -450,18 +457,7 @@ public sealed class DoctorTool
         StringBuilder sb, string repoPath, IReadOnlyList<DoctorRecommendation> fixes,
         Dictionary<string, string[]?> lineCache)
     {
-        var groups = fixes
-            .GroupBy(f => f.RuleId)
-            .Select(g => new
-            {
-                Rep = g.OrderBy(x => x.Priority).First(),
-                Items = g.OrderBy(x => x.File, StringComparer.Ordinal).ThenBy(x => x.Line).ToList(),
-                MinPriority = g.Min(x => x.Priority),
-            })
-            .OrderBy(g => g.MinPriority)
-            .ThenByDescending(g => g.Items.Count)
-            .ThenBy(g => g.Rep.RuleId, StringComparer.Ordinal)
-            .ToList();
+        var groups = GroupByRule(fixes);
 
         sb.AppendLine($"### All findings ({fixes.Count} across {groups.Count} rule(s), grouped + ordered by impact)");
         sb.AppendLine();
@@ -511,6 +507,95 @@ public sealed class DoctorTool
         "COST-001" => "uncapped agent call — no `MaxOutputTokens`",
         _ => rep.Issue,
     };
+
+    /// <summary>
+    /// Groups recommendations by rule, ordered by impact (min priority), then by
+    /// occurrence count, then rule id. Each group carries a representative (the
+    /// highest-priority member) + every occurrence sorted by file:line. Shared by
+    /// the grouped <c>--all</c> view and the <c>--plan</c> formatter.
+    /// </summary>
+    private static IReadOnlyList<(DoctorRecommendation Rep, List<DoctorRecommendation> Items)> GroupByRule(
+        IEnumerable<DoctorRecommendation> fixes)
+        => fixes
+            .GroupBy(f => f.RuleId)
+            .Select(g => (
+                Rep: g.OrderBy(x => x.Priority).First(),
+                Items: g.OrderBy(x => x.File, StringComparer.Ordinal).ThenBy(x => x.Line).ToList(),
+                MinPriority: g.Min(x => x.Priority)))
+            .OrderBy(t => t.MinPriority)
+            .ThenByDescending(t => t.Items.Count)
+            .ThenBy(t => t.Rep.RuleId, StringComparer.Ordinal)
+            .Select(t => (t.Rep, t.Items))
+            .ToList();
+
+    /// <summary>
+    /// Tier 3 — the <c>--plan</c> / <c>format: "plan"</c> output: an ordered,
+    /// checkboxed remediation plan you can drop straight into a GitHub issue.
+    /// Phase 1 batches every auto-fixable finding into a single deterministic
+    /// command; Phase 2 lists the semantic fixes as impact-ordered tasks. Always
+    /// covers every finding (a partial plan would be misleading). No source
+    /// snippets — file:line + why + fix only — so it never echoes a secret.
+    /// </summary>
+    private static string FormatPlan(string repoPath, DoctorSummary s)
+    {
+        var sb = new StringBuilder();
+        var emoji = s.Grade switch { 'A' => "🟢", 'B' => "🟡", 'C' => "🟠", _ => "🔴" };
+        sb.AppendLine($"# {emoji} MAF remediation plan — grade {s.Grade}");
+        sb.AppendLine();
+        sb.AppendLine($"_{s.Reason}_");
+        sb.AppendLine();
+        sb.AppendLine($"**Repo:** `{repoPath}`");
+        sb.AppendLine();
+
+        var all = s.AllFixes;
+        if (all.Count == 0)
+        {
+            sb.AppendLine("✅ Nothing to do — the repo is clean against all configured rules.");
+            return sb.ToString();
+        }
+
+        var auto = all.Where(f => f.AutoFixable).ToList();
+        var manual = all.Where(f => !f.AutoFixable).ToList();
+        sb.AppendLine($"{all.Count} finding(s): **{auto.Count} auto-fixable**, **{manual.Count} need your judgment**.");
+        sb.AppendLine();
+
+        if (auto.Count > 0)
+        {
+            sb.AppendLine("## Phase 1 — Quick wins (deterministic, no LLM)");
+            sb.AppendLine();
+            sb.AppendLine($"One command clears {auto.Count} mechanical finding(s):");
+            sb.AppendLine();
+            sb.AppendLine("- [ ] Run `maf-doctor autofix-all .` (CLI) or `MafAutoFixAll(repoPath)` (MCP), then rebuild.");
+            sb.AppendLine();
+            sb.AppendLine("It applies deterministic Roslyn rewriters for:");
+            foreach (var (rep, items) in GroupByRule(auto))
+                sb.AppendLine($"  - `{rep.RuleId}` — {GroupHeaderTitle(rep)}{(items.Count > 1 ? $" ×{items.Count}" : "")}");
+            sb.AppendLine();
+        }
+
+        if (manual.Count > 0)
+        {
+            sb.AppendLine("## Phase 2 — Semantic fixes (need your judgment)");
+            sb.AppendLine();
+            sb.AppendLine("Ordered by impact — each is a separate, build-verified change (hand to `@maf-migration` for the agent loop):");
+            sb.AppendLine();
+            foreach (var (rep, items) in GroupByRule(manual))
+            {
+                var count = items.Count > 1 ? $" ×{items.Count}" : "";
+                sb.AppendLine($"- [ ] **{PrioritySeverityLabel(rep.Priority)} `{rep.RuleId}` — {GroupHeaderTitle(rep)}**{count}");
+                if (!string.IsNullOrEmpty(rep.Why)) sb.AppendLine($"  - **Why:** {rep.Why}");
+                if (!string.IsNullOrEmpty(rep.FixDescription)) sb.AppendLine($"  - **Fix:** {rep.FixDescription}");
+                foreach (var it in items)
+                    sb.AppendLine($"  - `{it.File}:{it.Line}`");
+                sb.AppendLine();
+            }
+        }
+
+        sb.AppendLine("## After");
+        sb.AppendLine();
+        sb.AppendLine("Re-run `maf-doctor doctor .` to confirm the grade improved. For any single finding, `MafExplainFinding(repoPath, file, line)` gives the grounded deep-dive + fix.");
+        return sb.ToString();
+    }
 
     /// <summary>
     /// Reads the offending source line for a finding so the report shows the
