@@ -207,15 +207,15 @@ public sealed class SimulateWorkflowTool
     }
 
     // Phase 7.G fixup — regex hygiene. Identifier-class anchored regexes are
-    // backtracking-safe but the policy requires NonBacktracking + 100ms timeout.
+    // backtracking-safe but the policy requires NonBacktracking + 2s timeout.
     private static readonly Regex PascalIdentifierRegex = new(
         @"\b([A-Z][A-Za-z0-9_]*)\b",
         RegexOptions.Compiled | RegexOptions.NonBacktracking,
-        TimeSpan.FromMilliseconds(100));
+        TimeSpan.FromSeconds(2));
     private static readonly Regex AnyIdentifierRegex = new(
         @"\b([A-Za-z_][A-Za-z0-9_]*)\b",
         RegexOptions.Compiled | RegexOptions.NonBacktracking,
-        TimeSpan.FromMilliseconds(100));
+        TimeSpan.FromSeconds(2));
 
     private static void CollectEdges(
         SyntaxNode root,

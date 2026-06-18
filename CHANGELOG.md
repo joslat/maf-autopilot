@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.10] - 2026-06-18
+
+### Fixed
+
+- **Flaky-test class hardened.** Every NonBacktracking regex carried a 100ms `MatchTimeout` that intermittently tripped on the engine's one-time DFA-build cost under CI load (`RegexMatchTimeoutException` — surfaced as `LlmFencingTests.Fence_StripsHtmlComments_Multiple`). Raised to **2s** across all ~17 sites. NonBacktracking is linear and inputs are length-bounded, so the timeout is only a cold-start backstop, not the primary ReDoS defense — raising it doesn't weaken safety.
+- **Demo sample builds again.** `samples/maf-1.3-sample` pinned `maf-doctor.Analyzers` at `1.3.0-alpha-1` (never published — the rename left a dead version pin), so `dotnet restore` failed. Repinned to `1.2.9`.
+
+### Added
+
+- **README hero cast.** Added the truthful `install-cast` GIF (install → `maf-doctor doctor .` → grade F + the top fixes) below the intro, via absolute raw URL so it renders on GitHub and nuget.org.
+
 ## [1.2.9] - 2026-06-16
 
 ### Changed (branding)

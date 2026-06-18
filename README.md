@@ -16,6 +16,12 @@ Plus a separate **maf-doctor.Analyzers** NuGet package with 3 Roslyn analyzers (
 
 > 📦 **[Latest release on NuGet →](https://www.nuget.org/packages/maf-doctor)** — and the toolkit keeps its own MAF knowledge current automatically. See [**It updates itself**](#it-updates-itself).
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/joslat/maf-doctor/main/docs/assets/install-cast.gif" alt="maf-doctor: install, then audit a MAF codebase — grade F + the top fixes" width="760" />
+  <br/>
+  <em>Install, then run maf-doctor doctor on any MAF codebase — an A–F health letter + the top fixes, in seconds.</em>
+</p>
+
 ### What makes it worth trying
 
 - 🔍 **Catches the bugs that compile clean** — detects fan-out/fan-in silent failures where a workflow exits successfully but produces no output. Runtime-only, zero build signal, invisible without this tool.
