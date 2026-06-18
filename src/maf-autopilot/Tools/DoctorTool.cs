@@ -410,6 +410,7 @@ public sealed class DoctorTool
         sb.AppendLine();
         sb.AppendLine("- Every finding (full triage): `--all` (CLI) or `full: true` (MafDoctor MCP).");
         sb.AppendLine("- Machine-readable JSON (CI / dashboards): `--json` (CLI) or `format: \"json\"` (MafDoctor MCP).");
+        sb.AppendLine("- Deep-dive ONE finding (offending code in context + why + fix): `MafExplainFinding(repoPath, file, line)` or the `maf-explain-finding` prompt (MCP clients).");
         sb.AppendLine("- Deeper per-area analysis in your MCP client (Copilot / Claude / Cursor): `MafScanAntiPatterns`, `MafValidateFanOut`, `MafSimulateWorkflow`, `MafRunCs0618Hunt` — the anti-pattern + fan-out scanners also emit SARIF (`format: \"sarif\"`).");
 
         return sb.ToString();

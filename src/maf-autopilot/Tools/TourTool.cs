@@ -115,7 +115,8 @@ public sealed class TourTool
         new("MafMigrationPath", "Upgrade", "Multi-step migration planner — walks version-keyed guide metadata, returns ordered intermediate-step sections."),
 
         // — Health —
-        new("MafDoctor", "Health", "Single-command A/B/C/F grade. Aggregates 4 scanners + reports the top 3 fixes. Best triage signal in the toolkit."),
+        new("MafDoctor", "Health", "Single-command A/B/C/F grade. Aggregates 4 scanners + reports the top 3 fixes (or every finding with `full: true`). Best triage signal in the toolkit."),
+        new("MafExplainFinding", "Health", "Deep-dive ONE doctor finding (file + line): the offending code in context plus the rule's why / fix / auto-fixability. Grounded substrate for explaining or fixing it — pair with the `maf-explain-finding` prompt."),
 
         // — Discovery (this very tool) —
         new("MafTour", "Discovery", "This catalogue. Returns every capability with one-line descriptions. Use as the first stop for new users."),
@@ -155,6 +156,7 @@ public sealed class TourTool
         ("maf-cs0618-hunt", "Starter prompt for finding + fixing CS0618 obsolete-API warnings."),
         ("maf-review", "Best-practices code review starter — day-to-day development, PR review, post-migration validation. Routes to MafDoctor / MafScanAntiPatterns / MafValidateFanOut."),
         ("maf-debug", "Reactive-debugging starter — paste an error or symptom, the prompt routes to the right diagnostic tool by symptom class."),
+        ("maf-explain-finding", "Deep-dive + fix ONE doctor finding (file + line). Calls MafExplainFinding for grounded context, then explains + proposes the fix using maf://constraints + maf://guide."),
         ("maf-scaffold", "Boilerplate generation starter — routes to MafNewAgent or MafNewExecutor depending on what you want to build."),
         ("maf-help", "3-question interactive flow for new users. Routes to the right tool / agent based on intent."),
     };

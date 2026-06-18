@@ -283,6 +283,52 @@ public static class MafPrompts
         return [new PromptMessage { Role = Role.User, Content = new TextContentBlock { Text = sb.ToString() } }];
     }
 
+    [McpServerPrompt(Name = "maf-explain-finding",
+        Title = "MAF Explain Finding: deep-dive and fix one doctor finding")]
+    [Description(
+        "Deep-dive a single MAF Doctor finding (file + line from the report) and turn it " +
+        "into a precise explanation and proposed fix. Calls MafExplainFinding for the grounded " +
+        "code context + rule rationale, then uses maf://constraints and maf://guide as grounding " +
+        "so the explanation and fix are accurate, not hallucinated.")]
+    public static IList<PromptMessage> ExplainFinding(
+        [Description("Repo-relative file path of the finding, exactly as shown in the doctor report (e.g. 'Executors/Foo.cs').")] string file,
+        [Description("1-based line number of the finding.")] string line,
+        [Description("Path to the repository root. Leave empty to let the assistant infer it.")] string? repoPath = null)
+    {
+        // Phase 5.G fixup — length caps before sanitization. See Audit for rationale.
+        try { BoundedInput.Validate(file,     BoundedInput.PathBytes,      nameof(file)); }
+        catch (ArgumentException) { file = string.Empty; }
+        try { BoundedInput.Validate(line,     BoundedInput.ShortTextBytes, nameof(line)); }
+        catch (ArgumentException) { line = string.Empty; }
+        try { BoundedInput.Validate(repoPath, BoundedInput.PathBytes,      nameof(repoPath)); }
+        catch (ArgumentException) { repoPath = null; }
+
+        // Phase 2.G fixup (Finding 3) — strip HTML comments from echoed values.
+        var safeFile = LlmFencing.StripHtmlComments(file);
+        var safeLine = LlmFencing.StripHtmlComments(line);
+        var safeRepoPath = LlmFencing.StripHtmlComments(repoPath);
+
+        var sb = new StringBuilder();
+        sb.AppendLine("Explain ONE MAF Doctor finding and propose the exact fix in the user's code. Be precise — ground every claim in the served resources, do not guess.");
+        sb.AppendLine();
+        sb.AppendLine($"Finding location: `{(string.IsNullOrEmpty(safeFile) ? "<file>" : safeFile)}:{(string.IsNullOrEmpty(safeLine) ? "<line>" : safeLine)}`");
+        if (!string.IsNullOrEmpty(safeRepoPath))
+            sb.AppendLine($"Repository: {safeRepoPath}");
+        sb.AppendLine();
+        var repoArg = string.IsNullOrEmpty(safeRepoPath) ? "<repo>" : safeRepoPath;
+        sb.AppendLine("STEPS:");
+        sb.AppendLine($"1. Call `MafExplainFinding(repoPath: \"{repoArg}\", file: \"{(string.IsNullOrEmpty(safeFile) ? "<file>" : safeFile)}\", line: {(string.IsNullOrEmpty(safeLine) ? "<line>" : safeLine)})` to get the offending code in context plus the rule's rationale, fix, and auto-fixability.");
+        sb.AppendLine("2. Read `maf://constraints` (the hard rules) and the relevant section of `maf://guide`. For an obsolete / removed-surface finding (e.g. `MAF-AP-EXEC-001`), also call `MafRegistryLookup` for the canonical before/after.");
+        sb.AppendLine("3. Explain to the user, grounded in those sources:");
+        sb.AppendLine("   - **What** the finding is and **why it matters** (the concrete failure mode, not a restatement of the rule name).");
+        sb.AppendLine("   - **The fix.** If the tool reports it is *auto-fixable*, tell the user to run `maf-doctor autofix-all .` (or call `MafAutoFixAll`) — the rewrite is deterministic. If it *needs judgment*, propose the exact change as a minimal diff against the shown code.");
+        sb.AppendLine("4. Before finalizing a hand-written fix, re-check it against `maf://constraints` so the fix doesn't violate a hard rule.");
+        sb.AppendLine();
+        sb.AppendLine("Keep it tight: one finding, one clear fix. If `MafExplainFinding` reports no finding at that line, say so and suggest re-running `MafDoctor` for the current `file:line`.");
+
+        return [new PromptMessage { Role = Role.User, Content = new TextContentBlock { Text = sb.ToString() } }];
+    }
+
     [McpServerPrompt(Name = "maf-scaffold",
         Title = "MAF Scaffold: Generate MAF Boilerplate")]
     [Description(

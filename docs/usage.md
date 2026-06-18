@@ -31,6 +31,7 @@ Prompts are pre-built workflows the server exposes; your client surfaces them as
 | `maf-cs0618-hunt` | Find + fix every CS0618 obsolete-API usage | — |
 | `maf-review` | Best-practice review of already-migrated code | `@maf-best-practice-reviewer` |
 | `maf-debug` | Diagnose a MAF failure → root cause + fix | `@maf-incident-responder` |
+| `maf-explain-finding` | Deep-dive + fix ONE doctor finding (file + line) | — |
 | `maf-scaffold` | Generate clean agent/executor boilerplate | — |
 | `maf-help` | Triage: where are you, what do you need? | `@maf-onboarding` |
 
@@ -45,7 +46,7 @@ The server exposes a couple dozen executable tools, each annotated read-only / d
 - **Workflow topology** — `MafSimulateWorkflow` (+ Mermaid)
 - **Scaffold** — `MafNewAgent`, `MafNewExecutor`
 - **Fix** — `MafAutoFix`, `MafAutoFixAll` (both support `dryRun`)
-- **Report** — `MafDoctor` (A/B/C/F health letter), `MafAuditPullRequest`, `MafExplain`, `MafBeforeAfter`, `MafCompatibility`, `MafDraftIssue`
+- **Report** — `MafDoctor` (A/B/C/F health letter), `MafExplainFinding` (deep-dive one finding), `MafAuditPullRequest`, `MafExplain`, `MafBeforeAfter`, `MafCompatibility`, `MafDraftIssue`
 
 > **Live catalogue:** ask the assistant to run **`MafTour`**, or read the **`maf://rules`** resource — both are generated from the actual code, so they never drift.
 
