@@ -70,12 +70,12 @@ public sealed class DiffPackageTool
     // patterns here parse `dotnet-inspect` markdown output (third-party
     // attacker-influenced text via package metadata) so the +/.+ classes
     // could in theory be probed for backtracking. NonBacktracking on the
-    // bounded patterns + a 100ms timeout caps any future drift.
+    // bounded patterns + a 2s timeout caps any future drift.
     private const RegexOptions HygieneOptions =
         RegexOptions.Compiled | RegexOptions.NonBacktracking;
     private const RegexOptions HygieneOptionsMultiline =
         RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.Multiline;
-    private static readonly TimeSpan RegexBudget = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan RegexBudget = TimeSpan.FromSeconds(2);
 
     private static readonly Regex PackageIdRegex = new(@"^[A-Za-z0-9._-]+$", HygieneOptions, RegexBudget);
     private static readonly Regex VersionRegex = new(@"^[A-Za-z0-9.+\-]+$", HygieneOptions, RegexBudget);

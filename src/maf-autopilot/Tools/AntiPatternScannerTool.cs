@@ -105,7 +105,7 @@ public sealed class AntiPatternScannerTool
 
     // Phase 5.9 — ReDoS hygiene on every rule pattern.
     //
-    // All AntiPatternScanner regexes carry NonBacktracking + a 100ms
+    // All AntiPatternScanner regexes carry NonBacktracking + a 2s
     // MatchTimeout. The patterns are simple enough that catastrophic
     // backtracking is unlikely in practice, but `MAF-AP-SEC-002` (the
     // API-key matcher) and `MAF-AP-CONC-002` (the .Result/.Wait matcher)
@@ -117,7 +117,7 @@ public sealed class AntiPatternScannerTool
     // confirms the contract.
     private const RegexOptions RegexHygiene =
         RegexOptions.Compiled | RegexOptions.NonBacktracking;
-    private static readonly TimeSpan RegexBudget = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan RegexBudget = TimeSpan.FromSeconds(2);
 
     internal static readonly IReadOnlyList<AntiPatternRule> AllRules = new AntiPatternRule[]
     {

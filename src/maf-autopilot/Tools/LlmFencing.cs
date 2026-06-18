@@ -112,13 +112,16 @@ internal static class LlmFencing
 
     /// <summary>
     /// HTML-comment regex. Non-greedy to handle multiple comments on one
-    /// line; multiline to span newlines. NonBacktracking + a 100ms timeout
-    /// guard against ReDoS even though the pattern itself is bounded.
+    /// line; multiline to span newlines. NonBacktracking makes matching linear
+    /// (ReDoS-proof); the MatchTimeout is only a backstop. Raised 100ms → 2s:
+    /// the 100ms cap intermittently tripped on the NonBacktracking engine's
+    /// one-time DFA build under CI load (RegexMatchTimeoutException), never on
+    /// real input.
     /// </summary>
     private static readonly Regex HtmlCommentRegex = new(
         @"<!--[\s\S]*?-->",
         RegexOptions.Compiled | RegexOptions.NonBacktracking,
-        TimeSpan.FromMilliseconds(100));
+        TimeSpan.FromSeconds(2));
 
     /// <summary>
     /// Clamp to <paramref name="cap"/> UTF-8 bytes. Returns <c>(clamped, true)</c>

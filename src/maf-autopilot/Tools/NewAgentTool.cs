@@ -150,15 +150,15 @@ public sealed class NewAgentTool
     // Phase 7.G fixup — regex hygiene applied to all Regex declarations.
     // NamespaceRegex matches user-controlled .csproj content; the bounded
     // `[^<]+` class is backtracking-safe but the policy requires
-    // NonBacktracking + 100ms timeout regardless.
+    // NonBacktracking + 2s timeout regardless.
     private static readonly Regex IdentifierRegex = new(
         @"^[A-Za-z][A-Za-z0-9_]*$",
         RegexOptions.Compiled | RegexOptions.NonBacktracking,
-        TimeSpan.FromMilliseconds(100));
+        TimeSpan.FromSeconds(2));
     private static readonly Regex NamespaceRegex = new(
         @"<RootNamespace>([^<]+)</RootNamespace>",
         RegexOptions.Compiled | RegexOptions.NonBacktracking,
-        TimeSpan.FromMilliseconds(100));
+        TimeSpan.FromSeconds(2));
 
     internal static bool IsSafeIdentifier(string s) =>
         !string.IsNullOrWhiteSpace(s) && IdentifierRegex.IsMatch(s);
