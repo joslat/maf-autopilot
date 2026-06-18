@@ -89,64 +89,46 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
             }
         }
 
-        // (b) Enclosing function must be async. Walk to the nearest "function"-y
-        // ancestor and check its modifiers / async lambda token. If we hit the
-        // top-level program or a property accessor (rare), treat as non-async.
+        // (b) WHITELIST, not blacklist. Walk outward and rewrite ONLY when we
+        // positively land in an async-capable scope: an `async` method / local
+        // function / lambda, or a top-level statement (the generated entry point is
+        // async). If we instead reach a type-declaration body or the compilation-unit
+        // root WITHOUT finding one, the `.Result` sits in a context that can never be
+        // `async` (property / field / operator / conversion / primary-ctor base /
+        // attribute / …), so we SKIP. Defaulting to skip closes the entire
+        // await-into-non-async corruption class in one place, instead of trying to
+        // enumerate every non-async member kind (we kept missing some — operators,
+        // then C# 12 primary-constructor base initializers).
         foreach (var ancestor in node.Ancestors())
         {
             switch (ancestor)
             {
                 case MethodDeclarationSyntax m:
-                    if (!m.Modifiers.Any(mod => mod.IsKind(SyntaxKind.AsyncKeyword)))
-                    {
-                        reason = "// MAF-AP-CONC-002: enclosing method is not async — mark `async` (and adjust return type) or refactor before applying this rule.";
-                        return true;
-                    }
-                    reason = string.Empty;
-                    return false; // method is async — OK to rewrite
-                case LocalFunctionStatementSyntax lf:
-                    if (!lf.Modifiers.Any(mod => mod.IsKind(SyntaxKind.AsyncKeyword)))
-                    {
-                        reason = "// MAF-AP-CONC-002: enclosing local function is not async — mark `async` or refactor.";
-                        return true;
-                    }
-                    reason = string.Empty;
-                    return false;
-                case AnonymousFunctionExpressionSyntax af:
-                    if (af.AsyncKeyword == default)
-                    {
-                        reason = "// MAF-AP-CONC-002: enclosing lambda is not async — add `async` or refactor.";
-                        return true;
-                    }
-                    reason = string.Empty;
-                    return false;
-                case AccessorDeclarationSyntax: // property/event accessors — never async-able in our targets
-                    reason = "// MAF-AP-CONC-002: cannot await inside a property/event accessor — refactor.";
+                    if (m.Modifiers.Any(mod => mod.IsKind(SyntaxKind.AsyncKeyword))) { reason = string.Empty; return false; }
+                    reason = "// MAF-AP-CONC-002: enclosing method is not async — mark `async` (and adjust return type) or refactor before applying this rule.";
                     return true;
-                // Expression-bodied / initializer member boundaries that have NO
-                // accessor node and can NEVER be `async`. Without these, a `.Result`
-                // in `string P => Foo().Result;`, `this[int i] => …`, a field
-                // initializer, or a ctor/dtor fell through to the async-allowed
-                // default and got `await` injected → uncompilable (CS4032). These
-                // are members (never nested), so they don't shadow the method /
-                // local-function / lambda cases for ordinary bodies.
-                case PropertyDeclarationSyntax:
-                case IndexerDeclarationSyntax:
-                case EventDeclarationSyntax:
-                case FieldDeclarationSyntax:
-                case ConstructorDeclarationSyntax:
-                case DestructorDeclarationSyntax:
-                case OperatorDeclarationSyntax:           // operators can never be async
-                case ConversionOperatorDeclarationSyntax: // user-defined conversions can never be async
-                    reason = "// MAF-AP-CONC-002: cannot await here — this member cannot be `async`; refactor the call site (e.g. make it a method).";
+                case LocalFunctionStatementSyntax lf:
+                    if (lf.Modifiers.Any(mod => mod.IsKind(SyntaxKind.AsyncKeyword))) { reason = string.Empty; return false; }
+                    reason = "// MAF-AP-CONC-002: enclosing local function is not async — mark `async` or refactor.";
+                    return true;
+                case AnonymousFunctionExpressionSyntax af:
+                    if (af.AsyncKeyword != default) { reason = string.Empty; return false; }
+                    reason = "// MAF-AP-CONC-002: enclosing lambda is not async — add `async` or refactor.";
+                    return true;
+                case GlobalStatementSyntax:
+                    // Top-level statement — the generated Main is async-capable.
+                    reason = string.Empty;
+                    return false;
+                case BaseTypeDeclarationSyntax: // class/struct/record/interface/enum body reached without an async fn
+                case CompilationUnitSyntax:     // reached the root without an async fn
+                    reason = "// MAF-AP-CONC-002: this position cannot `await` (not inside an async method/function) — refactor the call site, e.g. make it an async method.";
                     return true;
             }
         }
 
-        // No enclosing function found (top-level statement context). Top-level
-        // is implicitly async-allowed in modern C#; leave the rewrite alone.
-        reason = string.Empty;
-        return false;
+        // Defensive default: never inject `await` into an unrecognized context.
+        reason = "// MAF-AP-CONC-002: cannot await here — no enclosing async context.";
+        return true;
     }
 
     /// <summary>

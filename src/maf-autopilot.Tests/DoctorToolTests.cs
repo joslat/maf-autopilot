@@ -706,6 +706,50 @@ public class DoctorToolTests
     }
 
     [Fact]
+    public void AutofixAll_DoesNotCorrupt_PrimaryConstructorBaseInitializer()
+    {
+        // Round-4 regression: a C# 12 primary-ctor base initializer can't be async.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002pc-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "PC.cs");
+            File.WriteAllText(file, """
+                using System.Threading.Tasks;
+                public class Base { public Base(int x) { } }
+                public static class H { public static Task<int> Foo() => Task.FromResult(1); }
+                public class Derived(int p) : Base(H.Foo().Result) { }
+                """);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var after = File.ReadAllText(file);
+            Assert.DoesNotContain("(await", after, StringComparison.Ordinal);
+            Assert.Contains(".Result", after, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void AutofixAll_StillRewrites_ResultInsideAsyncMethod()
+    {
+        // The whitelist must keep rewriting valid async contexts (no over-skip).
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002ok-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "Ok.cs");
+            File.WriteAllText(file, """
+                using System.Threading.Tasks;
+                public class C { static Task<int> Foo() => Task.FromResult(1);
+                  public async Task<int> M() { return Foo().Result; } }
+                """);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var after = File.ReadAllText(file);
+            Assert.Contains("(await", after, StringComparison.Ordinal); // rewritten in the async method
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
     public void ScanAntiPatterns_SarifOutput_RedactsSecret()
     {
         // Round-3 regression: the SARIF surface must redact the SEC-002 secret too.
