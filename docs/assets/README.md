@@ -1,17 +1,17 @@
 # `docs/assets/` — the README demo casts
 
-This folder holds the two animated terminal demos shown in the top-level `README.md`:
+This folder holds the terminal demo casts for the project:
 
 | Source (`.tape`) | Renders to | Shows |
 |---|---|---|
-| `install-cast.tape` | `install-cast.gif` | Install the tool + `maf-doctor doctor .` → grade **F** + top fixes |
-| `migration-cast.tape` | `migration-cast.gif` | `maf-doctor autofix-all .` → grade **F → A**, deterministic |
+| `install-cast.tape` | `install-cast.gif` (committed, shown in the top-level `README.md`) | Install the tool + `maf-doctor doctor .` → grade **F** + top fixes |
+| `migration-cast.tape` | _(not rendered/committed yet)_ | `maf-doctor autofix-all .` → deterministic Roslyn rewriters clear the **mechanical** anti-patterns; the **semantic** fan-out fixes (`ValueTask` → `Task<T>`) are left for the `@maf-migration` agent. It does **not** reach grade A on its own — that needs the agent pass. |
 
 ## What the `.tape` files are
 
 They're **[VHS](https://github.com/charmbracelet/vhs)** scripts (by Charm). VHS reads a `.tape` file — a list of `Type`, `Enter`, `Sleep`, `Set` directives — drives a **headless terminal**, runs the commands for real, and records the session to a `.gif`. So the casts aren't hand-made screen recordings: they're reproducible scripts you re-run whenever the CLI output changes.
 
-The `.gif` outputs are **not committed** — they're build artifacts you render on demand (which is why the README's `<img>` tags were removed until someone renders + commits them).
+`install-cast.gif` is committed and embedded in the top-level README. `migration-cast.gif` is **not** rendered/committed yet — the agent-driven migration it should show needs a Copilot/Claude session, so it's deferred. Render any cast on demand from its `.tape`.
 
 ## How to render them ("auto-run")
 
