@@ -196,12 +196,21 @@ public sealed class AntiPatternScannerTool
                         || rhs.RawKind != (int)SyntaxKind.TrueLiteralExpression)
                         continue;
 
+                    // Match ONLY the contexts the rewriter can actually fix, so every
+                    // finding is genuinely auto-fixable (true detector ⇆ rewriter parity):
+                    // initializer entries (VisitInitializerExpression) and statement
+                    // assignments (VisitExpressionStatement). A lambda-body / nested
+                    // assignment the rewriter can't touch is intentionally not flagged.
                     var match = assign.Left switch
                     {
-                        IdentifierNameSyntax id => id.Identifier.ValueText == "EnableSensitiveData",          // EnableSensitiveData = true
-                        MemberAccessExpressionSyntax mae => mae.Name.Identifier.ValueText == "EnableSensitiveData", // x.EnableSensitiveData = true
-                        ImplicitElementAccessSyntax iea => IsEnableSensitiveDataKey(iea.ArgumentList),        // ["EnableSensitiveData"] = true
-                        ElementAccessExpressionSyntax eae => IsEnableSensitiveDataKey(eae.ArgumentList),      // dict["EnableSensitiveData"] = true
+                        IdentifierNameSyntax id => id.Identifier.ValueText == "EnableSensitiveData"
+                            && assign.Parent is InitializerExpressionSyntax,                                   // new O { EnableSensitiveData = true }
+                        ImplicitElementAccessSyntax iea => IsEnableSensitiveDataKey(iea.ArgumentList)
+                            && assign.Parent is InitializerExpressionSyntax,                                   // new D { ["EnableSensitiveData"] = true }
+                        MemberAccessExpressionSyntax mae => mae.Name.Identifier.ValueText == "EnableSensitiveData"
+                            && assign.Parent is ExpressionStatementSyntax,                                     // x.EnableSensitiveData = true;
+                        ElementAccessExpressionSyntax eae => IsEnableSensitiveDataKey(eae.ArgumentList)
+                            && assign.Parent is ExpressionStatementSyntax,                                     // dict["EnableSensitiveData"] = true;
                         _ => false,
                     };
                     if (!match) continue;
@@ -347,6 +356,11 @@ public sealed class AntiPatternScannerTool
                         continue;
 
                     var modifiers = cls.Modifiers.Select(m => m.ValueText).ToHashSet();
+                    // Skip abstract classes: an abstract Executor base can never be
+                    // `sealed partial` (abstract precludes sealed), so flagging it with
+                    // an auto-fixable rule whose fix is impossible would be dishonest.
+                    // The dispatched concrete subclass is what must be `sealed partial`.
+                    if (modifiers.Contains("abstract")) continue;
                     var hasPartial = modifiers.Contains("partial");
                     var hasSealed = modifiers.Contains("sealed");
                     if (hasPartial && hasSealed) continue;
@@ -641,11 +655,16 @@ internal sealed class RegexRule : AntiPatternRule
         var lineStart = 0;
         for (var i = 0; i < lines.Length; i++)
         {
-            var match = _pattern.Match(lines[i]);
-            if (match.Success
-                && !IsInCommentOrSkippedLiteral(root, lineStart + match.Index, _matchesStringContent))
+            // Inspect EVERY match on the line, not just the first: a real code
+            // match can follow a comment/string match on the same physical line.
+            // Emit the first match that isn't in skipped trivia (one per line,
+            // preserving prior behavior); only skip the line if all are filtered.
+            foreach (Match m in _pattern.Matches(lines[i]))
             {
-                findings.Add(new AntiPatternFinding(Id, Name, Severity, file, i + 1, match.Value));
+                if (IsInCommentOrSkippedLiteral(root, lineStart + m.Index, _matchesStringContent))
+                    continue;
+                findings.Add(new AntiPatternFinding(Id, Name, Severity, file, i + 1, m.Value));
+                break;
             }
             lineStart += lines[i].Length + 1; // +1 for the '\n' that Split removed
         }

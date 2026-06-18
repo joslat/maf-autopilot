@@ -35,11 +35,14 @@ internal sealed class ExecutorSealedRewriter : CSharpSyntaxRewriter, IRuleRewrit
         // source generator can't emit the dispatcher → generator-time compile
         // error). So add WHICHEVER is missing — not just `sealed`.
 
-        // Phase 4.1a — corruption guard: `sealed abstract` / `sealed static` are
-        // C# compile errors. We can't add `sealed` to those, so skip with a
-        // comment-warning rather than emit uncompilable code. (Adding `sealed`
-        // is what's blocked; an abstract class missing `partial` is a refactor
-        // the developer must do anyway.)
+        // Corruption guard: `sealed abstract` / `sealed static` are C# compile
+        // errors, so `sealed` can't be added to those. An abstract Executor can
+        // never be `sealed partial` at all (abstract precludes sealed) — the
+        // scanner skips abstract classes for that reason, so a real WF-001 finding
+        // won't reach here — but if autofix-all visits one directly, leave a
+        // comment pointing at the real fix (make the concrete subclass
+        // `sealed partial`, or don't derive the abstract base from Executor)
+        // rather than emit uncompilable code.
         if (needsSealed && modifiers.Contains("abstract"))
         {
             return AddSkipWarning(node,

@@ -181,9 +181,12 @@ public sealed class ExplainFindingTool
             var raw = lines[n - 1];
             var marker = marked.Contains(n) ? ">" : " ";
             var num = n.ToString().PadLeft(width);
-            var body = AntiPatternScannerTool.LooksLikeSecret(raw)
-                ? "(line redacted — may contain a secret)"
-                : raw.TrimEnd();
+            // Guard the regex: a RegexMatchTimeout must redact-on-doubt, not fault
+            // the whole tool (mirrors DoctorTool.TryReadSourceLine).
+            bool secret;
+            try { secret = AntiPatternScannerTool.LooksLikeSecret(raw); }
+            catch { secret = true; }
+            var body = secret ? "(line redacted — may contain a secret)" : raw.TrimEnd();
             sb.AppendLine($"{marker} {num} | {body}");
         }
         sb.AppendLine("```");

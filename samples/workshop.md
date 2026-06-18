@@ -104,7 +104,7 @@ git restore samples/maf-1.3-sample/
 
 - **Total command count: 6 commands.** No more than what fits on a slide.
 - **No Copilot Chat required.** No agent setup. No tokens consumed. Pure CLI.
-- **One "whoa" per beat.** Build warnings (beat 2) → grade F (3) → preview (4) → fix (5) → grade A (6). Each beat adds one piece of evidence.
+- **One "whoa" per beat.** Build warnings (beat 2) → grade F (3) → preview (4) → fix (5) → still F but errors cleared 7→4 (6) → plan (7). Each beat adds one piece of evidence; grade A comes later, in the agent flow.
 - **Resettable in one line.** Re-run the speedrun on any laptop without setup cost.
 
 ---

@@ -577,6 +577,39 @@ public class DoctorToolTests
     }
 
     [Fact]
+    public void RegexRule_DetectsRealMatch_AfterAStringMatchOnSameLine()
+    {
+        // Regression: trivia-aware scan must inspect EVERY match on a line, not
+        // just the first — a real call after a string-literal mention is real.
+        const string src = "class C { void M() { var x = \"new DefaultAzureCredential()\"; var y = new DefaultAzureCredential(); } }";
+        var sec001 = AntiPatternScannerTool.ScanFile(src, "C.cs")
+            .Where(f => f.RuleId == "MAF-AP-SEC-001").ToList();
+        Assert.Single(sec001); // the real `new DefaultAzureCredential()`, not skipped
+    }
+
+    [Fact]
+    public void Sec003_OnlyFlagsRewriterFixableContexts()
+    {
+        // Statement assignment → fixable → flagged.
+        const string stmt = "class C { void M(Opts o) { o.EnableSensitiveData = true; } } class Opts { public bool EnableSensitiveData; }";
+        Assert.Single(AntiPatternScannerTool.ScanFile(stmt, "S.cs").Where(f => f.RuleId == "MAF-AP-SEC-003"));
+        // Expression-bodied lambda → the rewriter can't fix it → NOT flagged (no false auto-fixable).
+        const string lambda = "class C { System.Action F(Opts o) => () => o.EnableSensitiveData = true; } class Opts { public bool EnableSensitiveData; }";
+        Assert.Empty(AntiPatternScannerTool.ScanFile(lambda, "L.cs").Where(f => f.RuleId == "MAF-AP-SEC-003"));
+    }
+
+    [Fact]
+    public void Wf001_SkipsAbstractExecutor_ButFlagsConcrete()
+    {
+        // Abstract Executor can never be `sealed partial` → not flagged (no impossible auto-fix promise).
+        const string abstractCls = "public abstract class Base : Executor { [MessageHandler] public abstract System.Threading.Tasks.Task<int> H(string s); }";
+        Assert.Empty(AntiPatternScannerTool.ScanFile(abstractCls, "B.cs").Where(f => f.RuleId == "MAF-AP-WF-001"));
+        // Concrete Executor missing sealed/partial still fires.
+        const string concrete = "public class Conc : Executor { [MessageHandler] public System.Threading.Tasks.Task<int> H(string s) => null; }";
+        Assert.Single(AntiPatternScannerTool.ScanFile(concrete, "C.cs").Where(f => f.RuleId == "MAF-AP-WF-001"));
+    }
+
+    [Fact]
     public void Json_HasUnboundedCostSites_AndCountsReconcileWithTopFixes()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-jsonreconcile-" + Guid.NewGuid().ToString("N"));
