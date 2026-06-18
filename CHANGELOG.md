@@ -9,15 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.2.12] - 2026-06-18
+## [1.3.0] - 2026-06-18
 
-### Fixed
-
-- **NuGet package page no longer shows raw HTML.** The shared README's centered hero (`<p align="center">…<br/><em>…</em></p>`) rendered as literal HTML text on nuget.org (its README renderer escapes HTML it doesn't fully support). Both packages now ship a dedicated **pure-markdown `NUGET_README.md`** as their `PackageReadmeFile`, so the package page renders cleanly. The GitHub README keeps its centered HTML hero.
+Doctor-suggestions overhaul — three tiers that turn each finding from a terse label into something a developer can act on in one read. Each tier shipped after two adversarial multi-agent review passes.
 
 ### Added
 
-- **NuGet README explains the install.** The new package README spells out that **`init` is non-destructive — it attaches and updates only, never overwriting your files** (adds its own MCP server entry + regenerates self-contained steering sidecars), lists what you get (MCP server / CLI / plugin / analyzers), and highlights recent features (`doctor --all`, self-update, security hardening). The same non-destructive framing was added to the main README's Quick Start.
+- **Richer, actionable suggestions (Tier 1).** Every finding now carries a one-line **Why** (the concrete failure mode) and surfaces its **Fix** + an "auto-fixable / needs your judgment" tag + a "N of M auto-fixable → `autofix-all`" hint directly in the human markdown report (previously the fix string was JSON-only). The report shows the **offending source line** for each finding, with content-aware secret redaction (a line matching the hard-coded-key pattern is never echoed). `doctor --all` now **groups findings by rule** (rule-generic header, ×N, severity emoji, ordered by impact). New CLI `--json` flag (JSON was MCP-only). The JSON finding gains an additive `why` field (schema_version stays `"1"`).
+- **`MafExplainFinding` tool + `maf-explain-finding` prompt (Tier 2).** Deep-dive a single finding: given its `file:line` (as printed by the report), the tool returns the offending code in context plus the rule's why / fix / auto-fixability and grounding pointers — the substrate a host model (Copilot / Claude / Cursor) uses to explain and propose the fix without spending our own LLM budget. The prompt drives that flow grounded in `maf://constraints` + `maf://guide`.
+- **`doctor --plan` / `MafDoctor(format: "plan")` (Tier 3).** Turns the findings into an ordered, checkboxed **remediation plan** for a GitHub issue: Phase 1 batches every auto-fixable finding into one `autofix-all` step; Phase 2 lists the semantic fixes as impact-ordered `- [ ]` tasks (why / fix / file:line, tagged `@maf-migration`). Covers every finding regardless of `--all`; emits no source snippets, so it never echoes a secret.
+- **NuGet README explains the install.** A dedicated package README spells out that **`init` is non-destructive — it attaches and updates only, never overwriting your files** (adds its own MCP server entry + regenerates self-contained steering sidecars), lists what you get (MCP server / CLI / plugin / analyzers), and highlights recent features. The same non-destructive framing was added to the main README's Quick Start.
+
+### Fixed
+
+- **NuGet package page no longer shows raw HTML.** The shared README's centered hero (`<p align="center">…<br/><em>…</em></p>`) rendered as literal HTML text on nuget.org (its renderer escapes HTML it doesn't fully support). Both packages now ship a pure-markdown `NUGET_README.md` as their `PackageReadmeFile`; the GitHub README keeps its centered hero.
+- **Fan-out findings report the signature line**, not the `[MessageHandler]` attribute line above it — so the offending return type lands on the reported line and in the snippet.
+- **`MafDoctor` markdown report no longer dead-ends.** The "Want more" footer advertised MCP-only tool calls to CLI users; it now lists surface-neutral commands (`--all` / `--json` / `--plan` for the CLI, `full:`/`format:` for MCP) and points at `MafExplainFinding`.
 
 ## [1.2.11] - 2026-06-18
 
