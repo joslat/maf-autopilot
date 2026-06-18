@@ -141,7 +141,9 @@ public sealed class AntiPatternScannerTool
     // Pattern text in a const so the multi-line literal doesn't push the
     // `new(...)` options outside the ci-invariants regex-hygiene detection window.
     private const string SecretRedactionRegexText =
-        @"""(?:sk-|api[-_]?key=)[A-Za-z0-9_\-]{16,}"""
+        // Leading quote OPTIONAL (`"?`) so bare `sk-…` / `api-key=…` in a comment or
+        // raw-string body is redacted too, not just the quoted finding-style line.
+        @"""?(?:sk-|api[-_]?key\s*=\s*)[A-Za-z0-9_\-]{16,}"
         + @"|""[^""]*(?:accountkey|sharedaccesskey|password|pwd|secret|token)\s*=\s*[^""]{4,}[^""]*"""
         + @"|gh[opsru]_[A-Za-z0-9]{20,}"
         + @"|AKIA[0-9A-Z]{16}"
@@ -155,6 +157,12 @@ public sealed class AntiPatternScannerTool
     /// on purpose — see <see cref="SecretRedactionPattern"/>. Not a guarantee.
     /// </summary>
     internal static bool LooksLikeSecret(string text) => SecretRedactionPattern.IsMatch(text);
+
+    /// <summary>OBS-001's `new ChatClientAgent(` probe — hoisted to a field so it honors
+    /// the same NonBacktracking + MatchTimeout hygiene as every other rule (case-sensitive,
+    /// matching the original static call and real C# type-name casing).</summary>
+    private static readonly Regex ChatClientAgentCtor =
+        new(@"\bnew\s+ChatClientAgent\s*\(", RegexHygiene, RegexBudget);
 
     internal static readonly IReadOnlyList<AntiPatternRule> AllRules = new AntiPatternRule[]
     {
@@ -200,9 +208,11 @@ public sealed class AntiPatternScannerTool
 
                     // Match ONLY the contexts the rewriter can actually fix, so every
                     // finding is genuinely auto-fixable (true detector ⇆ rewriter parity):
-                    // initializer entries (VisitInitializerExpression) and statement
-                    // assignments (VisitExpressionStatement). A lambda-body / nested
-                    // assignment the rewriter can't touch is intentionally not flagged.
+                    // initializer entries (VisitInitializerExpression) and statement-position
+                    // assignments (VisitExpressionStatement — this DOES include a statement
+                    // inside a block-bodied lambda). Expression-bodied lambdas
+                    // (`() => o.X = true`) and nested/parenthesized assignments
+                    // (`b = (o.X = true)`) are intentionally excluded — the rewriter can't reach them.
                     var match = assign.Left switch
                     {
                         IdentifierNameSyntax id => id.Identifier.ValueText == "EnableSensitiveData"
@@ -233,7 +243,11 @@ public sealed class AntiPatternScannerTool
             id: "MAF-AP-CONC-002",
             name: "Sync-over-async (.Result / .Wait())",
             severity: AntiPatternSeverity.Warning,
-            pattern: new Regex(@"\b\)\s*\.(Result|Wait)\s*(\(\))?", RegexHygiene, RegexBudget),
+            // Anchor on the call's close-paren `\)` (NOT a leading `\b`, which
+            // required a word char before `)` and so MISSED the canonical
+            // parameterless `Foo().Result` / `Foo().Wait()`). The trailing `\b`
+            // after the member name avoids `.Results` / `.WaitHandle` false hits.
+            pattern: new Regex(@"\)\s*\.(?:Result|Wait)\b(\s*\(\s*\))?", RegexHygiene, RegexBudget),
             skipInTestFiles: true),
 
         new RegexRule(
@@ -246,7 +260,7 @@ public sealed class AntiPatternScannerTool
             customScan: (source, _, file) =>
             {
                 var hasBuilder = source.Contains("AIAgentBuilder")
-                              || Regex.IsMatch(source, @"\bnew\s+ChatClientAgent\s*\(");
+                              || ChatClientAgentCtor.IsMatch(source);
                 var hasOTel = source.Contains("UseOpenTelemetry");
                 if (hasBuilder && !hasOTel)
                 {
@@ -309,12 +323,12 @@ public sealed class AntiPatternScannerTool
                 var findings = new List<AntiPatternFinding>();
                 // Find object initializers on ChatClientAgentOptions where an Instructions
                 // assignment appears at the OUTER level (not nested inside `ChatOptions = new { ... }`).
-                foreach (var oce in root.DescendantNodes().OfType<ObjectCreationExpressionSyntax>())
+                // Handles both `new ChatClientAgentOptions { … }` AND target-typed
+                // `ChatClientAgentOptions opts = new() { … }` (declared type visible).
+                foreach (var oce in root.DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>())
                 {
-                    var typeName = oce.Type.ToString();
-                    var simpleName = typeName.Contains('.') ? typeName[(typeName.LastIndexOf('.') + 1)..] : typeName;
-                    if (simpleName != "ChatClientAgentOptions") continue;
                     if (oce.Initializer is null) continue;
+                    if (ChatClientAgentOptionsTargetName(oce) != "ChatClientAgentOptions") continue;
 
                     foreach (var expr in oce.Initializer.Expressions.OfType<AssignmentExpressionSyntax>())
                     {
@@ -490,6 +504,26 @@ public sealed class AntiPatternScannerTool
             skipInTestFiles: false),
     };
 
+    /// <summary>
+    /// The constructed type's simple name for an object-creation, resolving the
+    /// target-typed <c>new()</c> form only when the declared type is syntactically
+    /// visible (a <c>T x = new() {…}</c> variable declaration). Pure-source — returns
+    /// null when the type can't be determined without a semantic model.
+    /// </summary>
+    private static string? ChatClientAgentOptionsTargetName(BaseObjectCreationExpressionSyntax oce)
+    {
+        static string Simple(string t) => t.Contains('.') ? t[(t.LastIndexOf('.') + 1)..] : t;
+
+        if (oce is ObjectCreationExpressionSyntax explicitOce)
+            return Simple(explicitOce.Type.ToString());
+
+        // Target-typed `new()` — only resolvable from a visible declared type.
+        if (oce.Parent is EqualsValueClauseSyntax { Parent: VariableDeclaratorSyntax { Parent: VariableDeclarationSyntax vd } })
+            return Simple(vd.Type.ToString());
+
+        return null;
+    }
+
     /// <summary>True if a bracketed indexer argument list is the single string key "EnableSensitiveData".</summary>
     private static bool IsEnableSensitiveDataKey(BracketedArgumentListSyntax args)
         => args.Arguments.Count == 1
@@ -594,7 +628,13 @@ public sealed class AntiPatternScannerTool
         sb.AppendLine("| Rule | File | Line | Match |");
         sb.AppendLine("|---|---|---:|---|");
         foreach (var f in findings)
-            sb.AppendLine($"| `{f.RuleId}` — {f.RuleName} | `{f.File}` | {f.Line} | `{f.Match}` |");
+        {
+            // The Match column echoes the matched source — redact it if it looks
+            // like a secret (e.g. the SEC-002 key literal), and neutralize backticks
+            // so the value can't break the markdown code span / table cell.
+            var match = LooksLikeSecret(f.Match) ? "(redacted)" : f.Match.Replace('`', '\'').Replace('|', '\\');
+            sb.AppendLine($"| `{f.RuleId}` — {f.RuleName} | `{f.File.Replace('`', '\'')}` | {f.Line} | `{match}` |");
+        }
         sb.AppendLine();
     }
 }

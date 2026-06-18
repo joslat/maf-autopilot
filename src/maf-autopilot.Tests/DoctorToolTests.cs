@@ -599,6 +599,87 @@ public class DoctorToolTests
     }
 
     [Fact]
+    public void Grade_TopFixes_AreDeterministicWithinPriority()
+    {
+        // Same priority bucket must order by file then line, so the top-3 headline
+        // and JSON top_fixes don't depend on filesystem enumeration order.
+        var aps = new[]
+        {
+            new AntiPatternFinding("MAF-AP-SEC-001", "n", AntiPatternSeverity.Error, "zzz.cs", 9, "m"),
+            new AntiPatternFinding("MAF-AP-SEC-001", "n", AntiPatternSeverity.Error, "aaa.cs", 2, "m"),
+            new AntiPatternFinding("MAF-AP-SEC-001", "n", AntiPatternSeverity.Error, "aaa.cs", 1, "m"),
+        };
+        var s = DoctorTool.Grade(aps, []);
+        Assert.Equal(new[] { ("aaa.cs", 1), ("aaa.cs", 2), ("zzz.cs", 9) },
+            s.AllFixes.Select(f => (f.File, f.Line)).ToArray());
+    }
+
+    [Fact]
+    public void Conc002_DetectsParameterlessCall_AndIsNotAutoFixable()
+    {
+        // Regression: leading `\b` made the canonical `Foo().Result` / `Foo().Wait()`
+        // miss. One finding per line, so put the two forms on separate lines.
+        const string src = "using System.Threading.Tasks;\nclass C {\n  void M() {\n    var a = Foo().Result;\n    Bar().Wait();\n  }\n  Task<int> Foo() => null;\n  Task Bar() => null;\n}";
+        var conc = AntiPatternScannerTool.ScanFile(src, "C.cs").Where(f => f.RuleId == "MAF-AP-CONC-002").ToList();
+        Assert.Equal(2, conc.Count); // both .Result and .Wait() forms
+        // Sync-over-async needs judgment (async-ify the caller) → NOT auto-fixable.
+        var summary = DoctorTool.Grade(conc, []);
+        Assert.All(summary.AllFixes.Where(f => f.RuleId == "MAF-AP-CONC-002"), f => Assert.False(f.AutoFixable));
+    }
+
+    [Fact]
+    public void Conc002_StillIgnoresPropertyAccess_NoCloseParen()
+    {
+        // `task.Result` (no call) must NOT match — only `<call>().Result`.
+        const string src = "using System.Threading.Tasks; class C { void M(Task<int> t) { var a = t.Result; } }";
+        Assert.Empty(AntiPatternScannerTool.ScanFile(src, "C.cs").Where(f => f.RuleId == "MAF-AP-CONC-002"));
+    }
+
+    [Fact]
+    public void Agent001_DetectsTargetTypedNew()
+    {
+        // Regression: target-typed `new()` placement of Instructions was never flagged.
+        const string src = "class C { void M() { ChatClientAgentOptions o = new() { Instructions = \"x\" }; } }";
+        Assert.Single(AntiPatternScannerTool.ScanFile(src, "C.cs").Where(f => f.RuleId == "MAF-AP-AGENT-001"));
+    }
+
+    [Fact]
+    public void BareSecretInComment_IsRedacted()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-baresecret-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "F.cs"),
+                "public class F { public F() { var c = new DefaultAzureCredential(); } } // rotate sk-BARESKabcdefghij1234567 now");
+            var output = new DoctorTool().Run(dir, "markdown", excludes: null, full: true);
+            Assert.Contains("MAF-AP-SEC-001", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("sk-BARESKabcdefghij1234567", output, StringComparison.Ordinal); // bare token redacted
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void AutofixAll_DoesNotCorrupt_ExpressionBodiedPropertyWithResult()
+    {
+        // Regression (blocker): the CONC-002 rewriter inserted `await` into a
+        // non-async expression-bodied property → uncompilable. Must skip it.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002corrupt-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "P.cs");
+            File.WriteAllText(file,
+                "using System.Threading.Tasks; public class P { Task<string> Fetch() => Task.FromResult(\"x\"); public string Val => Fetch().Result; }");
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var after = File.ReadAllText(file);
+            Assert.DoesNotContain("(await", after, StringComparison.Ordinal);  // never injected the `(await …)` rewrite
+            Assert.Contains(".Result", after, StringComparison.Ordinal);       // left intact
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
     public void Wf001_SkipsAbstractExecutor_ButFlagsConcrete()
     {
         // Abstract Executor can never be `sealed partial` → not flagged (no impossible auto-fix promise).

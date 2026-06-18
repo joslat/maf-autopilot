@@ -123,6 +123,21 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
                 case AccessorDeclarationSyntax: // property/event accessors — never async-able in our targets
                     reason = "// MAF-AP-CONC-002: cannot await inside a property/event accessor — refactor.";
                     return true;
+                // Expression-bodied / initializer member boundaries that have NO
+                // accessor node and can NEVER be `async`. Without these, a `.Result`
+                // in `string P => Foo().Result;`, `this[int i] => …`, a field
+                // initializer, or a ctor/dtor fell through to the async-allowed
+                // default and got `await` injected → uncompilable (CS4032). These
+                // are members (never nested), so they don't shadow the method /
+                // local-function / lambda cases for ordinary bodies.
+                case PropertyDeclarationSyntax:
+                case IndexerDeclarationSyntax:
+                case EventDeclarationSyntax:
+                case FieldDeclarationSyntax:
+                case ConstructorDeclarationSyntax:
+                case DestructorDeclarationSyntax:
+                    reason = "// MAF-AP-CONC-002: cannot await here — this member cannot be `async`; refactor the call site (e.g. make it a method).";
+                    return true;
             }
         }
 

@@ -251,7 +251,12 @@ public sealed class DoctorTool
                     FixDescription: GetAntiPatternFix(a.RuleId),
                     AutoFixable: IsAutoFixable(a.RuleId),
                     Why: GetWhy(a.RuleId))))
+            // Deterministic within a priority bucket (matches GroupByRule's order),
+            // so the top-3 markdown headline + JSON top_fixes don't depend on
+            // filesystem enumeration order.
             .OrderBy(r => r.Priority)
+            .ThenBy(r => r.File, StringComparer.Ordinal)
+            .ThenBy(r => r.Line)
             .ToList();
 
         return new DoctorSummary(
@@ -280,7 +285,7 @@ public sealed class DoctorTool
         var findings = (full ? s.AllFixes : s.TopFixes)
             .Select(f => new DoctorJsonFinding(
                 RuleId: f.RuleId,
-                Severity: f.Priority switch { 1 => "starvation_risk", 2 => "error", 3 => "cost", _ => "warning" },
+                Severity: SeverityFor(f.Priority).Json,
                 File: f.File,
                 Line: f.Line,
                 Issue: f.Issue,
@@ -300,16 +305,24 @@ public sealed class DoctorTool
             SummaryMd: markdownSummary);
     }
 
-    /// <summary>True if MafAutoFix knows how to apply a deterministic rewriter for this rule.</summary>
+    /// <summary>
+    /// True if MafAutoFix applies a deterministic, context-safe rewriter for this
+    /// rule. The MAF002/MAF003 (analyzer aliases) and MAF130-FAN-IN-001 (autofix-only)
+    /// arms are kept for 1:1 parity with AutoFixTool's factory map even though the
+    /// doctor scan emits only canonical AntiPatternScannerTool.AllRules IDs.
+    /// </summary>
     private static bool IsAutoFixable(string ruleId) => ruleId switch
     {
         "MAF-AP-SEC-001" => true,    // DefaultAzureCredential → ManagedIdentityCredential
         "MAF002" => true,            // analyzer-aligned alias
         "MAF-AP-SEC-003" => true,    // EnableSensitiveData = true → removed
         "MAF003" => true,            // analyzer-aligned alias
-        "MAF-AP-WF-001" => true,     // sealed modifier on Executor
+        "MAF-AP-WF-001" => true,     // sealed/partial modifiers on Executor
         "MAF130-FAN-IN-001" => true, // fan-in argument order swap
-        "MAF-AP-CONC-002" => true,   // .Result / .Wait() → await
+        // NOT MAF-AP-CONC-002: a safe `.Result`/`.Wait()` → `await` fix requires the
+        // caller to be async (signature/caller changes), so it's a judgment call, not
+        // a blanket auto-fix — the rewriter only rewrites already-async contexts and
+        // declines the rest. The doctor lists CONC-002 as "needs your judgment".
         _ => false,
     };
 
@@ -317,14 +330,17 @@ public sealed class DoctorTool
     private static string GetAntiPatternFix(string ruleId) => ruleId switch
     {
         "MAF-AP-SEC-001" => "Replace `DefaultAzureCredential` with `ManagedIdentityCredential` in production code.",
+        "MAF-AP-SEC-002" => "Remove the hard-coded key; load it from configuration / Key Vault and rotate the leaked value.",
         "MAF-AP-SEC-003" => "Remove `EnableSensitiveData = true` from non-dev configurations.",
         "MAF-AP-WF-001" => "Add the missing `sealed` / `partial` modifier(s) so the Executor class is `sealed partial`.",
         "MAF130-FAN-IN-001" => "Swap `AddFanInBarrierEdge` argument order — sources first, target second.",
-        "MAF-AP-CONC-002" => "Replace `.Result` / `.Wait()` with `await`.",
+        "MAF-AP-CONC-002" => "Make the enclosing method `async` and `await` the call (or use a synchronous API) — `.Result` / `.Wait()` can deadlock.",
         "MAF-AP-OBS-001" => "Wire `UseOpenTelemetry` on the IChatClient pipeline.",
-        "MAF-AP-IDN-001" => "Use `ManagedIdentityCredential` instead of secret-based auth.",
         "MAF-AP-CONC-001" => "Move session state out of `AIContextProvider` instance fields into `ProviderSessionState<T>`.",
         "MAF-AP-AGENT-001" => "Move `Instructions` inside `ChatClientAgentOptions.ChatOptions` (top-level placement is silently ignored).",
+        "MAF-AP-EXEC-001" => "Migrate the legacy executor surface (`ReflectingExecutor` / `IMessageHandler` / `[StreamsMessage]` / `[YieldsMessage]`) per the MAF130 registry.",
+        "MAF-AP-DEVUI-001" => "Guard the DevUI / Hosting reference with `#if DEVUI_ENABLED`.",
+        "MAF-AP-MID-001" => "Provide BOTH `runFunc` and `runStreamingFunc` so the streaming path runs the middleware too.",
         _ => "See MafRegistryLookup for the canonical fix for this rule.",
     };
 
@@ -382,8 +398,23 @@ public sealed class DoctorTool
 
         foreach (var path in EnumerateScannableFiles(repoPath, excludes))
         {
-            var source = File.ReadAllText(path);
-            var rel = MakeRelative(repoPath, path);
+            string source, rel;
+            try
+            {
+                // Guard ONLY the read + relative-path resolve: a file can be
+                // deleted/locked/raced between enumeration and read. Narrow catch
+                // so analyzer/parse bugs still propagate (the grade must never be
+                // silently degraded by swallowing a logic error).
+                source = File.ReadAllText(path);
+                rel = MakeRelative(repoPath, path);
+            }
+            catch (Exception ex) when (ex is IOException
+                                        or UnauthorizedAccessException
+                                        or System.Security.SecurityException
+                                        or InvalidOperationException)
+            {
+                continue; // skip the unreadable/out-of-root file, don't crash the run
+            }
             antiPatterns.AddRange(AntiPatternScannerTool.ScanFile(source, rel));
             handlers.AddRange(FanOutValidatorTool.AnalyzeSource(source, rel));
             promptFindings.AddRange(PromptLintTool.LintSource(source, rel));
@@ -402,13 +433,7 @@ public sealed class DoctorTool
     private static string FormatReport(string repoPath, DoctorSummary s, bool full = false)
     {
         var sb = new StringBuilder();
-        var emoji = s.Grade switch
-        {
-            'A' => "🟢",
-            'B' => "🟡",
-            'C' => "🟠",
-            _ => "🔴",
-        };
+        var emoji = GradeEmoji(s.Grade);
 
         sb.AppendLine($"## {emoji} MAF health grade: **{s.Grade}**");
         sb.AppendLine();
@@ -530,14 +555,30 @@ public sealed class DoctorTool
         }
     }
 
-    /// <summary>Priority bucket → severity emoji + label for the grouped view.</summary>
-    private static string PrioritySeverityLabel(int priority) => priority switch
+    /// <summary>
+    /// Single source of truth for severity presentation, keyed by the doctor's
+    /// priority bucket, so the JSON string, markdown label, and emoji can never
+    /// drift across the report / --all / --plan / JSON / MafExplainFinding surfaces.
+    /// The JSON strings are part of the schema_version "1" contract — keep byte-identical.
+    /// </summary>
+    internal static (string Json, string Label, string Emoji) SeverityFor(int priority) => priority switch
     {
-        1 => "🔴 starvation",
-        2 => "🔴 error",
-        3 => "🟠 cost",
-        _ => "🟡 warning",
+        1 => ("starvation_risk", "🔴 starvation", "🔴"),
+        2 => ("error", "🔴 error", "🔴"),
+        3 => ("cost", "🟠 cost", "🟠"),
+        _ => ("warning", "🟡 warning", "🟡"),
     };
+
+    /// <summary>Grade letter → status emoji (single source of truth).</summary>
+    internal static string GradeEmoji(char grade) => grade switch
+    {
+        'A' => "🟢",
+        'B' => "🟡",
+        'C' => "🟠",
+        _ => "🔴",
+    };
+
+    private static string PrioritySeverityLabel(int priority) => SeverityFor(priority).Label;
 
     /// <summary>
     /// A rule-generic title for a grouped header. Anti-pattern Issues are already
@@ -548,6 +589,7 @@ public sealed class DoctorTool
     {
         "MAF001" => "fan-out handler must return `Task<T>`",
         "COST-001" => "uncapped agent call — no `MaxOutputTokens`",
+        "PROMPT-002" => "oversized Instructions (token bloat)",
         "PROMPT-004" => "untrusted input concatenated into `Instructions` (prompt injection)",
         _ => rep.Issue,
     };
@@ -583,7 +625,7 @@ public sealed class DoctorTool
     private static string FormatPlan(string repoPath, DoctorSummary s)
     {
         var sb = new StringBuilder();
-        var emoji = s.Grade switch { 'A' => "🟢", 'B' => "🟡", 'C' => "🟠", _ => "🔴" };
+        var emoji = GradeEmoji(s.Grade);
         sb.AppendLine($"# {emoji} MAF remediation plan — grade {s.Grade}");
         sb.AppendLine();
         sb.AppendLine($"_{s.Reason}_");
@@ -687,7 +729,10 @@ public sealed class DoctorTool
         catch { return (null, true); }
         if (looksSecret) return (null, true);
         var text = raw.Replace('`', '\'');
-        return (text.Length > 100 ? text[..100] + "…" : text, false);
+        if (text.Length <= 100) return (text, false);
+        // Don't slice through a surrogate pair (would emit U+FFFD mojibake).
+        var cut = char.IsHighSurrogate(text[99]) ? 99 : 100;
+        return (text[..cut] + "…", false);
     }
 }
 

@@ -67,6 +67,12 @@ public sealed class ExplainFindingTool
         try { full = PathGuard.ValidateContainment(repoPath, file, nameof(file)); }
         catch (ArgumentException ex) { return $"Error: {ex.Message}"; }
 
+        // C#-source only: doctor findings come from .cs files, and this guards
+        // against rendering a secret-bearing config (.env / appsettings / .pem)
+        // through the best-effort (not exhaustive) redactor.
+        if (!full.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+            return $"Error: MafExplainFinding only inspects C# source (.cs) files; got `{file}`.";
+
         if (!File.Exists(full)) return $"Error: file not found under the repository: `{file}`.";
 
         var source = File.ReadAllText(full);
@@ -193,11 +199,6 @@ public sealed class ExplainFindingTool
         sb.AppendLine();
     }
 
-    private static string SeverityEmoji(int priority) => priority switch
-    {
-        1 => "🔴",
-        2 => "🔴",
-        3 => "🟠",
-        _ => "🟡",
-    };
+    // Single source of truth in DoctorTool.SeverityFor (keeps emoji/label/JSON aligned).
+    private static string SeverityEmoji(int priority) => DoctorTool.SeverityFor(priority).Emoji;
 }
