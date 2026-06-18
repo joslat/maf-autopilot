@@ -138,14 +138,16 @@ public sealed class AntiPatternScannerTool
     /// in unrecognized shapes can still slip through; this is defense-in-depth, not
     /// the primary control.
     /// </summary>
-    internal static readonly Regex SecretRedactionPattern = new(
+    // Pattern text in a const so the multi-line literal doesn't push the
+    // `new(...)` options outside the ci-invariants regex-hygiene detection window.
+    private const string SecretRedactionRegexText =
         @"""(?:sk-|api[-_]?key=)[A-Za-z0-9_\-]{16,}"""
         + @"|""[^""]*(?:accountkey|sharedaccesskey|password|pwd|secret|token)\s*=\s*[^""]{4,}[^""]*"""
         + @"|gh[opsru]_[A-Za-z0-9]{20,}"
         + @"|AKIA[0-9A-Z]{16}"
         + @"|eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]+"
-        + @"|-----BEGIN [A-Z ]*PRIVATE KEY-----",
-        RegexHygiene | RegexOptions.IgnoreCase, RegexBudget);
+        + @"|-----BEGIN [A-Z ]*PRIVATE KEY-----";
+    internal static readonly Regex SecretRedactionPattern = new(SecretRedactionRegexText, RegexHygiene | RegexOptions.IgnoreCase, RegexBudget);
 
     /// <summary>
     /// Best-effort: true if the text looks like it contains a secret, for REDACTION
