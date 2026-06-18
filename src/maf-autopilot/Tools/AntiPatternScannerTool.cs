@@ -119,6 +119,18 @@ public sealed class AntiPatternScannerTool
         RegexOptions.Compiled | RegexOptions.NonBacktracking;
     private static readonly TimeSpan RegexBudget = TimeSpan.FromSeconds(2);
 
+    /// <summary>
+    /// The hard-coded-secret literal pattern (rule MAF-AP-SEC-002). Exposed as
+    /// the single source of truth for "what is a secret" so other tools can
+    /// redact any source line containing one — e.g. DoctorTool's snippet
+    /// renderer redacts content-aware, regardless of which rule surfaced the line.
+    /// </summary>
+    internal static readonly Regex SecretLiteralPattern =
+        new(@"""(?:sk-|api[-_]?key=)[A-Za-z0-9_\-]{16,}""", RegexHygiene | RegexOptions.IgnoreCase, RegexBudget);
+
+    /// <summary>True if the text contains a hard-coded secret literal (MAF-AP-SEC-002).</summary>
+    internal static bool LooksLikeSecret(string text) => SecretLiteralPattern.IsMatch(text);
+
     internal static readonly IReadOnlyList<AntiPatternRule> AllRules = new AntiPatternRule[]
     {
         new RegexRule(
@@ -133,7 +145,8 @@ public sealed class AntiPatternScannerTool
             name: "Hard-coded API key literal",
             severity: AntiPatternSeverity.Error,
             // Matches "sk-XXXXXXXXXXXXXXXX" or "api-key=XXXXXXXXXXXXXXXX" style strings.
-            pattern: new Regex(@"""(?:sk-|api[-_]?key=)[A-Za-z0-9_\-]{16,}""", RegexHygiene | RegexOptions.IgnoreCase, RegexBudget),
+            // Shared with DoctorTool's snippet redactor via SecretLiteralPattern.
+            pattern: SecretLiteralPattern,
             skipInTestFiles: false),
 
         new RegexRule(

@@ -303,6 +303,280 @@ public class DoctorToolTests
     // `Run(..., excludes)` must skip those so the grade reflects product code.
     // -------------------------------------------------------------------------
 
+    // -------------------------------------------------------------------------
+    // Tier 1 — richer suggestions: Why + Fix + autofix hint + source line in the
+    // human markdown report (previously the fix string lived only in JSON), plus
+    // rule-grouped --all output and a `why` field in JSON.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Markdown_Report_ShowsWhy_Fix_SourceLine_AndAutofixHint()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-tier1-md-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            File.WriteAllText(Path.Combine(tempDir, "Bad.cs"), """
+                using Azure.Identity;
+                public class Bad
+                {
+                    public Bad() { var c = new DefaultAzureCredential(); }
+                }
+                """);
+            var output = new DoctorTool().MafDoctor(tempDir); // markdown (default)
+
+            Assert.Contains("**Why:**", output, StringComparison.Ordinal);
+            Assert.Contains("**Fix:**", output, StringComparison.Ordinal);
+            // Autofix one-liner — MAF-AP-SEC-001 is auto-fixable.
+            Assert.Contains("auto-fixable", output, StringComparison.Ordinal);
+            Assert.Contains("autofix-all", output, StringComparison.Ordinal);
+            // The offending SOURCE line is shown (only the source — not the rule name —
+            // contains the `new` keyword), proving we read the file, not just the location.
+            Assert.Contains("new DefaultAzureCredential", output, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(tempDir, recursive: true); }
+    }
+
+    [Fact]
+    public void AllReport_GroupsRepeatedRule_WithCount()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-tier1-group-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            // Same rule (MAF-AP-SEC-001) in two files → one group ×2 in --all.
+            foreach (var name in new[] { "A.cs", "B.cs" })
+                File.WriteAllText(Path.Combine(tempDir, name), $$"""
+                    using Azure.Identity;
+                    public class {{name[..1]}}x
+                    {
+                        public {{name[..1]}}x() { var c = new DefaultAzureCredential(); }
+                    }
+                    """);
+
+            var output = new DoctorTool().Run(tempDir, "markdown", excludes: null, full: true);
+
+            Assert.Contains("`MAF-AP-SEC-001`", output, StringComparison.Ordinal);
+            Assert.Contains("×2", output, StringComparison.Ordinal);
+            Assert.Contains("grouped", output, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(tempDir, recursive: true); }
+    }
+
+    [Fact]
+    public void Json_Finding_CarriesWhy()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-tier1-json-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            File.WriteAllText(Path.Combine(tempDir, "Bad.cs"), """
+                using Azure.Identity;
+                public class Bad
+                {
+                    public Bad() { var c = new DefaultAzureCredential(); }
+                }
+                """);
+            var output = new DoctorTool().MafDoctor(tempDir, format: "json");
+
+            using var doc = JsonDocument.Parse(output);
+            var fix = doc.RootElement.GetProperty("top_fixes")[0];
+            Assert.False(string.IsNullOrWhiteSpace(fix.GetProperty("why").GetString()),
+                "Tier 1 adds a non-empty `why` rationale to each known-rule finding.");
+        }
+        finally { Directory.Delete(tempDir, recursive: true); }
+    }
+
+    [Fact]
+    public void GetWhy_CoversEveryScannerAndPromptRule()
+    {
+        // Drift guard (registry-driven): every rule the scanner can actually emit,
+        // plus the prompt-lint rules and the fan-in registry rule, must have a
+        // non-empty Why. A new rule added to AllRules without a GetWhy arm would
+        // otherwise ship an empty rationale silently. (Fan-out MAF001 + COST-001
+        // carry their Why inline, not via GetWhy, so they're excluded here.)
+        var ruleIds = AntiPatternScannerTool.AllRules.Select(r => r.Id)
+            .Concat(new[] { "PROMPT-001", "PROMPT-002", "PROMPT-003", "PROMPT-004", "MAF130-FAN-IN-001" })
+            .Distinct();
+        foreach (var id in ruleIds)
+            Assert.False(string.IsNullOrWhiteSpace(DoctorTool.GetWhy(id)),
+                $"Rule {id} has no Why rationale — add a GetWhy arm.");
+    }
+
+    [Fact]
+    public void FanOut_Report_SnippetShowsSignatureNotAttribute()
+    {
+        // The fan-out finding's line must land on the signature (return type),
+        // not the [MessageHandler] attribute line — otherwise the snippet hides
+        // the very thing the finding is about (the wrong return type).
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-tier1-fanout-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            File.WriteAllText(Path.Combine(tempDir, "Wf.cs"), """
+                using System.Threading.Tasks;
+                public partial class Inv : Executor
+                {
+                    [MessageHandler]
+                    public ValueTask HandleAsync(string m) => default;
+                }
+                """);
+            var output = new DoctorTool().Run(tempDir, "markdown", excludes: null, full: true);
+            // Snippet shows the signature line, not the bare attribute.
+            Assert.Contains("public ValueTask HandleAsync", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("→ `[MessageHandler]`", output, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(tempDir, recursive: true); }
+    }
+
+    [Fact]
+    public void GroupedHeader_ForFanOut_IsRuleGeneric_NotPerInstance()
+    {
+        // Two DISTINCT fan-out methods collapse into one MAF001 group ×2; the
+        // header must use a rule-generic title, not one method's specifics.
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-tier1-grouphdr-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            File.WriteAllText(Path.Combine(tempDir, "Wf.cs"), """
+                using System.Threading.Tasks;
+                public partial class Inv : Executor
+                {
+                    [MessageHandler]
+                    public ValueTask AlphaAsync(string m) => default;
+                    [MessageHandler]
+                    public ValueTask BetaAsync(string m) => default;
+                }
+                """);
+            var output = new DoctorTool().Run(tempDir, "markdown", excludes: null, full: true);
+            // The ×2 MAF001 header is generic — it does NOT name a single method.
+            Assert.Contains("`MAF001` — fan-out handler must return `Task<T>` ×2", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("`AlphaAsync` returns", output, StringComparison.Ordinal); // not in the header
+        }
+        finally { Directory.Delete(tempDir, recursive: true); }
+    }
+
+    [Fact]
+    public void SecretRule_SourceLine_IsRedactedNotEchoed()
+    {
+        // MAF-AP-SEC-002 (hard-coded key) must NOT echo the secret-bearing line
+        // into the report; the file:line locator stays, the snippet is redacted.
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-tier1-secret-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            File.WriteAllText(Path.Combine(tempDir, "Keys.cs"),
+                "public class Keys { const string K = \"sk-ABCDEF0123456789abcdef\"; }");
+            var output = new DoctorTool().Run(tempDir, "markdown", excludes: null, full: true);
+
+            Assert.Contains("MAF-AP-SEC-002", output, StringComparison.Ordinal); // finding present
+            Assert.Contains("redacted", output, StringComparison.Ordinal);       // redaction marker
+            Assert.DoesNotContain("sk-ABCDEF0123456789abcdef", output, StringComparison.Ordinal); // secret NOT echoed
+        }
+        finally { Directory.Delete(tempDir, recursive: true); }
+    }
+
+    [Fact]
+    public void SecretOnSharedLine_NotEchoed_EvenWhenSurfacedByAnotherRule()
+    {
+        // A secret literal co-located with a `.Result` (CONC-002, a non-secret
+        // rule) on one physical line: redaction is content-aware, so the line is
+        // withheld no matter which rule's locator renders it.
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-tier1-coleak-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            // The `, 3)` (word char before `)`) is what trips CONC-002's `\b\)\.Result`;
+            // the secret literal sits earlier on the same physical line.
+            File.WriteAllText(Path.Combine(tempDir, "C.cs"),
+                "public class C { object Get(string s, int n) => s; public void M() { var r = Get(\"sk-ABCDEF0123456789abcdef\", 3).Result; } }");
+            var output = new DoctorTool().Run(tempDir, "markdown", excludes: null, full: true);
+
+            Assert.Contains("MAF-AP-CONC-002", output, StringComparison.Ordinal); // a non-secret rule fired on that line
+            Assert.DoesNotContain("sk-ABCDEF0123456789abcdef", output, StringComparison.Ordinal); // secret never echoed
+        }
+        finally { Directory.Delete(tempDir, recursive: true); }
+    }
+
+    [Fact]
+    public void Json_FullMode_SerializesAllFindings_NotJustTopThree()
+    {
+        // `--all --json` (full + json) must serialize every finding into top_fixes,
+        // not cap at 3. Seed >3 distinct findings and compare full vs default.
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-tier1-fulljson-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            // Five distinct findings: SEC-002 (key), SEC-001 (cred), SEC-003
+            // (sensitive data), WF-001 (missing sealed+partial), fan-out (void).
+            File.WriteAllText(Path.Combine(tempDir, "Bad.cs"), """
+                using Azure.Identity;
+                public class Inv : Executor
+                {
+                    const string K = "sk-ABCDEF0123456789abcdef";
+                    public Inv()
+                    {
+                        var c = new DefaultAzureCredential();
+                        var o = new O { EnableSensitiveData = true };
+                    }
+                    [MessageHandler]
+                    public void HandleAsync(string m) { }
+                }
+                """);
+            var tool = new DoctorTool();
+
+            int Count(bool full)
+            {
+                using var doc = JsonDocument.Parse(tool.Run(tempDir, "json", excludes: null, full: full));
+                return doc.RootElement.GetProperty("top_fixes").GetArrayLength();
+            }
+
+            var defaultCount = Count(false);
+            var fullCount = Count(true);
+            Assert.Equal(3, defaultCount);            // default caps at 3
+            Assert.True(fullCount > 3, $"full mode should serialize all findings, got {fullCount}");
+        }
+        finally { Directory.Delete(tempDir, recursive: true); }
+    }
+
+    // -------------------------------------------------------------------------
+    // Tier 1 — doctor CLI arg parsing (extracted to DoctorCli for testability)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void DoctorCli_Parse_JsonFlag_SetsJsonFormat()
+    {
+        var (_, format, _, _) = MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--json" });
+        Assert.Equal("json", format);
+    }
+
+    [Fact]
+    public void DoctorCli_Parse_NoFormatFlag_DefaultsToMarkdown()
+    {
+        var (path, format, _, full) = MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", "." });
+        Assert.Equal(".", path);
+        Assert.Equal("markdown", format);
+        Assert.False(full);
+    }
+
+    [Fact]
+    public void DoctorCli_Parse_FlagBeforePath_StillCapturesPath()
+    {
+        // The `--` guard means a flag preceding the path isn't mistaken for it.
+        var (path, format, _, full) = MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", "--all", "--json", "myrepo" });
+        Assert.Equal("myrepo", path);
+        Assert.Equal("json", format);
+        Assert.True(full);
+    }
+
+    [Fact]
+    public void DoctorCli_Parse_ExcludeIsRepeatable()
+    {
+        var (_, _, excludes, _) = MafDoctor.Commands.DoctorCli.Parse(
+            new[] { "doctor", ".", "--exclude", "samples/", "--exclude", "tests/" });
+        Assert.Equal(new[] { "samples/", "tests/" }, excludes);
+    }
+
     [Fact]
     public void Run_ExcludedPaths_DoNotAffectGrade()
     {

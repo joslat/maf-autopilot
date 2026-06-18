@@ -88,7 +88,11 @@ public sealed class FanOutValidatorTool
 
             var returnType = method.ReturnType.ToString();
             var verdict = ClassifyReturnType(returnType);
-            var location = method.GetLocation().GetLineSpan();
+            // Report the SIGNATURE line (the return type), not method.GetLocation()
+            // — the latter starts at the [MessageHandler] attribute (attributes are
+            // part of the method's span), so the offending return type wouldn't be
+            // on the reported line. The return-type token is exactly what's wrong.
+            var location = method.ReturnType.GetLocation().GetLineSpan();
 
             findings.Add(new MessageHandlerFinding(
                 File: fileName,

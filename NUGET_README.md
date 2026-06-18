@@ -42,7 +42,7 @@ Uninstall is just as clean: `dotnet tool uninstall --global maf-doctor`, then de
 
 - 🔍 **Catches bugs that compile clean** — fan-out/fan-in silent failures where a workflow exits successfully but produces no output. Zero build signal.
 - 🩺 **Compiler ground-truth for CS0618** — obsolete-API usage mapped to its exact replacement pattern. Deterministic fixes, not hallucinated ones.
-- 🆕 **`doctor --all`** — list *every* finding (not just the top 3), one line each, ordered by impact. Full triage in one pass.
+- 🆕 **`doctor --all`** — list *every* finding (not just the top 3), grouped by rule and ordered by impact, each with a one-line *why* and the offending source line. Full triage in one pass.
 - 📖 **It updates itself** — a weekly GitHub Actions watcher refreshes the migration guide, compatibility matrix, and obsolete-API registry as new MAF versions ship, so you don't pin to a MAF version or wait on a maintainer release.
 - 🔐 **Security-hardened** — closes the named MCP attack lattice (path-escape, annotation drift, scaffold code-injection, prompt-injection, workflow-dispatch input injection). Cisco mcp-scanner: 25/25 tools SAFE, 0 findings.
 
