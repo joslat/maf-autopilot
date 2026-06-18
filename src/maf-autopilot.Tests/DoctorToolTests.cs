@@ -729,6 +729,62 @@ public class DoctorToolTests
     }
 
     [Fact]
+    public void AutofixAll_DoesNotCorrupt_LinqQueryClause()
+    {
+        // Round-5 regression: `await` is illegal in a let/where/select clause
+        // (CS1995) even inside an async method — must skip.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002linq-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "Q.cs");
+            File.WriteAllText(file, """
+                using System.Threading.Tasks;
+                using System.Linq;
+                public class Q {
+                  static Task<int> F() => Task.FromResult(1);
+                  public async Task M() {
+                    var q = from i in new[] { 1, 2 } let r = F().Result select r;
+                    await Task.Yield();
+                    _ = q.ToList();
+                  }
+                }
+                """);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var after = File.ReadAllText(file);
+            Assert.DoesNotContain("(await", after, StringComparison.Ordinal);
+            Assert.Contains(".Result", after, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void AutofixAll_IsIdempotent_OnSkippedPrimaryCtorBase()
+    {
+        // Round-5 regression: the skip-TODO comment was re-stacked on a 2nd run
+        // for contexts with no enclosing method (primary-ctor base initializer).
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002idem-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "PC.cs");
+            File.WriteAllText(file, """
+                using System.Threading.Tasks;
+                public class Base { public Base(int x) { } }
+                public static class H { public static Task<int> G() => Task.FromResult(1); }
+                public class Derived(int n) : Base(H.G().Result) { }
+                """);
+            var tool = new AutoFixTool();
+            tool.MafAutoFixAll(dir, dryRun: false);
+            var after1 = File.ReadAllText(file);
+            tool.MafAutoFixAll(dir, dryRun: false);
+            var after2 = File.ReadAllText(file);
+            Assert.Equal(after1, after2); // 2nd run is a no-op (no duplicate comment)
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
     public void AutofixAll_StillRewrites_ResultInsideAsyncMethod()
     {
         // The whitelist must keep rewriting valid async contexts (no over-skip).

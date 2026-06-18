@@ -89,6 +89,16 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
             }
         }
 
+        // (a2) LINQ query clause (CS1995): `await` is legal ONLY in the initial
+        // `from` source and a `join … in` source — never in let/where/select/
+        // orderby/group/secondary-from. Skip those (default-safe direction).
+        var query = node.FirstAncestorOrSelf<QueryExpressionSyntax>();
+        if (query is not null && !IsInAwaitableQuerySource(node, query))
+        {
+            reason = "// MAF-AP-CONC-002: cannot await inside this query clause — materialize the awaited value before the query.";
+            return true;
+        }
+
         // (b) WHITELIST, not blacklist. Walk outward and rewrite ONLY when we
         // positively land in an async-capable scope: an `async` method / local
         // function / lambda, or a top-level statement (the generated entry point is
@@ -141,11 +151,26 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
     /// list. Scanning by source-text of the enclosing scope is stable
     /// across parse round-trips.
     /// </summary>
+    /// <summary>True only when the node sits in an await-legal query position: the
+    /// query's initial <c>from</c> source, or a <c>join … in</c> source expression.</summary>
+    private static bool IsInAwaitableQuerySource(SyntaxNode node, QueryExpressionSyntax query)
+    {
+        if (query.FromClause.Expression.Span.Contains(node.Span)) return true;
+        foreach (var join in query.DescendantNodes().OfType<JoinClauseSyntax>())
+            if (join.InExpression.Span.Contains(node.Span)) return true;
+        return false;
+    }
+
     private static SyntaxNode WithTodoTrivia(SyntaxNode node, string commentText)
     {
+        // Dedup scope: the enclosing function, else the enclosing TYPE declaration
+        // (covers contexts with no method ancestor — primary-ctor base initializers,
+        // field / collection-expression initializers — which otherwise re-stacked a
+        // duplicate comment on a second pass), else the parent.
         var enclosingMethod = (SyntaxNode?)node.FirstAncestorOrSelf<MethodDeclarationSyntax>()
             ?? node.FirstAncestorOrSelf<LocalFunctionStatementSyntax>()
             ?? node.FirstAncestorOrSelf<AnonymousFunctionExpressionSyntax>()
+            ?? node.FirstAncestorOrSelf<BaseTypeDeclarationSyntax>()
             ?? node.Parent;
         if (enclosingMethod is not null
             && enclosingMethod.ToFullString().Contains(commentText, StringComparison.Ordinal))
