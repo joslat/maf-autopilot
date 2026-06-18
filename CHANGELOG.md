@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.12] - 2026-06-18
+
+### Fixed
+
+- **NuGet package page no longer shows raw HTML.** The shared README's centered hero (`<p align="center">…<br/><em>…</em></p>`) rendered as literal HTML text on nuget.org (its README renderer escapes HTML it doesn't fully support). Both packages now ship a dedicated **pure-markdown `NUGET_README.md`** as their `PackageReadmeFile`, so the package page renders cleanly. The GitHub README keeps its centered HTML hero.
+
+### Added
+
+- **NuGet README explains the install.** The new package README spells out that **`init` is non-destructive — it attaches and updates only, never overwriting your files** (adds its own MCP server entry + regenerates self-contained steering sidecars), lists what you get (MCP server / CLI / plugin / analyzers), and highlights recent features (`doctor --all`, self-update, security hardening). The same non-destructive framing was added to the main README's Quick Start.
+
 ## [1.2.11] - 2026-06-18
 
 ### Added
