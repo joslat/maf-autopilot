@@ -759,6 +759,75 @@ public class DoctorToolTests
     }
 
     [Fact]
+    public void AutofixAll_DoesNotCorrupt_NestedQueryJoinSourceInOuterIllegalClause()
+    {
+        // Round-9 regression: a `.Result` in an INNER query's join source that sits
+        // inside an OUTER query's await-illegal `let` clause must be skipped. The
+        // old IsInAwaitableQuerySource descended into the nested query and wrongly
+        // marked the outer position awaitable → injected `await` → CS1995 corruption.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002nestq-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "NestQ.cs");
+            File.WriteAllText(file, """
+                using System.Linq;
+                using System.Collections.Generic;
+                using System.Threading.Tasks;
+                public class C {
+                  Task<List<int>> Foo() => Task.FromResult(new List<int>());
+                  public async Task M() {
+                    var a = new List<int>();
+                    var b = new List<int>();
+                    var q = from i in a
+                            let k = (from x in b join y in Foo().Result on x equals y select x).Count()
+                            select i + k;
+                    await Task.Yield();
+                    _ = q.ToList();
+                  }
+                }
+                """);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var after = File.ReadAllText(file);
+            Assert.DoesNotContain("(await Foo", after, StringComparison.Ordinal);
+            Assert.Contains(".Result", after, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void AutofixAll_Rewrites_ResultInTopLevelJoinSource()
+    {
+        // Control / no-over-skip: a `.Result` in the join source of a TOP-LEVEL query
+        // inside an async method IS await-legal (CS1995 explicitly permits await in a
+        // join collection expression), so it SHOULD rewrite.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002joinok-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "JoinOk.cs");
+            File.WriteAllText(file, """
+                using System.Linq;
+                using System.Collections.Generic;
+                using System.Threading.Tasks;
+                public class C {
+                  Task<List<int>> Foo() => Task.FromResult(new List<int>());
+                  public async Task M() {
+                    var b = new List<int>();
+                    var q = from x in b join y in Foo().Result on x equals y select x;
+                    await Task.Yield();
+                    _ = q.ToList();
+                  }
+                }
+                """);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var after = File.ReadAllText(file);
+            Assert.Contains("(await Foo", after, StringComparison.Ordinal); // join source is awaitable
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
     public void AutofixAll_IsIdempotent_OnSkippedPrimaryCtorBase()
     {
         // Round-5 regression: the skip-TODO comment was re-stacked on a 2nd run

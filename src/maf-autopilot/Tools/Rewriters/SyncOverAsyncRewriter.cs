@@ -189,13 +189,23 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
     /// list. Scanning by source-text of the enclosing scope is stable
     /// across parse round-trips.
     /// </summary>
-    /// <summary>True only when the node sits in an await-legal query position: the
-    /// query's initial <c>from</c> source, or a <c>join … in</c> source expression.</summary>
+    /// <summary>True only when the node sits in an await-legal source of THIS query:
+    /// its OWN initial <c>from</c> source, or a <c>join … in</c> source it directly
+    /// owns. Clauses inside a NESTED query (e.g. an inner query embedded in this
+    /// query's await-illegal <c>let</c>/<c>where</c>/<c>select</c>) belong to that
+    /// inner query, not this one — so we exclude them. Without the ownership check,
+    /// <c>DescendantNodes()</c> reached an inner-query join source and wrongly marked
+    /// an await-illegal outer-query position as legal, injecting an <c>await</c> that
+    /// the compiler rejects with CS1995.</summary>
     private static bool IsInAwaitableQuerySource(SyntaxNode node, QueryExpressionSyntax query)
     {
-        if (query.FromClause.Expression.Span.Contains(node.Span)) return true;
+        if (query.FromClause.Expression.Span.Contains(node.Span)
+            && node.FirstAncestorOrSelf<QueryExpressionSyntax>() == query)
+            return true;
         foreach (var join in query.DescendantNodes().OfType<JoinClauseSyntax>())
-            if (join.InExpression.Span.Contains(node.Span)) return true;
+            if (join.FirstAncestorOrSelf<QueryExpressionSyntax>() == query
+                && join.InExpression.Span.Contains(node.Span))
+                return true;
         return false;
     }
 
