@@ -680,6 +680,49 @@ public class DoctorToolTests
     }
 
     [Fact]
+    public void AutofixAll_DoesNotCorrupt_OperatorOrConversionBodyWithResult()
+    {
+        // Round-3 regression: operators / user-defined conversions can't be async,
+        // so the CONC-002 rewriter must NOT inject `await` into their bodies.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-conc002op-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "Op.cs");
+            File.WriteAllText(file, """
+                using System.Threading.Tasks;
+                public class Op {
+                    static Task<int> Foo() => Task.FromResult(1);
+                    public static Op operator +(Op a, Op b) { var z = Foo().Result; return a; }
+                    public static explicit operator string(Op c) => Foo().Result.ToString();
+                }
+                """);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var after = File.ReadAllText(file);
+            Assert.DoesNotContain("(await", after, StringComparison.Ordinal); // no `await` in operator/conversion bodies
+            Assert.Contains(".Result", after, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void ScanAntiPatterns_SarifOutput_RedactsSecret()
+    {
+        // Round-3 regression: the SARIF surface must redact the SEC-002 secret too.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-sarifsecret-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "K.cs"),
+                "public class K { const string S = \"sk-abcdefghij1234567890\"; }");
+            var sarif = new AntiPatternScannerTool().MafScanAntiPatterns(dir, format: "sarif");
+            Assert.Contains("MAF-AP-SEC-002", sarif, StringComparison.Ordinal);
+            Assert.DoesNotContain("sk-abcdefghij1234567890", sarif, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
     public void Wf001_SkipsAbstractExecutor_ButFlagsConcrete()
     {
         // Abstract Executor can never be `sealed partial` → not flagged (no impossible auto-fix promise).

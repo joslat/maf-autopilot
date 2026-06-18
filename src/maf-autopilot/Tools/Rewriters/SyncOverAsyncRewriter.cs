@@ -136,6 +136,8 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
                 case FieldDeclarationSyntax:
                 case ConstructorDeclarationSyntax:
                 case DestructorDeclarationSyntax:
+                case OperatorDeclarationSyntax:           // operators can never be async
+                case ConversionOperatorDeclarationSyntax: // user-defined conversions can never be async
                     reason = "// MAF-AP-CONC-002: cannot await here — this member cannot be `async`; refactor the call site (e.g. make it a method).";
                     return true;
             }
