@@ -128,8 +128,31 @@ public sealed class AntiPatternScannerTool
     internal static readonly Regex SecretLiteralPattern =
         new(@"""(?:sk-|api[-_]?key=)[A-Za-z0-9_\-]{16,}""", RegexHygiene | RegexOptions.IgnoreCase, RegexBudget);
 
-    /// <summary>True if the text contains a hard-coded secret literal (MAF-AP-SEC-002).</summary>
-    internal static bool LooksLikeSecret(string text) => SecretLiteralPattern.IsMatch(text);
+    /// <summary>
+    /// Broader, best-effort REDACTION pattern (decoupled from the precise SEC-002
+    /// rule pattern). Used only to decide whether a source line is too risky to
+    /// echo into a report — so it errs toward over-matching (redact-on-doubt is
+    /// safe; it just hides a line). Covers OpenAI/api keys, quoted connection-string
+    /// secrets (AccountKey/Password/Secret/Token=…), GitHub tokens, AWS access-key
+    /// ids, JWTs, and PEM private-key headers. NOT exhaustive — high-entropy secrets
+    /// in unrecognized shapes can still slip through; this is defense-in-depth, not
+    /// the primary control.
+    /// </summary>
+    internal static readonly Regex SecretRedactionPattern = new(
+        @"""(?:sk-|api[-_]?key=)[A-Za-z0-9_\-]{16,}"""
+        + @"|""[^""]*(?:accountkey|sharedaccesskey|password|pwd|secret|token)\s*=\s*[^""]{4,}[^""]*"""
+        + @"|gh[opsru]_[A-Za-z0-9]{20,}"
+        + @"|AKIA[0-9A-Z]{16}"
+        + @"|eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]+"
+        + @"|-----BEGIN [A-Z ]*PRIVATE KEY-----",
+        RegexHygiene | RegexOptions.IgnoreCase, RegexBudget);
+
+    /// <summary>
+    /// Best-effort: true if the text looks like it contains a secret, for REDACTION
+    /// purposes. Broader than the SEC-002 finding rule (<see cref="SecretLiteralPattern"/>)
+    /// on purpose — see <see cref="SecretRedactionPattern"/>. Not a guarantee.
+    /// </summary>
+    internal static bool LooksLikeSecret(string text) => SecretRedactionPattern.IsMatch(text);
 
     internal static readonly IReadOnlyList<AntiPatternRule> AllRules = new AntiPatternRule[]
     {
@@ -147,14 +170,53 @@ public sealed class AntiPatternScannerTool
             // Matches "sk-XXXXXXXXXXXXXXXX" or "api-key=XXXXXXXXXXXXXXXX" style strings.
             // Shared with DoctorTool's snippet redactor via SecretLiteralPattern.
             pattern: SecretLiteralPattern,
-            skipInTestFiles: false),
+            skipInTestFiles: false,
+            // This rule deliberately matches inside string literals (a hard-coded
+            // key IS a string), so it must NOT be skipped by the string-literal filter.
+            matchesStringContent: true),
 
-        new RegexRule(
+        // Syntax-aware (RoslynRule) so it matches the actual assignment shapes the
+        // EnableSensitiveDataRewriter fixes — object-initializer, dictionary/
+        // collection-initializer (`["EnableSensitiveData"] = true`), member-access,
+        // and element-access — and does NOT false-fire on comments / string
+        // literals that merely mention it. A regex (`EnableSensitiveData\s*=\s*true`)
+        // both missed the dictionary form (the `"]` breaks it) AND matched comments,
+        // so its "auto-fixable" tag was a no-op. This keeps detector ⇆ rewriter in parity.
+        new RoslynRule(
             id: "MAF-AP-SEC-003",
             name: "EnableSensitiveData = true outside development",
             severity: AntiPatternSeverity.Error,
-            pattern: new Regex(@"EnableSensitiveData\s*=\s*true", RegexHygiene, RegexBudget),
-            skipInTestFiles: true),
+            skipInTestFiles: true,
+            scan: (root, file) =>
+            {
+                var findings = new List<AntiPatternFinding>();
+                foreach (var assign in root.DescendantNodes().OfType<AssignmentExpressionSyntax>())
+                {
+                    if (assign.Right is not LiteralExpressionSyntax rhs
+                        || rhs.RawKind != (int)SyntaxKind.TrueLiteralExpression)
+                        continue;
+
+                    var match = assign.Left switch
+                    {
+                        IdentifierNameSyntax id => id.Identifier.ValueText == "EnableSensitiveData",          // EnableSensitiveData = true
+                        MemberAccessExpressionSyntax mae => mae.Name.Identifier.ValueText == "EnableSensitiveData", // x.EnableSensitiveData = true
+                        ImplicitElementAccessSyntax iea => IsEnableSensitiveDataKey(iea.ArgumentList),        // ["EnableSensitiveData"] = true
+                        ElementAccessExpressionSyntax eae => IsEnableSensitiveDataKey(eae.ArgumentList),      // dict["EnableSensitiveData"] = true
+                        _ => false,
+                    };
+                    if (!match) continue;
+
+                    var loc = assign.GetLocation().GetLineSpan();
+                    findings.Add(new AntiPatternFinding(
+                        "MAF-AP-SEC-003",
+                        "EnableSensitiveData = true outside development",
+                        AntiPatternSeverity.Error,
+                        file,
+                        loc.StartLinePosition.Line + 1,
+                        assign.ToString()));
+                }
+                return findings;
+            }),
 
         new RegexRule(
             id: "MAF-AP-CONC-002",
@@ -412,6 +474,13 @@ public sealed class AntiPatternScannerTool
             skipInTestFiles: false),
     };
 
+    /// <summary>True if a bracketed indexer argument list is the single string key "EnableSensitiveData".</summary>
+    private static bool IsEnableSensitiveDataKey(BracketedArgumentListSyntax args)
+        => args.Arguments.Count == 1
+           && args.Arguments[0].Expression is LiteralExpressionSyntax keyLit
+           && keyLit.RawKind == (int)SyntaxKind.StringLiteralExpression
+           && keyLit.Token.ValueText == "EnableSensitiveData";
+
     private static int FirstLineMatching(string source, string regex)
     {
         // Phase 5.9 — hygiene policy applies to scanner-internal regexes too.
@@ -543,11 +612,13 @@ internal sealed class RegexRule : AntiPatternRule
 {
     private readonly Regex? _pattern;
     private readonly Func<string, Microsoft.CodeAnalysis.SyntaxNode, string, IEnumerable<AntiPatternFinding>>? _custom;
+    private readonly bool _matchesStringContent;
 
     public RegexRule(
         string id, string name, AntiPatternSeverity severity,
         Regex? pattern, bool skipInTestFiles = false,
-        Func<string, Microsoft.CodeAnalysis.SyntaxNode, string, IEnumerable<AntiPatternFinding>>? customScan = null)
+        Func<string, Microsoft.CodeAnalysis.SyntaxNode, string, IEnumerable<AntiPatternFinding>>? customScan = null,
+        bool matchesStringContent = false)
     {
         Id = id;
         Name = name;
@@ -555,6 +626,7 @@ internal sealed class RegexRule : AntiPatternRule
         SkipInTestFiles = skipInTestFiles;
         _pattern = pattern;
         _custom = customScan;
+        _matchesStringContent = matchesStringContent;
     }
 
     public override IEnumerable<AntiPatternFinding> Scan(string source, Microsoft.CodeAnalysis.SyntaxNode root, string file)
@@ -566,13 +638,50 @@ internal sealed class RegexRule : AntiPatternRule
 
         var findings = new List<AntiPatternFinding>();
         var lines = source.Split('\n');
+        var lineStart = 0;
         for (var i = 0; i < lines.Length; i++)
         {
             var match = _pattern.Match(lines[i]);
-            if (match.Success)
+            if (match.Success
+                && !IsInCommentOrSkippedLiteral(root, lineStart + match.Index, _matchesStringContent))
+            {
                 findings.Add(new AntiPatternFinding(Id, Name, Severity, file, i + 1, match.Value));
+            }
+            lineStart += lines[i].Length + 1; // +1 for the '\n' that Split removed
         }
         return findings;
+    }
+
+    /// <summary>
+    /// True if the matched span lies in a comment (skip for ALL rules — a
+    /// commented-out / documented pattern is not a real finding) or, for rules
+    /// that don't target string content, inside a string-literal token (a pattern
+    /// inside a string is data, not code). The hard-coded-secret rule sets
+    /// <paramref name="matchesStringContent"/> so it keeps matching string bodies.
+    /// Offset-based (not line-based), so it's robust to CRLF/LF/CR differences.
+    /// </summary>
+    private static bool IsInCommentOrSkippedLiteral(
+        Microsoft.CodeAnalysis.SyntaxNode root, int offset, bool matchesStringContent)
+    {
+        if (offset < 0 || offset >= root.FullSpan.End) return false;
+
+        var triviaKind = (SyntaxKind)root.FindTrivia(offset).RawKind;
+        if (triviaKind is SyntaxKind.SingleLineCommentTrivia
+            or SyntaxKind.MultiLineCommentTrivia
+            or SyntaxKind.SingleLineDocumentationCommentTrivia
+            or SyntaxKind.MultiLineDocumentationCommentTrivia)
+            return true;
+
+        if (matchesStringContent) return false;
+
+        var token = root.FindToken(offset);
+        var tokenKind = (SyntaxKind)token.RawKind;
+        return token.Span.Contains(offset)
+            && tokenKind is SyntaxKind.StringLiteralToken
+                or SyntaxKind.InterpolatedStringTextToken
+                or SyntaxKind.SingleLineRawStringLiteralToken
+                or SyntaxKind.MultiLineRawStringLiteralToken
+                or SyntaxKind.Utf8StringLiteralToken;
     }
 }
 

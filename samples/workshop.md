@@ -44,7 +44,7 @@ You're looking at a workshop for **maf-doctor** — an AI co-pilot toolkit for t
 
 ## ⚡ Quick Speedrun — 5-10 minutes of "wow"
 
-> **Goal:** minimum time-to-wow. By minute 10 you've installed the toolkit, watched it diagnose a broken codebase, watched it auto-fix every mechanical issue, and watched the grade go from F → A. **No Copilot Chat. No agents. No setup beyond the .NET SDK.**
+> **Goal:** minimum time-to-wow. By minute 10 you've installed the toolkit, watched it diagnose a broken codebase (including silent-starvation bugs the build never warns about), and watched it **deterministically clear the mechanical errors** with one command — with the remaining *semantic* issues clearly flagged for the agent phase. **No Copilot Chat. No agents. No setup beyond the .NET SDK.** (Grade A comes later, in the agent-driven Phase D — deterministic auto-fix alone doesn't claim it.)
 >
 > **Audience:** someone who hasn't installed anything yet and wants the elevator pitch in real time.
 >
@@ -80,10 +80,11 @@ Run these in your terminal, one beat at a time. Each beat is 30-60 seconds with 
 |---|---|---|---|
 | **1** | `cd samples/maf-1.3-sample` | — | _"This is a real MAF 1.3.0 codebase. A small fraud-claims triage workflow. Looks fine. Let's see if it is."_ |
 | **2** | `dotnet build` | 4 Warning(s), 0 Error(s) — 1 × `CS0618` + 3 × `MAF001` | _"Builds clean — well, with 4 warnings the developer probably dismissed. The analyzer's already firing on three executor methods. We'll see why in a second."_ |
-| **3** | `maf-doctor doctor .` | 🔴 **Grade F** — 10 errors + 3 silent-starvation risks | _"The toolkit grades it: F. Ten anti-pattern errors. Three of them are silent-starvation risks — these compile clean and BREAK at runtime. No build warning. No exception. Just silently wrong output."_ |
-| **4** | `maf-doctor autofix-all . --dry-run` | JSON: 6 files would change across 5 rule families | _"This is what would change — preview only. Six files, five rule families. Deterministic. No LLM in this loop."_ |
-| **5** | `maf-doctor autofix-all .` | JSON: 6 files changed | _"Apply for real. Roslyn rewriters under the hood — same code path you'd trust in a Microsoft refactor extension."_ |
-| **6** | `maf-doctor doctor .` | 🟢 **Grade A** — 0 errors | _"And we're at grade A. Zero errors. The whole audit-fix-verify loop just ran in under 30 seconds, deterministically, on a real broken MAF codebase. That's what the toolkit does."_ |
+| **3** | `maf-doctor doctor .` | 🔴 **Grade F** — 7 errors + 3 silent-starvation risks | _"The toolkit grades it: F. Seven anti-pattern errors — and three silent-starvation risks that compile clean and BREAK at runtime. No build warning. No exception. Just silently wrong output."_ |
+| **4** | `maf-doctor autofix-all . --dry-run` | JSON: 4 files would change across 5 rule families | _"This is what would change — preview only. Four files, five rule families. Deterministic. No LLM in this loop."_ |
+| **5** | `maf-doctor autofix-all .` | JSON: 4 files changed | _"Apply for real. Roslyn rewriters under the hood — same code path you'd trust in a Microsoft refactor extension."_ |
+| **6** | `maf-doctor doctor .` | 🟠 **Grade F** — 4 errors + 3 starvation (down from 7+3) | _"Three mechanical errors gone — deterministically, no LLM. Still F: the rest are semantic — a hard-coded key, shared provider state, and the fan-out starvation bugs — and those need judgment. That's the hand-off to the `@maf-migration` agent (next section), which is what drives the grade to A."_ |
+| **7** | `maf-doctor doctor . --plan` | ordered remediation plan | _"And here's the punch list: Phase 1 was the autofix we just ran; Phase 2 is the semantic work, as checkboxes you can paste into a GitHub issue or hand to the agent."_ |
 
 ### Visual bonus beat (~30 seconds, optional but high impact)
 
@@ -389,10 +390,10 @@ Expected JSON output:
     "MAF130-FAN-IN-001",
     "MAF-AP-CONC-002"
   ],
-  "totalDistinctFilesChanged": 6,
+  "totalDistinctFilesChanged": 4,
   "affectedFiles": [
     "ChatClientFactory.cs",
-    "Executors/HistoryInvestigator.cs",
+    "Executors/TransactionInvestigator.cs",
     ...
   ]
 }
@@ -406,9 +407,9 @@ Re-run the doctor:
 maf-doctor doctor .
 ```
 
-Should report **grade A** — auto-fix handled all 5 mechanical rule families.
+Should still report **grade F**, but with **errors down from 7 to 4** — auto-fix cleared the mechanical rule families (DefaultAzureCredential, EnableSensitiveData, the `sealed partial` executor, the fan-in arg-order swap, and the sync-over-async warning). The remaining errors are *semantic* — a hard-coded API key and shared `AIContextProvider` state — and the 3 fan-out starvation risks need a return-type change that's a judgment call. Those go to the agent flow (Step 9), which is what drives the grade to A.
 
-> **Talk-track:** _"Five rules. Six files. Zero LLM calls. Took 800 milliseconds. A CI bot can do this on every PR — no Copilot subscription required, no token costs, fully deterministic."_
+> **Talk-track:** _"Five rule families. Four files. Zero LLM calls. Took 800 milliseconds. A CI bot can do this on every PR — no Copilot subscription required, no token costs, fully deterministic. It won't reach grade A on its own — the semantic fixes need the agent — but it clears the mechanical backlog every time."_
 
 #### Step 9 — The agent-driven flow (`@maf-auditor` + `@maf-migration`)
 

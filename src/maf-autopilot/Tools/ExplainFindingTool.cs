@@ -45,9 +45,9 @@ public sealed class ExplainFindingTool
           - line: 1-based line number of the finding.
           - context: lines of surrounding code on each side (default 8, max 30).
 
-        Returns a markdown report. Lines matching the hard-coded-API-key pattern
-        are redacted, not echoed; other secret shapes (connection strings, JWTs,
-        PEM blocks) are not detected.
+        Returns a markdown report. Lines that look like they contain a secret
+        (API keys, connection-string secrets, tokens, JWTs, PEM private keys) are
+        redacted, not echoed — best-effort, not exhaustive.
         """)]
     public string MafExplainFinding(
         [Description("Absolute path to the repository root.")] string repoPath,
@@ -154,17 +154,22 @@ public sealed class ExplainFindingTool
     /// <summary>
     /// Renders a numbered code window centred on <paramref name="centerLine"/>,
     /// marking every line in <paramref name="marked"/> with <c>&gt;</c>. Lines
-    /// matching the hard-coded-API-key pattern (the shared SEC-002
+    /// that look like they contain a secret (the shared
     /// <see cref="AntiPatternScannerTool.LooksLikeSecret"/>, single source of
-    /// truth with DoctorTool's redactor) are withheld — this is best-effort,
-    /// API-key-shaped redaction, NOT full secret-shape coverage. The
+    /// truth with DoctorTool's redactor) are withheld — best-effort, not
+    /// exhaustive (high-entropy secrets in unrecognized shapes can slip through). The
     /// <c>"{marker} {num} | "</c> prefix also means no source line can ever form
     /// a valid CommonMark closing fence, so a line of backticks can't break out.
     /// </summary>
     private static void AppendCodeWindow(StringBuilder sb, string[] lines, int centerLine, HashSet<int> marked, int context)
     {
-        var start = Math.Max(1, centerLine - context);
-        var end = Math.Min(lines.Length, centerLine + context);
+        // Cover the context window AND every marked finding line, so a widened
+        // multi-finding window (or a small `context`) never claims "marked above"
+        // for a line that falls outside the rendered range.
+        var lo = marked.Count > 0 ? Math.Min(centerLine - context, marked.Min()) : centerLine - context;
+        var hi = marked.Count > 0 ? Math.Max(centerLine + context, marked.Max()) : centerLine + context;
+        var start = Math.Max(1, lo);
+        var end = Math.Min(lines.Length, hi);
         if (start > lines.Length) return; // line past EOF — nothing to show
 
         sb.AppendLine("### Code in context");
@@ -177,7 +182,7 @@ public sealed class ExplainFindingTool
             var marker = marked.Contains(n) ? ">" : " ";
             var num = n.ToString().PadLeft(width);
             var body = AntiPatternScannerTool.LooksLikeSecret(raw)
-                ? "(line redacted — contains a secret)"
+                ? "(line redacted — may contain a secret)"
                 : raw.TrimEnd();
             sb.AppendLine($"{marker} {num} | {body}");
         }

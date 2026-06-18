@@ -33,7 +33,7 @@ Uninstall is just as clean: `dotnet tool uninstall --global maf-doctor`, then de
 
 ## What you get
 
-- **MCP server** — 25 tools, 6 resources, and 7 prompts for GitHub Copilot / Claude Code / Cursor.
+- **MCP server** — 26 tools, 6 resources, and 8 prompts for GitHub Copilot / Claude Code / Cursor.
 - **CLI** — `doctor`, `autofix-all`, `new agent`, `init`, and more.
 - **Plugin** — 12 bundled skills + 7 specialist agents wired into Copilot's and Claude's agentic loops.
 - A companion **[maf-doctor.Analyzers](https://www.nuget.org/packages/maf-doctor.Analyzers)** package — 3 Roslyn analyzers (MAF001 / MAF002 / MAF003) for IDE write-time enforcement.
@@ -45,7 +45,7 @@ Uninstall is just as clean: `dotnet tool uninstall --global maf-doctor`, then de
 - 🆕 **`doctor --all`** — list *every* finding (not just the top 3), grouped by rule and ordered by impact, each with a one-line *why* and the offending source line. Full triage in one pass.
 - 🆕 **`doctor --plan`** — turn the findings into an ordered, checkboxed **remediation plan** (Phase 1: one `autofix-all` for the mechanical fixes; Phase 2: the semantic fixes as impact-ordered tasks) you can drop straight into a GitHub issue.
 - 📖 **It updates itself** — a weekly GitHub Actions watcher refreshes the migration guide, compatibility matrix, and obsolete-API registry as new MAF versions ship, so you don't pin to a MAF version or wait on a maintainer release.
-- 🔐 **Security-hardened** — closes the named MCP attack lattice (path-escape, annotation drift, scaffold code-injection, prompt-injection, workflow-dispatch input injection). Cisco mcp-scanner: 25/25 tools SAFE, 0 findings.
+- 🔐 **Security-hardened** — closes the named MCP attack lattice (path-escape, annotation drift, scaffold code-injection, prompt-injection, workflow-dispatch input injection). Cisco mcp-scanner: all tools SAFE, 0 findings.
 
 ## Full docs
 

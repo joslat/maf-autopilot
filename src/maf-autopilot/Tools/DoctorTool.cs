@@ -66,7 +66,18 @@ public sealed class DoctorTool
 
     private string RunCore(string repoPath, string format, IReadOnlyList<string>? excludes, bool full = false)
     {
-        if (PathGuard.ValidateRepoPath(repoPath) is { } err) return err;
+        // Render a validation failure in the REQUESTED format — a machine consumer
+        // asking for --json must get JSON back, not a plain-text string that
+        // breaks their parser.
+        if (PathGuard.ValidateRepoPath(repoPath) is { } err)
+        {
+            if (format.Equals("json", StringComparison.OrdinalIgnoreCase))
+                return JsonSerializer.Serialize(
+                    new DoctorJsonError("1", err), DoctorJsonContext.Default.DoctorJsonError);
+            if (format.Equals("plan", StringComparison.OrdinalIgnoreCase))
+                return $"# 🩺 MAF remediation plan\n\n⚠️ Cannot scan: {err}\n";
+            return err;
+        }
 
         var summary = AnalyzeRepo(repoPath, excludes);
 
@@ -209,6 +220,37 @@ public sealed class DoctorTool
                     FixDescription: GetAntiPatternFix(a.RuleId),
                     AutoFixable: IsAutoFixable(a.RuleId),
                     Why: GetWhy(a.RuleId))))
+            .Concat(promptFindings
+                // Prompt WARNINGS (PROMPT-001/002/003) are counted in the grade +
+                // metrics; they must also be LISTED, or --all/--plan/--json would
+                // contradict the metrics ("grade B, 2 warnings" but "0 findings").
+                .Where(p => p.Severity == PromptSeverity.Warning)
+                .Select(p => new DoctorRecommendation(
+                    Priority: 4,
+                    Source: "MafLintAgentPrompt",
+                    Description: $"{p.RuleId} at {p.File}:{p.Line} — {p.Message}",
+                    RuleId: p.RuleId,
+                    File: p.File,
+                    Line: p.Line,
+                    Issue: p.Message,
+                    FixDescription: GetPromptFix(p.RuleId),
+                    AutoFixable: false,
+                    Why: GetWhy(p.RuleId))))
+            .Concat(antiPatterns
+                // Info-severity anti-patterns are counted in the grade too — list
+                // them for the same reason (no rule emits Info today; kept consistent).
+                .Where(a => a.Severity == AntiPatternSeverity.Info)
+                .Select(a => new DoctorRecommendation(
+                    Priority: 4,
+                    Source: "MafScanAntiPatterns",
+                    Description: $"{a.RuleId} at {a.File}:{a.Line} — {a.RuleName}",
+                    RuleId: a.RuleId,
+                    File: a.File,
+                    Line: a.Line,
+                    Issue: a.RuleName,
+                    FixDescription: GetAntiPatternFix(a.RuleId),
+                    AutoFixable: IsAutoFixable(a.RuleId),
+                    Why: GetWhy(a.RuleId))))
             .OrderBy(r => r.Priority)
             .ToList();
 
@@ -238,7 +280,7 @@ public sealed class DoctorTool
         var findings = (full ? s.AllFixes : s.TopFixes)
             .Select(f => new DoctorJsonFinding(
                 RuleId: f.RuleId,
-                Severity: f.Priority switch { 1 => "starvation_risk", 2 => "error", _ => "warning" },
+                Severity: f.Priority switch { 1 => "starvation_risk", 2 => "error", 3 => "cost", _ => "warning" },
                 File: f.File,
                 Line: f.Line,
                 Issue: f.Issue,
@@ -251,8 +293,9 @@ public sealed class DoctorTool
             SchemaVersion: "1",
             Verdict: s.Grade.ToString(),
             ErrorsCount: s.AntiPatternErrors + s.PromptErrors,
-            WarningsCount: s.AntiPatternWarnings + s.PromptWarnings,
+            WarningsCount: s.AntiPatternWarnings + s.PromptWarnings + s.AntiPatternInfos,
             SilentStarvationRisks: s.SilentStarvationRisks,
+            UnboundedCostSites: s.UnboundedCostSites,
             TopFixes: findings,
             SummaryMd: markdownSummary);
     }
@@ -275,7 +318,7 @@ public sealed class DoctorTool
     {
         "MAF-AP-SEC-001" => "Replace `DefaultAzureCredential` with `ManagedIdentityCredential` in production code.",
         "MAF-AP-SEC-003" => "Remove `EnableSensitiveData = true` from non-dev configurations.",
-        "MAF-AP-WF-001" => "Add `sealed` modifier to the Executor class.",
+        "MAF-AP-WF-001" => "Add the missing `sealed` / `partial` modifier(s) so the Executor class is `sealed partial`.",
         "MAF130-FAN-IN-001" => "Swap `AddFanInBarrierEdge` argument order — sources first, target second.",
         "MAF-AP-CONC-002" => "Replace `.Result` / `.Wait()` with `await`.",
         "MAF-AP-OBS-001" => "Wire `UseOpenTelemetry` on the IChatClient pipeline.",
@@ -371,7 +414,7 @@ public sealed class DoctorTool
         sb.AppendLine();
         sb.AppendLine($"_{s.Reason}_");
         sb.AppendLine();
-        sb.AppendLine($"**Repo:** `{repoPath}`");
+        sb.AppendLine($"**Repo:** `{repoPath.Replace('`', '\'')}`");
         sb.AppendLine();
         sb.AppendLine("| Metric | Count |");
         sb.AppendLine("|---|---:|");
@@ -417,7 +460,7 @@ public sealed class DoctorTool
         sb.AppendLine("- Every finding (full triage): `--all` (CLI) or `full: true` (MafDoctor MCP).");
         sb.AppendLine("- Machine-readable JSON (CI / dashboards): `--json` (CLI) or `format: \"json\"` (MafDoctor MCP).");
         sb.AppendLine("- Ordered, checkboxed remediation plan (drop into a GitHub issue): `--plan` (CLI) or `format: \"plan\"` (MafDoctor MCP).");
-        sb.AppendLine("- Deep-dive ONE finding (offending code in context + why + fix): `MafExplainFinding(repoPath, file, line)` or the `maf-explain-finding` prompt (MCP clients).");
+        sb.AppendLine("- Deep-dive ONE finding (offending code in context + why + fix) — **MCP clients only** (no CLI flag): `MafExplainFinding(repoPath, file, line)` or the `maf-explain-finding` prompt.");
         sb.AppendLine("- Deeper per-area analysis in your MCP client (Copilot / Claude / Cursor): `MafScanAntiPatterns`, `MafValidateFanOut`, `MafSimulateWorkflow`, `MafRunCs0618Hunt` — the anti-pattern + fan-out scanners also emit SARIF (`format: \"sarif\"`).");
 
         return sb.ToString();
@@ -438,7 +481,7 @@ public sealed class DoctorTool
             if (!string.IsNullOrEmpty(fix.FixDescription)) sb.AppendLine($"   - **Fix:** {fix.FixDescription}");
             var (src, redacted) = TryReadSourceLine(repoPath, fix.File, fix.Line, lineCache);
             if (redacted)
-                sb.AppendLine($"   - `{fix.File}:{fix.Line}` → _(source line redacted — contains a secret)_");
+                sb.AppendLine($"   - `{fix.File}:{fix.Line}` → _(source line redacted — may contain a secret)_");
             else if (src is not null)
                 sb.AppendLine($"   - `{fix.File}:{fix.Line}` → `{src}`");
             i++;
@@ -478,7 +521,7 @@ public sealed class DoctorTool
             foreach (var it in g.Items)
             {
                 var (src, redacted) = TryReadSourceLine(repoPath, it.File, it.Line, lineCache);
-                var suffix = redacted ? " → _(redacted — contains a secret)_"
+                var suffix = redacted ? " → _(redacted — may contain a secret)_"
                     : src is not null ? $" → `{src}`"
                     : "";
                 sb.AppendLine($"  - `{it.File}:{it.Line}`{suffix}");
@@ -505,6 +548,7 @@ public sealed class DoctorTool
     {
         "MAF001" => "fan-out handler must return `Task<T>`",
         "COST-001" => "uncapped agent call — no `MaxOutputTokens`",
+        "PROMPT-004" => "untrusted input concatenated into `Instructions` (prompt injection)",
         _ => rep.Issue,
     };
 
@@ -544,7 +588,7 @@ public sealed class DoctorTool
         sb.AppendLine();
         sb.AppendLine($"_{s.Reason}_");
         sb.AppendLine();
-        sb.AppendLine($"**Repo:** `{repoPath}`");
+        sb.AppendLine($"**Repo:** `{repoPath.Replace('`', '\'')}`");
         sb.AppendLine();
 
         var all = s.AllFixes;
@@ -567,7 +611,7 @@ public sealed class DoctorTool
             sb.AppendLine();
             sb.AppendLine("- [ ] Run `maf-doctor autofix-all .` (CLI) or `MafAutoFixAll(repoPath)` (MCP), then rebuild.");
             sb.AppendLine();
-            sb.AppendLine("It applies deterministic Roslyn rewriters for:");
+            sb.AppendLine("It applies deterministic Roslyn rewriters for the rules below (and may also clear build-surfaced fixes like the fan-in arg-order swap that the scan-time grader doesn't see):");
             foreach (var (rep, items) in GroupByRule(auto))
                 sb.AppendLine($"  - `{rep.RuleId}` — {GroupHeaderTitle(rep)}{(items.Count > 1 ? $" ×{items.Count}" : "")}");
             sb.AppendLine();
@@ -593,7 +637,7 @@ public sealed class DoctorTool
 
         sb.AppendLine("## After");
         sb.AppendLine();
-        sb.AppendLine("Re-run `maf-doctor doctor .` to confirm the grade improved. For any single finding, `MafExplainFinding(repoPath, file, line)` gives the grounded deep-dive + fix.");
+        sb.AppendLine("Re-run `maf-doctor doctor .` to confirm the grade improved. In an MCP client (Copilot / Claude / Cursor), `MafExplainFinding(repoPath, file, line)` gives a grounded per-finding deep-dive + fix.");
         return sb.ToString();
     }
 
@@ -636,7 +680,12 @@ public sealed class DoctorTool
         var raw = lines[line - 1].Trim();
         if (raw.Length == 0) return (null, false);
         // Redact BEFORE truncation so a secret past char 100 can't slip through.
-        if (AntiPatternScannerTool.LooksLikeSecret(raw)) return (null, true);
+        // Guard the regex: a RegexMatchTimeout (cold-start DFA build under load)
+        // must degrade to redact-on-doubt, never abort the whole report.
+        bool looksSecret;
+        try { looksSecret = AntiPatternScannerTool.LooksLikeSecret(raw); }
+        catch { return (null, true); }
+        if (looksSecret) return (null, true);
         var text = raw.Replace('`', '\'');
         return (text.Length > 100 ? text[..100] + "…" : text, false);
     }
@@ -683,8 +732,14 @@ public sealed record DoctorJsonResult(
     [property: JsonPropertyName("errors_count")] int ErrorsCount,
     [property: JsonPropertyName("warnings_count")] int WarningsCount,
     [property: JsonPropertyName("silent_starvation_risks")] int SilentStarvationRisks,
+    [property: JsonPropertyName("unbounded_cost_sites")] int UnboundedCostSites,
     [property: JsonPropertyName("top_fixes")] IReadOnlyList<DoctorJsonFinding> TopFixes,
     [property: JsonPropertyName("summary_md")] string SummaryMd);
+
+/// <summary>Error shape for format:"json" when the request fails validation (e.g. bad path).</summary>
+public sealed record DoctorJsonError(
+    [property: JsonPropertyName("schema_version")] string SchemaVersion,
+    [property: JsonPropertyName("error")] string Error);
 
 public sealed record DoctorJsonFinding(
     [property: JsonPropertyName("rule_id")] string RuleId,
@@ -698,5 +753,6 @@ public sealed record DoctorJsonFinding(
 
 [JsonSerializable(typeof(DoctorJsonResult))]
 [JsonSerializable(typeof(DoctorJsonFinding))]
+[JsonSerializable(typeof(DoctorJsonError))]
 [JsonSourceGenerationOptions(WriteIndented = true)]
 internal sealed partial class DoctorJsonContext : JsonSerializerContext { }

@@ -25,50 +25,52 @@ internal sealed class ExecutorSealedRewriter : CSharpSyntaxRewriter, IRuleRewrit
             return base.VisitClassDeclaration(node);
 
         var modifiers = node.Modifiers.Select(m => m.ValueText).ToHashSet();
-        if (modifiers.Contains("sealed"))
-            return base.VisitClassDeclaration(node); // already sealed
+        var needsSealed = !modifiers.Contains("sealed");
+        var needsPartial = !modifiers.Contains("partial");
+        if (!needsSealed && !needsPartial)
+            return base.VisitClassDeclaration(node); // already `sealed partial`
 
-        // Phase 4.1a — corruption guard: `sealed abstract class` is a C#
-        // compile error (the two modifiers are mutually exclusive). Same for
-        // `sealed static class` (static implies sealed AND abstract; combining
-        // with explicit `sealed` is also rejected). Pre-fix, the rewriter
-        // happily inserted `sealed` regardless and produced uncompilable user
-        // code. Now: skip the rewrite and leave a comment-warning so the
-        // developer sees why the rule wasn't auto-applied.
-        if (modifiers.Contains("abstract"))
+        // The scanner (MAF-AP-WF-001) fires when EITHER `sealed` or `partial` is
+        // missing, and `partial` is the load-bearing one (without it the workflow
+        // source generator can't emit the dispatcher → generator-time compile
+        // error). So add WHICHEVER is missing — not just `sealed`.
+
+        // Phase 4.1a — corruption guard: `sealed abstract` / `sealed static` are
+        // C# compile errors. We can't add `sealed` to those, so skip with a
+        // comment-warning rather than emit uncompilable code. (Adding `sealed`
+        // is what's blocked; an abstract class missing `partial` is a refactor
+        // the developer must do anyway.)
+        if (needsSealed && modifiers.Contains("abstract"))
         {
             return AddSkipWarning(node,
                 "// MAF-AP-WF-001: cannot seal an abstract Executor — refactor to a non-abstract class first.");
         }
-        if (modifiers.Contains("static"))
+        if (needsSealed && modifiers.Contains("static"))
         {
             return AddSkipWarning(node,
                 "// MAF-AP-WF-001: cannot seal a static class — static classes cannot derive from Executor anyway; this rule shouldn't be reachable.");
         }
 
-        // Insert `sealed` immediately after `public` (or any first access modifier);
-        // fall back to the start of the modifier list. Preserve trivia by borrowing
-        // the trailing trivia of the preceding token.
-        var sealedToken = SyntaxFactory.Token(SyntaxKind.SealedKeyword)
-            .WithTrailingTrivia(SyntaxFactory.Space);
-
-        SyntaxTokenList newModifiers;
-        if (node.Modifiers.Count == 0)
+        // Build canonical `[access] sealed … partial class`: insert `sealed` right
+        // after the first (access) modifier; append `partial` last (immediately
+        // before the `class` keyword). Each inserted token carries a trailing
+        // space so the rendered text stays well-formed.
+        var list = node.Modifiers.ToList();
+        if (needsSealed)
         {
-            newModifiers = SyntaxFactory.TokenList(sealedToken);
+            var sealedToken = SyntaxFactory.Token(SyntaxKind.SealedKeyword)
+                .WithTrailingTrivia(SyntaxFactory.Space);
+            // Insert after the first modifier; if there are none, prepend.
+            list.Insert(list.Count == 0 ? 0 : 1, sealedToken);
         }
-        else
+        if (needsPartial)
         {
-            // Insert after the first modifier (preserves "public sealed partial class X").
-            // Note: when `node.Modifiers.Count == 1` (e.g. just `public`), index 1
-            // equals the list's Count, and List<T>.Insert(Count, x) appends — which
-            // is exactly what we want: `public` → `public sealed`.
-            var list = node.Modifiers.ToList();
-            list.Insert(1, sealedToken);
-            newModifiers = SyntaxFactory.TokenList(list);
+            var partialToken = SyntaxFactory.Token(SyntaxKind.PartialKeyword)
+                .WithTrailingTrivia(SyntaxFactory.Space);
+            list.Add(partialToken); // last modifier, right before `class`
         }
 
-        return node.WithModifiers(newModifiers);
+        return node.WithModifiers(SyntaxFactory.TokenList(list));
     }
 
     /// <summary>

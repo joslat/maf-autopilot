@@ -192,7 +192,7 @@ public static class MafPrompts
         sb.AppendLine("**Suggested tool calls** (most-to-least lightweight):");
         sb.AppendLine();
         sb.AppendLine("- `MafDoctor(repoPath)` — A/B/C/F grade + top 3 fixes. Best triage signal.");
-        sb.AppendLine("- `MafScanAntiPatterns(repoPath)` — 10-rule security/concurrency/observability scan.");
+        sb.AppendLine("- `MafScanAntiPatterns(repoPath)` — 11-rule security/concurrency/observability scan.");
         sb.AppendLine("- `MafValidateFanOut(repoPath)` — silent fan-in starvation detector.");
         sb.AppendLine("- `MafLintAgentPrompt(repoPath)` — agent-prompt safety (empty / bloat / refusal / injection).");
         sb.AppendLine("- `MafEstimateCost(repoPath)` — token-cost auditor (missing `MaxOutputTokens` cap).");

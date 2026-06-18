@@ -540,6 +540,71 @@ public class DoctorToolTests
     }
 
     // -------------------------------------------------------------------------
+    // Deep-review regressions — prompt warnings listed, SEC-003 syntax-aware,
+    // JSON counts reconcile with top_fixes.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Grade_PromptWarnings_AreListed_NotJustCounted()
+    {
+        // Regression: prompt warnings were counted in the grade/metrics but never
+        // appeared in AllFixes — so --all/--json/--plan contradicted the metrics.
+        var prompts = new[]
+        {
+            new PromptFinding("PROMPT-001", PromptSeverity.Warning, "Instructions is empty", "A.cs", 5),
+            new PromptFinding("PROMPT-003", PromptSeverity.Warning, "no refusal clause", "A.cs", 6),
+        };
+        var summary = DoctorTool.Grade([], [], prompts, []);
+        Assert.Equal(2, summary.PromptWarnings);
+        Assert.Equal(2, summary.AllFixes.Count(f => f.RuleId.StartsWith("PROMPT-", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void Sec003_IsSyntaxAware_DetectsDictionaryForm_IgnoresComment()
+    {
+        // The dictionary-key form is the shape the rewriter fixes; a comment that
+        // merely mentions the rule must NOT fire.
+        const string src = """
+            using System.Collections.Generic;
+            class C { void M() {
+                // EnableSensitiveData = true   (just a comment — not a finding)
+                var d = new Dictionary<string, bool> { ["EnableSensitiveData"] = true };
+            } }
+            """;
+        var sec003 = AntiPatternScannerTool.ScanFile(src, "C.cs")
+            .Where(f => f.RuleId == "MAF-AP-SEC-003").ToList();
+        Assert.Single(sec003); // the real dict assignment only — not the comment
+    }
+
+    [Fact]
+    public void Json_HasUnboundedCostSites_AndCountsReconcileWithTopFixes()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-jsonreconcile-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            // SEC-001 (error) + a real dictionary SEC-003 (error).
+            File.WriteAllText(Path.Combine(tempDir, "Bad.cs"), """
+                using Azure.Identity;
+                using System.Collections.Generic;
+                class C { void M() {
+                    var c = new DefaultAzureCredential();
+                    var d = new Dictionary<string, bool> { ["EnableSensitiveData"] = true };
+                } }
+                """);
+            using var doc = JsonDocument.Parse(new DoctorTool().Run(tempDir, "json", excludes: null, full: true));
+            var root = doc.RootElement;
+            Assert.True(root.TryGetProperty("unbounded_cost_sites", out _)); // new field present
+            var sum = root.GetProperty("errors_count").GetInt32()
+                + root.GetProperty("warnings_count").GetInt32()
+                + root.GetProperty("silent_starvation_risks").GetInt32()
+                + root.GetProperty("unbounded_cost_sites").GetInt32();
+            Assert.Equal(root.GetProperty("top_fixes").GetArrayLength(), sum); // counts == listed findings
+        }
+        finally { Directory.Delete(tempDir, recursive: true); }
+    }
+
+    // -------------------------------------------------------------------------
     // Tier 3 — `--plan` / format:"plan": an ordered, checkboxed remediation plan.
     // -------------------------------------------------------------------------
 

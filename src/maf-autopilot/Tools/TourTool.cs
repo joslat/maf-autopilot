@@ -83,7 +83,7 @@ public sealed class TourTool
         new("MafRegistryList", "Registry lookup", "Enumerate every registry entry ID. Useful for discovery and CI auditing."),
 
         // — Scanners —
-        new("MafScanAntiPatterns", "Scanner", "Walk a repo for known anti-patterns (security / concurrency / observability / identity / topology). 10 rules. Supports `format: \"sarif\"` for CI."),
+        new("MafScanAntiPatterns", "Scanner", "Walk a repo for known anti-patterns (security / concurrency / observability / identity / topology). 11 rules. Supports `format: \"sarif\"` for CI."),
         new("MafValidateFanOut", "Scanner", "Find handlers that return `void` / non-generic `Task` (silent fan-in starvation risk). Supports `format: \"sarif\"`."),
         new("MafLintAgentPrompt", "Scanner", "Lint every agent `Instructions` literal. 4 rules: empty / token bloat / missing refusal / untrusted-input concat (prompt injection)."),
         new("MafEstimateCost", "Scanner", "Find every `RunAsync` / `RunStreamingAsync` site missing a `MaxOutputTokens` cap. Production cost governance."),
