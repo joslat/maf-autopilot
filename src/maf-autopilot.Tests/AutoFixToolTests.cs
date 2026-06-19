@@ -804,12 +804,14 @@ public class AutoFixToolTests
     // mutually exclusive). Pre-fix the rewriter happily inserted `sealed` on
     // any class deriving from Executor with a [MessageHandler], producing
     // uncompilable user code when the source class was abstract. Same for
-    // `sealed static class` (also rejected by the compiler). Now: skip the
-    // rewrite and emit a leading-trivia comment explaining why.
+    // `sealed static class` (also rejected by the compiler). Now: leave abstract
+    // and static Executors UNCHANGED — parity with the scanner, which skips them
+    // (so autofix/preview honestly report "no change" instead of dirtying a
+    // scanner-clean file with an advisory comment).
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void ExecutorSealedRewriter_AbstractClass_NotRewritten_WithWarningComment()
+    public void ExecutorSealedRewriter_AbstractClass_LeftUnchanged()
     {
         var src = """
             using Microsoft.Agents.AI.Workflow;
@@ -821,12 +823,12 @@ public class AutoFixToolTests
             """;
         var output = ApplyRewriter(new ExecutorSealedRewriter(), src);
 
-        // The output must NOT contain the uncompilable `sealed abstract` order
-        // (the unguarded path would insert `sealed` right after `abstract`,
-        // producing `abstract sealed class`).
+        // Parity with the scanner: an abstract Executor is left UNTOUCHED — no
+        // `sealed` (which would be the uncompilable `abstract sealed`), and no
+        // advisory comment that would dirty a scanner-clean file.
         Assert.DoesNotContain("sealed", output);
-        // The skip-warning comment is present.
-        Assert.Contains("cannot seal an abstract Executor", output);
+        Assert.DoesNotContain("cannot seal", output);
+        Assert.Equal(src, output.TrimEnd());
     }
 
     [Fact]

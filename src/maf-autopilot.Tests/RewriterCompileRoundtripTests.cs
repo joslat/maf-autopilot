@@ -1,0 +1,295 @@
+using System.Collections.Immutable;
+using MafDoctor.Tools;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Xunit;
+
+namespace MafDoctor.Tests;
+
+/// <summary>
+/// Compile-roundtrip safety net for EVERY <c>IRuleRewriter</c>.
+///
+/// For a corpus of VALID (clean-compiling) C# fixtures, running a rewriter must
+/// NOT introduce a new compiler ERROR. Two real source-corruption bugs —
+/// <c>CS1995</c> (await injected into a nested-query clause) and <c>CS4004</c>
+/// (await injected into an <c>unsafe</c> member) — shipped past the string-assertion
+/// unit tests and were caught ONLY by compiling the rewritten output. This test
+/// makes that check permanent: any future rewriter change that injects an
+/// <c>await</c> (or otherwise breaks compilation) into a context the C# spec
+/// forbids fails CI immediately, instead of silently corrupting user source.
+///
+/// Scope note: the corpus contains only VALID inputs — that is the whole point
+/// (a rewriter must never turn compilable code into uncompilable code). Cases
+/// where the INPUT is already uncompilable (e.g. a <c>.Result</c> in a parameter
+/// default) cannot occur in real code and are covered by the rewriter's own unit
+/// tests, not here. Several rule IDs share one rewriter; rewriters that don't
+/// match a given fixture are no-ops and are skipped (no compile attempt).
+/// </summary>
+public class RewriterCompileRoundtripTests
+{
+    // Full framework reference set so fixtures using Task / LINQ / unsafe compile.
+    private static readonly MetadataReference[] References =
+        ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
+        .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+        .Where(p => p.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+        .Select(p => (MetadataReference)MetadataReference.CreateFromFile(p))
+        .ToArray();
+
+    private static readonly CSharpParseOptions ParseOpts = new(LanguageVersion.Latest);
+
+    private static readonly CSharpCompilationOptions CompileOpts =
+        new(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true);
+
+    private static ImmutableArray<Diagnostic> CompileErrors(SyntaxNode root)
+    {
+        var comp = CSharpCompilation.Create(
+            "roundtrip",
+            new[] { root.SyntaxTree },
+            References,
+            CompileOpts);
+        return comp.GetDiagnostics()
+            .Where(d => d.Severity == DiagnosticSeverity.Error)
+            .ToImmutableArray();
+    }
+
+    [Theory]
+    [MemberData(nameof(Fixtures))]
+    public void Rewriter_NeverIntroducesACompilerError(string label, string source)
+    {
+        var inputTree = CSharpSyntaxTree.ParseText(source, ParseOpts);
+        var inputRoot = inputTree.GetRoot();
+        var inputErrors = CompileErrors(inputRoot);
+
+        // The fixture itself must be valid C# — otherwise the test is meaningless
+        // (a rewriter can only be blamed for breaking code that compiled to begin with).
+        Assert.True(inputErrors.IsEmpty,
+            $"[{label}] FIXTURE does not compile clean (fix the test, not the rewriter): " +
+            string.Join("; ", inputErrors.Select(d => $"{d.Id} {d.GetMessage()}")));
+
+        foreach (var ruleId in AutoFixTool.SupportedRuleIds)
+        {
+            Assert.True(AutoFixTool.TryCreateRewriter(ruleId, out var rewriter) && rewriter is not null,
+                $"could not create rewriter for {ruleId}");
+
+            var newRoot = rewriter!.Visit(inputRoot);
+            if (ReferenceEquals(newRoot, inputRoot)) continue; // rewriter didn't match this fixture
+
+            var rewritten = CSharpSyntaxTree.ParseText(newRoot.ToFullString(), ParseOpts).GetRoot();
+            var outErrors = CompileErrors(rewritten);
+
+            // inputErrors is empty (asserted above), so ANY output error is new.
+            Assert.True(outErrors.IsEmpty,
+                $"[{label}] rewriter '{ruleId}' INTRODUCED a compiler error — source corruption:\n  " +
+                string.Join("\n  ", outErrors.Select(d => $"{d.Id}: {d.GetMessage()}")) +
+                $"\n--- rewritten output ---\n{newRoot.ToFullString()}");
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Corpus. Each entry is a self-contained, clean-compiling C# program.
+    // -------------------------------------------------------------------------
+
+    public static IEnumerable<object[]> Fixtures()
+    {
+        // ---- CONC-002: REGRESSION shapes (the two historical corruptions). ----
+        // The rewriter must SKIP these (await is illegal here); the skip-with-comment
+        // output still compiles, so the roundtrip passes. If the guard regresses,
+        // an injected `await` makes the output fail to compile and this test goes red.
+
+        yield return F("conc002-regression-nested-query-join-in-let", """
+            using System.Linq;
+            using System.Collections.Generic;
+            using System.Threading.Tasks;
+            public class C {
+              Task<List<int>> Foo() => Task.FromResult(new List<int>());
+              public async Task M() {
+                var a = new List<int>();
+                var b = new List<int>();
+                var q = from i in a
+                        let k = (from x in b join y in Foo().Result on x equals y select x).Count()
+                        select i + k;
+                await Task.Yield();
+                _ = q.ToList();
+              }
+            }
+            """);
+
+        foreach (var (kind, member) in new[]
+        {
+            ("property",   "public unsafe int P { get { System.Func<System.Threading.Tasks.Task> f = async () => { var x = Foo().Result; }; return 0; } }"),
+            ("indexer",    "public unsafe int this[int i] { get { System.Func<System.Threading.Tasks.Task> f = async () => { var x = Foo().Result; }; return 0; } }"),
+            ("operator",   "public static unsafe C operator +(C a, C b) { System.Func<System.Threading.Tasks.Task> f = async () => { var x = Foo().Result; }; return a; }"),
+            ("conversion", "public static unsafe implicit operator int(C c) { System.Func<System.Threading.Tasks.Task> f = async () => { var x = Foo().Result; }; return 0; }"),
+            ("constructor","public unsafe C() { System.Func<System.Threading.Tasks.Task> f = async () => { var x = Foo().Result; }; }"),
+        })
+        {
+            yield return F($"conc002-regression-unsafe-{kind}-nested-lambda",
+                "using System.Threading.Tasks;\npublic class C {\n  static Task<int> Foo() => Task.FromResult(1);\n  " + member + "\n}\n");
+        }
+
+        // ---- CONC-002: other await-ILLEGAL contexts (valid input ⇒ must skip). ----
+        yield return F("conc002-skip-lock-body", """
+            using System.Threading.Tasks;
+            public class C {
+              readonly object _lock = new();
+              static Task<int> Foo() => Task.FromResult(1);
+              public async Task M() { lock (_lock) { var x = Foo().Result; } await Task.Yield(); }
+            }
+            """);
+
+        yield return F("conc002-skip-unsafe-block", """
+            using System.Threading.Tasks;
+            public class C {
+              static Task<int> Foo() => Task.FromResult(1);
+              public async Task M() { unsafe { var x = Foo().Result; } await Task.Yield(); }
+            }
+            """);
+
+        yield return F("conc002-skip-catch-filter", """
+            using System;
+            using System.Threading.Tasks;
+            public class C {
+              static Task<int> Foo() => Task.FromResult(1);
+              public async Task M() { try { await Task.Yield(); } catch (Exception) when (Foo().Result > 0) { } }
+            }
+            """);
+
+        yield return F("conc002-skip-query-let", """
+            using System.Linq;
+            using System.Threading.Tasks;
+            public class C {
+              static Task<int> F() => Task.FromResult(1);
+              public async Task M() {
+                var q = from i in new[] { 1, 2 } let r = F().Result select r;
+                await Task.Yield();
+                _ = q.ToList();
+              }
+            }
+            """);
+
+        yield return F("conc002-skip-non-async-method", """
+            using System.Threading.Tasks;
+            public class C {
+              static Task<int> Foo() => Task.FromResult(1);
+              public int M() { return Foo().Result; }
+            }
+            """);
+
+        yield return F("conc002-skip-async-lambda-in-unsafe-block", """
+            using System;
+            using System.Threading.Tasks;
+            public class C {
+              static Task<int> Foo() => Task.FromResult(1);
+              public async Task M() { unsafe { Func<Task> f = async () => { var x = Foo().Result; }; } await Task.Yield(); }
+            }
+            """);
+
+        // ---- CONC-002: await-LEGAL contexts (valid input ⇒ should REWRITE; output must still compile). ----
+        yield return F("conc002-rewrite-async-method-body", """
+            using System.Threading.Tasks;
+            public class C {
+              static Task<int> Foo() => Task.FromResult(1);
+              public async Task<int> M() { return Foo().Result; }
+            }
+            """);
+
+        yield return F("conc002-rewrite-wait-async-method-body", """
+            using System.Threading.Tasks;
+            public class C {
+              static Task Foo() => Task.CompletedTask;
+              public async Task M() { Foo().Wait(); await Task.Yield(); }
+            }
+            """);
+
+        yield return F("conc002-rewrite-top-level-join-source", """
+            using System.Linq;
+            using System.Collections.Generic;
+            using System.Threading.Tasks;
+            public class C {
+              Task<List<int>> Foo() => Task.FromResult(new List<int>());
+              public async Task M() {
+                var b = new List<int>();
+                var q = from x in b join y in Foo().Result on x equals y select x;
+                await Task.Yield();
+                _ = q.ToList();
+              }
+            }
+            """);
+
+        yield return F("conc002-rewrite-async-lambda-in-lock", """
+            using System;
+            using System.Threading.Tasks;
+            public class C {
+              readonly object _lock = new();
+              static Task<int> Foo() => Task.FromResult(1);
+              public async Task M() { lock (_lock) { Func<Task> f = async () => { var x = Foo().Result; }; } await Task.Yield(); }
+            }
+            """);
+
+        yield return F("conc002-rewrite-catch-body", """
+            using System;
+            using System.Threading.Tasks;
+            public class C {
+              static Task<int> Foo() => Task.FromResult(1);
+              public async Task M() { try { await Task.Yield(); } catch (Exception) { var x = Foo().Result; } }
+            }
+            """);
+
+        yield return F("conc002-rewrite-async-finally", """
+            using System.Threading.Tasks;
+            public class C {
+              static Task<int> Foo() => Task.FromResult(1);
+              public async Task M() { try { await Task.Yield(); } finally { var x = Foo().Result; } }
+            }
+            """);
+
+        // ---- ExecutorSealedRewriter (WF-001): output must compile. ----
+        yield return F("wf001-rewrite-plain-executor", """
+            using System.Threading.Tasks;
+            public class Executor { }
+            public sealed class MessageHandlerAttribute : System.Attribute { }
+            public partial class MyExec : Executor {
+              [MessageHandler]
+              public Task<int> Handle(string s) => Task.FromResult(0);
+            }
+            """);
+
+        yield return F("wf001-rewrite-generic-executor", """
+            using System.Threading.Tasks;
+            public class Executor<TIn, TOut> { }
+            public sealed class MessageHandlerAttribute : System.Attribute { }
+            public partial class MyExec : Executor<string, int> {
+              [MessageHandler]
+              public Task<int> Handle(string s) => Task.FromResult(0);
+            }
+            """);
+
+        yield return F("wf001-noop-abstract-executor", """
+            using System.Threading.Tasks;
+            public class Executor { }
+            public sealed class MessageHandlerAttribute : System.Attribute { }
+            public abstract partial class BaseAuditor : Executor {
+              [MessageHandler]
+              public abstract Task<string> Audit(string s);
+            }
+            """);
+
+        // ---- FanInArgOrderRewriter (FAN-IN-001): swap output must compile. ----
+        yield return F("fanin-rewrite-swap-with-overloads", """
+            public class B {
+              public void AddFanInBarrierEdge(object target, object[] sources) { }
+              public void AddFanInBarrierEdge(object[] sources, object target) { }
+            }
+            public class C {
+              void F() {
+                var b = new B();
+                object agg = null;
+                object o1 = null, o2 = null;
+                b.AddFanInBarrierEdge(agg, new[] { o1, o2 }); // swapped to (sources, target)
+              }
+            }
+            """);
+    }
+
+    private static object[] F(string label, string source) => new object[] { label, source };
+}
