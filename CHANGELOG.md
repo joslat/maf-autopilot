@@ -238,8 +238,10 @@ The full attack-surface map + closure list is in
 - **`ai_review_build_prompt.py` PR-registry injection** — each changed
   registry entry now fenced before embedding in the GPT-4o review prompt.
 - **`ExecutorSealedRewriter` produces uncompilable `abstract sealed class`** —
-  abstract / static guard skips with leading-trivia warning comment.
-  Idempotence via source-text dedup so repeat passes don't duplicate.
+  abstract / static Executors are left UNCHANGED (parity with the WF-001 scanner,
+  which skips abstract Executors), so `MafAutoFix` / `MafBeforeAfter` honestly
+  report "no change" instead of dirtying a scanner-clean file with an advisory
+  comment.
 - **`SyncOverAsyncRewriter` produces uncompilable `await`** — lock-block /
   non-async-method / accessor / non-async-lambda guards. Same idempotence pattern.
 

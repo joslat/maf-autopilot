@@ -83,7 +83,32 @@ public class RewriterCompileRoundtripTests
                 string.Join("\n  ", outErrors.Select(d => $"{d.Id}: {d.GetMessage()}")) +
                 $"\n--- rewritten output ---\n{newRoot.ToFullString()}");
         }
+
+        // Coverage assertion: the rule this fixture targets must actually ENGAGE
+        // (rewrite OR add a skip-comment). Otherwise a future regression that makes a
+        // rewriter silently stop matching would leave the fixture vacuously green —
+        // "the output compiles" is trivially true when nothing changed. `-noop-`
+        // fixtures are the deliberate exception (the rule must NOT touch them).
+        var expectedRule = ExpectedRuleFor(label);
+        Assert.True(AutoFixTool.TryCreateRewriter(expectedRule, out var targeted) && targeted is not null,
+            $"could not create rewriter for {expectedRule}");
+        var engaged = !ReferenceEquals(targeted!.Visit(inputRoot), inputRoot);
+        var shouldEngage = !label.Contains("-noop-", StringComparison.Ordinal);
+        Assert.True(engaged == shouldEngage,
+            $"[{label}] expected rule '{expectedRule}' to {(shouldEngage ? "ENGAGE (rewrite or add a skip-comment)" : "be a NO-OP")}, " +
+            $"but it {(engaged ? "changed" : "did NOT change")} the input — coverage silently lost.");
     }
+
+    // Maps a fixture label's prefix to the rule whose rewriter it targets.
+    private static string ExpectedRuleFor(string label) => label.Split('-')[0] switch
+    {
+        "conc002" => "MAF-AP-CONC-002",
+        "wf001"   => "MAF-AP-WF-001",
+        "fanin"   => "MAF130-FAN-IN-001",
+        "sec001"  => "MAF-AP-SEC-001",
+        "sec003"  => "MAF-AP-SEC-003",
+        var other => throw new InvalidOperationException($"fixture label '{label}' has an unknown rule prefix '{other}'"),
+    };
 
     // -------------------------------------------------------------------------
     // Corpus. Each entry is a self-contained, clean-compiling C# program.
@@ -181,6 +206,69 @@ public class RewriterCompileRoundtripTests
             public class C {
               static Task<int> Foo() => Task.FromResult(1);
               public async Task M() { unsafe { Func<Task> f = async () => { var x = Foo().Result; }; } await Task.Yield(); }
+            }
+            """);
+
+        yield return F("conc002-skip-fixed-block-result", """
+            using System.Threading.Tasks;
+            public class C {
+              static Task<int> Foo() => Task.FromResult(1);
+              int[] _a = new int[4];
+              public async Task M() {
+                unsafe { fixed (int* p = _a) { var x = Foo().Result; } }
+                await Task.Yield();
+              }
+            }
+            """);
+
+        yield return F("conc002-skip-fixed-block-wait", """
+            using System.Threading.Tasks;
+            public class C {
+              static Task Foo() => Task.CompletedTask;
+              int[] _a = new int[4];
+              public async Task M() {
+                unsafe { fixed (int* p = _a) { Foo().Wait(); } }
+                await Task.Yield();
+              }
+            }
+            """);
+
+        yield return F("conc002-skip-unsafe-local-function", """
+            using System.Threading.Tasks;
+            public class C {
+              static Task<int> Foo() => Task.FromResult(1);
+              public async Task M() {
+                unsafe void Local() { var x = Foo().Result; }
+                Local();
+                await Task.Yield();
+              }
+            }
+            """);
+
+        yield return F("conc002-skip-query-secondary-from", """
+            using System.Linq;
+            using System.Collections.Generic;
+            using System.Threading.Tasks;
+            public class C {
+              static Task<List<int>> F() => Task.FromResult(new List<int>());
+              public async Task M() {
+                var q = from i in new[] { 1, 2 } from j in F().Result select i + j;
+                await Task.Yield();
+                _ = q.ToList();
+              }
+            }
+            """);
+
+        yield return F("conc002-skip-query-orderby", """
+            using System.Linq;
+            using System.Threading.Tasks;
+            public class C {
+              static Task<int> F() => Task.FromResult(1);
+              public async Task M() {
+                var q = from i in new[] { 1, 2 } orderby F().Result select i;
+                await Task.Yield();
+                _ = q.ToList();
+              }
             }
             """);
 
@@ -287,6 +375,49 @@ public class RewriterCompileRoundtripTests
                 object o1 = null, o2 = null;
                 b.AddFanInBarrierEdge(agg, new[] { o1, o2 }); // swapped to (sources, target)
               }
+            }
+            """);
+
+        yield return F("fanin-rewrite-named-args", """
+            public class B {
+              public void AddFanInBarrierEdge(object[] sources, object target) { }
+            }
+            public class C {
+              void F() {
+                var b = new B();
+                object agg = null;
+                object o1 = null, o2 = null;
+                b.AddFanInBarrierEdge(target: agg, sources: new[] { o1, o2 }); // labels stripped on swap
+              }
+            }
+            """);
+
+        yield return F("fanin-rewrite-collection-expression-source", """
+            public class B {
+              public void AddFanInBarrierEdge(object target, System.Collections.Generic.List<object> sources) { }
+              public void AddFanInBarrierEdge(System.Collections.Generic.List<object> sources, object target) { }
+            }
+            public class C {
+              void F() {
+                var b = new B();
+                object agg = null;
+                object o1 = null, o2 = null;
+                b.AddFanInBarrierEdge(agg, [o1, o2]); // collection-expression source
+              }
+            }
+            """);
+
+        // ---- SEC-001 / SEC-003: output of the security rewrites must compile. ----
+        yield return F("sec001-rewrite-default-azure-credential", """
+            public class DefaultAzureCredential { public DefaultAzureCredential() { } }
+            public class ManagedIdentityCredential { public ManagedIdentityCredential() { } }
+            public class C { object _c = new DefaultAzureCredential(); }
+            """);
+
+        yield return F("sec003-rewrite-embedded-if-assignment", """
+            public class Options { public bool EnableSensitiveData { get; set; } }
+            public class C {
+              void M(Options opts, bool flag) { if (flag) opts.EnableSensitiveData = true; }
             }
             """);
     }
