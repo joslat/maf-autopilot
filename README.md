@@ -8,7 +8,7 @@
 
 **MAF Doctor** is a **.NET global tool** (installed from NuGet) that does three things in one install:
 
-1. **An MCP server** — exposes 25 executable tools, 6 resources, and 7 prompts to GitHub Copilot / Claude Code / Cursor.
+1. **An MCP server** — exposes 26 executable tools, 6 resources, and 8 prompts to GitHub Copilot / Claude Code / Cursor.
 2. **A CLI** — **doctor** for an A–F health letter, **autofix-all** for deterministic rewriters, **new agent** to scaffold, **init** to wire up your repo, and more.
 3. **A plugin** — init drops steering snippets and wires the MCP server into both VS Code and Claude Code, so Copilot's and Claude's agentic loops gain MAF-specific knowledge (12 bundled skills + 7 specialist agents).
 
@@ -30,7 +30,7 @@ Plus a separate **maf-doctor.Analyzers** NuGet package with 3 Roslyn analyzers (
 - 🤖 **Fully agentic loop** — Copilot audits your codebase, generates a tracked migration plan, and executes it task-by-task, building after every step.
 - 🧰 **Deterministic fixes, not guesses** — the obsolete-API registry maps every known CS0618 warning to its exact replacement pattern. No hallucinated fixes.
 - 📖 **It updates itself** — as new MAF versions ship, the toolkit refreshes its own migration knowledge automatically. [How →](#it-updates-itself)
-- 🔐 **Hardened against the named MCP attack lattice** — a comprehensive security pass closes the critical- and high-tier MCP attack classes (path-escape, annotation drift, scaffold code-injection, prompt-injection via release notes, workflow-dispatch input injection), with defense-in-depth helpers and CI-enforced invariants. Cisco mcp-scanner: 25/25 tools SAFE, 0 findings. See [SECURITY.md](SECURITY.md) and [docs/security.md](docs/security.md).
+- 🔐 **Hardened against the named MCP attack lattice** — a comprehensive security pass closes the critical- and high-tier MCP attack classes (path-escape, annotation drift, scaffold code-injection, prompt-injection via release notes, workflow-dispatch input injection), with defense-in-depth helpers and CI-enforced invariants. Cisco mcp-scanner: all tools SAFE, 0 findings. See [SECURITY.md](SECURITY.md) and [docs/security.md](docs/security.md).
 
 ## It updates itself
 
@@ -50,9 +50,9 @@ The practical upshot: you don't pin to a MAF version in these docs, and you don'
 
 MAF Doctor is a **[Model Context Protocol (MCP)](https://modelcontextprotocol.io) server** packaged as a .NET global tool. With no subcommand it runs in MCP mode and exposes:
 
-- **25 executable tools**, each annotated with MCP behavior hints (read-only / destructive / idempotent / open-world) so clients can auto-classify them — registry lookup, code scanning, build-verified CS0618 hunts, NuGet diffing, workflow simulation, scaffolding, PR-scoped audits, version planning, and a single-command health letter. The anti-pattern and fan-out scanners emit SARIF for GitHub Advanced Security; the two destructive tools (auto-fix and auto-fix-all) support a dry-run.
+- **26 executable tools**, each annotated with MCP behavior hints (read-only / destructive / idempotent / open-world) so clients can auto-classify them — registry lookup, code scanning, build-verified CS0618 hunts, NuGet diffing, workflow simulation, scaffolding, PR-scoped audits, version planning, and a single-command health letter. The anti-pattern and fan-out scanners emit SARIF for GitHub Advanced Security; the two destructive tools (auto-fix and auto-fix-all) support a dry-run.
 - **6 resources** — the migration guide, constraints, registry, rules, help, and per-name skills — readable on demand.
-- **7 prompts** — audit, migrate, cs0618-hunt, review, debug, scaffold, and help.
+- **8 prompts** — audit, migrate, cs0618-hunt, review, debug, explain-finding, scaffold, and help.
 - **3 Roslyn analyzers** (in the separate maf-doctor.Analyzers package) — MAF001 (fan-out), MAF002 (DefaultAzureCredential), MAF003 (EnableSensitiveData). Write-time enforcement.
 
 With a subcommand, the same binary runs as a CLI tool — see Quick Start below.
@@ -72,7 +72,7 @@ cd your-maf-project
 maf-doctor init
 ```
 
-init wires the MCP server into both **VS Code** (.vscode/mcp.json) and **Claude Code** (.mcp.json), and drops auto-loaded steering in each tool's convention dir — .github/instructions/ for Copilot, .claude/ plus a one-line CLAUDE.md import for Claude Code, and an AGENTS.md managed block. These are refreshed on every re-run and never merged into your own files. Your assistant picks the server up automatically and gains live tool calls, resource reads, and structured prompts.
+`init` is **non-destructive — it attaches and updates only, never overwriting your files.** It adds its own MCP server entry to both **VS Code** (.vscode/mcp.json) and **Claude Code** (.mcp.json), and drops auto-loaded steering as self-contained sidecars in each tool's convention dir — .github/instructions/ for Copilot, .claude/ plus a one-line CLAUDE.md import for Claude Code, and an AGENTS.md managed block. These sidecars are refreshed on every re-run and never merged into your hand-authored files, so re-running `init` after an upgrade is always safe. Your assistant picks the server up automatically and gains live tool calls, resource reads, and structured prompts.
 
 > 📖 **Going deeper:** [what `init` installs (and why)](docs/init-reference.md) · [using MAF Doctor — prompts, tools, agents & natural-language steering](docs/usage.md) · [hands-on workshop](samples/workshop.md).
 

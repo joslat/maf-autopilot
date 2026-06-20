@@ -42,7 +42,10 @@ if (args.Length > 0 && (args[0] is "--help" or "-h" or "help"))
         Commands:
           init [--with-cursor]              Wire the MCP server + steering into the current repo
                                             (.vscode/mcp.json, .mcp.json, instructions, agents).
-          doctor [path] [--exclude <s>] [--all]  A/B/C/F health report (--all = every finding, not just top 3).
+          doctor [path] [--exclude <s>] [--all] [--json|--plan]
+                                            A/B/C/F health report. --all = every finding (grouped),
+                                            not just the top 3; --json = machine-readable output;
+                                            --plan = ordered, checkboxed remediation plan.
           autofix-all [path] [--dry-run]    Apply deterministic Roslyn fixes.
           new agent <Name>                  Scaffold a MAF agent + smoke test.
           new executor <Name> [In] [Out]    Scaffold a workflow executor + smoke test.
@@ -71,22 +74,14 @@ if (args.Length >= 2 && args[0] == "new")
 }
 if (args.Length >= 1 && args[0] == "doctor")
 {
-    // Usage: maf-doctor doctor [path] [--exclude <substr>]...
-    // Repeatable `--exclude` skips files whose repo-relative path contains the
-    // substring — used by the drift detector to scan product code only (skip
-    // samples/ + test fixtures). The first non-flag arg is the path (default cwd).
-    // `--all` / `--full` lists EVERY finding (one line each) instead of the top 3.
-    var excludes = new List<string>();
-    string? path = null;
-    var full = false;
-    for (int i = 1; i < args.Length; i++)
-    {
-        if (args[i] == "--exclude" && i + 1 < args.Length) { excludes.Add(args[++i]); continue; }
-        if (args[i] is "--all" or "--full") { full = true; continue; }
-        if (path is null && !args[i].StartsWith("--", StringComparison.Ordinal)) path = args[i];
-    }
-    path ??= Directory.GetCurrentDirectory();
-    var report = new MafDoctor.Tools.DoctorTool().Run(path, "markdown", excludes, full);
+    // Usage: maf-doctor doctor [path] [--exclude <substr>]... [--all|--full] [--json]
+    // Parsing lives in DoctorCli.Parse (extracted so it's unit-testable without a
+    // process spawn). `--exclude` skips files by repo-relative substring (drift
+    // detector scopes to product code); `--all`/`--full` lists every finding
+    // (grouped); `--json` emits machine-readable output.
+    var (parsedPath, format, excludes, full) = MafDoctor.Commands.DoctorCli.Parse(args);
+    var path = parsedPath ?? Directory.GetCurrentDirectory();
+    var report = new MafDoctor.Tools.DoctorTool().Run(path, format, excludes, full);
     Console.WriteLine(report);
     Environment.Exit(0);
     return;
