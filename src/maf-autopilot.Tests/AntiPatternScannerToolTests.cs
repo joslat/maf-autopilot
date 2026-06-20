@@ -210,6 +210,23 @@ public class AntiPatternScannerToolTests
         Assert.Contains(findings, f => f.RuleId == "MAF-AP-OBS-001");
     }
 
+    [Fact]
+    public void Obs001_TypeReferenceOnly_DoesNotFlag()
+    {
+        // A bare TYPE reference (parameter type, field type, nameof) is not building
+        // an agent — only a `new AIAgentBuilder(...)` / `new ChatClientAgent(...)`
+        // CONSTRUCTION should fire. The earlier identifier-match over-flagged these.
+        const string source = """
+            public class AgentSetup
+            {
+                private AIAgentBuilder _cached;
+                public void Configure(AIAgentBuilder builder) { var n = nameof(AIAgentBuilder); }
+            }
+            """;
+        var findings = AntiPatternScannerTool.ScanFile(source, "src/AgentSetup.cs");
+        Assert.DoesNotContain(findings, f => f.RuleId == "MAF-AP-OBS-001");
+    }
+
     // -------------------------------------------------------------------------
     // MAF-AP-AGENT-001 — Instructions at top of ChatClientAgentOptions (silent ignore)
     // -------------------------------------------------------------------------
@@ -314,6 +331,23 @@ public class AntiPatternScannerToolTests
             """;
         var findings = AntiPatternScannerTool.ScanFile(source, "src/FraudExecutor.cs");
         Assert.Contains(findings, f => f.RuleId == "MAF-AP-WF-001");
+    }
+
+    [Fact]
+    public void Wf001_StaticExecutor_NotFlagged_ParityWithRewriter()
+    {
+        // A static class can't derive from Executor (compile error) — not fixable, so
+        // the scanner skips it, matching ExecutorSealedRewriter which leaves it
+        // untouched (detector⇆rewriter parity; previously the scanner flagged it).
+        const string source = """
+            public static class HelperExecutor : Executor
+            {
+                [MessageHandler]
+                public static System.Threading.Tasks.Task<int> Handle(string s) => System.Threading.Tasks.Task.FromResult(0);
+            }
+            """;
+        var findings = AntiPatternScannerTool.ScanFile(source, "src/HelperExecutor.cs");
+        Assert.DoesNotContain(findings, f => f.RuleId == "MAF-AP-WF-001");
     }
 
     // -------------------------------------------------------------------------

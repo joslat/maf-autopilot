@@ -257,14 +257,16 @@ public sealed class AntiPatternScannerTool
             severity: AntiPatternSeverity.Warning,
             scan: (root, file) =>
             {
-                // An agent is built in real code via an `AIAgentBuilder` reference or
-                // a `new ChatClientAgent(...)` construction.
+                // An agent is BUILT via a `new AIAgentBuilder(...)` or a
+                // `new ChatClientAgent(...)` CONSTRUCTION. Match construction (object
+                // creation), NOT a bare type reference — a parameter type, field type,
+                // `nameof(AIAgentBuilder)` or `typeof(...)` is not building an agent and
+                // must not fire (the earlier identifier-match over-flagged those).
                 Microsoft.CodeAnalysis.SyntaxNode? builderNode = null;
                 foreach (var n in root.DescendantNodes())
                 {
-                    if (n is IdentifierNameSyntax { Identifier.ValueText: "AIAgentBuilder" }
-                        || (n is BaseObjectCreationExpressionSyntax oce
-                            && ObjectCreationTypeName(oce) == "ChatClientAgent"))
+                    if (n is BaseObjectCreationExpressionSyntax oce
+                        && ObjectCreationTypeName(oce) is "AIAgentBuilder" or "ChatClientAgent")
                     {
                         builderNode = n;
                         break;
@@ -384,11 +386,14 @@ public sealed class AntiPatternScannerTool
                         continue;
 
                     var modifiers = cls.Modifiers.Select(m => m.ValueText).ToHashSet();
-                    // Skip abstract classes: an abstract Executor base can never be
-                    // `sealed partial` (abstract precludes sealed), so flagging it with
-                    // an auto-fixable rule whose fix is impossible would be dishonest.
-                    // The dispatched concrete subclass is what must be `sealed partial`.
-                    if (modifiers.Contains("abstract")) continue;
+                    // Skip abstract AND static Executors: an abstract Executor can never
+                    // be `sealed` (abstract precludes sealed), and a static class can't
+                    // derive from Executor at all — neither is fixable, so flagging them
+                    // with an auto-fixable rule would be dishonest. This also keeps the
+                    // scanner in lockstep with ExecutorSealedRewriter, which leaves both
+                    // untouched (detector⇆rewriter parity). The dispatched concrete
+                    // subclass is what must be `sealed partial`.
+                    if (modifiers.Contains("abstract") || modifiers.Contains("static")) continue;
                     var hasPartial = modifiers.Contains("partial");
                     var hasSealed = modifiers.Contains("sealed");
                     if (hasPartial && hasSealed) continue;
