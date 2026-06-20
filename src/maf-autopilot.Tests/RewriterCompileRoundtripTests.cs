@@ -110,6 +110,38 @@ public class RewriterCompileRoundtripTests
         var other => throw new InvalidOperationException($"fixture label '{label}' has an unknown rule prefix '{other}'"),
     };
 
+    [Fact]
+    public void EveryRewriterHasRoundtripCoverage()
+    {
+        // Durable guard against the corpus silently falling behind: every distinct
+        // rewriter TYPE that AutoFixTool can dispatch must have at least one fixture
+        // targeting it. A newly-added rewriter therefore cannot ship without a
+        // compile-roundtrip fixture — the exact gap that left SEC-001 / SEC-003
+        // unexercised until the adversarial review caught it.
+        var fixtureRules = Fixtures()
+            .Select(f => ExpectedRuleFor((string)f[0]))
+            .ToHashSet();
+
+        var ruleToType = new Dictionary<string, Type>();
+        foreach (var id in AutoFixTool.SupportedRuleIds)
+            if (AutoFixTool.TryCreateRewriter(id, out var r) && r is not null)
+                ruleToType[id] = r.GetType();
+
+        var coveredTypes = fixtureRules
+            .Where(ruleToType.ContainsKey)
+            .Select(id => ruleToType[id])
+            .ToHashSet();
+
+        var uncovered = ruleToType.Values.Distinct()
+            .Where(t => !coveredTypes.Contains(t))
+            .Select(t => t.Name)
+            .ToList();
+
+        Assert.True(uncovered.Count == 0,
+            "Rewriter type(s) with NO compile-roundtrip fixture — add one to Fixtures() " +
+            "(label prefix must map via ExpectedRuleFor): " + string.Join(", ", uncovered));
+    }
+
     // -------------------------------------------------------------------------
     // Corpus. Each entry is a self-contained, clean-compiling C# program.
     // -------------------------------------------------------------------------
