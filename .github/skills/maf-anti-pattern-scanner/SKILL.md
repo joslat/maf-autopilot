@@ -50,7 +50,7 @@ Each is a "rule" with a unique ID, a `severity`, and a deterministic search patt
 **Source:** `maf-constraints.instructions.md` hard rule #2.
 
 #### `MAF-AP-CONC-002` — `.Result` / `.Wait()` on async  (severity: warning)
-**Pattern:** `\.Result\b` or `\.Wait\(\)` immediately following an awaitable expression in agent / executor code.
+**Pattern:** `\)\s*\.(?:Result|Wait)\b` — a `.Result` / `.Wait()` immediately following a method CALL (e.g. `SomeAsync().Result`). Deliberately anchored on the call's close-paren rather than the bare member name: matching `task.Result` on *any* member would false-fire on the many non-Task `.Result` / `.Wait` properties in real code, so the bare-member form is intentionally out of scope (pinned by a regression test).
 **Why:** Sync-over-async deadlocks under SynchronizationContext. Agent runtimes pump async; mixing sync waits is a latent hang.
 **Fix:** `await` the expression. Make the calling method `async`.
 

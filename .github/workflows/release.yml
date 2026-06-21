@@ -1,4 +1,4 @@
-name: Release maf-autopilot
+name: Release maf-doctor
 
 on:
   workflow_dispatch:
@@ -18,16 +18,37 @@ on:
       - '[0-9]*'
 
 jobs:
+  # Phase 3.1 — validate workflow_dispatch inputs BEFORE any privileged step
+  # runs. release.yml has NUGET_API_KEY in scope downstream; a malformed
+  # `version` input is the highest-value injection lane in this repo.
+  validate-inputs:
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Validate version input shape
+        env:
+          INPUT: ${{ inputs.version }}
+        run: |
+          if [ -z "$INPUT" ]; then
+            echo "No version input — will use tag or csproj"
+            exit 0
+          fi
+          if ! echo "$INPUT" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$'; then
+            echo "::error::Invalid version input shape: $INPUT (must be semver)"
+            exit 1
+          fi
+
   release:
+    needs: validate-inputs
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Setup .NET (all three runtimes — nupkg multi-targets net8/9/10)
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
         with:
           dotnet-version: |
             8.0.x
@@ -36,9 +57,13 @@ jobs:
 
       - name: Determine version
         id: version
+        # Phase 3.2 — read inputs via `env:` redirect, not `${{ }}` templating
+        # inside the run block. Eliminates the template-injection surface.
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
             echo "Using input version: $VERSION"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             # Canonical: tag with `v` prefix (e.g. `v1.3.0-alpha-5`).
@@ -58,10 +83,20 @@ jobs:
 
       - name: Override version in csproj
         if: github.event.inputs.version != '' || startsWith(github.ref, 'refs/tags/v')
+        # Phase 7.G fixup — env-redirect `steps.*.outputs.*` like we do for
+        # `inputs.*`. Defense in depth: VERSION is already semver-validated
+        # upstream by the validate-inputs job, but eliminating the templating
+        # site entirely is the cleaner invariant.
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          # Keep BOTH packages in version lockstep (the server tool + the analyzer).
+          # Previously only the server csproj was overridden, so the analyzer
+          # shipped at its stale csproj <Version> and `--skip-duplicate` silently
+          # skipped re-publishing it. Override both from the tag/input.
           sed -i "s|<Version>.*</Version>|<Version>${VERSION}</Version>|" src/maf-autopilot/maf-autopilot.csproj
-          echo "Set csproj <Version> to $VERSION"
+          sed -i "s|<Version>.*</Version>|<Version>${VERSION}</Version>|" src/maf-autopilot.Analyzers/maf-autopilot.Analyzers.csproj
+          echo "Set <Version> to $VERSION on both the server tool and the analyzer."
 
       - name: Restore
         run: dotnet restore maf-autopilot.sln
@@ -97,8 +132,8 @@ jobs:
             --no-restore \
             --output src/dist/
           PACK_EXIT=$?
-          if ls src/dist/maf-autopilot.Analyzers*.nupkg >/dev/null 2>&1; then
-            echo "Packed: $(ls src/dist/maf-autopilot.Analyzers*.nupkg)"
+          if ls src/dist/maf-doctor.Analyzers*.nupkg >/dev/null 2>&1; then
+            echo "Packed: $(ls src/dist/maf-doctor.Analyzers*.nupkg)"
             exit 0
           fi
           echo "::error::Analyzer nupkg was not produced (pack exit code was $PACK_EXIT)"
@@ -116,8 +151,8 @@ jobs:
         # (no tag ref) — in that case the user typically created the Release manually
         # via the GitHub UI before dispatching.
         if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/0') || startsWith(github.ref, 'refs/tags/1') || startsWith(github.ref, 'refs/tags/2') || startsWith(github.ref, 'refs/tags/3') || startsWith(github.ref, 'refs/tags/4') || startsWith(github.ref, 'refs/tags/5') || startsWith(github.ref, 'refs/tags/6') || startsWith(github.ref, 'refs/tags/7') || startsWith(github.ref, 'refs/tags/8') || startsWith(github.ref, 'refs/tags/9')
-        # SHA-pinned to softprops/action-gh-release v2.2.1 (2025-01-23) per supply-chain
-        # hardening: a major-tag pin would let the maintainer's compromised account push
+        # SHA-pinned to softprops/action-gh-release v3.0.0 per supply-chain hardening:
+        # a major-tag pin would let an upstream maintainer's compromised account push
         # arbitrary code into our release workflow with NUGET_API_KEY in scope.
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
         with:

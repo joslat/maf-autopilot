@@ -1,10 +1,10 @@
 using System.ComponentModel;
 using System.Text;
 using System.Text.RegularExpressions;
-using MafAutopilot.Resources;
+using MafDoctor.Resources;
 using ModelContextProtocol.Server;
 
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// MCP tool: MafMigrationPath

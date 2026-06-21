@@ -29,16 +29,40 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # Phase 3.1 — validate workflow_dispatch input BEFORE any privileged step.
+  # The build-and-push job has `packages: write` on GHCR.
+  validate-inputs:
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Validate version input shape
+        env:
+          INPUT: ${{ inputs.version }}
+        run: |
+          if [ -z "$INPUT" ]; then
+            echo "No version input — will use git tag"
+            exit 0
+          fi
+          if ! echo "$INPUT" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$'; then
+            echo "::error::Invalid version input shape: $INPUT (must be semver)"
+            exit 1
+          fi
+
   build-and-push:
+    needs: validate-inputs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Determine version
         id: version
+        # Phase 3.2 — read input via env: redirect; reference $INPUT_VERSION
+        # as a shell variable. Eliminates template-injection surface.
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           else
@@ -56,7 +80,7 @@ jobs:
           echo "Building image for version: $VERSION"
 
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -64,7 +88,7 @@ jobs:
 
       - name: Extract metadata (tags + labels)
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf  # v6.0.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -74,10 +98,10 @@ jobs:
             type=raw,value=latest,enable=${{ steps.version.outputs.is_prerelease == 'false' }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
 
       - name: Build and push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
         with:
           context: .
           push: true
@@ -88,15 +112,23 @@ jobs:
           platforms: linux/amd64,linux/arm64
 
       - name: Image summary
+        # Phase 7.G fixup — env-redirect `steps.*.outputs.*` so the run: block
+        # contains no template substitutions. `env.*` references inside another
+        # `env:` block are valid GitHub Actions syntax (the runner resolves them
+        # before the shell sees the value).
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PULL_URL: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         run: |
           echo "## 🐳 Image published" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Tags:" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "$TAGS" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Pull with:" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${PULL_URL}:${VERSION}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY

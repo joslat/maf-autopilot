@@ -1,6 +1,6 @@
 using Microsoft.CodeAnalysis;
 
-namespace MafAutopilot.Tools.Rewriters;
+namespace MafDoctor.Tools.Rewriters;
 
 /// <summary>
 /// Contract for a deterministic per-rule auto-fixer. Implementations are

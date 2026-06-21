@@ -36,8 +36,10 @@ migrate, and keep registry fresh.
 ## Companion docs
 
 - `CLAUDE.md` — Claude Code-specific working notes (this is where Claude reads when invoked from `claude-code`)
-- `CONTRIBUTING.md` — contributor playbook (setup, conventions, PR norms)
-- `docs/security/threat-model.md` — security boundaries
+- `CONTRIBUTING.md` — contributor playbook (setup, conventions, PR norms, security rubric for new MCP tools)
+- `SECURITY.md` — vulnerability-disclosure policy + scope (GitHub Security tab landing)
+- `docs/security.md` — user-facing "how MAF Doctor is hardened" overview + Cisco mcp-scanner results + canonical-source references
+- `docs/security/threat-model.md` — full attack-surface map, closure list (§4), and documented residual gaps (§5)
 - `CHANGELOG.md` — release history
 
 ## The AI-fill loop (unique to this project)

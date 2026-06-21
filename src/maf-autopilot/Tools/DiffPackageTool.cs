@@ -2,10 +2,10 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
-using MafAutopilot.Data;
+using MafDoctor.Data;
 using ModelContextProtocol.Server;
 
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// MCP tool: MafDiffPackage
@@ -29,7 +29,11 @@ public sealed class DiffPackageTool
         _registry = registry;
     }
 
-    [McpServerTool(ReadOnly = true, Destructive = false)]
+    // Annotation rationale: OpenWorld = true because dotnet-inspect reaches
+    // api.nuget.org (and any configured private feeds) to download the package
+    // versions being diffed. ReadOnly = true is correct — the tool produces a
+    // text report and writes nothing to the user's workspace.
+    [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = true)]
     [Description("""
         Diff two versions of a NuGet package's public API surface.
 
@@ -62,8 +66,19 @@ public sealed class DiffPackageTool
     // Input validation (defends against argument injection via the LLM)
     // -------------------------------------------------------------------------
 
-    private static readonly Regex PackageIdRegex = new(@"^[A-Za-z0-9._-]+$", RegexOptions.Compiled);
-    private static readonly Regex VersionRegex = new(@"^[A-Za-z0-9.+\-]+$", RegexOptions.Compiled);
+    // Phase 5.G fixup — ReDoS hygiene on every regex in this file. The
+    // patterns here parse `dotnet-inspect` markdown output (third-party
+    // attacker-influenced text via package metadata) so the +/.+ classes
+    // could in theory be probed for backtracking. NonBacktracking on the
+    // bounded patterns + a 2s timeout caps any future drift.
+    private const RegexOptions HygieneOptions =
+        RegexOptions.Compiled | RegexOptions.NonBacktracking;
+    private const RegexOptions HygieneOptionsMultiline =
+        RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.Multiline;
+    private static readonly TimeSpan RegexBudget = TimeSpan.FromSeconds(2);
+
+    private static readonly Regex PackageIdRegex = new(@"^[A-Za-z0-9._-]+$", HygieneOptions, RegexBudget);
+    private static readonly Regex VersionRegex = new(@"^[A-Za-z0-9.+\-]+$", HygieneOptions, RegexBudget);
 
     internal static bool IsValidPackageId(string s) =>
         !string.IsNullOrWhiteSpace(s) && PackageIdRegex.IsMatch(s);
@@ -99,9 +114,9 @@ public sealed class DiffPackageTool
     //     > No API changes detected.
     // -------------------------------------------------------------------------
 
-    private static readonly Regex SectionRegex = new(@"^##\s+(?<heading>.+?)\s*$", RegexOptions.Compiled);
-    private static readonly Regex TypeRegex = new(@"^###\s+(?<type>.+?)\s*$", RegexOptions.Compiled);
-    private static readonly Regex BulletRegex = new(@"^\s*-\s+(?<body>.+?)\s*$", RegexOptions.Compiled);
+    private static readonly Regex SectionRegex = new(@"^##\s+(?<heading>.+?)\s*$", HygieneOptions, RegexBudget);
+    private static readonly Regex TypeRegex = new(@"^###\s+(?<type>.+?)\s*$", HygieneOptions, RegexBudget);
+    private static readonly Regex BulletRegex = new(@"^\s*-\s+(?<body>.+?)\s*$", HygieneOptions, RegexBudget);
 
     /// <summary>
     /// Parses the markdown-formatted output of `dotnet-inspect diff`. Pure: no I/O.
@@ -175,7 +190,8 @@ public sealed class DiffPackageTool
 
     private static readonly Regex ObsoleteAnnotationRegex = new(
         @"\[Obsolete(?:Attribute)?\b|\bObsolete\s*[-—]",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        HygieneOptions | RegexOptions.IgnoreCase,
+        RegexBudget);
 
     private static bool HasObsoleteAnnotation(string body) =>
         ObsoleteAnnotationRegex.IsMatch(body);

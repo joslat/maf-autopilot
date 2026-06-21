@@ -5,26 +5,26 @@
     <!-- Multi-target: NuGet picks the best TFM at install time. Matches the
          AgentEval house style (see docs/architecture.md → "Multi-targeting"). -->
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
-    <RootNamespace>MafAutopilot</RootNamespace>
-    <AssemblyName>maf-autopilot</AssemblyName>
+    <RootNamespace>MafDoctor</RootNamespace>
+    <AssemblyName>maf-doctor</AssemblyName>
 
     <!-- .NET Global Tool packaging -->
     <PackAsTool>true</PackAsTool>
-    <ToolCommandName>maf-autopilot</ToolCommandName>
-    <PackageId>maf-autopilot</PackageId>
-    <!-- Version policy: decoupled from MAF's version progression.
-         1.0.0 = first stable release; supports MAF 1.0 / 1.2 / 1.3 simultaneously.
-         When cutting a new release, bump this AND push the workflow_dispatch
-         on `release.yml`. Don't bump locally without pushing — the README
-         documents the NuGet version, so any drift confuses users.
-         (See CHANGELOG.md — "Versioning note for alpha users".) -->
-    <Version>1.1.0</Version>
+    <ToolCommandName>maf-doctor</ToolCommandName>
+    <PackageId>maf-doctor</PackageId>
+    <!-- Version policy: decoupled from MAF's version progression — the toolkit
+         self-updates its MAF knowledge (see README → "It updates itself").
+         release.yml overrides this from the pushed tag and keeps the analyzer
+         package in lockstep, so the canonical version is the git tag (`vX.Y.Z`).
+         This value is the local/dev default. -->
+    <Version>1.3.0</Version>
     <Authors>joslat</Authors>
-    <Description>MAF autopilot MCP server — Tools + Resources + Prompts + Sampling for MAF 1.3.0 migrations. Answers "is this API safe?", exposes migration guide as resources, and uses sampling for multi-step agentic analysis.</Description>
+    <Description>MAF Doctor — a .NET global tool and MCP server for Microsoft Agent Framework (MAF). Diagnoses, explains, and auto-fixes MAF agents and workflows: A-F health grades, deterministic Roslyn rewriters, anti-pattern and fan-out scanning, and a self-updating obsolete-API registry. Use it from Copilot / Claude / Cursor via MCP, or standalone as a CLI.</Description>
     <PackageTags>maf;migration;mcp;dotnet;agents</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryUrl>https://github.com/joslat/maf-autopilot</RepositoryUrl>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/joslat/maf-doctor</RepositoryUrl>
+    <PackageReadmeFile>NUGET_README.md</PackageReadmeFile>
+    <PackageIcon>MAFDoctorIcon.png</PackageIcon>
 
     <!-- Ensure logs go to stderr so stdout stays clean for MCP protocol -->
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
@@ -59,8 +59,10 @@
       Bundle registry.yaml as an embedded resource so the tool works as a standalone NuGet global tool.
       At runtime, RegistryService first checks MAF_REGISTRY_PATH env var (for local dev override),
       then falls back to this embedded resource.
-    -->    <!-- README for NuGet package page -->
-    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    -->    <!-- NuGet-specific README (pure markdown — the GitHub README's centered
+         HTML hero renders as raw text on nuget.org). -->
+    <None Include="..\..\NUGET_README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\assets\MAFDoctorIcon.png" Pack="true" PackagePath="\" Visible="false" />
 
     <!-- Steering snippets — dropped by `maf-autopilot init` into user repos -->
     <EmbeddedResource Include="..\..\docs\steering\copilot-instructions.md"

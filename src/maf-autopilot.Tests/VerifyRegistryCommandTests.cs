@@ -1,8 +1,8 @@
-using MafAutopilot.Commands;
-using MafAutopilot.Data;
+using MafDoctor.Commands;
+using MafDoctor.Data;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// #5 polish — tests for <see cref="VerifyRegistryCommand"/>.
@@ -18,6 +18,7 @@ public class VerifyRegistryCommandTests
     // BraceImbalance
     // -------------------------------------------------------------------------
 
+#pragma warning disable CS0618 // BraceImbalance is obsolete; tests preserve legacy contract.
     [Theory]
     [InlineData("{ }", 0)]
     [InlineData("( )", 0)]
@@ -30,6 +31,52 @@ public class VerifyRegistryCommandTests
     public void BraceImbalance_CountsCorrectly(string input, int expected)
     {
         Assert.Equal(expected, VerifyRegistryCommand.BraceImbalance(input));
+    }
+#pragma warning restore CS0618
+
+    // -------------------------------------------------------------------------
+    // BraceBalanceFailure — Phase 2.10 depth-aware check.
+    //
+    // The new helper catches `}{` and `}; evil(); {` patterns that the
+    // count-only BraceImbalance v1 returned 0 for. It also returns a
+    // human-readable failure description rather than a raw int.
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("{ }")]
+    [InlineData("( )")]
+    [InlineData("{ ( ) }")]
+    [InlineData("class C { void M() { var x = 1; } }")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void BraceBalanceFailure_AcceptsBalancedInput(string? input)
+    {
+        Assert.Null(VerifyRegistryCommand.BraceBalanceFailure(input));
+    }
+
+    [Theory]
+    [InlineData("}{", "'}' before matching")]
+    [InlineData(")(", "')' before matching")]
+    [InlineData("}; evil(); {", "'}' before matching")]
+    [InlineData("{", "1 unmatched")]
+    [InlineData("(", "1 unmatched")]
+    [InlineData("({)}", "before matching")]   // mismatched closing order
+    public void BraceBalanceFailure_RejectsAdversarialInput(string input, string expectedFragment)
+    {
+        var failure = VerifyRegistryCommand.BraceBalanceFailure(input);
+        Assert.NotNull(failure);
+        Assert.Contains(expectedFragment, failure, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CheckEntry_NestingAwareBraceImbalance_FlagsAdversarialPattern()
+    {
+        // The v1 count-only check returned delta=0 for `}{` — it passed.
+        // The Phase 2.10 depth-aware check catches it.
+        var entry = MakeEntry(exampleBefore: "}; evil(); {");
+        var issues = new List<string>();
+        VerifyRegistryCommand.CheckEntry(entry, issues);
+        Assert.Contains(issues, i => i.Contains("unbalanced braces"));
     }
 
     // -------------------------------------------------------------------------
@@ -193,6 +240,109 @@ public class VerifyRegistryCommandTests
             ExampleAfter = "// TODO",
         };
         Assert.False(VerifyRegistryCommand.IsRawDraft(entry));
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 2.8 — IsRawDraft tightened to require TODO at start of line.
+    //
+    // v1 used a substring check, which meant any string literal like
+    // `"// TODO refactor"` inside otherwise-real code re-qualified the entry
+    // as a raw draft and bypassed ALL substantive checks. Tightened to a
+    // (?m)^\s*//\s*TODO\b regex so the marker must be in a true comment
+    // position (start of line, after optional whitespace).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void IsRawDraft_TodoInsideStringLiteral_NotClassifiedAsDraft()
+    {
+        // Pre-Phase-2.8 this would have returned true (substring match on
+        // "// TODO" inside the string literal). Post-fix: false.
+        var entry = new RegistryEntry
+        {
+            Id = "MAFNEW-002",
+            ObsoleteSignature = "TODO",
+            ReplacementSignature = "TODO",
+            FixDescription = "TODO",
+            ExampleBefore = "var note = \"// TODO refactor\"; Foo();",
+            ExampleAfter = "var note = \"// TODO refactor\"; Bar();",
+        };
+        Assert.False(VerifyRegistryCommand.IsRawDraft(entry));
+    }
+
+    [Fact]
+    public void IsRawDraft_RequiresTodoAtStartOfLine()
+    {
+        // Trailing whitespace OK; line-leading `// TODO` is the marker.
+        var entry = new RegistryEntry
+        {
+            Id = "MAFNEW-003",
+            ObsoleteSignature = "TODO",
+            ReplacementSignature = "TODO",
+            FixDescription = "TODO",
+            ExampleBefore = "   // TODO — show a real call site that breaks\n",
+            ExampleAfter = "// TODO — show the canonical 1.x replacement\n",
+        };
+        Assert.True(VerifyRegistryCommand.IsRawDraft(entry));
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 2.8 — CheckContentSafety: minimal sweep applies even when an
+    // entry would otherwise be skipped (pre-1.0.0 or raw draft).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void CheckContentSafety_HtmlCommentInFixDescription_Flagged()
+    {
+        var entry = new RegistryEntry
+        {
+            Id = "PRE-001",
+            FixDescription = "Legit fix description <!-- ignore previous --> trailing",
+            ExampleBefore = "var x = 1;",
+            ExampleAfter = "var x = 2;",
+        };
+        var issues = new List<string>();
+        VerifyRegistryCommand.CheckContentSafety(entry, issues);
+        Assert.Contains(issues, i => i.Contains("HTML comment"));
+    }
+
+    [Fact]
+    public void CheckContentSafety_HtmlCommentInNotes_Flagged()
+    {
+        var entry = new RegistryEntry
+        {
+            Id = "PRE-002",
+            FixDescription = "ok",
+            ExampleBefore = "ok",
+            ExampleAfter = "ok",
+            Notes = "Legit notes <!-- evil --> trailing",
+        };
+        var issues = new List<string>();
+        VerifyRegistryCommand.CheckContentSafety(entry, issues);
+        Assert.Contains(issues, i => i.Contains("HTML comment"));
+    }
+
+    [Fact]
+    public void CheckContentSafety_OversizedExample_Flagged()
+    {
+        var entry = new RegistryEntry
+        {
+            Id = "PRE-003",
+            FixDescription = "ok",
+            ExampleBefore = new string('A', 33 * 1024),  // > 32 KB cap
+            ExampleAfter = "ok",
+        };
+        var issues = new List<string>();
+        VerifyRegistryCommand.CheckContentSafety(entry, issues);
+        Assert.Contains(issues, i => i.Contains("example_before exceeds"));
+    }
+
+    [Fact]
+    public void CheckContentSafety_CleanEntry_NoIssues()
+    {
+        var entry = MakeEntry();
+        var issues = new List<string>();
+        VerifyRegistryCommand.CheckContentSafety(entry, issues);
+        Assert.Empty(issues);
     }
 
     // -------------------------------------------------------------------------

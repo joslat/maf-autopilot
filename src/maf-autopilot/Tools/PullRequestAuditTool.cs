@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Text;
 using ModelContextProtocol.Server;
 
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// MCP tool: MafAuditPullRequest
@@ -183,7 +183,7 @@ public sealed class PullRequestAuditTool
         }
 
         sb.AppendLine("---");
-        sb.AppendLine("_Audited by `maf-autopilot` MCP tool `MafAuditPullRequest`. Full-repo scans available via `MafDoctor` / `MafScanAntiPatterns` / `MafValidateFanOut` / `MafLintAgentPrompt`._");
+        sb.AppendLine("_Audited by `maf-doctor` MCP tool `MafAuditPullRequest`. Full-repo scans available via `MafDoctor` / `MafScanAntiPatterns` / `MafValidateFanOut` / `MafLintAgentPrompt`._");
         return sb.ToString();
     }
 

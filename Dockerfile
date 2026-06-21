@@ -3,16 +3,16 @@
 # Containerised distribution of the maf-autopilot MCP server.
 #
 # Usage:
-#   docker pull ghcr.io/joslat/maf-autopilot:latest
-#   docker run --rm -i ghcr.io/joslat/maf-autopilot
+#   docker pull ghcr.io/joslat/maf-doctor:latest
+#   docker run --rm -i ghcr.io/joslat/maf-doctor
 #
 # The container speaks MCP over stdio. Wire it up in your IDE's mcp.json with:
 #   {
 #     "servers": {
-#       "maf-autopilot": {
+#       "maf-doctor": {
 #         "type": "stdio",
 #         "command": "docker",
-#         "args": ["run", "--rm", "-i", "ghcr.io/joslat/maf-autopilot:latest"]
+#         "args": ["run", "--rm", "-i", "ghcr.io/joslat/maf-doctor:latest"]
 #       }
 #     }
 #   }
@@ -69,9 +69,9 @@ WORKDIR /app
 COPY --from=build /app .
 
 # OCI labels — useful for `docker inspect` and registry browsing.
-LABEL org.opencontainers.image.title="maf-autopilot"
+LABEL org.opencontainers.image.title="maf-doctor"
 LABEL org.opencontainers.image.description="MCP server + Roslyn analyzers for Microsoft Agent Framework (MAF) — migration, audit, prompt-lint, cost auditor, scaffolder, simulator."
-LABEL org.opencontainers.image.source="https://github.com/joslat/maf-autopilot"
+LABEL org.opencontainers.image.source="https://github.com/joslat/maf-doctor"
 LABEL org.opencontainers.image.licenses="MIT"
 
 # Security: drop root. The MCP server speaks stdio only and writes nothing to the
@@ -82,4 +82,4 @@ RUN groupadd -r maf && useradd -r -u 1001 -g maf -d /nonexistent -s /usr/sbin/no
     && chown -R maf:maf /app
 USER maf
 
-ENTRYPOINT ["dotnet", "/app/maf-autopilot.dll"]
+ENTRYPOINT ["dotnet", "/app/maf-doctor.dll"]

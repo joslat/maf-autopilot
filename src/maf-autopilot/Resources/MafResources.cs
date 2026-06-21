@@ -1,10 +1,10 @@
 using System.ComponentModel;
 using System.Reflection;
 using System.Text;
-using MafAutopilot.Tools;
+using MafDoctor.Tools;
 using ModelContextProtocol.Server;
 
-namespace MafAutopilot.Resources;
+namespace MafDoctor.Resources;
 
 /// <summary>
 /// MCP Resources — expose all MAF knowledge files at stable maf:// URIs.
@@ -12,7 +12,7 @@ namespace MafAutopilot.Resources;
 /// Static resources (no parameters):
 ///   maf://constraints  — hard constraints, always read before any migration task
 ///   maf://registry     — CS0618 obsolete API registry (YAML)
-///   maf://guide        — full MAF 1.3.0 migration guide
+///   maf://guide        — full MAF migration guide
 ///
 /// Template resource (one per skill):
 ///   maf://skills?name=&lt;skillName&gt;  — any of the 12 skill SKILL.md files
@@ -29,8 +29,8 @@ public static class MafResources
     [McpServerResource(UriTemplate = "maf://constraints",
         MimeType = "text/markdown",
         Name = "maf-constraints",
-        Title = "MAF 1.3.0 Hard Constraints")]
-    [Description("The hard constraints that must never be violated during a MAF 1.3.0 migration. Always read this before starting any migration task.")]
+        Title = "MAF Hard Constraints")]
+    [Description("The hard constraints that must never be violated during a MAF migration. Always read this before starting any migration task.")]
     public static string GetConstraints() => ReadEmbedded("constraints.md");
 
     [McpServerResource(UriTemplate = "maf://registry",
@@ -43,8 +43,8 @@ public static class MafResources
     [McpServerResource(UriTemplate = "maf://guide",
         MimeType = "text/markdown",
         Name = "maf-guide",
-        Title = "MAF 1.3.0 Migration Guide")]
-    [Description("Full MAF 1.3.0 migration reference guide with API signatures, before/after code patterns, and section-by-section explanations.")]
+        Title = "MAF Migration Guide")]
+    [Description("Full MAF migration reference guide with API signatures, before/after code patterns, and section-by-section explanations.")]
     public static string GetGuide() => ReadEmbedded("guide.md");
 
     [McpServerResource(UriTemplate = "maf://rules",
@@ -66,7 +66,7 @@ public static class MafResources
         var sb = new StringBuilder();
         sb.AppendLine("# MAF rule catalog");
         sb.AppendLine();
-        sb.AppendLine("Auto-generated from the live tool surface. If a rule appears here, it ships in the current `maf-autopilot` binary.");
+        sb.AppendLine("Auto-generated from the live tool surface. If a rule appears here, it ships in the current `maf-doctor` binary.");
         sb.AppendLine();
         sb.AppendLine("## Anti-pattern scanner rules (`MafScanAntiPatterns`)");
         sb.AppendLine();
@@ -91,7 +91,7 @@ public static class MafResources
         sb.AppendLine("| `PROMPT-004` | Untrusted-input concatenation — prompt-injection risk. **Error.** |");
         sb.AppendLine();
 
-        sb.AppendLine("## Roslyn analyzer rules (ships as `maf-autopilot.Analyzers` NuGet)");
+        sb.AppendLine("## Roslyn analyzer rules (ships as `maf-doctor.Analyzers` NuGet)");
         sb.AppendLine();
         sb.AppendLine("| Rule ID | Description | Same intent as scanner |");
         sb.AppendLine("|---|---|---|");

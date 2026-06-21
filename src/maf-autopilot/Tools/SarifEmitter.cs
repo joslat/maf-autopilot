@@ -2,10 +2,10 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
-/// Emits SARIF v2.1.0 documents for the maf-autopilot scanners. SARIF is the
+/// Emits SARIF v2.1.0 documents for the maf-doctor scanners. SARIF is the
 /// format consumed by GitHub code-scanning / Advanced Security and the VS Code
 /// Problems panel — unlocking these integrations is plan #58.
 ///
@@ -13,8 +13,8 @@ namespace MafAutopilot.Tools;
 /// </summary>
 internal static class SarifEmitter
 {
-    public const string ToolName = "maf-autopilot";
-    public const string ToolUri = "https://github.com/joslat/maf-autopilot";
+    public const string ToolName = "maf-doctor";
+    public const string ToolUri = "https://github.com/joslat/maf-doctor";
 
     /// <summary>
     /// Builds a SARIF document for a collection of normalised findings.

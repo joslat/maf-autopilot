@@ -1,7 +1,7 @@
-using MafAutopilot.Tools;
+using MafDoctor.Tools;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Tests for AntiPatternScannerTool. All tests use literal C# source strings
@@ -162,6 +162,71 @@ public class AntiPatternScannerToolTests
         Assert.DoesNotContain(findings, f => f.RuleId == "MAF-AP-OBS-001");
     }
 
+    [Fact]
+    public void Obs001_BuilderMentionedOnlyInComment_DoesNotFlag()
+    {
+        // Round-8 regression: the builder type appears ONLY in a comment — no agent
+        // is actually constructed. The node-based rule must not fire (comments are
+        // trivia, never syntax nodes).
+        const string source = """
+            public class AgentSetup
+            {
+                // example: var a = new AIAgentBuilder(client).Build();
+                public int Compute() => 1 + 2;
+            }
+            """;
+        var findings = AntiPatternScannerTool.ScanFile(source, "src/AgentSetup.cs");
+        Assert.DoesNotContain(findings, f => f.RuleId == "MAF-AP-OBS-001");
+    }
+
+    [Fact]
+    public void Obs001_BuilderMentionedOnlyInStringLiteral_DoesNotFlag()
+    {
+        // Round-8 regression: a string body that mentions AIAgentBuilder is data,
+        // not code — a literal token, not an identifier node.
+        const string source = """
+            public class Docs
+            {
+                public string Help => "see the AIAgentBuilder docs for telemetry";
+            }
+            """;
+        var findings = AntiPatternScannerTool.ScanFile(source, "src/Docs.cs");
+        Assert.DoesNotContain(findings, f => f.RuleId == "MAF-AP-OBS-001");
+    }
+
+    [Fact]
+    public void Obs001_ChatClientAgentConstruction_Flags()
+    {
+        // The `new ChatClientAgent(...)` construction path (not just AIAgentBuilder)
+        // must also fire when telemetry is absent.
+        const string source = """
+            public class AgentSetup
+            {
+                public void Build(object client, object opts)
+                    => _ = new ChatClientAgent(client, opts);
+            }
+            """;
+        var findings = AntiPatternScannerTool.ScanFile(source, "src/AgentSetup.cs");
+        Assert.Contains(findings, f => f.RuleId == "MAF-AP-OBS-001");
+    }
+
+    [Fact]
+    public void Obs001_TypeReferenceOnly_DoesNotFlag()
+    {
+        // A bare TYPE reference (parameter type, field type, nameof) is not building
+        // an agent — only a `new AIAgentBuilder(...)` / `new ChatClientAgent(...)`
+        // CONSTRUCTION should fire. The earlier identifier-match over-flagged these.
+        const string source = """
+            public class AgentSetup
+            {
+                private AIAgentBuilder _cached;
+                public void Configure(AIAgentBuilder builder) { var n = nameof(AIAgentBuilder); }
+            }
+            """;
+        var findings = AntiPatternScannerTool.ScanFile(source, "src/AgentSetup.cs");
+        Assert.DoesNotContain(findings, f => f.RuleId == "MAF-AP-OBS-001");
+    }
+
     // -------------------------------------------------------------------------
     // MAF-AP-AGENT-001 — Instructions at top of ChatClientAgentOptions (silent ignore)
     // -------------------------------------------------------------------------
@@ -252,6 +317,39 @@ public class AntiPatternScannerToolTests
         Assert.DoesNotContain(findings, f => f.RuleId == "MAF-AP-WF-001");
     }
 
+    [Fact]
+    public void Wf001_GenericExecutorBase_Flags()
+    {
+        // Round-8 regression: a generic `Executor<…>` base was missed because the
+        // old check compared the base-type STRING against "Executor"/".Executor".
+        const string source = """
+            public class FraudExecutor : Microsoft.Agents.AI.Workflows.Executor<string, int>
+            {
+                [MessageHandler]
+                public Task<int> Handle(string s) => Task.FromResult(0);
+            }
+            """;
+        var findings = AntiPatternScannerTool.ScanFile(source, "src/FraudExecutor.cs");
+        Assert.Contains(findings, f => f.RuleId == "MAF-AP-WF-001");
+    }
+
+    [Fact]
+    public void Wf001_StaticExecutor_NotFlagged_ParityWithRewriter()
+    {
+        // A static class can't derive from Executor (compile error) — not fixable, so
+        // the scanner skips it, matching ExecutorSealedRewriter which leaves it
+        // untouched (detector⇆rewriter parity; previously the scanner flagged it).
+        const string source = """
+            public static class HelperExecutor : Executor
+            {
+                [MessageHandler]
+                public static System.Threading.Tasks.Task<int> Handle(string s) => System.Threading.Tasks.Task.FromResult(0);
+            }
+            """;
+        var findings = AntiPatternScannerTool.ScanFile(source, "src/HelperExecutor.cs");
+        Assert.DoesNotContain(findings, f => f.RuleId == "MAF-AP-WF-001");
+    }
+
     // -------------------------------------------------------------------------
     // MAF-AP-MID-001 — Middleware Use() must provide both callbacks
     // -------------------------------------------------------------------------
@@ -306,6 +404,37 @@ public class AntiPatternScannerToolTests
                             runStreamingFunc: (m, o, n, ct) => n(m, o, ct))
                         .Build();
                 }
+            }
+            """;
+        var findings = AntiPatternScannerTool.ScanFile(source, "src/Setup.cs");
+        Assert.DoesNotContain(findings, f => f.RuleId == "MAF-AP-MID-001");
+    }
+
+    [Fact]
+    public void Mid001_PositionalArgNamedRunFunc_DoesNotFlag()
+    {
+        // Round-8 regression: a positional local named `runFunc` (no `runFunc:` label)
+        // must NOT fire — the old substring scan false-fired on the bare text.
+        const string source = """
+            public class Setup
+            {
+                public void Build(object pipeline, object runFunc) => pipeline.Use(runFunc);
+            }
+            """;
+        var findings = AntiPatternScannerTool.ScanFile(source, "src/Setup.cs");
+        Assert.DoesNotContain(findings, f => f.RuleId == "MAF-AP-MID-001");
+    }
+
+    [Fact]
+    public void Mid001_SubstringInUnrelatedIdentifier_DoesNotFlag()
+    {
+        // Round-8 regression: an identifier that merely CONTAINS "runFunc"
+        // (e.g. `computeMyrunFunc()`) must NOT fire.
+        const string source = """
+            public class Setup
+            {
+                object computeMyrunFunc() => null;
+                public void Build(object obj) => obj.Use(computeMyrunFunc());
             }
             """;
         var findings = AntiPatternScannerTool.ScanFile(source, "src/Setup.cs");
