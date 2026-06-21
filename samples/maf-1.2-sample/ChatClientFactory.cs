@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 //
 // ⚠️ THIS FILE CONTAINS DELIBERATE ANTI-PATTERNS — DO NOT COPY INTO PRODUCTION.
-// It exists to give the maf-autopilot migration toolkit something to find.
+// It exists to give the maf-doctor migration toolkit something to find.
 //
 // Triggers:
 //   - MAF-AP-SEC-001 / MAF002 — DefaultAzureCredential in production code
@@ -19,7 +19,7 @@ namespace MafSample.FraudClaims;
 public static class ChatClientFactory
 {
     // MAF-AP-SEC-002 — hard-coded "api-key=" literal (placeholder, NOT real).
-    // The maf-autopilot scanner flags this on regex; the real fix is to load
+    // The maf-doctor scanner flags this on regex; the real fix is to load
     // from configuration or Key Vault, never inline.
     private const string FALLBACK_KEY = "api-key=sk-FAKEPLACEHOLDERkey1234567890abcdef";
 

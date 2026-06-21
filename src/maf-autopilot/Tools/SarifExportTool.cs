@@ -21,7 +21,9 @@ internal static class SarifExportTool
         var sarifFindings = findings.Select(f => new SarifFinding(
             RuleId: f.RuleId,
             Severity: MapSeverity(f.Severity),
-            Message: f.RuleName + " — " + f.Match,
+            // Redact a secret-bearing Match (e.g. the SEC-002 key literal) so the
+            // SARIF surface matches the markdown surface's no-secret-leak posture.
+            Message: f.RuleName + " — " + (AntiPatternScannerTool.LooksLikeSecret(f.Match) ? "(redacted)" : f.Match),
             File: f.File,
             Line: f.Line));
 

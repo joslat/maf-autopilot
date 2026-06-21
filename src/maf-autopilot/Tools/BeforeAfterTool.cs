@@ -147,22 +147,30 @@ public sealed class BeforeAfterTool
         var ctxEndBefore = Math.Min(beforeLines.Length, beforeLines.Length - suffix + contextLines);
         var ctxEndAfter = Math.Min(afterLines.Length, afterLines.Length - suffix + contextLines);
 
+        // Redact a diff line whose content looks like a secret (redact-on-doubt),
+        // so the rendered diff doesn't echo a hard-coded key sitting near a change.
+        static string Safe(string line)
+        {
+            try { return AntiPatternScannerTool.LooksLikeSecret(line) ? "(redacted — may contain a secret)" : line; }
+            catch { return "(redacted — may contain a secret)"; }
+        }
+
         var sb = new StringBuilder();
         sb.AppendLine($"@@ -{ctxStart + 1},{ctxEndBefore - ctxStart} +{ctxStart + 1},{ctxEndAfter - ctxStart} @@");
 
         // Leading context (unchanged lines before the change).
         for (var i = ctxStart; i < prefix; i++)
-            sb.AppendLine($" {beforeLines[i]}");
+            sb.AppendLine($" {Safe(beforeLines[i])}");
 
         // The change region: emit all removed lines, then all added lines.
         for (var i = prefix; i < beforeLines.Length - suffix; i++)
-            sb.AppendLine($"-{beforeLines[i]}");
+            sb.AppendLine($"-{Safe(beforeLines[i])}");
         for (var i = prefix; i < afterLines.Length - suffix; i++)
-            sb.AppendLine($"+{afterLines[i]}");
+            sb.AppendLine($"+{Safe(afterLines[i])}");
 
         // Trailing context (unchanged lines after the change).
         for (var i = beforeLines.Length - suffix; i < ctxEndBefore; i++)
-            sb.AppendLine($" {beforeLines[i]}");
+            sb.AppendLine($" {Safe(beforeLines[i])}");
 
         return sb.ToString();
     }

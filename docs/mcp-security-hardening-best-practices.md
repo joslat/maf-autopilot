@@ -2,7 +2,7 @@
 
 > **Audience:** authors and maintainers of Model Context Protocol (MCP) servers.
 >
-> **Source material:** distilled from the maf-autopilot v1.1 security hardening release (5 critical-tier + 11 high-tier closures + defense-in-depth + CI invariants — see [`CHANGELOG.md`](../CHANGELOG.md) for the closure list and [`docs/security/threat-model.md`](security/threat-model.md) for the threat surface map).
+> **Source material:** distilled from the maf-doctor v1.1 security hardening release (5 critical-tier + 11 high-tier closures + defense-in-depth + CI invariants — see [`CHANGELOG.md`](../CHANGELOG.md) for the closure list and [`docs/security/threat-model.md`](security/threat-model.md) for the threat surface map).
 >
 > **Last updated:** 2026-05-21. Anchored to the canonical sources in §10 — if any link rots, file an issue or open a PR.
 
@@ -606,7 +606,7 @@ jobs:
 
 ### 4.2 CI invariants — lock the code-side hardening in five jobs
 
-Beyond the external scanner, every code-side invariant from §2 should be enforced by a CI grep-guard. The maf-autopilot pattern is one workflow with five jobs:
+Beyond the external scanner, every code-side invariant from §2 should be enforced by a CI grep-guard. The maf-doctor pattern is one workflow with five jobs:
 
 | Job | What it locks |
 |---|---|
@@ -830,8 +830,8 @@ The complete source list, with one-line descriptions of what each names:
 
 ## See also
 
-- [`docs/security.md`](security.md) — the maf-autopilot user-facing security commitment (this playbook's reference implementation).
-- [`docs/security/threat-model.md`](security/threat-model.md) — the deeper technical record for maf-autopilot's specific threat surface.
+- [`docs/security.md`](security.md) — the maf-doctor user-facing security commitment (this playbook's reference implementation).
+- [`docs/security/threat-model.md`](security/threat-model.md) — the deeper technical record for maf-doctor's specific threat surface.
 - [`CONTRIBUTING.md`](../CONTRIBUTING.md) — the contributor-facing security rubric + helper composition decision tree.
 - [`CHANGELOG.md`](../CHANGELOG.md) — the per-release closure list.
 - [`.github/workflows/ci-invariants.yml`](../.github/workflows/ci-invariants.yml) — the five-job CI invariant pattern in production.

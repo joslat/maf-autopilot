@@ -12,10 +12,7 @@ Every document below is canonical for one slice of the project. **One concept, o
 
 | If you want to… | Read |
 |---|---|
-| Understand what `maf-autopilot` *is* and how the .NET projects fit together | [`architecture.md`](./architecture.md) |
-| See what work is **next** (active, deferred, gated) | [`next-steps.md`](./next-steps.md) |
-| See the *full historical* implementation plan + tracking table | [`maf-migration-toolkit-plan.md`](./maf-migration-toolkit-plan.md) |
-| See the strategy + vision snapshot from 2026-05-11 | [`project-status-and-vision.md`](./project-status-and-vision.md) |
+| Understand what `maf-doctor` *is* and how the .NET projects fit together | [`architecture.md`](./architecture.md) |
 | Look up MAF version ↔ dependency versions | [`compatibility-matrix.md`](./compatibility-matrix.md) |
 | Install + configure the toolkit | [`setup.md`](./setup.md) |
 | Install / run troubleshooting | [`/TROUBLESHOOTING.md`](../TROUBLESHOOTING.md) (repo root) |
@@ -26,45 +23,13 @@ Every document below is canonical for one slice of the project. **One concept, o
 
 ## Document catalogue
 
-### 🚀 [`next-steps.md`](./next-steps.md)
-
-**Purpose.** The single page that tells you what's next. Active work, deferred items (with rationale), pre-1.0 ship gates, post-1.0 roadmap.
-
-**Status.** Current as of 2026-05-13. Phase S complete; Phase T (MAF 1.3 sample dogfood — the A.8 unblocker) is the next active phase.
-
-**Audience.** Anyone deciding "what should I work on?" or "is feature X done?".
-
----
-
 ### 🏛️ [`architecture.md`](./architecture.md)
 
-**Purpose.** Component map. What is `maf-autopilot` vs `maf-autopilot.Analyzers` vs the two test projects? How do they relate? What does each one ship? Plus the multi-targeting strategy (`net8.0;net9.0;net10.0` nupkg + `Directory.Packages.props` CPM), and the rationale for the `/src/` layout and `.github/scripts/` placement (under "Structural decisions — closed").
+**Purpose.** Component map. What is `maf-doctor` vs `maf-doctor.Analyzers` vs the two test projects? How do they relate? What does each one ship? Plus the multi-targeting strategy (`net8.0;net9.0;net10.0` nupkg + `Directory.Packages.props` CPM), and the rationale for the `/src/` layout and `.github/scripts/` placement (under "Structural decisions — closed").
 
 **Status.** Current as of 2026-05-13 (Phase S landed).
 
 **Audience.** New contributors. Maintainers reasoning about packaging / distribution.
-
----
-
-### 📋 [`maf-migration-toolkit-plan.md`](./maf-migration-toolkit-plan.md)
-
-**Purpose.** The *historical* full plan + implementation tracking table. Every phase (Phase 0 through N), every numbered item (#1 through current), every decision made along the way. **This is a living archive, not a forward-looking doc** — for that, see `next-steps.md`.
-
-**Status.** Up to date through Phase N. Future phases land here when shipped.
-
-**Audience.** Anyone asking "why did we choose X?" or "when did Y land?". The tracking table is the audit trail.
-
-**Length.** ~130 KB. Skim by phase header.
-
----
-
-### 🧭 [`project-status-and-vision.md`](./project-status-and-vision.md)
-
-**Purpose.** Strategy + vision snapshot from the 2026-05-11 4-Opus audit that started the current sprint. Headline findings, TL;DR, stage assessment, the broader "permanent co-pilot" vision.
-
-**Status.** Snapshot — deliberately frozen at 2026-05-11. The "current state" sections (§10, Headline) have been amended to point forward to `next-steps.md`.
-
-**Audience.** Anyone asking "where is this project going?". Read alongside `next-steps.md` for execution detail.
 
 ---
 
