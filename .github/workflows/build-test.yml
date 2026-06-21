@@ -1,0 +1,48 @@
+name: build-test
+
+# Builds and runs the full .NET test suite on every PR and push to main.
+#
+# Why this exists: before this workflow, `dotnet test` ran ONLY in release.yml
+# (triggered by a release tag), so the entire test suite — including the rewriter
+# compile-roundtrip corruption guard (RewriterCompileRoundtripTests, which catches
+# the CS1995 / CS4004 "await injected into an await-illegal context" class of source
+# corruption) — never gated a pull request. It surfaced only weeks later, at release.
+#
+# This makes the suite a real pre-merge gate: a rewriter (or any) regression fails
+# here, on the PR, before merge.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: Build + test (net8/9/10)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Setup .NET (all three runtimes — project multi-targets net8/9/10)
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Restore
+        run: dotnet restore maf-autopilot.sln
+
+      - name: Build
+        run: dotnet build maf-autopilot.sln --configuration Release --no-restore
+
+      - name: Test (solution-level — gates analyzer + main project + rewriter compile-roundtrip guard)
+        run: |
+          dotnet test maf-autopilot.sln \
+            --configuration Release \
+            --no-build \
+            --logger "console;verbosity=minimal"

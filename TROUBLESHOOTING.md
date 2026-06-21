@@ -124,17 +124,34 @@ dotnet tool install --global dnx
 
 `dnx` auto-resolves `dotnet-inspect@0.7.8` on first use.
 
-## Release watcher (GitHub Actions)
+## Self-update workflows (GitHub Actions)
 
-### Workflow runs but doesn't open a PR
+Two scheduled workflows keep the repo in sync with MAF:
 
-1. The MAF version on NuGet hasn't moved — the watcher exits cleanly when `.maf-version` matches the latest NuGet release. Check the job log's "check-for-new-maf-release" step.
-2. `continue-on-error: true` on the diff steps masks real failures — if you suspect a silent failure, manually re-run the workflow and inspect each step's logs.
-3. The watcher writes to a branch `chore/maf-<new>-update`. If that branch already exists from a prior run, the `peter-evans/create-pull-request@v6` action will update it rather than open a new PR.
+- **MAF Release Watcher** (`maf-release-watcher.yml`) — Mondays; checks NuGet for a new **stable** MAF, then commits matrix/guide/registry updates **directly to `main`** (no PR gate — a deliberate solo-maintainer trade-off) and dispatches the Copilot AI-fill flow. Prereleases and (until task 3.2 lands) major bumps are manual-dispatch only.
+- **MAF Drift Detector** (`maf-drift-detector.yml`) — Mondays; runs `MafDoctor` and opens/updates a `maf-drift` issue when the grade drops below A.
 
-### "Release notes not available" in the PR
+### How do I know if a scheduled run failed?
 
-The watcher used to query `microsoft/agents` for release notes — wrong repo. The correct repo is `microsoft/agent-framework`. Plan row #46 fixes this.
+Each workflow has a `notify-on-failure` job: on any failure it opens (or comments onto) **one rolling issue** titled `🔴 Self-update workflow failed: <name>`, labelled `maf-release`. You'll get a normal GitHub notification; close the issue once the cause is fixed.
+
+**Optional belt-and-suspenders:** enable *Settings → Notifications → "Send notifications for failed workflows you've created"* for a native email. It only emails on the **first** failure of a streak, which is why the issue-based notifier above is the primary signal.
+
+### Watcher runs but nothing changes on `main`
+
+The MAF version on NuGet hasn't moved — the watcher exits cleanly when `.maf-version` already equals the latest stable NuGet release. Check the `check-for-new-maf-release` step for `has_update=false`.
+
+### Scheduled run fails immediately on the NuGet check with `IndentationError`
+
+You're on a build predating the task-1.1 fix. The NuGet version filter is now a real module, `.github/scripts/get_latest_stable.py`; pull `main`.
+
+### "Release notes not available" in the generated guide
+
+Release notes are fetched from `microsoft/agent-framework` (tags `dotnet-X.Y.Z`, falling back to `vX.Y.Z`). If MAF hasn't published notes for that tag yet, a placeholder is used — harmless.
+
+### Drift detector keeps reporting grade F / re-opening the same issue
+
+The doctor scans the whole repo, which ships intentional anti-pattern *bait* (`samples/`, scanner test fixtures). Until task 3.1 (scan exclusions) lands, the drift grade reflects that bait, not product health. After 3.1 the detector scans only product code.
 
 ## CI
 

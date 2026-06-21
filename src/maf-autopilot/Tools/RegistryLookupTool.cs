@@ -1,8 +1,8 @@
-using MafAutopilot.Data;
+using MafDoctor.Data;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// MCP tool: MafRegistryLookup

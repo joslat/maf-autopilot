@@ -2,7 +2,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using ModelContextProtocol.Server;
 
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// MCP tool: <c>MafScoreMigrationRisk</c>.

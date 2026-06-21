@@ -51,7 +51,7 @@ TRIGGER (cron or gh workflow run)
 │  1.5  Run `python3 .github/scripts/gen_guide_section.py`           │
 │          → writes guides/maf-X.Y.Z-migration-guide.md              │
 │          → ALSO regenerates guides/maf-current-migration-guide.md  │
-│  1.6  Run `maf-autopilot registry-extract` (the dotnet tool CLI)   │
+│  1.6  Run `maf-doctor registry-extract` (the dotnet tool CLI)   │
 │          → emits draft registry entries, appended to registry.yaml │
 │  1.7  Update .maf-version                                          │
 │  1.8  Upload diff-core.txt / diff-workflows.txt / release-notes.txt│
@@ -184,6 +184,6 @@ After Stage 3 (Copilot's PR):
 
 - **Workflows**: `.github/workflows/maf-release-watcher.yml`, `.github/workflows/maf-ai-fill-todos.yml`
 - **Python helpers**: `.github/scripts/gen_guide_section.py`, `.github/scripts/update_compat_matrix.py`
-- **CLI used by Stage 1**: `maf-autopilot registry-extract` (from the published NuGet tool)
+- **CLI used by Stage 1**: `maf-doctor registry-extract` (from the published NuGet tool)
 - **MCP tool for multi-version paths**: `MafMigrationPath(currentVer, targetVer)` — returns the ordered chain of per-version guide sections to read
 - **Resource**: `maf://compatibility` — exposes the matrix to the LLM at chat time

@@ -1,24 +1,14 @@
 {
   "servers": {
-    "maf-autopilot": {
+    "maf-doctor": {
       "type": "stdio",
       "command": "dotnet",
       "args": [
         "run",
         "--project",
         "${workspaceFolder}/src/maf-autopilot/maf-autopilot.csproj",
-        "--no-build",
-        "--"
-      ],
-      "env": {}
-    },
-    "maf-autopilot-custom-registry": {
-      "type": "stdio",
-      "command": "dotnet",
-      "args": [
-        "run",
-        "--project",
-        "${workspaceFolder}/src/maf-autopilot/maf-autopilot.csproj",
+        "--framework",
+        "net10.0",
         "--no-build",
         "--"
       ],

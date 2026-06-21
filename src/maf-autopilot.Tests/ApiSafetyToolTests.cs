@@ -1,8 +1,8 @@
-using MafAutopilot.Data;
-using MafAutopilot.Tools;
+using MafDoctor.Data;
+using MafDoctor.Tools;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// End-to-end tests for the ApiSafetyTool — invokes the tool the way the MCP host would.

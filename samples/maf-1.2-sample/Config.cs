@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 maf-autopilot sample.
+// Copyright (c) 2026 maf-doctor sample.
 
 using Azure;
 

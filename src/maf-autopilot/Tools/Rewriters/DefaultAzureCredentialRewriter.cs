@@ -2,7 +2,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace MafAutopilot.Tools.Rewriters;
+namespace MafDoctor.Tools.Rewriters;
 
 /// <summary>
 /// Rule: <c>MAF-AP-SEC-001</c> / <c>MAF002</c>.

@@ -1,13 +1,13 @@
 using Microsoft.CodeAnalysis.CSharp.Testing;
 using Microsoft.CodeAnalysis.Testing;
-using MafAutopilot.Analyzers;
+using MafDoctor.Analyzers;
 using Xunit;
 
 using Verify = Microsoft.CodeAnalysis.CSharp.Testing.CSharpAnalyzerTest<
-    MafAutopilot.Analyzers.FanOutHandlerAnalyzer,
+    MafDoctor.Analyzers.FanOutHandlerAnalyzer,
     Microsoft.CodeAnalysis.Testing.DefaultVerifier>;
 
-namespace MafAutopilot.Analyzers.Tests;
+namespace MafDoctor.Analyzers.Tests;
 
 public class FanOutHandlerAnalyzerTests
 {

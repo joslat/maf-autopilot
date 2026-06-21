@@ -2,10 +2,10 @@ using System.ComponentModel;
 using System.Text;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using MafAutopilot.Data;
+using MafDoctor.Data;
 using ModelContextProtocol.Server;
 
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// MCP tool: MafExplain
@@ -34,7 +34,7 @@ public sealed class ExplainTool
 
         Walks every type reference, invocation, and attribute in the snippet,
         cross-references the obsolete-API registry, and emits a structured
-        report: which pieces are canonical MAF 1.3.0 patterns, which are
+        report: which pieces are canonical MAF patterns, which are
         deprecated, and which guide section explains each.
 
         Input:
@@ -49,6 +49,12 @@ public sealed class ExplainTool
     {
         if (string.IsNullOrWhiteSpace(snippet))
             return "Error: snippet must not be empty.";
+
+        // Phase 5.1 — DoS guard: a 1 GB snippet would otherwise flow into
+        // Roslyn's parser without an upstream cap. 256 KB is the snippet-class
+        // ceiling from §5.6 — well above any realistic paste.
+        try { BoundedInput.Validate(snippet, BoundedInput.SnippetBytes, nameof(snippet)); }
+        catch (ArgumentException ex) { return $"Error: {ex.Message}"; }
 
         var findings = AnalyzeSnippet(snippet, _registry);
         return FormatReport(snippet, findings);
@@ -206,7 +212,7 @@ public sealed class ExplainTool
         "MessageHandler" or "MessageHandlerAttribute" =>
             "✅ Marks an executor method as a workflow handler. MUST return `Task<T>` or `ValueTask<T>` — `void` / non-generic causes silent fan-in starvation.",
         "ChatClientAgent" =>
-            "✅ The canonical 1.3.0 agent base. `Instructions` lives inside `ChatOptions`, not at the options top level.",
+            "✅ The canonical MAF agent base. `Instructions` lives inside `ChatOptions`, not at the options top level.",
         _ => null,
     };
 

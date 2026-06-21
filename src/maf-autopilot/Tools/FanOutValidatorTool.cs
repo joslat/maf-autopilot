@@ -5,7 +5,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// MCP tool: MafValidateFanOut
@@ -88,7 +88,11 @@ public sealed class FanOutValidatorTool
 
             var returnType = method.ReturnType.ToString();
             var verdict = ClassifyReturnType(returnType);
-            var location = method.GetLocation().GetLineSpan();
+            // Report the SIGNATURE line (the return type), not method.GetLocation()
+            // — the latter starts at the [MessageHandler] attribute (attributes are
+            // part of the method's span), so the offending return type wouldn't be
+            // on the reported line. The return-type token is exactly what's wrong.
+            var location = method.ReturnType.GetLocation().GetLineSpan();
 
             findings.Add(new MessageHandlerFinding(
                 File: fileName,
@@ -152,7 +156,12 @@ public sealed class FanOutValidatorTool
         if (File.Exists(path) && path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
             return new[] { path };
         if (Directory.Exists(path))
-            return Directory.GetFiles(path, "*.cs", SearchOption.AllDirectories);
+        {
+            // Phase 5.G fixup — migrated from Directory.GetFiles(..., SearchOption.AllDirectories)
+            // (default options follow symlinks) to SourceFileWalker.EnumerateCsFiles which sets
+            // AttributesToSkip = ReparsePoint and also filters /bin/ + /obj/ noise paths.
+            return SourceFileWalker.EnumerateCsFiles(path).ToList();
+        }
         return Array.Empty<string>();
     }
 
