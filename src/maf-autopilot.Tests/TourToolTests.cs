@@ -1,9 +1,9 @@
 using System.Reflection;
-using MafAutopilot.Tools;
+using MafDoctor.Tools;
 using ModelContextProtocol.Server;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Tests for the `MafTour` discovery tool. The catalogue is hand-curated;
@@ -39,7 +39,7 @@ public sealed class TourToolTests
         var output = _tool.MafTour(section);
 
         // Assert — the requested section is present, and at least one of the others is absent.
-        Assert.Contains("# 🗺️ maf-autopilot — capability tour", output);
+        Assert.Contains("# 🗺️ maf-doctor — capability tour", output);
         var others = new[] { "🔧 MCP tools", "🤖 Copilot Chat agents", "📄 MCP resources", "💬 MCP prompts" }
             .Where(h => !h.Contains(GetEmojiForSection(section), StringComparison.Ordinal))
             .ToList();
@@ -118,6 +118,33 @@ public sealed class TourToolTests
         Assert.True(extra.Count == 0,
             $"MafTour catalogue lists tools that don't exist as [McpServerTool] methods: {string.Join(", ", extra)}. " +
             "Remove each one, or implement it.");
+    }
+
+    [Fact]
+    public void Catalogue_ListsEveryMcpServerPrompt_NoDrift()
+    {
+        // Same drift guard for prompts — every [McpServerPrompt] method must
+        // appear in the prompt catalogue (and vice versa).
+        var assembly = typeof(TourTool).Assembly;
+        var promptNames = assembly.GetTypes()
+            .Where(t => t.GetCustomAttribute<McpServerPromptTypeAttribute>() is not null)
+            .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static))
+            .Select(m => m.GetCustomAttribute<McpServerPromptAttribute>())
+            .Where(a => a is not null)
+            .Select(a => a!.Name!)
+            .Where(n => !string.IsNullOrEmpty(n))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var catalogued = TourTool.PromptCatalogue.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+
+        var missing = promptNames.Except(catalogued).OrderBy(s => s).ToList();
+        var extra = catalogued.Except(promptNames).OrderBy(s => s).ToList();
+
+        Assert.True(missing.Count == 0,
+            $"MafTour catalogue is missing entries for live MCP prompts: {string.Join(", ", missing)}. " +
+            "Add each one to TourTool.PromptCatalogue.");
+        Assert.True(extra.Count == 0,
+            $"MafTour catalogue lists prompts that don't exist as [McpServerPrompt] methods: {string.Join(", ", extra)}.");
     }
 
     [Fact]

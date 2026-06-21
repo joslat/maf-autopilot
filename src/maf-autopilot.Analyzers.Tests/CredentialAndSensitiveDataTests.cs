@@ -1,16 +1,16 @@
 using Microsoft.CodeAnalysis.CSharp.Testing;
 using Microsoft.CodeAnalysis.Testing;
-using MafAutopilot.Analyzers;
+using MafDoctor.Analyzers;
 using Xunit;
 
-namespace MafAutopilot.Analyzers.Tests;
+namespace MafDoctor.Analyzers.Tests;
 
 using DacVerify = Microsoft.CodeAnalysis.CSharp.Testing.CSharpAnalyzerTest<
-    MafAutopilot.Analyzers.DefaultAzureCredentialAnalyzer,
+    MafDoctor.Analyzers.DefaultAzureCredentialAnalyzer,
     Microsoft.CodeAnalysis.Testing.DefaultVerifier>;
 
 using SdVerify = Microsoft.CodeAnalysis.CSharp.Testing.CSharpAnalyzerTest<
-    MafAutopilot.Analyzers.SensitiveDataAnalyzer,
+    MafDoctor.Analyzers.SensitiveDataAnalyzer,
     Microsoft.CodeAnalysis.Testing.DefaultVerifier>;
 
 public class DefaultAzureCredentialAnalyzerTests
@@ -101,6 +101,84 @@ public class SensitiveDataAnalyzerTests
                 public void Configure()
                 {
                     var o = new Options { {|MAF003:EnableSensitiveData = true|} };
+                }
+            }
+            """;
+
+        await new SdVerify { TestCode = source }.RunAsync();
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 4.4 — dictionary-style assignment parity with rewriter.
+    //
+    // The EnableSensitiveDataRewriter has handled `["EnableSensitiveData"] = true`
+    // since the initial rewriter pass; the analyzer was missing this shape.
+    // Without the analyzer rule, the IDE didn't warn — only the build-time
+    // `MafAutoFix` would silently remove the entry. Phase 4.4 closes the gap.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task DictionaryInitializerStyle_ReportsMAF003()
+    {
+        var source = """
+            using System.Collections.Generic;
+            public class Setup
+            {
+                public void Configure()
+                {
+                    var o = new Dictionary<string, object> { {|MAF003:["EnableSensitiveData"] = true|} };
+                }
+            }
+            """;
+
+        await new SdVerify { TestCode = source }.RunAsync();
+    }
+
+    [Fact]
+    public async Task DictionaryStandaloneAssignment_ReportsMAF003()
+    {
+        var source = """
+            using System.Collections.Generic;
+            public class Setup
+            {
+                public void Configure()
+                {
+                    var dict = new Dictionary<string, object>();
+                    {|MAF003:dict["EnableSensitiveData"] = true|};
+                }
+            }
+            """;
+
+        await new SdVerify { TestCode = source }.RunAsync();
+    }
+
+    [Fact]
+    public async Task DictionaryStyleWithFalse_NoReport()
+    {
+        var source = """
+            using System.Collections.Generic;
+            public class Setup
+            {
+                public void Configure()
+                {
+                    var o = new Dictionary<string, object> { ["EnableSensitiveData"] = false };
+                }
+            }
+            """;
+
+        await new SdVerify { TestCode = source }.RunAsync();
+    }
+
+    [Fact]
+    public async Task DictionaryStyleWithUnrelatedKey_NoReport()
+    {
+        var source = """
+            using System.Collections.Generic;
+            public class Setup
+            {
+                public void Configure()
+                {
+                    var o = new Dictionary<string, object> { ["SomeOtherFlag"] = true };
                 }
             }
             """;

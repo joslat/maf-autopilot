@@ -1,7 +1,7 @@
-using MafAutopilot.Tools;
+using MafDoctor.Tools;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Tests for the pure parser of DiffPackageTool. The fixture string in
@@ -205,7 +205,7 @@ public class DiffPackageToolTests
     [Fact]
     public void Mcp_InvalidArguments_ReturnError()
     {
-        var tool = new DiffPackageTool(new MafAutopilot.Data.RegistryService());
+        var tool = new DiffPackageTool(new MafDoctor.Data.RegistryService());
 
         Assert.Contains("Error", tool.MafDiffPackage("", "1.0", "2.0"), StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Error", tool.MafDiffPackage("Foo;rm", "1.0", "2.0"), StringComparison.OrdinalIgnoreCase);

@@ -63,7 +63,10 @@ N=$(grep -c "Auto-generated stub" guides/maf-$TARGET-migration-guide.md 2>/dev/n
 FAIL6=""
 while read sec; do
   [ -z "$sec" ] && continue
-  grep -qE "^##+ ${sec}\\." guides/maf-1.3.0-migration-guide.md || FAIL6="$FAIL6 $sec"
+  # Task 4.11 — validate against ALL per-version guides (union), matching the CI
+  # gate verify_crossfile_consistency.py. (Was 1.3.0-only, which false-failed a
+  # section that legitimately lives in a newer guide.)
+  grep -qhE "^##+ ${sec}\\." guides/maf-*-migration-guide.md || FAIL6="$FAIL6 $sec"
 done < <(grep -E "^\\s+guide_section:" .github/skills/maf-obsolete-api-registry/registry.yaml \
   | grep -v 'guide_section:.*"\\?N/A"\\?' \
   | awk '{gsub(/"/, "", $2); print $2}' | sort -u)

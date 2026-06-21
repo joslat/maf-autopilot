@@ -2,21 +2,19 @@
 
 > **Last updated:** 2026-05-13 — Phase S landed: multi-target nupkg + central package management.
 
-This document explains what each piece of `maf-autopilot` is, how the pieces fit together, and where the structural choices were deliberate (vs. accidental).
-
-For *what's pending*, see [`next-steps.md`](./next-steps.md). For history of decisions, see [`maf-migration-toolkit-plan.md`](./maf-migration-toolkit-plan.md).
+This document explains what each piece of `maf-doctor` is, how the pieces fit together, and where the structural choices were deliberate (vs. accidental).
 
 ---
 
-## What is `maf-autopilot`?
+## What is `maf-doctor`?
 
 A toolkit that turns **GitHub Copilot Chat into a Microsoft Agent Framework (MAF) expert** for the lifetime of a .NET project.
 
 It ships through **four channels**:
 
-1. **MCP server (NuGet tool)** — the main product. 17 [Model Context Protocol](https://modelcontextprotocol.io/) tools that Copilot can invoke during chats: anti-pattern scanner, fan-out validator, workflow simulator, scaffolders, PR auditor, etc.
+1. **MCP server (NuGet tool)** — the main product. 25 [Model Context Protocol](https://modelcontextprotocol.io/) tools that Copilot can invoke during chats: anti-pattern scanner, fan-out validator, workflow simulator, scaffolders, PR auditor, etc.
 2. **MCP server (Docker)** — same product, containerised on GHCR (multi-arch amd64+arm64), for users without a .NET SDK on the host.
-3. **Roslyn analyzer (separate NuGet)** — `maf-autopilot.Analyzers`. Ships 3 write-time rules (MAF001–003) into any consumer project's compiler. Independent of the MCP server.
+3. **Roslyn analyzer (separate NuGet)** — `maf-doctor.Analyzers`. Ships 3 write-time rules (MAF001–003) into any consumer project's compiler. Independent of the MCP server.
 4. **Skills + agents (GitHub-native)** — 12 SKILL.md files + 6 agent personas + 3 always-loaded instruction files. Loaded by GitHub Copilot Chat directly from `.github/`.
 
 The MCP server, the analyzer NuGet, and the skill bundle are independently shippable. A user can adopt any one, two, or all three.
@@ -27,7 +25,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│                          maf-autopilot repo                              │
+│                          maf-doctor repo                                 │
 │                                                                          │
 │  /Directory.Packages.props  ← central package mgmt (CPM)                │
 │  /Directory.Build.props     ← shared compiler settings                  │
@@ -37,7 +35,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 │  │  /src/maf-autopilot/    │   │  /src/maf-autopilot.Analyzers/    │   │
 │  │  ── MCP server          │   │  ── Roslyn analyzers              │   │
 │  │  ── net8.0;net9.0;net10.0   │   │  ── netstandard2.0 (compiler host)│
-│  │  ── NuGet: maf-autopilot│   │  ── NuGet: maf-autopilot.Analyzers│   │
+│  │  ── NuGet: maf-doctor   │   │  ── NuGet: maf-doctor.Analyzers   │   │
 │  │  ── Docker: GHCR (net8) │   │  ── 3 rules (MAF001/002/003)      │   │
 │  └────────┬────────────────┘   └────────┬──────────────────────────┘   │
 │           │ ProjectReference (none)     │ ProjectReference (none)        │
@@ -78,23 +76,23 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 
 ## What each .NET project IS
 
-### `maf-autopilot` (the MCP server)
+### `maf-doctor` (the MCP server)
 
 **Path:** `/src/maf-autopilot/`
 **Target frameworks:** `net8.0;net9.0;net10.0` (multi-target — NuGet picks the best TFM at install time)
-**Output:** a single executable (`maf-autopilot.dll`) packaged as a dotnet global tool + a Docker image (Dockerfile uses `net8.0` base for smallest container).
+**Output:** a single executable (`maf-doctor.dll`) packaged as a dotnet global tool + a Docker image (Dockerfile uses `net8.0` base for smallest container).
 **Dependencies:** `ModelContextProtocol` 1.2.0, `Microsoft.CodeAnalysis.CSharp` 4.11.0, `YamlDotNet` 16.2.1, `Microsoft.Extensions.Hosting` 10.0.7 (the 10.0.x line internally ships net8/net9/net10 TFM assemblies). Versions pinned centrally in `Directory.Packages.props`.
 
 **What it does:**
 - Speaks MCP over stdio (when run as a tool) or stdio-in-container (when run via Docker).
-- Exposes **17 tools** (`[McpServerTool]`-decorated methods under `Tools/*.cs`).
-- Exposes **4 resources** (`maf://constraints`, `maf://guide`, `maf://registry`, `maf://rules`, `maf://skills?name=...`).
-- Exposes **3 prompts** (`maf-audit`, `maf-migrate`, `maf-cs0618-hunt`).
+- Exposes **25 tools** (`[McpServerTool]`-decorated methods under `Tools/*.cs`) — see the README for the live catalogue.
+- Exposes **6 resources** (`maf://guide`, `maf://constraints`, `maf://registry`, `maf://rules`, `maf://help`, `maf://skills?name=...`).
+- Exposes **7 prompts** (`maf-audit`, `maf-migrate`, `maf-cs0618-hunt`, `maf-review`, `maf-debug`, `maf-scaffold`, `maf-help`).
 - Provides **CLI subcommands**: `init` (wires `.vscode/mcp.json`), `doctor` (health grade), `new agent` / `new executor` (scaffolders), `registry-extract` (CI helper).
 
 **Embeds at build time** (via `<EmbeddedResource>`): the 12 SKILL.md files, the 3 instruction files, the obsolete-API registry YAML, the migration guide. This is why the runtime container only needs a single .dll — everything ships inline.
 
-### `maf-autopilot.Analyzers` (the Roslyn analyzer NuGet)
+### `maf-doctor.Analyzers` (the Roslyn analyzer NuGet)
 
 **Path:** `/src/maf-autopilot.Analyzers/`
 **Target framework:** **netstandard2.0** (mandatory — Roslyn analyzers load into the compiler host, which targets netstandard2.0).
@@ -106,7 +104,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 - `MAF002` — avoid `DefaultAzureCredential` in production code.
 - `MAF003` — avoid `EnableSensitiveData = true` outside test code.
 
-**Critically: it has ZERO dependencies on the MCP server.** A consumer can install just the analyzers without ever touching `maf-autopilot` the tool.
+**Critically: it has ZERO dependencies on the MCP server.** A consumer can install just the analyzers without ever touching `maf-doctor` the tool.
 
 ### `maf-autopilot.Tests`
 
@@ -173,7 +171,7 @@ maf-autopilot.sln
 
 ## Multi-targeting
 
-The MCP server NuGet `maf-autopilot` ships TFM assemblies for **net8.0 + net9.0 + net10.0** inside a single `nupkg`. NuGet's TFM resolution selects the best match at consumer install time:
+The MCP server NuGet `maf-doctor` ships TFM assemblies for **net8.0 + net9.0 + net10.0** inside a single `nupkg`. NuGet's TFM resolution selects the best match at consumer install time:
 
 - A user on the .NET 8 LTS runtime installs the `net8.0` binary.
 - A user on the .NET 9 STS runtime installs the `net9.0` binary.
@@ -189,7 +187,7 @@ This pattern matches the sibling [`AgentEval`](https://github.com/joslat/AgentEv
 | `Directory.Build.props` | Shared compiler settings (`LangVersion`, `ImplicitUsings`, `Nullable`). Per-project csprojs may override (the analyzer uses its own `LangVersion=latest` + locked `netstandard2.0`). |
 | `global.json` | Pins `sdk.version=8.0.100` with `rollForward: latestMajor` + `allowPrerelease: true`. Any installed SDK ≥ 8.x can build the solution. |
 
-**The Roslyn analyzer (`maf-autopilot.Analyzers`) is excluded from multi-targeting.** It MUST stay on `netstandard2.0` — analyzers load into the compiler host (csc.exe / VS / OmniSharp), which itself runs on the netstandard2.0 surface. Multi-targeting an analyzer would not change consumer reach (consumer csproj loads the netstandard2.0 DLL regardless of consumer TFM) and would break compatibility with older compiler hosts.
+**The Roslyn analyzer (`maf-doctor.Analyzers`) is excluded from multi-targeting.** It MUST stay on `netstandard2.0` — analyzers load into the compiler host (csc.exe / VS / OmniSharp), which itself runs on the netstandard2.0 surface. Multi-targeting an analyzer would not change consumer reach (consumer csproj loads the netstandard2.0 DLL regardless of consumer TFM) and would break compatibility with older compiler hosts.
 
 **The Dockerfile is excluded.** Only the multi-target NuGet ships all 3 TFMs; the container can only choose one runtime. Net8 LTS is the smallest, longest-supported runtime image — picked for the smallest container footprint.
 
@@ -201,9 +199,9 @@ This pattern matches the sibling [`AgentEval`](https://github.com/joslat/AgentEv
 
 | Channel | What ships | Who consumes | Where |
 |---|---|---|---|
-| NuGet (server) | `maf-autopilot` .NET global tool | Developers installing via `dotnet tool install` | `nuget.org/packages/maf-autopilot` |
-| NuGet (analyzer) | `maf-autopilot.Analyzers` analyzer | Consumer .csproj `<PackageReference>` | `nuget.org/packages/maf-autopilot.Analyzers` |
-| Docker | Multi-arch image (amd64+arm64) | Developers without .NET SDK on host | `ghcr.io/joslat/maf-autopilot:<semver>` |
+| NuGet (server) | `maf-doctor` .NET global tool | Developers installing via `dotnet tool install` | `nuget.org/packages/maf-doctor` |
+| NuGet (analyzer) | `maf-doctor.Analyzers` analyzer | Consumer .csproj `<PackageReference>` | `nuget.org/packages/maf-doctor.Analyzers` |
+| Docker | Multi-arch image (amd64+arm64) | Developers without .NET SDK on host | `ghcr.io/joslat/maf-doctor:<semver>` |
 | Skills-only | The `.github/` directory copied into a consumer repo | Users wanting agents+skills without the MCP server | `git clone` |
 
 ---
@@ -216,7 +214,7 @@ The `maf-release-watcher` workflow runs weekly + on-demand, detecting new MAF re
 
 | Surface | Additive? | How it's enforced |
 |---|---|---|
-| `.github/skills/maf-obsolete-api-registry/registry.yaml` | ✅ | `maf-autopilot registry-extract` emits draft entries; watcher appends via `>> $REGISTRY`. **Pinned by test** `RegistryExtractCommandTests.Additivity_DraftEntries_AppendedToExistingRegistry_PreserveAllOriginalEntries`. |
+| `.github/skills/maf-obsolete-api-registry/registry.yaml` | ✅ | `maf-doctor registry-extract` emits draft entries; watcher appends via `>> $REGISTRY`. **Pinned by test** `RegistryExtractCommandTests.Additivity_DraftEntries_AppendedToExistingRegistry_PreserveAllOriginalEntries`. |
 | `docs/compatibility-matrix.md` | ✅ | `.github/scripts/update_compat_matrix.py` inserts at top of data section; checks for duplicate version rows (no-op on re-run). Idempotency documented in the script's docstring. |
 | `guides/maf-<NEW-VERSION>-migration-guide.md` | ✅ | `.github/scripts/gen_guide_section.py` writes a NEW per-version file. If the file already exists, the AUTO-GENERATED region is overwritten but the `## Human additions` heading and everything below it is preserved. The 1.3.0 guide is never touched. |
 | `.maf-version` (tracked version pointer) | ✅ (overwritten cleanly) | One-line file; the watcher writes the new latest version. The old value is replaced — but the old version's registry/matrix/guide data stays intact (rows above). |
@@ -232,16 +230,17 @@ The `maf-release-watcher` workflow runs weekly + on-demand, detecting new MAF re
 
 ### When MAF X.Y ships — the actual flow
 
-1. **Watcher fires** (weekly cron OR manual `gh workflow run maf-release-watcher.yml`).
+1. **Watcher fires** (daily cron OR manual `gh workflow run maf-release-watcher.yml`; a manual run can set `maf_version` for a specific version and `push_target` for a safe dry-run against a throwaway branch).
 2. **Detection step** compares NuGet's latest stable against `.maf-version`. If different, proceeds.
-3. **Major-version check** sets `is_major=true` for X.0 bumps — auto-PR title gets a 🚨 prefix + `major-version,needs-review` labels.
-4. **dotnet-inspect diff** runs for each MAF NuGet package; output captured.
-5. **`registry-extract` CLI** parses each diff, emits draft YAML entries to `tmp-entries.yaml`.
-6. **Append step** appends the drafts to the live `registry.yaml` via `>> $REGISTRY` (additive). A separator comment marks the auto-appended region for reviewer clarity.
-7. **Matrix update** appends a new row to `compatibility-matrix.md` (additive).
-8. **Guide generation** writes a per-version file `guides/maf-X.Y.0-migration-guide.md` (additive — new file, doesn't touch existing guides).
-9. **Auto-PR** opens with the cumulative diff, labels (`maf-release` + optional `major-version,needs-review`), and a body summarising what landed.
-10. **Human reviewer** fills in the TODO placeholders in the new registry entries (`replacement_signature`, `fix_description`, `example_after`, `guide_section`) and either merges or escalates.
+3. **Major-version check** sets `is_major=true` for X.0 bumps. **Majors are NOT auto-committed** — they escalate to a `maf-release,needs-review` tracking issue (with the breaking-API diffs attached as run artifacts) for human-driven migration. Minor/patch bumps continue automatically.
+4. **dotnet-inspect diff** runs for each MAF NuGet package; output captured (and uploaded as run artifacts for reviewer access).
+5. **`registry-extract` CLI** parses each diff, emits draft YAML entries; the append step de-dupes them against existing entry ids (idempotent on re-run).
+6. **Append step** appends the de-duplicated drafts to the live `registry.yaml`. A separator comment marks the auto-appended region.
+7. **Matrix update** inserts a new top row in `compatibility-matrix.md`.
+8. **Guide generation** writes a per-version file `guides/maf-X.Y.0-migration-guide.md` and regenerates the cumulative guide (existing per-version guides untouched).
+9. **Direct commit to `main`** (no PR gate — a deliberate solo-maintainer trade-off; majors are gated at step 3). The push uses the maintainer PAT so it bypasses branch protection.
+10. **AI-fill dispatch** kicks off `maf-ai-fill-todos.yml`, which opens an issue assigned to the GitHub Copilot Coding Agent; the agent fills the TODO placeholders (`replacement_signature`, `fix_description`, `example_after`, `guide_section`) and opens a PR, gated by the rung-1 `verify-registry` + rung-2 semantic-review checks.
+11. **On any failure**, a `notify-on-failure` job opens/updates a `maf-release` tracking issue so the maintainer is alerted (scheduled failures no longer pass silently).
 
 ### How additivity is engraved
 

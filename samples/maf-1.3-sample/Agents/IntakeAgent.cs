@@ -2,7 +2,7 @@
 //
 // ⚠️ Note on the "top-level Instructions" anti-pattern:
 //
-// The maf-autopilot registry entry MAF130-INSTRUCTIONS-001 documents a
+// The maf-doctor registry entry MAF130-INSTRUCTIONS-001 documents a
 // "silently ignored Instructions property at the top of ChatClientAgentOptions."
 // **This property does not exist on ChatClientAgentOptions in MAF 1.3.0 GA.**
 // It was REMOVED outright, not just made [Obsolete]. So the anti-pattern as

@@ -6,7 +6,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using ModelContextProtocol.Server;
 
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// MCP tool: MafLintAgentPrompt
@@ -178,9 +178,13 @@ public sealed class PromptLintTool
     // Heuristics
     // -------------------------------------------------------------------------
 
+    // Phase 7.G fixup — regex hygiene. Bounded alternation is structurally
+    // backtracking-safe; explicit NonBacktracking + 2s timeout matches the
+    // project-wide invariant.
     private static readonly Regex RefusalPatternRegex = new(
         @"\b(?:do not|don't|refuse|cannot|can't|must not|mustn't|decline|won't|never|forbidden|prohibited|not allowed|out of scope)\b",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase,
+        TimeSpan.FromSeconds(2));
 
     internal static bool ContainsRefusalPattern(string s) => RefusalPatternRegex.IsMatch(s);
 

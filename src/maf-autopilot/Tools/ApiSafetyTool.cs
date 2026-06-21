@@ -1,13 +1,13 @@
-using MafAutopilot.Data;
+using MafDoctor.Data;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// MCP tool: MafApiSafety
 ///
-/// Answers the question: "Is this MAF API safe to use in MAF 1.3.0?"
+/// Answers the question: "Is this MAF API safe to use in the latest MAF version?"
 ///
 /// Historically motivated by richlander/dotnet-inspect#316:
 /// dotnet-inspect &lt;= v0.7.7 did not surface [Obsolete] at the individual overload level.

@@ -1,4 +1,4 @@
-namespace MafAutopilot.Tools;
+namespace MafDoctor.Tools;
 
 /// <summary>
 /// SARIF v2.1.0 emitter wrappers around the existing finding lists.
@@ -21,7 +21,9 @@ internal static class SarifExportTool
         var sarifFindings = findings.Select(f => new SarifFinding(
             RuleId: f.RuleId,
             Severity: MapSeverity(f.Severity),
-            Message: f.RuleName + " — " + f.Match,
+            // Redact a secret-bearing Match (e.g. the SEC-002 key literal) so the
+            // SARIF surface matches the markdown surface's no-secret-leak posture.
+            Message: f.RuleName + " — " + (AntiPatternScannerTool.LooksLikeSecret(f.Match) ? "(redacted)" : f.Match),
             File: f.File,
             Line: f.Line));
 
@@ -61,7 +63,7 @@ internal static class SarifExportTool
 
     private static IEnumerable<SarifRule> BuildAntiPatternRuleCatalog()
     {
-        const string skillUri = "https://github.com/joslat/maf-autopilot/blob/main/.github/skills/maf-anti-pattern-scanner/SKILL.md";
+        const string skillUri = "https://github.com/joslat/maf-doctor/blob/main/.github/skills/maf-anti-pattern-scanner/SKILL.md";
         foreach (var rule in AntiPatternScannerTool.AllRules)
         {
             yield return new SarifRule(
@@ -80,6 +82,6 @@ internal static class SarifExportTool
             Name: "Fan-out handler must return Task<T> or ValueTask<T>",
             Severity: SarifSeverity.Error,
             FullDescription: "A [MessageHandler] method that returns void, Task, or ValueTask (non-generic) produces no downstream message and silently starves the fan-in barrier.",
-            HelpUri: "https://github.com/joslat/maf-autopilot/blob/main/.github/skills/maf-fan-out-validator/SKILL.md");
+            HelpUri: "https://github.com/joslat/maf-doctor/blob/main/.github/skills/maf-fan-out-validator/SKILL.md");
     }
 }
