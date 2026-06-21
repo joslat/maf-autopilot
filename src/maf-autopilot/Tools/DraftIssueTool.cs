@@ -252,15 +252,15 @@ public sealed class DraftIssueTool
 
     // Phase 7.G fixup — regex hygiene. Both patterns process user-controlled
     // .csproj content. The bounded `[^"]+` / `[^<]+` classes are
-    // backtracking-safe but the policy requires NonBacktracking + 100ms timeout.
+    // backtracking-safe but the policy requires NonBacktracking + 2s timeout.
     private static readonly Regex PackageRefRegex = new(
         @"<PackageReference\s+Include=""(?<id>[^""]+)""\s+Version=""(?<ver>[^""]+)""",
         RegexOptions.Compiled | RegexOptions.NonBacktracking,
-        TimeSpan.FromMilliseconds(100));
+        TimeSpan.FromSeconds(2));
     private static readonly Regex TfmRegex = new(
         @"<TargetFramework[s]?>(?<tfm>[^<]+)</TargetFramework[s]?>",
         RegexOptions.Compiled | RegexOptions.NonBacktracking,
-        TimeSpan.FromMilliseconds(100));
+        TimeSpan.FromSeconds(2));
 
     private static (IReadOnlyList<(string Id, string Version)> MafPkgs, string DotnetTfm) ScanCsprojFiles(string repoPath)
     {

@@ -13,7 +13,7 @@
 -->
 
 > This file is the single source of truth for MAF version ↔ dependency version compatibility.
-> It is referenced by `maf-autopilot` MCP server tools (`maf_compatibility`) and auto-updated by the `maf-release-watcher` skill and GitHub Actions workflow.
+> It is referenced by `maf-doctor` MCP server tools (`maf_compatibility`) and auto-updated by the `maf-release-watcher` skill and GitHub Actions workflow.
 
 ---
 
@@ -82,4 +82,4 @@ When a new MAF version ships:
 
 ---
 
-*Maintained by maf-autopilot | See `.github/skills/maf-release-watcher/SKILL.md` for update process*
+*Maintained by maf-doctor | See `.github/skills/maf-release-watcher/SKILL.md` for update process*

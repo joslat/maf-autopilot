@@ -25,80 +25,56 @@ internal sealed class ExecutorSealedRewriter : CSharpSyntaxRewriter, IRuleRewrit
             return base.VisitClassDeclaration(node);
 
         var modifiers = node.Modifiers.Select(m => m.ValueText).ToHashSet();
-        if (modifiers.Contains("sealed"))
-            return base.VisitClassDeclaration(node); // already sealed
 
-        // Phase 4.1a — corruption guard: `sealed abstract class` is a C#
-        // compile error (the two modifiers are mutually exclusive). Same for
-        // `sealed static class` (static implies sealed AND abstract; combining
-        // with explicit `sealed` is also rejected). Pre-fix, the rewriter
-        // happily inserted `sealed` regardless and produced uncompilable user
-        // code. Now: skip the rewrite and leave a comment-warning so the
-        // developer sees why the rule wasn't auto-applied.
-        if (modifiers.Contains("abstract"))
-        {
-            return AddSkipWarning(node,
-                "// MAF-AP-WF-001: cannot seal an abstract Executor — refactor to a non-abstract class first.");
-        }
-        if (modifiers.Contains("static"))
-        {
-            return AddSkipWarning(node,
-                "// MAF-AP-WF-001: cannot seal a static class — static classes cannot derive from Executor anyway; this rule shouldn't be reachable.");
-        }
+        // Parity with the WF-001 scanner, which SKIPS abstract Executors entirely:
+        // an abstract class can't be `sealed` (the two modifiers are mutually
+        // exclusive), and a static class can't derive from Executor at all. Leave
+        // both UNTOUCHED — returning the node unchanged means MafAutoFix /
+        // MafBeforeAfter honestly report "no change" for a file the scanner also
+        // considers clean, instead of dirtying it with an advisory comment. (The
+        // concrete subclass is what must be `sealed partial`; the scanner flags THAT.)
+        if (modifiers.Contains("abstract") || modifiers.Contains("static"))
+            return base.VisitClassDeclaration(node);
 
-        // Insert `sealed` immediately after `public` (or any first access modifier);
-        // fall back to the start of the modifier list. Preserve trivia by borrowing
-        // the trailing trivia of the preceding token.
-        var sealedToken = SyntaxFactory.Token(SyntaxKind.SealedKeyword)
-            .WithTrailingTrivia(SyntaxFactory.Space);
+        var needsSealed = !modifiers.Contains("sealed");
+        var needsPartial = !modifiers.Contains("partial");
+        if (!needsSealed && !needsPartial)
+            return base.VisitClassDeclaration(node); // already `sealed partial`
 
-        SyntaxTokenList newModifiers;
-        if (node.Modifiers.Count == 0)
+        // The scanner (MAF-AP-WF-001) fires when EITHER `sealed` or `partial` is
+        // missing, and `partial` is the load-bearing one (without it the workflow
+        // source generator can't emit the dispatcher → generator-time compile
+        // error). So add WHICHEVER is missing — not just `sealed`.
+
+        // Build canonical `[access] sealed … partial class`: insert `sealed` right
+        // after the first (access) modifier; append `partial` last (immediately
+        // before the `class` keyword). Each inserted token carries a trailing
+        // space so the rendered text stays well-formed.
+        var list = node.Modifiers.ToList();
+        if (needsSealed)
         {
-            newModifiers = SyntaxFactory.TokenList(sealedToken);
+            var sealedToken = SyntaxFactory.Token(SyntaxKind.SealedKeyword)
+                .WithTrailingTrivia(SyntaxFactory.Space);
+            // Insert after the first modifier; if there are none, prepend.
+            list.Insert(list.Count == 0 ? 0 : 1, sealedToken);
         }
-        else
+        if (needsPartial)
         {
-            // Insert after the first modifier (preserves "public sealed partial class X").
-            // Note: when `node.Modifiers.Count == 1` (e.g. just `public`), index 1
-            // equals the list's Count, and List<T>.Insert(Count, x) appends — which
-            // is exactly what we want: `public` → `public sealed`.
-            var list = node.Modifiers.ToList();
-            list.Insert(1, sealedToken);
-            newModifiers = SyntaxFactory.TokenList(list);
+            var partialToken = SyntaxFactory.Token(SyntaxKind.PartialKeyword)
+                .WithTrailingTrivia(SyntaxFactory.Space);
+            list.Add(partialToken); // last modifier, right before `class`
         }
 
-        return node.WithModifiers(newModifiers);
-    }
-
-    /// <summary>
-    /// Attach a leading-trivia comment to the class declaration explaining why
-    /// the rewriter skipped it. Returns the node unchanged otherwise — the
-    /// caller's `MafAutoFix` flow will record "no change" for this file, which
-    /// is the right answer: we'd rather emit nothing than emit garbage.
-    ///
-    /// Idempotent — dedup by scanning the class's source text for the same
-    /// comment. Roslyn re-parses can shift trivia between adjacent tokens,
-    /// so source-text inspection is more reliable than checking just the
-    /// node's immediate leading-trivia list.
-    /// </summary>
-    private static SyntaxNode AddSkipWarning(ClassDeclarationSyntax node, string comment)
-    {
-        if (node.ToFullString().Contains(comment, StringComparison.Ordinal))
-        {
-            return node;
-        }
-        return node.WithLeadingTrivia(
-            node.GetLeadingTrivia()
-                .Add(SyntaxFactory.Comment(comment))
-                .Add(SyntaxFactory.EndOfLine("\n")));
+        return node.WithModifiers(SyntaxFactory.TokenList(list));
     }
 
     private static bool IsExecutorWithMessageHandler(ClassDeclarationSyntax cls)
     {
+        // Shared predicate with the WF-001 scanner rule — matches plain `Executor`,
+        // generic `Executor<…>`, and qualified forms — so detector and rewriter stay
+        // in lockstep (no "flagged as fixable but silently not rewritten" parity gap).
         var derivesFromExecutor = cls.BaseList?.Types
-            .Select(t => t.Type.ToString())
-            .Any(b => b == "Executor" || b.EndsWith(".Executor", StringComparison.Ordinal)) ?? false;
+            .Any(t => AntiPatternScannerTool.IsExecutorBaseType(t.Type)) ?? false;
         if (!derivesFromExecutor) return false;
 
         return cls.Members.OfType<MethodDeclarationSyntax>().Any(m =>

@@ -328,7 +328,7 @@ public static class AgentScaffolder
     private static readonly Regex IdentifierRegex = new(
         @"^[A-Za-z][A-Za-z0-9_]*$",
         RegexOptions.Compiled | RegexOptions.NonBacktracking,
-        TimeSpan.FromMilliseconds(100));
+        TimeSpan.FromSeconds(2));
 
     private static bool IsValidIdentifier(string s) =>
         !string.IsNullOrWhiteSpace(s) && IdentifierRegex.IsMatch(s);

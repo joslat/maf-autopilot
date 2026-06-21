@@ -102,7 +102,7 @@ public static class VerifyRegistryCommand
     private static readonly Regex TodoAtLineStart = new(
         @"(?m)^\s*//\s*TODO\b",
         RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase,
-        TimeSpan.FromMilliseconds(100));
+        TimeSpan.FromSeconds(2));
 
     internal static bool IsRawDraft(RegistryEntry entry)
     {
@@ -153,7 +153,7 @@ public static class VerifyRegistryCommand
     private static readonly Regex HtmlCommentRegex = new(
         @"<!--[\s\S]*?-->",
         RegexOptions.Compiled | RegexOptions.NonBacktracking,
-        TimeSpan.FromMilliseconds(100));
+        TimeSpan.FromSeconds(2));
 
     private static bool LooksLikePlaceholderOrStartsWith(string? s, string prefix)
     {

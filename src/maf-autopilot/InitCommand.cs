@@ -107,20 +107,25 @@ internal static class InitCommand
 
     internal static async Task WriteMcpJsonAsync(string targetDir)
     {
-        // VS Code reads .vscode/mcp.json with a top-level "servers" object.
+        // VS Code reads .vscode/mcp.json with a top-level "servers" object and
+        // expects an explicit "type": "stdio" on each entry.
         await WriteMcpServerEntryAsync(
             Path.Combine(targetDir, ".vscode", "mcp.json"),
             serversKey: "servers",
-            label: ".vscode/mcp.json (VS Code / Copilot)");
+            label: ".vscode/mcp.json (VS Code / Copilot)",
+            includeType: true);
     }
 
     internal static async Task WriteClaudeMcpJsonAsync(string targetDir)
     {
-        // Claude Code reads .mcp.json at the repo root with a top-level "mcpServers" object.
+        // Claude Code reads .mcp.json at the repo root with a top-level "mcpServers"
+        // object. Its entries are {command, args, env} — stdio is the implied default,
+        // so we OMIT the "type" field (older Claude Code builds don't recognize it).
         await WriteMcpServerEntryAsync(
             Path.Combine(targetDir, ".mcp.json"),
             serversKey: "mcpServers",
-            label: ".mcp.json (Claude Code)");
+            label: ".mcp.json (Claude Code)",
+            includeType: false);
     }
 
     /// <summary>
@@ -130,7 +135,7 @@ internal static class InitCommand
     /// .vscode/mcp.json, "mcpServers" for Claude Code's .mcp.json. Recognizes the legacy
     /// "maf-autopilot" server key so re-running init on a pre-rename repo never duplicates.
     /// </summary>
-    private static async Task WriteMcpServerEntryAsync(string mcpJsonPath, string serversKey, string label)
+    private static async Task WriteMcpServerEntryAsync(string mcpJsonPath, string serversKey, string label, bool includeType)
     {
         var dir = Path.GetDirectoryName(mcpJsonPath);
         if (!string.IsNullOrEmpty(dir))
@@ -193,13 +198,13 @@ internal static class InitCommand
         }
 
         // Add the global-tool entry (assumes `dotnet tool install -g maf-doctor`).
-        servers["maf-doctor"] = new JsonObject
-        {
-            ["type"] = "stdio",
-            ["command"] = "maf-doctor",
-            ["args"] = new JsonArray(),
-            ["env"] = new JsonObject()
-        };
+        // VS Code wants an explicit "type": "stdio"; Claude Code's .mcp.json omits it.
+        var entry = new JsonObject();
+        if (includeType) entry["type"] = "stdio";
+        entry["command"] = "maf-doctor";
+        entry["args"] = new JsonArray();
+        entry["env"] = new JsonObject();
+        servers["maf-doctor"] = entry;
 
         var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(mcpJsonPath, json + Environment.NewLine);
