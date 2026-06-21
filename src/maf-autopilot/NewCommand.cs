@@ -1,10 +1,10 @@
-using MafAutopilot.Scaffolding;
-using MafAutopilot.Tools;
+using MafDoctor.Scaffolding;
+using MafDoctor.Tools;
 
-namespace MafAutopilot;
+namespace MafDoctor;
 
 /// <summary>
-/// CLI subcommand: <c>maf-autopilot new agent &lt;Name&gt;</c> or <c>new executor &lt;Name&gt;</c>.
+/// CLI subcommand: <c>maf-doctor new agent &lt;Name&gt;</c> or <c>new executor &lt;Name&gt;</c>.
 /// Operates against the current working directory by default; pass <c>--path &lt;dir&gt;</c>
 /// to target a different project.
 /// </summary>
@@ -23,7 +23,7 @@ internal static class NewCommand
         var name = args[2];
         var path = ExtractFlag(args, "--path") ?? Directory.GetCurrentDirectory();
 
-        Console.WriteLine($"maf-autopilot new {kind} {name}");
+        Console.WriteLine($"maf-doctor new {kind} {name}");
         Console.WriteLine($"  Target: {path}");
         Console.WriteLine();
 
@@ -81,14 +81,14 @@ internal static class NewCommand
         Console.WriteLine("Next steps:");
         Console.WriteLine();
         Console.WriteLine("  0. If your project doesn't reference MAF yet, add the packages:");
-        Console.WriteLine("       dotnet add package Microsoft.Agents.AI --version 1.3.0");
+        Console.WriteLine("       dotnet add package Microsoft.Agents.AI");
         Console.WriteLine("       dotnet add package Microsoft.Extensions.AI --version 10.5.*");
         Console.WriteLine("       dotnet add package Azure.AI.OpenAI");
         Console.WriteLine("       dotnet add package Azure.Identity");
         Console.WriteLine();
         Console.WriteLine("  1. Wire DI: register IChatClient and your new agent in Program.cs.");
         Console.WriteLine("  2. dotnet build && dotnet test");
-        Console.WriteLine("  3. Optional: run `maf-autopilot doctor .` to confirm anti-pattern-clean.");
+        Console.WriteLine("  3. Optional: run `maf-doctor doctor .` to confirm anti-pattern-clean.");
     }
 
     private static void PrintNextStepsForExecutor()
@@ -97,12 +97,12 @@ internal static class NewCommand
         Console.WriteLine("Next steps:");
         Console.WriteLine();
         Console.WriteLine("  0. If your project doesn't reference MAF Workflows yet, add the packages:");
-        Console.WriteLine("       dotnet add package Microsoft.Agents.AI.Workflows --version 1.3.0");
-        Console.WriteLine("       dotnet add package Microsoft.Agents.AI.Workflows.Generators --version 1.3.0");
+        Console.WriteLine("       dotnet add package Microsoft.Agents.AI.Workflows");
+        Console.WriteLine("       dotnet add package Microsoft.Agents.AI.Workflows.Generators");
         Console.WriteLine();
         Console.WriteLine("  1. Wire into your workflow's AddFanOutEdge / AddFanInBarrierEdge calls.");
         Console.WriteLine("  2. dotnet build && dotnet test");
-        Console.WriteLine("  3. Optional: run `maf-autopilot doctor .` to confirm fan-out-safe.");
+        Console.WriteLine("  3. Optional: run `maf-doctor doctor .` to confirm fan-out-safe.");
     }
 
     private static void WriteFiles(string baseDir, IReadOnlyList<AgentScaffolder.ScaffoldedFile> files)
@@ -133,12 +133,12 @@ internal static class NewCommand
 
     private static string Usage() => """
         Usage:
-          maf-autopilot new agent <Name> [--path <dir>] [--instructions "<prompt>"]
-          maf-autopilot new executor <Name> [--path <dir>] [--input <type>] [--output <type>]
+          maf-doctor new agent <Name> [--path <dir>] [--instructions "<prompt>"]
+          maf-doctor new executor <Name> [--path <dir>] [--input <type>] [--output <type>]
 
         Examples:
-          maf-autopilot new agent ChatBot
-          maf-autopilot new executor FraudReviewer --input FraudCheck --output FraudReport
+          maf-doctor new agent ChatBot
+          maf-doctor new executor FraudReviewer --input FraudCheck --output FraudReport
         """;
 
     private static string? ExtractFlag(string[] args, string flag)

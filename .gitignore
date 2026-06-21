@@ -24,6 +24,9 @@ coverage/                # coverage reports
 # .claude/settings.local.json is per-developer overrides — never commit.
 .claude/settings.local.json
 .claude/cache/
+# Harness-managed state (scheduled wakeups, locks). Local-only.
+.claude/*.lock
+.claude/scheduled_tasks/
 
 # --- Python (CI helpers in .github/scripts/) ---
 __pycache__/

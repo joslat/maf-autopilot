@@ -9,7 +9,322 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Docs
+- README now leads with a **"New in 1.3.0"** highlight (Tiers 1–3 + the compile-verified auto-fixer).
+- Quickstart: added an **"explain a finding"** (`MafExplainFinding`) snippet for discoverability, and corrected the numbers — the sample reports **7** anti-pattern errors (was "ten"), and deterministic `autofix-all` takes it **F (7 → 4 errors)**, not "F → A" (Grade A is the `@maf-migration` agent phase, not the deterministic fixer).
+
+## [1.3.0] - 2026-06-18
+
+Doctor-suggestions overhaul — three tiers that turn each finding from a terse label into something a developer can act on in one read. Each tier shipped after two adversarial multi-agent review passes.
+
+### Added
+
+- **Richer, actionable suggestions (Tier 1).** Every finding now carries a one-line **Why** (the concrete failure mode) and surfaces its **Fix** + an "auto-fixable / needs your judgment" tag + a "N of M auto-fixable → `autofix-all`" hint directly in the human markdown report (previously the fix string was JSON-only). The report shows the **offending source line** for each finding, with content-aware secret redaction (a line matching the hard-coded-key pattern is never echoed). `doctor --all` now **groups findings by rule** (rule-generic header, ×N, severity emoji, ordered by impact). New CLI `--json` flag (JSON was MCP-only). The JSON finding gains an additive `why` field (schema_version stays `"1"`).
+- **`MafExplainFinding` tool + `maf-explain-finding` prompt (Tier 2).** Deep-dive a single finding: given its `file:line` (as printed by the report), the tool returns the offending code in context plus the rule's why / fix / auto-fixability and grounding pointers — the substrate a host model (Copilot / Claude / Cursor) uses to explain and propose the fix without spending our own LLM budget. The prompt drives that flow grounded in `maf://constraints` + `maf://guide`.
+- **`doctor --plan` / `MafDoctor(format: "plan")` (Tier 3).** Turns the findings into an ordered, checkboxed **remediation plan** for a GitHub issue: Phase 1 batches every auto-fixable finding into one `autofix-all` step; Phase 2 lists the semantic fixes as impact-ordered `- [ ]` tasks (why / fix / file:line, tagged `@maf-migration`). Covers every finding regardless of `--all`; emits no source snippets, so it never echoes a secret.
+- **NuGet README explains the install.** A dedicated package README spells out that **`init` is non-destructive — it attaches and updates only, never overwriting your files** (adds its own MCP server entry + regenerates self-contained steering sidecars), lists what you get (MCP server / CLI / plugin / analyzers), and highlights recent features. The same non-destructive framing was added to the main README's Quick Start.
+
+### Fixed
+
+- **NuGet package page no longer shows raw HTML.** The shared README's centered hero (`<p align="center">…<br/><em>…</em></p>`) rendered as literal HTML text on nuget.org (its renderer escapes HTML it doesn't fully support). Both packages now ship a pure-markdown `NUGET_README.md` as their `PackageReadmeFile`; the GitHub README keeps its centered hero.
+- **Fan-out findings report the signature line**, not the `[MessageHandler]` attribute line above it — so the offending return type lands on the reported line and in the snippet.
+- **`MafDoctor` markdown report no longer dead-ends.** The "Want more" footer advertised MCP-only tool calls to CLI users; it now lists surface-neutral commands (`--all` / `--json` / `--plan` for the CLI, `full:`/`format:` for MCP) and points at `MafExplainFinding`.
+
+## [1.2.11] - 2026-06-18
+
+### Added
+
+- **`doctor --all` / `--full` lists every finding.** The health report ranks all findings by impact but only printed the top 3, with the rest invisible. The new flag prints every finding (anti-pattern, fan-out, prompt-lint, cost) — one line each, ordered by impact — so you can see the full backlog in one pass. Default output is unchanged (top 3) and now ends with a "…and N more. Run with `--all`" hint when findings are hidden. The MCP `MafDoctor` tool gains a matching `full` parameter (`MafDoctor(full: true)`), and the JSON format includes the full `findings` array when `--all` is set.
+
+## [1.2.10] - 2026-06-18
+
+### Fixed
+
+- **Flaky-test class hardened.** Every NonBacktracking regex carried a 100ms `MatchTimeout` that intermittently tripped on the engine's one-time DFA-build cost under CI load (`RegexMatchTimeoutException` — surfaced as `LlmFencingTests.Fence_StripsHtmlComments_Multiple`). Raised to **2s** across all ~17 sites. NonBacktracking is linear and inputs are length-bounded, so the timeout is only a cold-start backstop, not the primary ReDoS defense — raising it doesn't weaken safety.
+- **Demo sample builds again.** `samples/maf-1.3-sample` pinned `maf-doctor.Analyzers` at `1.3.0-alpha-1` (never published — the rename left a dead version pin), so `dotnet restore` failed. Repinned to `1.2.9`.
+
+### Added
+
+- **README hero cast.** Added the truthful `install-cast` GIF (install → `maf-doctor doctor .` → grade F + the top fixes) below the intro, via absolute raw URL so it renders on GitHub and nuget.org.
+
+## [1.2.9] - 2026-06-16
+
+### Changed (branding)
+
+- **README logo → white-background `MAFDoctorLogo.png`.** The transparent logo's dark artwork disappeared on dark backgrounds (GitHub dark theme); the white-background version renders consistently everywhere. Republished so the nuget.org package page (README is baked per-version) gets the fix too.
+
+## [1.2.8] - 2026-06-16
+
+### Added (branding)
+
+- **README now leads with the MAF Doctor logo** (`assets/MAFDoctorLogoTransparent.png`, referenced by absolute raw URL so it renders on both GitHub and the nuget.org package page).
+- **Both NuGet packages ship a package icon** (`MAFDoctorIcon.png`) — `maf-doctor` and `maf-doctor.Analyzers` now show the brand icon on nuget.org.
+- **The MCP server advertises its icon** via the 2025-11 spec's `icons` field on `serverInfo` (`Implementation.Icons`, supported by ModelContextProtocol 1.3.0) — clients that support server icons can render it; older clients ignore it.
+
+## [1.2.7] - 2026-06-16
+
+### Added
+
+- **`maf-doctor --version` / `-v` and `--help` / `-h`.** The CLI had no version or help command, so any non-subcommand argument fell through to MCP-server mode — meaning `maf-doctor --version` (which the quickstart told users to run) just hung on stdio. Both now print and exit cleanly.
+
+### Fixed
+
+- **Claude Code couldn't see the MCP server that `init` wired.** The `.mcp.json` (Claude Code) entry carried a `"type": "stdio"` field that some Claude Code builds don't recognize. Dropped `type` from the Claude entry — stdio is the implied default — while VS Code's `.vscode/mcp.json` keeps it. `init` now emits a `.mcp.json` Claude Code reads cleanly.
+- Added a project-root `.mcp.json` to **this** repo (it previously had only the VS-Code-format `.vscode/mcp.json`), so Claude Code picks up maf-doctor when developing the toolkit itself.
+
+## [1.2.6] - 2026-06-14
+
+### Fixed (stop pinning MAF 1.3.0 in served text)
+
+- **Removed hardcoded `MAF 1.3.0` version pins from the tool's user-facing output** — MCP prompt bodies, resource titles/descriptions, tool descriptions, and scaffolder comments said things like "Target MAF version: 1.3.0", "MAF 1.3.0 Hard Constraints", "scaffold MAF 1.3.0 boilerplate". Reworded to version-agnostic phrasing ("MAF", "the latest stable release") so they don't go stale as MAF ships. Audited all 19 served-source files (75 references); fixed 37 display/command pins, deliberately kept the ~38 that are historical facts ("removed in 1.3.0"), per-version data (the compatibility matrix's `1.3.0` row), registry version keys, or user-supplied version-argument examples (diff/migration-path tools).
+- **`maf-doctor new agent` no longer prints stale install commands.** `NewCommand` told users to run `dotnet add package Microsoft.Agents.AI --version 1.3.0` (and the Workflows/Generators packages) — pinning a years-old MAF. Dropped the `--version 1.3.0` so NuGet installs the latest stable.
+- All 749 + 15 tests pass across net8/9/10 (no behavior change — text only).
+
+## [1.2.5] - 2026-06-14
+
+### Changed (`init` steering layout — no longer merges into your own files)
+
+- **`init` now writes its steering as overwrite-on-reinit sidecars in each tool's auto-loaded convention location, instead of appending into your hand-authored files:**
+  - **Copilot** → `.github/instructions/maf-doctor.instructions.md` (with `applyTo: '**'` frontmatter). `init` no longer creates or touches `.github/copilot-instructions.md`.
+  - **Claude Code** → `.claude/maf-doctor.md`, imported via a single stable `@.claude/maf-doctor.md` line in `CLAUDE.md` (added once; the rest of your `CLAUDE.md` is never touched).
+  - **AGENTS.md** → a sentinel-delimited managed block (`<!-- BEGIN maf-doctor -->…<!-- END maf-doctor -->`) that is replaced in place; content outside the block is preserved.
+  - **Cursor** (`--with-cursor`) → `.cursor/rules/maf-doctor.mdc`.
+- **Why:** the previous append-into-existing behavior froze the guidance at first-init and (before 1.2.4) could stack duplicates. Sidecars are **overwritten on every `init`**, so re-running refreshes the guidance to the installed version, never duplicates, and never edits your own files. Added sidecar/managed-block tests (16 InitCommand tests green across net8/9/10).
+
+## [1.2.4] - 2026-06-14
+
+### Added
+
+- **`init` now wires the MCP server for Claude Code too.** It writes `.mcp.json` at the repo root (top-level `mcpServers`) alongside the existing `.vscode/mcp.json` (top-level `servers`) — so the `maf-doctor` tools are available natively in Claude Code, not just VS Code / Copilot. Same merge-not-overwrite + legacy-key-recognition + JSONC-safe behavior as the VS Code path. (CLAUDE.md / AGENTS.md steering were already written.)
+
+### Fixed
+
+- **Stale `maf-autopilot` text in the `init`-emitted steering snippets.** The embedded snippets dropped into a user's repo (CLAUDE.md, AGENTS.md, .github/copilot-instructions.md, .cursorrules) still told assistants to "defer to maf-autopilot's tools" / referenced the "maf-autopilot registry". Renamed the prose to maf-doctor (the MCP tool names like `MafDoctor` were already correct).
+- **Duplicate-append bug in `init`.** The merge idempotency marker (`## Using maf-doctor`) no longer matched the copilot snippet header after the rename, so re-running `init` appended a second steering section. Headers and markers are realigned, and the marker set now also covers the `.cursorrules` snippet. Added regression + Claude-path tests.
+
+## [1.2.3] - 2026-06-14
+
+### Changed (docs)
+
+- **Toned down inline-code density in the README.** NuGet.org styles inline `code` spans as red-on-pink, so the previous README (~50 inline-code spans) rendered as a wall of red on the package page (it looks fine on GitHub). Rewrote prose to use plain/bold text, keeping backticks only where monospace genuinely helps — the literal API transformations in "Why This Exists" and the one registry path a contributor edits (6 spans total). Fenced command blocks are unchanged.
+
+## [1.2.2] - 2026-06-14
+
+### Fixed (NuGet package metadata)
+
+- **Corrected the published package descriptions.** Both `maf-doctor` and `maf-doctor.Analyzers` still carried the pre-rename blurb on nuget.org ("MAF autopilot MCP server … MAF 1.3.0 migrations" / "Pairs with the maf-autopilot MCP server"). They now describe MAF Doctor accurately and version-agnostically.
+- **Removed the README "Naming" note.** It explained the rename/deprecation of a package that was never publicly announced — pointless noise for a new reader. The intro now states plainly that `maf-doctor` is a **.NET global tool installed from NuGet** (`dotnet tool install -g maf-doctor`), with `maf-doctor.Analyzers` as a separate analyzer package.
+
+## [1.2.1] - 2026-06-14
+
+**First release published under the `maf-doctor` package id** (and `maf-doctor.Analyzers`) — this is the version where the rename below actually reaches NuGet.
+
+### Changed (BREAKING — full rename to `maf-doctor`)
+
+- **The NuGet package + CLI are renamed `maf-autopilot` → `maf-doctor`** (and `maf-autopilot.Analyzers` → `maf-doctor.Analyzers`). The brand, repo, MCP server id, and C# namespace were already MAF Doctor; this completes the rename so the package/command match. Done pre-public-announcement, so the break is acceptable.
+  - **For users:** `dotnet tool uninstall -g maf-autopilot && dotnet tool install -g maf-doctor`; the command is now `maf-doctor …`. Re-run `maf-doctor init` (it recognizes a legacy `maf-autopilot` mcp.json server entry and won't duplicate). The Docker image runs `maf-doctor.dll`.
+  - The old `maf-autopilot` package (≤ 1.2.0) will be **deprecated on nuget.org** with a pointer to `maf-doctor`.
+  - The internal `src/maf-autopilot/` project folder + `.csproj`/`.sln` filenames are unchanged (invisible to users; avoids high-churn path rewrites).
+
+### Docs
+
+- **README leaned to the essentials** — removed the Project Structure tree, the Skill Orchestration catalog, and the dated distribution block; deduplicated the `dotnet-inspect` notes; trimmed the companion-MCP recommendation to **Microsoft Learn MCP** (we don't wire Context7/DeepWiki/Serena); added an **"It updates itself"** section explaining how and when the self-update watcher runs (Thursday 06:00 UTC; minors auto-commit, majors escalate); and dropped hardcoded version pins so the docs stop going stale as MAF ships.
+- Fixed stale tool/resource/prompt counts and the `maf-autopilot.Analyzers` id in `docs/architecture.md`, and a stale "current release `1.3.0-alpha-5`" claim in `docs/setup.md`. The unrendered demo-cast `<img>` tags were removed (the `.tape` sources + `scripts/make-cast` remain — re-add once rendered).
+
+## [1.2.0] - 2026-06-14
+
+### Added
+
+- **MAF 1.10.0 support** — 22 registry entries (obsolete/changed APIs), the compatibility-matrix row (`Microsoft.Extensions.AI >= 10.6.0`), and the `1.6.1 → 1.10.0` migration guide. Auto-detected by the now-fixed release watcher; migration content authored by the Copilot coding agent and verified by the registry gates. _(AI-authored migration guidance — review against the upstream `microsoft/agent-framework` changelog when convenient.)_
+
+### Fixed (self-update reliability)
+
+The scheduled **MAF Release Watcher** and **MAF Drift Detector** had failed on
+**every** scheduled run since creation, for two unrelated reasons:
+- **Watcher** — the NuGet version filter was an inline `python3 -c` whose code
+  inherited the shell block's indentation → `IndentationError` on every
+  scheduled run (only an explicit-version manual dispatch bypassed it). Extracted
+  to `.github/scripts/get_latest_stable.py` (+ unit tests).
+- **Drift detector** — `gh issue create --label maf-drift` hard-failed because
+  the `maf-drift` / `needs-review` labels never existed. The workflow now
+  self-provisions them idempotently (`gh label create --force`).
+- **Observability** — both workflows open/de-dupe a `maf-release`-labelled
+  tracking issue on failure (`if: failure()`), so a scheduled failure can no
+  longer go unnoticed for weeks.
+- **Engine** — major MAF bumps escalate to a review issue instead of
+  auto-committing to `main`; registry append is idempotent; the doctor gained an
+  opt-in `doctor … --exclude <substr>` so the drift grade reflects product code
+  (samples / test fixtures excluded); the two crons are staggered with
+  `concurrency:` guards; the watcher polls daily (was weekly). Plus a batch of
+  latent fixes across the AI-fill / verify / semantic-review chain and the
+  Python helpers (prerelease-safe guide gen, union guide-section validation,
+  placeholder gate, sticky verify comment, non-fatal bot-id resolution, …).
+- **CI** — `ci-invariants` gained a workflow-lint + helper-test gate
+  (actionlint + `compileall` + `pytest`) so this class of breakage is caught
+  pre-merge.
+
+### Changed (brand — MAF Doctor)
+
+- The MCP **server id** is now `maf-doctor` (the brand) in `.vscode/mcp.json`,
+  the README / setup / workshop config snippets, and what `maf-autopilot init`
+  writes into a user's `.vscode/mcp.json`. The **`command` stays `maf-autopilot`**
+  (the frozen global-tool binary), so existing entries keep launching and
+  `dotnet tool install --global maf-autopilot` is unchanged. `init` recognizes
+  both the new `maf-doctor` and the legacy `maf-autopilot` server keys, so
+  re-running it never creates a duplicate.
+- **Maintainer follow-ups (post-merge, not in this PR):** rename the GitHub repo
+  `joslat/maf-autopilot` → `joslat/maf-doctor` (GitHub auto-redirects old URLs),
+  then flip the remaining `joslat/maf-autopilot` URL / `RepositoryUrl` / SARIF /
+  OCI-label references to `joslat/maf-doctor` (deferred here to avoid a 404
+  window). The GHCR image path follows the repo rename automatically; **new tags
+  publish under `ghcr.io/joslat/maf-doctor`** — old `ghcr.io/joslat/maf-autopilot`
+  tags stay pullable. The NuGet package id and CLI command are deliberately
+  **not** renamed (immutable id; renaming would break every existing install).
+
+### Security (security hardening release — branch `security-hardening-v1.1`)
+
+Comprehensive hardening pass following a three-agent Opus security review.
+Each phase carried its own Opus full-phase review + fixup commit; the final
+comprehensive review returned **READY TO SHIP**. Anchored to the canonical
+MCP / LLM / GHA security canon documented in
+[`docs/security.md` "Canonical references"](docs/security.md#canonical-references).
+The full attack-surface map + closure list is in
+[`docs/security/threat-model.md`](docs/security/threat-model.md) §3–§5.
+
+#### Critical-severity closures (5)
+- **C1 — Path-escape via `AutoFix.specificFile`** — added `PathGuard.ValidateContainment`
+  (canonicalize + jail + reparse-point reject at both leaf AND parent-chain).
+  An LLM-supplied `specificFile = "C:\\Users\\victim\\..."` is now rejected
+  with a non-leaky error message.
+- **C2 — `MafRunCs0618Hunt` annotation drift** — was `[ReadOnly=true]` despite
+  spawning `dotnet build` (executes MSBuild targets, source generators,
+  NuGet post-install). Now `[ReadOnly=false, OpenWorld=true]`; MCP-spec-
+  compliant clients prompt for consent before auto-invoke.
+- **C3 — Code injection via `AgentScaffolder.projectNamespace`** — added
+  `IsValidNamespace` (Roslyn `ParseName` + roundtrip equality) mirroring the
+  existing `IsValidTypeExpression` defense applied to `inputType`/`outputType`.
+- **C4 — Supply-chain prompt injection via upstream MAF release notes** —
+  `gen_guide_section.py` now fences both `release-notes.txt` AND `diff-core.txt`
+  via new shared `LlmFencing` helpers (HTML-comment strip + UTF-8 byte cap +
+  random-sentinel BEGIN/END markers with "treat as data" framing). Same
+  fence applied at every downstream hop (`build_ai_fill_issue_body.py`,
+  `ai_review_build_prompt.py`, `RegistryExtractCommand.notes:` embed).
+- **C5 — Workflow `${{ inputs.* }}` injection** — every `workflow_dispatch`
+  workflow that accepts inputs gained a `validate-inputs` job (semver-regex /
+  enum-check, `permissions: {}`); every `run:` block migrated to `env:`
+  redirect pattern. CI invariant blocks regressions on `inputs.*`,
+  `needs.*.outputs.*`, and `steps.*.outputs.*`.
+
+#### High-severity closures (~11)
+- **LLM-to-LLM prompt smuggling via `MafDraftIssue`** — every user-controlled
+  field (symptom, expected, actual, snippet) wrapped in `LlmFencing.Fence`
+  + `NeutralizeFences` + `StripHtmlComments` (snippet sits in a `csharp`
+  code-block so triple-backtick neutralization is required).
+- **`MafPrompts.Debug.errorOrSymptom`** — replaced single-line `>` blockquote
+  bypass with full `LlmFencing.Fence` + `BoundedInput.Validate`.
+- **`MafNewAgent` / `MafNewExecutor` annotation drift** — both `[Destructive=true]`
+  now (they write new `.cs` files to the project tree).
+- **`MafDiffPackage` / `MafPreUpgradeDryRun` annotation drift** — both
+  `[OpenWorld=true]` now (they reach `api.nuget.org`).
+- **`VerifyRegistryCommand` `pre-X.Y.Z` + `IsRawDraft` bypass** — pre-1.0 +
+  raw-draft branches now run `CheckContentSafety` instead of skipping all
+  checks. `IsRawDraft` tightened to require `// TODO` at line-start regex
+  (substring-anywhere allowed `// TODO` inside string literals to re-qualify).
+- **`SourceFileWalker` symlink-follow + `MakeRelative` info leak** —
+  `EnumerationOptions.AttributesToSkip = ReparsePoint | Hidden | System`;
+  `MakeRelative` throws on out-of-root instead of leaking the absolute path.
+- **`MAF_REGISTRY_PATH` unguarded** — `ValidateOverridePath` rejects shell
+  metachars + NUL/CR/LF + reparse-points; optional `MAF_REGISTRY_PATH_ROOTS`
+  env-var allowlist.
+- **`RegistryExtractCommand` persistence injection** — `notes:` field
+  attacker-controllable via `dotnet-inspect diff` output is now fenced
+  (8 KB cap because the value persists forever in `registry.yaml`).
+- **`ai_review_build_prompt.py` PR-registry injection** — each changed
+  registry entry now fenced before embedding in the GPT-4o review prompt.
+- **`ExecutorSealedRewriter` produces uncompilable `abstract sealed class`** —
+  abstract / static Executors are left UNCHANGED (parity with the WF-001 scanner,
+  which skips abstract Executors), so `MafAutoFix` / `MafBeforeAfter` honestly
+  report "no change" instead of dirtying a scanner-clean file with an advisory
+  comment.
+- **`SyncOverAsyncRewriter` produces uncompilable `await`** — lock-block /
+  non-async-method / accessor / non-async-lambda guards. Same idempotence pattern.
+
+#### G-tier gaps closed (added during the audit)
+- **`.github/CODEOWNERS`** — `@joslat` required on security-critical paths
+  (`src/maf-autopilot/Tools/`, `Scaffolding/`, `Commands/`, `Prompts/`,
+  `Resources/`, `Data/`, `Analyzers/`, `.github/workflows/`, `.github/scripts/`,
+  `docs/security*`, `private/`, root metadata like `Dockerfile` and
+  `Directory.Build.props`).
+- **Root `SECURITY.md`** — GitHub Security tab entry point; 72-hour
+  acknowledgement + patch-release SLA + scope + recognition policy.
+- **`.github/workflows/mcp-scanner.yml`** — Cisco mcp-scanner runs on every
+  PR against `main` touching `src/maf-autopilot/**`, plus weekly Monday cron.
+  Sticky PR comment with results. Advisory for the first 5 consecutive
+  clean runs, then promote to hard-fail.
+- **`maf-pr-audit.yml` compiler-bomb cap** — skip Roslyn-heavy audit when
+  PR changes > 200 `.cs` files OR > 5 MB aggregate; `git diff -z` +
+  `xargs -0` + `stat -c %s --` for filename-safety.
+
+#### Defense-in-depth additions
+- **`BoundedInput.Validate`** — single helper, UTF-8 byte count, six named
+  cap classes (`PathBytes` / `IdentifierBytes` / `ShortTextBytes` /
+  `SnippetBytes` / `InstructionsBytes` / `AggregateBytes`). Applied across
+  every MCP tool's user-controlled string parameter.
+- **`LlmFencing.Fence` + `LlmFencing.StripHtmlComments` (C# + Python parity)** —
+  the reusable primitive for "user content destined for another LLM."
+- **Annotation reflection tests (`McpToolAnnotationTests`)** — locks the
+  `[McpServerTool]` contract for every tool whose annotation gates MCP-client
+  auto-invocation behavior.
+- **Rewriter idempotence property tests (`RewriterIdempotenceTests`)** —
+  pass-1 must equal pass-2 for every rewriter; catches a regression class
+  that would otherwise only surface in production.
+- **`SensitiveDataAnalyzer` dictionary-form parity** — MAF003 now catches
+  `["EnableSensitiveData"] = true` in addition to the bare-identifier and
+  member-access forms; rewriter extended to remove the standalone statement
+  shapes too.
+- **Regex hygiene** — every `new Regex(` in `src/maf-autopilot/` carries
+  `NonBacktracking + MatchTimeout = 100ms` (and the CI invariant now
+  catches the target-typed `Regex X = new(...)` form too).
+- **SHA-pinning** — 9 third-party actions across 23 call sites pinned to
+  full SHAs with a trailing-comment specific tag; Dependabot's
+  `github-actions` ecosystem updates both in lockstep.
+
+#### CI invariants (`.github/workflows/ci-invariants.yml`)
+Five hard-fail jobs that lock the invariants going forward:
+1. `Process.Start` allowlist + unsafe `Arguments` string property block.
+2. Regex hygiene (`NonBacktracking + MatchTimeout` required on every `new Regex(`).
+3. `EnumerationOptions` on recursive `Directory.EnumerateFiles` walkers.
+4. `${{ inputs.* | needs.*.outputs.* | steps.*.outputs.* }}` blocked inside `run:` blocks.
+5. Explicit `permissions:` block on every workflow.
+
+#### Documentation
+- `docs/security.md` — six new "Known MCP attack classes" subsections with
+  canonical-source citations + a new "Canonical references" section
+  enumerating 13 sources (MCP spec, OWASP LLM / MCP / Agentic Top 10s,
+  MITRE ATLAS, Cisco MCP scanner, Invariant Labs, Snyk, Keysight, GitHub
+  Actions secure-use, NIST SP 800-218A, CSA mcpserver-audit).
+- `docs/security/threat-model.md` — §3 expanded with 5 new attack-surface
+  subsections (code injection via namespace, LLM-to-LLM smuggling,
+  supply-chain PI via release notes, workflow input injection, third-party
+  action supply chain); §4 split into "carried over from 1.0" + 18-item
+  "Added in 1.1" list; §5 rewritten with 7 documented residual gaps each
+  carrying a v1.2.x tracking note.
+- `CONTRIBUTING.md` — new 7-item security rubric for MCP tool contributions
+  (PathGuard containment, BoundedInput length caps, annotation correctness,
+  ArgumentList discipline, LlmFencing on LLM-bound content, recursive walker
+  safety, regex hygiene). CI invariants enforce most items mechanically.
+
 ### Deferred (1.2.0+)
+- **`PullRequestAuditTool` inline `Process.Start`** → migrate to `ProcessRunner`
+  (bypasses the 16 MB output cap today; larger refactor than v1.1 scope).
+- **`ProcessRunner` streaming-cap-during-read + env scrubbing** (`MAF_FORWARD_ENV=*`
+  opt-out) — both risk breaking `dotnet build` for users with custom env setups.
+- **Semantic-model upgrade** for `DefaultAzureCredentialRewriter` /
+  `FanInArgOrderRewriter` — pure-syntax matching can silently rewrite unrelated
+  user types with name collisions. Bounded today by `--dry-run` default
+  + idempotence tests.
+- **Roslyn-analyzer NuGet signing posture** — undocumented today.
+- **Commit-signing requirement** — maintainer choice.
 - Full Roslyn data-flow `MafScanPromptInjection` (PROMPT-004 covers the syntactic case today).
 - MCP sampling tools (`maf_full_audit`, `maf_migration_suggest`, `maf_open_feedback_issue`) — depend on host sampling support.
 - GitHub App `@maf-bot` for org-wide PR comments — separate multi-day project.

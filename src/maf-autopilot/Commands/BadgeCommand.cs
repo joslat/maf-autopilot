@@ -1,11 +1,11 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using MafAutopilot.Tools;
+using MafDoctor.Tools;
 
-namespace MafAutopilot.Commands;
+namespace MafDoctor.Commands;
 
 /// <summary>
-/// Phase W.13 — `maf-autopilot badge &lt;repoPath&gt;` subcommand.
+/// Phase W.13 — `maf-doctor badge &lt;repoPath&gt;` subcommand.
 ///
 /// Runs <see cref="DoctorTool.MafDoctor"/>, extracts the grade, and emits
 /// a JSON document conforming to the

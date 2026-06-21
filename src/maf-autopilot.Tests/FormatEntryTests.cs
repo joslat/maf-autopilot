@@ -1,7 +1,7 @@
-using MafAutopilot.Data;
+using MafDoctor.Data;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Pinpoint tests for <see cref="RegistryService.FormatEntry"/> — the markdown formatter
@@ -71,5 +71,71 @@ public class FormatEntryTests
                 : "**No** — compiler only";
             Assert.Contains(expected, formatted, StringComparison.Ordinal);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 2.9 — triple-backtick neutralization in example_before / example_after.
+    //
+    // Without this, an attacker-controlled example containing ```yaml ... ```
+    // would close the enclosing ```csharp fence and render the attacker's
+    // content as live markdown / executable instructions in the LLM context.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void FormatEntry_TripleBacktickInExampleBefore_NeutralizedFence()
+    {
+        var entry = new RegistryEntry
+        {
+            Id = "TEST-001",
+            FixDescription = "A real fix description over twenty chars long.",
+            ExampleBefore = "var x = 1;\n```yaml\nevil: true\n```\nvar y = 2;",
+            ExampleAfter = "var x = 3;",
+        };
+        var formatted = RegistryService.FormatEntry(entry);
+
+        // The triple-backtick must NOT appear as three consecutive backticks
+        // inside the body section (it would close the enclosing ```csharp).
+        // The only legitimate triple-backticks are the fence-open and -close
+        // around the example block; there should be exactly TWO such fences
+        // (one for Before, one for After).
+        int tripleCount = 0;
+        int idx = 0;
+        while ((idx = formatted.IndexOf("```", idx, StringComparison.Ordinal)) >= 0)
+        {
+            tripleCount++;
+            idx += 3;
+        }
+        // Before + After examples each have an open/close fence = 4 triples
+        // total. (We don't generate any other code fences in FormatEntry.)
+        Assert.Equal(4, tripleCount);
+    }
+
+    [Fact]
+    public void FormatEntry_NeutralizedFence_StillReadableToHumans()
+    {
+        // The zero-width space inside ``​`` is invisible. A human copying the
+        // example out gets effectively the same characters; only the markdown
+        // parser is fooled into not breaking the fence.
+        var entry = new RegistryEntry
+        {
+            Id = "TEST-002",
+            FixDescription = "A real fix description over twenty chars long.",
+            ExampleBefore = "var x = 1;",
+            ExampleAfter = "var x = 2;\n```\nevil\n```\nvar y = 3;",
+        };
+        var formatted = RegistryService.FormatEntry(entry);
+
+        // The "evil" content is still present (we're sanitizing the fence
+        // delimiter, not removing the content).
+        Assert.Contains("evil", formatted);
+        // But the fence is broken — there's a zero-width space between backticks.
+        Assert.Contains("`​`​`", formatted);
+    }
+
+    [Fact]
+    public void NeutralizeFences_NoTripleBacktick_LeavesUnchanged()
+    {
+        const string clean = "var x = 1; var y = 2;";
+        Assert.Equal(clean, RegistryService.NeutralizeFences(clean));
     }
 }

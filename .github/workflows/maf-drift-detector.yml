@@ -7,46 +7,78 @@ name: MAF Drift Detector
 
 on:
   schedule:
-    - cron: '0 9 * * 1'   # Every Monday 09:00 UTC
+    - cron: '0 11 * * 1'  # Monday 11:00 UTC — 2h after the watcher (task 3.3) so the doctor grades a settled main
   workflow_dispatch:        # Manual trigger anytime
 
 permissions:
   contents: read
   issues: write             # Required to open / update the drift issue
 
+# Phase 3.3 — prevent self-overlap (staggered 2h after the watcher above).
+concurrency:
+  group: maf-self-update-drift
+  cancel-in-progress: false
+
 jobs:
   doctor:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
         with:
           # Net8 LTS — install-only; nupkg multi-targets so any flavor works.
           dotnet-version: '8.0.x'
 
       - name: Install maf-autopilot (prerelease)
-        run: dotnet tool install --global maf-autopilot --prerelease || dotnet tool update --global maf-autopilot --prerelease
+        run: dotnet tool install --global maf-doctor --prerelease || dotnet tool update --global maf-doctor --prerelease
 
       - name: Run MafDoctor against repo
         id: doctor
         run: |
-          REPORT=$(maf-autopilot doctor "$GITHUB_WORKSPACE")
+          set -o pipefail
+          # Scan PRODUCT code only — exclude samples/ and test fixtures, which
+          # ship intentional anti-pattern bait that would otherwise force grade
+          # F regardless of real health. `--exclude` is honored by maf-autopilot
+          # builds carrying task 3.1; older published builds ignore the extra
+          # args (forward-compatible).
+          REPORT=$(maf-doctor doctor "$GITHUB_WORKSPACE" \
+            --exclude samples/ --exclude .Tests/ --exclude find-the-bug/)
           echo "$REPORT" > maf-doctor-report.md
-          # Extract grade (first line contains the bold letter).
-          GRADE=$(echo "$REPORT" | grep -oP 'health grade: \*\*\K[A-F]' | head -1)
-          echo "grade=$GRADE" >> $GITHUB_OUTPUT
+          # Extract grade (first line: "## <emoji> MAF health grade: **X**").
+          # Tolerate a grep miss with `|| true` — otherwise a future reword of
+          # the doctor headline yields an empty grade, which is != 'A' and would
+          # file a blank-grade issue. Empty -> UNKNOWN, which the issue gate skips.
+          GRADE=$(echo "$REPORT" | grep -oP 'health grade: \*\*\K[A-F]' | head -1 || true)
+          if [ -z "$GRADE" ]; then
+            echo "::warning::Could not parse health grade from doctor output — treating as UNKNOWN."
+            GRADE="UNKNOWN"
+          fi
+          echo "grade=$GRADE" >> "$GITHUB_OUTPUT"
           echo "Detected MAF health grade: $GRADE"
 
       - name: Upload report as artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: maf-doctor-report
           path: maf-doctor-report.md
 
+      - name: Ensure drift labels exist
+        if: steps.doctor.outputs.grade != 'A' && steps.doctor.outputs.grade != 'UNKNOWN'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # `gh issue create --label X` hard-fails ("could not add label: 'X'
+          # not found") when the label is absent — this is exactly why every
+          # scheduled drift run failed. Self-provision the labels idempotently
+          # (`--force` upserts) so the workflow never depends on a human having
+          # created them. Runs under GITHUB_TOKEN (issues: write).
+          gh label create "maf-drift"    --color B60205 --description "MafDoctor grade dropped below A" --force || true
+          gh label create "needs-review" --color FBCA04 --description "Awaiting maintainer triage"        --force || true
+
       - name: Open or update drift issue (if grade != A)
-        if: steps.doctor.outputs.grade != 'A'
+        if: steps.doctor.outputs.grade != 'A' && steps.doctor.outputs.grade != 'UNKNOWN'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GRADE: ${{ steps.doctor.outputs.grade }}
@@ -80,4 +112,33 @@ jobs:
             gh issue close "$EXISTING" --comment "✅ Drift resolved — MafDoctor returns grade A on $(date -u +%Y-%m-%d). Closing automatically."
           else
             echo "✅ Grade A — no open drift issue to close."
+          fi
+
+  # Phase 2.2 — same failure-notification pattern as the watcher. Opens/de-dupes
+  # a maf-release-labelled tracking issue if the drift detector itself fails.
+  notify-on-failure:
+    needs: [doctor]
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update a failure tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WORKFLOW: ${{ github.workflow }}
+        run: |
+          gh label create maf-release --color 0E8A16 \
+            --description "Auto-generated by maf-release-watcher / fill workflows" --force || true
+          TITLE="🔴 Self-update workflow failed: ${WORKFLOW}"
+          NUM=$(gh issue list --label maf-release --state open --json number,title \
+            --jq ".[] | select(.title == \"${TITLE}\") | .number" | head -1)
+          if [ -n "$NUM" ]; then
+            gh issue comment "$NUM" --body "Failed again: ${RUN_URL}"
+            echo "Commented on existing failure issue #${NUM}"
+          else
+            gh issue create --title "${TITLE}" --label maf-release \
+              --body "The scheduled **${WORKFLOW}** workflow failed. Most recent failed run: ${RUN_URL}. Updated (not duplicated) on subsequent failures; close once fixed."
+            echo "Opened new failure issue"
           fi

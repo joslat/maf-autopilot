@@ -1,7 +1,7 @@
 using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 
-namespace MafAutopilot.Data;
+namespace MafDoctor.Data;
 
 /// <summary>
 /// Root of the MAF obsolete-API registry YAML document.

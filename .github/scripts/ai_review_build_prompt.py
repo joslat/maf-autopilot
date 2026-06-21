@@ -26,6 +26,15 @@ from typing import Any
 
 import yaml
 
+# Phase 2.7 — fence PR-controlled registry entries before embedding in the
+# model prompt. A malicious PR contributor can put prompt-injection payloads
+# in `notes:` / `example_before` / `example_after` fields; without fencing
+# those flow verbatim into the AI semantic-review model prompt. Today's
+# COMMENT_ONLY_MODE makes this advisory, but locking the fence in BEFORE a
+# future rung-3 (hard-gate) promotion eliminates the lane proactively.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from llm_fencing import fence  # noqa: E402
+
 REGISTRY_PATH = ".github/skills/maf-obsolete-api-registry/registry.yaml"
 ENTRIES_OUT = Path(".ai-review-entries.json")
 
@@ -121,9 +130,14 @@ def main() -> int:
 
     parts = [SYSTEM_INSTRUCTIONS, "", "---", "", "Here are the entries to review:", ""]
     for e in entries:
-        parts.append("```yaml")
-        parts.append(yaml.safe_dump(e, sort_keys=False, allow_unicode=True).rstrip())
-        parts.append("```")
+        # Phase 2.7 — fence each entry. The fence carries explicit "treat as
+        # data" framing so the reviewing model knows the YAML is candidate
+        # content, not its own instructions. 16 KB cap per entry is generous
+        # (real entries are ~1-2 KB) but bounded enough that 50 hostile
+        # entries can't flood the context window.
+        entry_id = e.get("id", "unknown-entry")
+        yaml_dump = yaml.safe_dump(e, sort_keys=False, allow_unicode=True).rstrip()
+        parts.append(fence(f"registry-entry-{entry_id}", yaml_dump, max_bytes=16 * 1024))
         parts.append("")
 
     sys.stdout.buffer.write("\n".join(parts).encode("utf-8"))

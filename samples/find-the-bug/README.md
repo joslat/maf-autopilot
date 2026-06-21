@@ -22,7 +22,7 @@ Then run the toolkit. It finds all 3 in under a second.
 4. **Run the toolkit (10 s).**
 
    ```bash
-   maf-autopilot doctor samples/find-the-bug/
+   maf-doctor doctor samples/find-the-bug/
    ```
 
    Result: 3 errors + 2 silent-starvation risks, found in ~850 ms. The

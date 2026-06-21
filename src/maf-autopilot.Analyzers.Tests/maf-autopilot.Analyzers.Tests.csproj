@@ -4,7 +4,7 @@
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <RootNamespace>MafAutopilot.Analyzers.Tests</RootNamespace>
+    <RootNamespace>MafDoctor.Analyzers.Tests</RootNamespace>
     <!-- NU1701: Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit transitively
          pulls netstandard1.x packages. They work fine on net8/9/10 but emit warnings. -->
     <NoWarn>$(NoWarn);CA1707;NU1701</NoWarn>

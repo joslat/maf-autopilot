@@ -1,7 +1,7 @@
-using MafAutopilot.Data;
+using MafDoctor.Data;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Tests for RegistryService — the single most regression-prone surface in the server.

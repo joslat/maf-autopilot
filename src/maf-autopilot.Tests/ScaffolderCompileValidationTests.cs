@@ -1,10 +1,10 @@
-using MafAutopilot.Scaffolding;
-using MafAutopilot.Tools;
+using MafDoctor.Scaffolding;
+using MafDoctor.Tools;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Xunit;
 
-namespace MafAutopilot.Tests;
+namespace MafDoctor.Tests;
 
 /// <summary>
 /// Compile-validation tests for the scaffolder (Phase F.4 — Tests reviewer's

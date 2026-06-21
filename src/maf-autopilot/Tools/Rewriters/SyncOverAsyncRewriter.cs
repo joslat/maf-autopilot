@@ -2,7 +2,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace MafAutopilot.Tools.Rewriters;
+namespace MafDoctor.Tools.Rewriters;
 
 /// <summary>
 /// Rule: <c>MAF-AP-CONC-002</c>.
@@ -10,12 +10,27 @@ namespace MafAutopilot.Tools.Rewriters;
 /// Rewrite: <c>SomeAsync().Result</c> → <c>(await SomeAsync())</c>.
 /// Also handles <c>SomeAsync().Wait()</c> → <c>await SomeAsync()</c>.
 ///
-/// **Important limitation.** This rewriter does NOT verify the enclosing
-/// method is `async`. If it isn't, the produced code won't compile — but
-/// the build error is loud and easy to spot. v2 of this rewriter could walk
-/// up to the enclosing method declaration and add the <c>async</c> modifier
-/// + adjust the return type. For now, the caller (MafAutoFix) emits a TODO
-/// comment when changes are made in a non-async method.
+/// <para><b>Corruption guard (Phase 4.1b).</b> Before rewriting, the visitor
+/// walks ancestors and skips with a TODO comment in every position where the
+/// C# spec makes <c>await</c> illegal (otherwise the rewrite emits uncompilable
+/// source). These are the finite await-illegal contexts:</para>
+/// <list type="bullet">
+///   <item>Inside a <c>lock</c> block (CS1996).</item>
+///   <item>Inside a LINQ query clause other than the initial <c>from</c> /
+///         <c>join … in</c> source (CS1995).</item>
+///   <item>Inside a <c>catch when (...)</c> filter expression (CS7094) — the
+///         catch body itself remains rewritable.</item>
+///   <item>Inside an unsafe context (CS4004): an <c>unsafe</c>/<c>fixed</c>
+///         block, or under the <c>unsafe</c> modifier on the enclosing
+///         method / local function / type.</item>
+///   <item>Outside any <c>async</c> function — the enclosing method / local
+///         function / lambda must be <c>async</c> (whitelist walk), else the
+///         <c>.Result</c> sits in a context that can never be async
+///         (property / field / operator / primary-ctor base / …) (CS4032/CS4033).</item>
+/// </list>
+/// Pre-fix the rewriter happily inserted <c>await</c> in these cases and
+/// produced uncompilable user code. Now we surface a comment and leave the
+/// expression unchanged so the developer can refactor manually.
 /// </summary>
 internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewriter
 {
@@ -27,6 +42,9 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
         if (node.Name.Identifier.ValueText == "Result"
             && node.Expression is InvocationExpressionSyntax inv)
         {
+            if (ShouldSkipForContext(node, out var reason))
+                return WithTodoTrivia(node, reason);
+
             // Rewrite `Foo().Result` → `(await Foo())`.
             // Wrap in parens so the surrounding member-access / arg context
             // doesn't bind incorrectly. Explicit `await ` keyword token with a
@@ -49,6 +67,9 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
             && mae.Expression is InvocationExpressionSyntax inner
             && node.ArgumentList.Arguments.Count == 0)
         {
+            if (ShouldSkipForContext(node, out var reason))
+                return WithTodoTrivia(node, reason);
+
             // Rewrite `Foo().Wait()` → `await Foo()`. Need an explicit
             // trailing-space on the `await` token.
             return SyntaxFactory.AwaitExpression(
@@ -58,5 +79,162 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
                 .WithTrailingTrivia(node.GetTrailingTrivia());
         }
         return base.VisitInvocationExpression(node);
+    }
+
+    /// <summary>
+    /// Returns true if the rewrite must be skipped because awaiting in this
+    /// position would produce uncompilable code. Populates <paramref name="reason"/>
+    /// with a short comment explaining the skip.
+    /// </summary>
+    private static bool ShouldSkipForContext(SyntaxNode node, out string reason)
+    {
+        // (UNBOUNDED) Unsafe context (CS4004): `await` is illegal wherever an
+        // unsafe context is in effect — inside an `unsafe { }` or `fixed ( )` block,
+        // OR under the `unsafe` modifier on the enclosing method / local function /
+        // any enclosing type. Unlike lock/query/catch-filter below, an unsafe
+        // context PROPAGATES lexically into nested async lambdas, so it is checked
+        // across ALL ancestors here, before the bounded walk.
+        foreach (var ancestor in node.Ancestors())
+        {
+            // `MemberDeclarationSyntax` is the common base for method / property /
+            // indexer / operator / conversion / constructor / event / field / type
+            // declarations — every member kind that can carry the `unsafe` modifier.
+            // (Local functions are statements, not members, so they need their own
+            // check.) The modifier establishes an unsafe context that propagates
+            // lexically into nested async lambdas, so one uniform check here closes
+            // the whole class — enumerating only method/localfn/type previously missed
+            // `unsafe` properties / indexers / operators / conversions / constructors.
+            if (ancestor is UnsafeStatementSyntax or FixedStatementSyntax
+                || (ancestor is MemberDeclarationSyntax umd && umd.Modifiers.Any(mod => mod.IsKind(SyntaxKind.UnsafeKeyword)))
+                || (ancestor is LocalFunctionStatementSyntax ulf && ulf.Modifiers.Any(mod => mod.IsKind(SyntaxKind.UnsafeKeyword))))
+            {
+                reason = "// MAF-AP-CONC-002: cannot await in an unsafe context — move the awaited call out of the `unsafe`/`fixed` scope or drop the `unsafe` modifier.";
+                return true;
+            }
+        }
+
+        // SINGLE BOUNDED WALK — walk outward, FIRST match wins. This unifies two
+        // concerns and makes their interaction correct:
+        //
+        //   * lock (CS1996) / LINQ non-source query clause (CS1995) / catch filter
+        //     (CS7094) make awaiting illegal — but ONLY when they sit between the
+        //     node and its nearest enclosing async function. An async lambda /
+        //     local function is its OWN await context, so an OUTER lock / query /
+        //     catch-filter does not reach across it. Because these cases share this
+        //     walk with the async-boundary cases below, hitting an async lambda
+        //     FIRST correctly returns "rewrite" before an outer lock is ever seen
+        //     (pre-fix the unconditional pre-passes over-skipped that legal code and
+        //     injected a factually wrong "cannot await inside a lock" comment).
+        //
+        //   * The async WHITELIST: rewrite ONLY when we positively reach an `async`
+        //     method / local function / lambda, or a top-level statement. Reaching a
+        //     type body or the compilation-unit root first means the `.Result` sits
+        //     in a context that can never be `async` (property / field / operator /
+        //     conversion / primary-ctor base / …), so we SKIP — closing the entire
+        //     await-into-non-async corruption class in one place rather than
+        //     enumerating every non-async member kind.
+        //
+        //   * Parameter defaults and attribute arguments are await-illegal even
+        //     inside an async function (they require a compile-time constant), so
+        //     they SKIP before the walk reaches the async boundary.
+        foreach (var ancestor in node.Ancestors())
+        {
+            switch (ancestor)
+            {
+                // Await-illegal sub-contexts — only reached while still inside the
+                // nearest enclosing async scope (see note above).
+                case LockStatementSyntax:
+                    reason = "// MAF-AP-CONC-002: cannot await inside a lock block — refactor to SemaphoreSlim.WaitAsync or restructure.";
+                    return true;
+                case QueryExpressionSyntax q when !IsInAwaitableQuerySource(node, q):
+                    reason = "// MAF-AP-CONC-002: cannot await inside this query clause — materialize the awaited value before the query.";
+                    return true;
+                case CatchFilterClauseSyntax:
+                    reason = "// MAF-AP-CONC-002: cannot await inside a catch filter (`when (...)`) — hoist the awaited value into a variable before the try/catch.";
+                    return true;
+                case ParameterSyntax:
+                case AttributeSyntax:
+                    reason = "// MAF-AP-CONC-002: cannot await in a parameter default / attribute argument — these require a compile-time constant.";
+                    return true;
+
+                // Async-scope boundaries — these END the bounded walk.
+                case MethodDeclarationSyntax m:
+                    if (m.Modifiers.Any(mod => mod.IsKind(SyntaxKind.AsyncKeyword))) { reason = string.Empty; return false; }
+                    reason = "// MAF-AP-CONC-002: enclosing method is not async — mark `async` (and adjust return type) or refactor before applying this rule.";
+                    return true;
+                case LocalFunctionStatementSyntax lf:
+                    if (lf.Modifiers.Any(mod => mod.IsKind(SyntaxKind.AsyncKeyword))) { reason = string.Empty; return false; }
+                    reason = "// MAF-AP-CONC-002: enclosing local function is not async — mark `async` or refactor.";
+                    return true;
+                case AnonymousFunctionExpressionSyntax af:
+                    if (af.AsyncKeyword != default) { reason = string.Empty; return false; }
+                    reason = "// MAF-AP-CONC-002: enclosing lambda is not async — add `async` or refactor.";
+                    return true;
+                case GlobalStatementSyntax:
+                    // Top-level statement — the generated Main is async-capable.
+                    reason = string.Empty;
+                    return false;
+                case BaseTypeDeclarationSyntax: // class/struct/record/interface/enum body reached without an async fn
+                case CompilationUnitSyntax:     // reached the root without an async fn
+                    reason = "// MAF-AP-CONC-002: this position cannot `await` (not inside an async method/function) — refactor the call site, e.g. make it an async method.";
+                    return true;
+            }
+        }
+
+        // Defensive default: never inject `await` into an unrecognized context.
+        reason = "// MAF-AP-CONC-002: cannot await here — no enclosing async context.";
+        return true;
+    }
+
+    /// <summary>
+    /// Attach a leading-trivia comment to the expression node. Returns the
+    /// unchanged node otherwise.
+    ///
+    /// Idempotence: dedup by scanning the enclosing method / function for
+    /// the same comment text. Roslyn re-parses can reattach trivia to
+    /// neighboring tokens, so we cannot rely on the node's own leading-trivia
+    /// list. Scanning by source-text of the enclosing scope is stable
+    /// across parse round-trips.
+    /// </summary>
+    /// <summary>True only when the node sits in an await-legal source of THIS query:
+    /// its OWN initial <c>from</c> source, or a <c>join … in</c> source it directly
+    /// owns. Clauses inside a NESTED query (e.g. an inner query embedded in this
+    /// query's await-illegal <c>let</c>/<c>where</c>/<c>select</c>) belong to that
+    /// inner query, not this one — so we exclude them. Without the ownership check,
+    /// <c>DescendantNodes()</c> reached an inner-query join source and wrongly marked
+    /// an await-illegal outer-query position as legal, injecting an <c>await</c> that
+    /// the compiler rejects with CS1995.</summary>
+    private static bool IsInAwaitableQuerySource(SyntaxNode node, QueryExpressionSyntax query)
+    {
+        if (query.FromClause.Expression.Span.Contains(node.Span)
+            && node.FirstAncestorOrSelf<QueryExpressionSyntax>() == query)
+            return true;
+        foreach (var join in query.DescendantNodes().OfType<JoinClauseSyntax>())
+            if (join.FirstAncestorOrSelf<QueryExpressionSyntax>() == query
+                && join.InExpression.Span.Contains(node.Span))
+                return true;
+        return false;
+    }
+
+    private static SyntaxNode WithTodoTrivia(SyntaxNode node, string commentText)
+    {
+        // Dedup scope: the enclosing function, else the enclosing TYPE declaration
+        // (covers contexts with no method ancestor — primary-ctor base initializers,
+        // field / collection-expression initializers — which otherwise re-stacked a
+        // duplicate comment on a second pass), else the parent.
+        var enclosingMethod = (SyntaxNode?)node.FirstAncestorOrSelf<MethodDeclarationSyntax>()
+            ?? node.FirstAncestorOrSelf<LocalFunctionStatementSyntax>()
+            ?? node.FirstAncestorOrSelf<AnonymousFunctionExpressionSyntax>()
+            ?? node.FirstAncestorOrSelf<BaseTypeDeclarationSyntax>()
+            ?? node.Parent;
+        if (enclosingMethod is not null
+            && enclosingMethod.ToFullString().Contains(commentText, StringComparison.Ordinal))
+        {
+            return node;
+        }
+        return node.WithLeadingTrivia(
+            node.GetLeadingTrivia()
+                .Add(SyntaxFactory.Comment(commentText))
+                .Add(SyntaxFactory.EndOfLine("\n")));
     }
 }

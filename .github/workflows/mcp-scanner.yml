@@ -1,0 +1,185 @@
+name: MCP server security scan (Cisco mcp-scanner)
+
+# Runs Cisco's mcp-scanner against our MCP server on every PR. The scanner's
+# YARA rule set covers the named-attack-class lattice — prompt injection,
+# tool poisoning, credential harvesting, code execution patterns, parameter
+# injection, cross-origin escalation, rug-pull. Anchored to docs/security.md
+# § "MCP-server security scan — Cisco mcp-scanner" + the v1.1 hardening
+# plan G8 (added in Phase 6.5).
+#
+# Why a separate workflow:
+#   - The scanner stdio-launches the MCP server process and enumerates its
+#     tools. That's expensive enough (build + restore + dotnet run + scan)
+#     that we don't want it on every push to a feature branch — only on PRs
+#     against main, where the cost is paid once per merge candidate.
+#   - Failure is informational at first (continue-on-error: true) — we want
+#     to surface findings as a PR annotation without blocking merge during
+#     the initial rollout. After 2 weeks of clean runs, the maintainer can
+#     flip this to hard-fail.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/maf-autopilot/**'
+      - 'src/maf-autopilot.csproj'
+      - '.github/workflows/mcp-scanner.yml'
+  # Weekly cron as a backstop for findings introduced by upstream regex /
+  # tooling drift even without code changes on our side.
+  schedule:
+    - cron: '0 11 * * 1'  # Mondays 11:00 UTC
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    # Informational only during initial rollout. Promote to hard-fail by
+    # removing this line after 5 consecutive clean runs (combining PR + cron
+    # cadence — the weekly cron alone gives only ~2 runs in 14 days, so the
+    # calendar-deadline framing of the initial version was unrealistic).
+    #
+    # Rollback playbook (post-flip):
+    #   If a false-positive lands after promoting to hard-fail, do NOT just
+    #   re-enable `continue-on-error: true` — that loses the gate's signal
+    #   value. Instead:
+    #     1. Restore `continue-on-error: true` AS A SHORT-TERM UNBLOCK.
+    #     2. Open an issue labeled `cisco-mcp-scanner` documenting the YARA
+    #        rule that fired, the triggering tool/code path, and whether the
+    #        rule warrants an upstream report to cisco-ai-defense/mcp-scanner.
+    #     3. Triage within 1 week: either suppress at the source (rule too
+    #        aggressive — file upstream), refactor our code (the rule is right
+    #        and we drifted), or pin the scanner version below the flagging
+    #        release.
+    #     4. Remove `continue-on-error: true` again once triaged.
+    #   The triage-not-suppress posture is the contract.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7  # v5.2.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: '3.12'
+
+      - name: Cache pipx install
+        # Post-merge fixup — the original cache paths (`~/.local/share/pipx` +
+        # `~/.local/bin/mcp-scanner`) were wrong on the GHA Ubuntu runner.
+        # Pipx on this runner installs venvs to `/opt/pipx` and links binaries
+        # into `/opt/pipx_bin/` (verified via workflow log on PR #59). The
+        # cache step is kept (saves ~20s on hits) but the paths are corrected.
+        # Key still invalidates on workflow-file edits so version-pin changes
+        # force a fresh install instead of resurrecting a stale cache.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: |
+            /opt/pipx
+            /opt/pipx_bin
+          key: pipx-cisco-mcp-scanner-${{ hashFiles('.github/workflows/mcp-scanner.yml') }}
+
+      - name: Install Cisco mcp-scanner via pipx
+        run: |
+          set -e
+          python -m pip install --user pipx
+          python -m pipx ensurepath
+          # Idempotent: install or upgrade. Pin major version to v4 to stay
+          # ahead of any v5 breaking changes; allow minor bumps automatically.
+          pipx install 'cisco-ai-mcp-scanner>=4,<5' || \
+            pipx upgrade cisco-ai-mcp-scanner
+          # Surface the resolved binary path in the workflow log so future
+          # debugging doesn't require log-diving. `command -v` is PATH-aware —
+          # handles both `~/.local/bin` (default PIPX_BIN_DIR on dev machines)
+          # and `/opt/pipx_bin/` (GHA Ubuntu).
+          #
+          # Note: cisco-ai-mcp-scanner's CLI does NOT support `--version`
+          # (verified from `--help` output on v4.7.0). Don't try to invoke
+          # it as a sanity probe — `set -e` would kill the step. Trust the
+          # pipx-install success line above.
+          SCANNER_BIN=$(command -v mcp-scanner || echo "")
+          if [ -z "$SCANNER_BIN" ]; then
+            echo "::error::mcp-scanner binary not on PATH after pipx install."
+            echo "PATH = $PATH"
+            echo "pipx environment dump:"
+            pipx environment || true
+            exit 1
+          fi
+          echo "mcp-scanner installed at: $SCANNER_BIN"
+          # Print the help banner first line as a soft liveness probe (the
+          # scanner's argparse exits 0 on --help, so this is safe under set -e).
+          "$SCANNER_BIN" --help 2>&1 | head -1 || true
+
+      - name: Build the MCP server (so the scanner can launch it)
+        # Build Debug (the default) — `dotnet run --no-build` in the next
+        # step defaults to Debug too and looks for `bin/Debug/net10.0/`.
+        # The previous version passed `--configuration Release` here but
+        # not on the `dotnet run` side, so the scanner crashed with
+        # "No such file or directory" trying to launch the Debug binary
+        # that was never built (seen on PR #59 run 26213390604).
+        # The scanner doesn't need optimized code — it just needs the
+        # assemblies to exist for the stdio handshake.
+        run: |
+          dotnet build src/maf-autopilot/maf-autopilot.csproj \
+            --framework net10.0 \
+            --nologo
+
+      - name: Run mcp-scanner (yara analyzers, summary format)
+        id: scan
+        run: |
+          # Invoke via PATH-resolved bare command — pipx puts the binary
+          # somewhere on PATH (location varies by runner: `~/.local/bin` on
+          # dev machines, `/opt/pipx_bin` on GHA Ubuntu). The previous
+          # hardcoded `~/.local/bin/mcp-scanner` failed on GHA.
+          #
+          # The scanner stdio-launches the server we just built. Use
+          # --no-build so we don't pay restore + build twice. Pipe stderr
+          # to a file so the maintainer can see any server-side bootstrap
+          # noise alongside the scanner findings.
+          mcp-scanner \
+            --analyzers yara \
+            --format summary \
+            --hide-safe \
+            stdio \
+            --stdio-command=dotnet \
+            --stdio-arg=run \
+            --stdio-arg=--project \
+            --stdio-arg=src/maf-autopilot \
+            --stdio-arg=--framework \
+            --stdio-arg=net10.0 \
+            --stdio-arg=--no-build \
+            --stderr-file=/tmp/maf-server.log \
+            > scan-results.txt 2>&1 || true
+          echo "Scanner output:"
+          cat scan-results.txt
+          echo ""
+          echo "--- Server bootstrap log ---"
+          cat /tmp/maf-server.log 2>/dev/null || echo "(empty)"
+
+      - name: Build PR comment body
+        if: github.event_name == 'pull_request'
+        run: |
+          {
+            echo '### 🔍 Cisco mcp-scanner result'
+            echo ''
+            echo '```'
+            cat scan-results.txt 2>/dev/null || echo '(no output)'
+            echo '```'
+            echo ''
+            echo '<sub>Scan covers prompt-injection, tool-poisoning, credential-harvesting,'
+            echo 'code-execution, parameter-injection, cross-origin-escalation, and rug-pull'
+            echo 'patterns. See `docs/security.md` for the canonical interpretation. Currently'
+            echo 'advisory; flip to hard-fail after 5 consecutive clean runs.</sub>'
+          } > pr-comment.md
+
+      - name: Post scan results as PR comment
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0  # v2.9.2
+        with:
+          header: mcp-scanner-result
+          path: pr-comment.md
