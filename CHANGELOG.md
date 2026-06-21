@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Docs
+- README now leads with a **"New in 1.3.0"** highlight (Tiers 1–3 + the compile-verified auto-fixer).
+- Quickstart: added an **"explain a finding"** (`MafExplainFinding`) snippet for discoverability, and corrected the numbers — the sample reports **7** anti-pattern errors (was "ten"), and deterministic `autofix-all` takes it **F (7 → 4 errors)**, not "F → A" (Grade A is the `@maf-migration` agent phase, not the deterministic fixer).
+
 ## [1.3.0] - 2026-06-18
 
 Doctor-suggestions overhaul — three tiers that turn each finding from a terse label into something a developer can act on in one read. Each tier shipped after two adversarial multi-agent review passes.
