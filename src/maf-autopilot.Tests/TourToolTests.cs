@@ -121,6 +121,33 @@ public sealed class TourToolTests
     }
 
     [Fact]
+    public void Catalogue_ListsEveryMcpServerPrompt_NoDrift()
+    {
+        // Same drift guard for prompts — every [McpServerPrompt] method must
+        // appear in the prompt catalogue (and vice versa).
+        var assembly = typeof(TourTool).Assembly;
+        var promptNames = assembly.GetTypes()
+            .Where(t => t.GetCustomAttribute<McpServerPromptTypeAttribute>() is not null)
+            .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static))
+            .Select(m => m.GetCustomAttribute<McpServerPromptAttribute>())
+            .Where(a => a is not null)
+            .Select(a => a!.Name!)
+            .Where(n => !string.IsNullOrEmpty(n))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var catalogued = TourTool.PromptCatalogue.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+
+        var missing = promptNames.Except(catalogued).OrderBy(s => s).ToList();
+        var extra = catalogued.Except(promptNames).OrderBy(s => s).ToList();
+
+        Assert.True(missing.Count == 0,
+            $"MafTour catalogue is missing entries for live MCP prompts: {string.Join(", ", missing)}. " +
+            "Add each one to TourTool.PromptCatalogue.");
+        Assert.True(extra.Count == 0,
+            $"MafTour catalogue lists prompts that don't exist as [McpServerPrompt] methods: {string.Join(", ", extra)}.");
+    }
+
+    [Fact]
     public void BuildFullCatalogue_StaticMethod_RoundTripsThroughMafTour()
     {
         // Arrange / Act — the resource path (maf://help) and the tool path (MafTour)

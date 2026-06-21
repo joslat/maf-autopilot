@@ -1,4 +1,4 @@
-# Security — how MAF Doctor (`maf-autopilot`) is hardened
+# Security — how MAF Doctor (`maf-doctor`) is hardened
 
 > **Audience:** end users evaluating whether MAF Doctor is safe to install in their environment, and maintainers verifying mitigations stay in place.
 >
@@ -25,7 +25,7 @@
 
 | Mechanism | What it does | Where to verify |
 |---|---|---|
-| **Roslyn analyzer NuGet** | Ships as `maf-autopilot.Analyzers` (separate NuGet). 3 rules (`MAF001`, `MAF002`, `MAF003`) fire at write-time in the IDE — `MAF002` blocks `DefaultAzureCredential` in production code; `MAF003` blocks `EnableSensitiveData = true` outside tests | `src/maf-autopilot.Analyzers/*.cs` |
+| **Roslyn analyzer NuGet** | Ships as `maf-doctor.Analyzers` (separate NuGet). 3 rules (`MAF001`, `MAF002`, `MAF003`) fire at write-time in the IDE — `MAF002` blocks `DefaultAzureCredential` in production code; `MAF003` blocks `EnableSensitiveData = true` outside tests | `src/maf-autopilot.Analyzers/*.cs` |
 | **Multi-version regression CI** | Roslyn rewriters are run on pinned MAF 1.0 / 1.2 / 1.3 sample projects on every push — rewriter bugs that corrupt user code get caught before merge | `.github/workflows/*.yml` + `samples/maf-1.x-sample/` |
 | **`verify-registry` PR gate** | The AI-fill maintenance loop (release-watcher → Copilot Coding Agent → PR) is gated by a structural verifier — placeholders, broken examples, missing fields are caught before the PR can merge | `.github/workflows/maf-ai-fill-verify.yml` + `src/maf-autopilot/Commands/VerifyRegistryCommand.cs` |
 | **MIT-licensed, source-available** | All 25 tools, the analyzer, the rewriters, the registry — readable in the repo. No closed-source binaries shipped in the nupkg | `LICENSE` |

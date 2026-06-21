@@ -7,7 +7,7 @@
 ║                                                                              ║
 ║   This codebase is a DELIBERATE collection of MAF 1.3 anti-patterns.         ║
 ║   Every "broken" pattern here is on purpose. Do NOT copy any of this code    ║
-║   into a real project — it's bait for the maf-autopilot toolkit to find      ║
+║   into a real project — it's bait for the maf-doctor toolkit to find         ║
 ║   and fix. The toolkit's job is to detect, plan, and remediate every one     ║
 ║   of the anti-patterns embedded below.                                       ║
 ║                                                                              ║
@@ -18,19 +18,18 @@
 ```
 
 A small but realistic multi-agent **Microsoft Agent Framework 1.3.0** codebase
-that deliberately embeds anti-patterns the `maf-autopilot` toolkit was built to
-find. Used as **Phase T — the A.8 migration-dogfood unblocker** in
-[`docs/next-steps.md`](../../docs/next-steps.md).
+that deliberately embeds anti-patterns the `maf-doctor` toolkit was built to
+find. Used as **Phase T — the A.8 migration-dogfood unblocker**.
 
 **Want a guided run?** See [`samples/workshop.md`](../workshop.md) — a ~50-minute
 hands-on walkthrough that opens this sample standalone in VS Code Insiders,
-wires up the `maf-autopilot` MCP server, and exercises the toolkit
+wires up the `maf-doctor` MCP server, and exercises the toolkit
 end-to-end.
 
 This sample:
 
 - **Pins MAF 1.3.0 exactly** (not `>= 1.3.0`) so the surface stays stable.
-- **Targets `net8.0`** — the lowest TFM `maf-autopilot` now supports. A real
+- **Targets `net8.0`** — the lowest TFM `maf-doctor` now supports. A real
   customer with an aged codebase is the realistic Phase T fixture.
 - **Builds clean** with one expected `CS0618` warning (the obsolete fan-in
   edge — see below).
@@ -62,7 +61,7 @@ reject; the notifier dispatches.
 
 ## Embedded anti-patterns
 
-The sample triggers the maf-autopilot toolkit on **10 anti-pattern errors,
+The sample triggers the maf-doctor toolkit on **10 anti-pattern errors,
 3 warnings, and 3 silent-starvation risks** in `dotnet run --project
 src/maf-autopilot -- doctor samples/maf-1.3-sample` (grade: F).
 
@@ -86,7 +85,7 @@ src/maf-autopilot -- doctor samples/maf-1.3-sample` (grade: F).
 ### Dry-run (default) — no LLM call, ~150 ms
 
 ```bash
-# from the maf-autopilot repo root
+# from the maf-doctor repo root
 dotnet build samples/maf-1.3-sample/MafSample.FraudClaims.csproj
 dotnet run --project samples/maf-1.3-sample/MafSample.FraudClaims.csproj
 ```
@@ -107,7 +106,7 @@ dotnet run --project samples/maf-1.3-sample/MafSample.FraudClaims.csproj -- --ru
 `--run` is currently a stub — the sample is meant to exercise the migration
 toolkit on the **source** not at runtime.
 
-### Have the maf-autopilot toolkit audit it
+### Have the maf-doctor toolkit audit it
 
 ```bash
 # Doctor — A through F grade + per-tool detail pointers

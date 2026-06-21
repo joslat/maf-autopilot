@@ -98,7 +98,7 @@ public sealed class Cs0618HuntTool
     private static readonly Regex DiagRegex = new(
         @"^(?<file>[^()\r\n]+?)\((?<line>\d+),(?<col>\d+)\):\s+(?<severity>warning|error)\s+(?<code>CS\d{4}):\s+(?<msg>.+)$",
         RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.Multiline,
-        TimeSpan.FromMilliseconds(100));
+        TimeSpan.FromSeconds(2));
 
     /// <summary>
     /// Parses MSBuild stdout for CS0618 / CS0246 diagnostics. Pure: no I/O.
@@ -166,14 +166,14 @@ public sealed class Cs0618HuntTool
         return null;
     }
 
-    // Phase 5.G fixup — NonBacktracking + 100ms timeout. The `[^']+` class
+    // Phase 5.G fixup — NonBacktracking + 2s timeout. The `[^']+` class
     // is bounded by literal anchors so backtracking is structurally limited,
     // but the pattern matches `dotnet build` diagnostic text which is
     // attacker-influenced. Hygiene is cheap; we pay it.
     private static readonly Regex FirstQuotedRegex = new(
         @"'([^']+)'",
         RegexOptions.Compiled | RegexOptions.NonBacktracking,
-        TimeSpan.FromMilliseconds(100));
+        TimeSpan.FromSeconds(2));
 
     internal static string? ExtractObsoleteSymbol(string message)
     {
@@ -189,7 +189,7 @@ public sealed class Cs0618HuntTool
     // catastrophic backtracking. Measured on .NET 9: input `Aa…0` (n=30) took 9 seconds.
     // Fix is twofold: (1) the inner class is narrowed to `[a-z]+` to eliminate overlap;
     // (2) `RegexOptions.NonBacktracking` guarantees linear time even if the pattern is
-    // ever changed back. The 100ms timeout is belt-and-suspenders against future regex
+    // ever changed back. The 2s timeout is belt-and-suspenders against future regex
     // edits or a runtime-tuning regression. We lose the ability to recognise tokens like
     // `XMLParser` (consecutive uppercase) — acceptable, as the registry haystack is the
     // primary match path; this method is the fallback for CS0618 messages that don't
@@ -197,7 +197,7 @@ public sealed class Cs0618HuntTool
     private static readonly Regex CamelCaseIdentifierRegex = new(
         @"\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b",
         RegexOptions.Compiled | RegexOptions.NonBacktracking,
-        TimeSpan.FromMilliseconds(100));
+        TimeSpan.FromSeconds(2));
 
     private static IEnumerable<string> ExtractCamelCaseIdentifiers(string message) =>
         CamelCaseIdentifierRegex.Matches(message).Select(m => m.Value);
