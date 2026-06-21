@@ -6,9 +6,7 @@ namespace MafDoctor.Tools;
 /// Shared file-enumeration + relative-path helpers used by every scanner that
 /// walks a repo for <c>*.cs</c> files. Extracted 2026-05-12 — was previously
 /// duplicated verbatim in 6+ tools, and the slow-drift risk was real (a
-/// `/bin/` exclusion fix would land in some tools but not others).
-///
-/// See Phase E.5 in `docs/maf-migration-toolkit-plan.md`.
+/// `/bin/` exclusion fix would land in some tools but not others). (Phase E.5.)
 /// </summary>
 internal static class SourceFileWalker
 {

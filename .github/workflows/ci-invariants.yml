@@ -123,7 +123,7 @@ jobs:
                           # Accept the raw `NonBacktracking` + `MatchTimeout`
                           # tokens OR any of the constant names.
                           has_options = ('NonBacktracking' in block) or ('RegexHygiene' in block) or ('HygieneOptions' in block)
-                          has_timeout = ('MatchTimeout' in block) or ('RegexBudget' in block) or ('TimeSpan.FromMilliseconds' in block)
+                          has_timeout = ('MatchTimeout' in block) or ('RegexBudget' in block) or ('TimeSpan.From' in block)
                           if not has_options or not has_timeout:
                               violations.append(f"{path}:{i+1}: {line.rstrip()}")
           if violations:
@@ -133,7 +133,7 @@ jobs:
           )
           if [ -n "$VIOLATIONS" ]; then
             echo "::error::Regex declaration(s) missing NonBacktracking and/or MatchTimeout."
-            echo "Add RegexOptions.NonBacktracking and MatchTimeout = TimeSpan.FromMilliseconds(100)."
+            echo "Add RegexOptions.NonBacktracking and a MatchTimeout (e.g. TimeSpan.FromSeconds(2))."
             echo "$VIOLATIONS"
             exit 1
           fi

@@ -7,18 +7,8 @@
         "run",
         "--project",
         "${workspaceFolder}/src/maf-autopilot/maf-autopilot.csproj",
-        "--no-build",
-        "--"
-      ],
-      "env": {}
-    },
-    "maf-doctor-custom-registry": {
-      "type": "stdio",
-      "command": "dotnet",
-      "args": [
-        "run",
-        "--project",
-        "${workspaceFolder}/src/maf-autopilot/maf-autopilot.csproj",
+        "--framework",
+        "net10.0",
         "--no-build",
         "--"
       ],

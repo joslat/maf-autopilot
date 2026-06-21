@@ -76,12 +76,11 @@ public sealed class RewriterIdempotenceTests
     }
 
     [Fact]
-    public void ExecutorSealedRewriter_Idempotent_AbstractClass_SkipPath()
+    public void ExecutorSealedRewriter_AbstractClass_LeftUnchanged_Idempotent()
     {
-        // The abstract-class guard skips the rewrite with a warning comment.
-        // Running it twice should leave the comment exactly once — the second
-        // pass should detect the existing comment via source-text dedup and
-        // not duplicate it.
+        // Parity with the scanner: an abstract Executor is left untouched. Running
+        // the rewriter twice is a no-op — no `sealed`, no advisory comment, output
+        // identical to input on both passes.
         const string src = """
             using Microsoft.Agents.AI.Workflow;
             public abstract class BaseAuditor : Executor
@@ -91,22 +90,15 @@ public sealed class RewriterIdempotenceTests
             }
             """;
         var output = ApplyTwice(new ExecutorSealedRewriter(), src);
-
-        // Phase 4.G fixup (nit #3) — assert the warning appears EXACTLY once.
-        // Without this, a future bug where two abstract Executors in the same
-        // source produce two comments per visit could pass the equality check
-        // (both passes producing identical bad output) while still being buggy.
-        var matches = System.Text.RegularExpressions.Regex.Matches(
-            output, "cannot seal an abstract Executor");
-        Assert.Equal(1, matches.Count);
+        Assert.DoesNotContain("cannot seal", output);
+        Assert.DoesNotContain("sealed", output);
+        Assert.Equal(src, output.TrimEnd());
     }
 
     [Fact]
-    public void ExecutorSealedRewriter_TwoAbstractExecutors_EachGetsOneComment()
+    public void ExecutorSealedRewriter_TwoAbstractExecutors_BothLeftUnchanged()
     {
-        // Adversarial input (suggested by Phase 4.G review): two abstract
-        // Executor-derived classes in one source. Each should get its OWN
-        // comment, totaling two — but each only once, not duplicated.
+        // Two abstract Executor-derived classes in one source — both left untouched.
         const string src = """
             using Microsoft.Agents.AI.Workflow;
             public abstract class FirstAuditor : Executor
@@ -121,9 +113,8 @@ public sealed class RewriterIdempotenceTests
             }
             """;
         var output = ApplyTwice(new ExecutorSealedRewriter(), src);
-        var matches = System.Text.RegularExpressions.Regex.Matches(
-            output, "cannot seal an abstract Executor");
-        Assert.Equal(2, matches.Count);
+        Assert.DoesNotContain("cannot seal", output);
+        Assert.Equal(src, output.TrimEnd());
     }
 
     [Fact]
