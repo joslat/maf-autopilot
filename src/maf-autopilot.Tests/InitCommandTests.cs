@@ -197,7 +197,8 @@ public sealed class InitCommandTests : IDisposable
         // Claude Code uses "mcpServers" (not VS Code's "servers").
         var servers = root["mcpServers"]!.AsObject();
         Assert.True(servers.ContainsKey("maf-doctor"));
-        Assert.Equal("stdio", servers["maf-doctor"]!["type"]!.GetValue<string>());
+        // Claude Code .mcp.json omits "type" — stdio is the implied default.
+        Assert.False(servers["maf-doctor"]!.AsObject().ContainsKey("type"));
         Assert.Equal("maf-doctor", servers["maf-doctor"]!["command"]!.GetValue<string>());
     }
 

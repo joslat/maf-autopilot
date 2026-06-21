@@ -32,12 +32,26 @@ internal sealed class FanInArgOrderRewriter : CSharpSyntaxRewriter, IRuleRewrite
         if (!LooksLikeWrongOrder(args[0], args[1]))
             return base.VisitInvocationExpression(node);
 
-        // Swap and strip the named-argument labels (they no longer match
-        // the new overload's parameter positions).
-        var newFirst = StripNamedLabel(args[1]).WithTriviaFrom(args[0]);
-        var newSecond = StripNamedLabel(args[0]).WithTriviaFrom(args[1]);
+        // Swap the two argument VALUES and strip the named-argument labels (they no
+        // longer match the new overload's parameter positions), preserving trivia per
+        // the IRuleRewriter contract. The old `WithTriviaFrom(peer)` copied the OTHER
+        // slot's trivia onto each moved value, which dropped a comment carried by the
+        // separator and misattributed each value's own trailing comment. Instead:
+        //   * keep each slot's LEADING trivia (indentation stays at its position),
+        //   * carry each value's OWN TRAILING trivia (its trailing comment travels
+        //     with the value), and
+        //   * reuse the ORIGINAL separator token so an inter-argument comment that
+        //     lived on the comma is not lost.
+        var newFirst = StripNamedLabel(args[1])
+            .WithLeadingTrivia(args[0].GetLeadingTrivia())
+            .WithTrailingTrivia(args[1].GetTrailingTrivia());
+        var newSecond = StripNamedLabel(args[0])
+            .WithLeadingTrivia(args[1].GetLeadingTrivia())
+            .WithTrailingTrivia(args[0].GetTrailingTrivia());
 
-        var newArgs = SyntaxFactory.SeparatedList(new[] { newFirst, newSecond });
+        var newArgs = SyntaxFactory.SeparatedList(
+            new[] { newFirst, newSecond },
+            new[] { args.GetSeparator(0) });
         return node.WithArgumentList(node.ArgumentList.WithArguments(newArgs));
     }
 

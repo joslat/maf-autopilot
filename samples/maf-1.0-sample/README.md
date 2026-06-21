@@ -8,7 +8,7 @@
 ║   This codebase is a DELIBERATE collection of MAF anti-patterns, pinned to   ║
 ║   MAF 1.0.0 (the EARLIEST stable release). Every "broken" pattern is on      ║
 ║   purpose. Do NOT copy any of this code into a real project — it's bait for  ║
-║   the maf-autopilot toolkit to find and fix.                                 ║
+║   the maf-doctor toolkit to find and fix.                                    ║
 ║                                                                              ║
 ║   This is the third in a 3-version sample set (1.0 / 1.2 / 1.3). The set     ║
 ║   pins the toolkit's detection across the full MAF NuGet history via W.9's   ║

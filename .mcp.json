@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "maf-doctor": {
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "src/maf-autopilot/maf-autopilot.csproj",
+        "--framework",
+        "net10.0",
+        "--no-build",
+        "--"
+      ],
+      "env": {
+        "MAF_REGISTRY_PATH": ".github/skills/maf-obsolete-api-registry/registry.yaml"
+      }
+    }
+  }
+}

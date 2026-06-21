@@ -1,16 +1,35 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/joslat/maf-doctor/main/assets/MAFDoctorLogo.png" alt="MAF Doctor" width="320" />
+</p>
+
 # MAF Doctor — a toolkit for Microsoft Agent Framework
 
 > Diagnose, explain, prescribe, verify — for MAF agents and workflows.
 
 **MAF Doctor** is a **.NET global tool** (installed from NuGet) that does three things in one install:
 
-1. **An MCP server** — exposes 25 executable tools, 6 resources, and 7 prompts to GitHub Copilot / Claude Code / Cursor.
+1. **An MCP server** — exposes 26 executable tools, 6 resources, and 8 prompts to GitHub Copilot / Claude Code / Cursor.
 2. **A CLI** — **doctor** for an A–F health letter, **autofix-all** for deterministic rewriters, **new agent** to scaffold, **init** to wire up your repo, and more.
 3. **A plugin** — init drops steering snippets and wires the MCP server into both VS Code and Claude Code, so Copilot's and Claude's agentic loops gain MAF-specific knowledge (12 bundled skills + 7 specialist agents).
 
 Plus a separate **maf-doctor.Analyzers** NuGet package with 3 Roslyn analyzers (MAF001 / MAF002 / MAF003) for IDE write-time enforcement, and a curated, version-keyed **obsolete-API registry** that maps every known CS0618 warning to its exact replacement.
 
 > 📦 **[Latest release on NuGet →](https://www.nuget.org/packages/maf-doctor)** — and the toolkit keeps its own MAF knowledge current automatically. See [**It updates itself**](#it-updates-itself).
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/joslat/maf-doctor/main/docs/assets/install-cast.gif" alt="maf-doctor: install, then audit a MAF codebase — grade F + the top fixes" width="760" />
+  <br/>
+  <em>Install, then run maf-doctor doctor on any MAF codebase — an A–F health letter + the top fixes, in seconds.</em>
+</p>
+
+### 🆕 New in 1.3.0 — findings you can act on in one read
+
+Every finding now tells you **Why** it matters, the **Fix**, and whether it's auto-fixable:
+
+- **`doctor`** surfaces each finding's Why + Fix + the offending source line — `--all` groups every finding by rule, `--json` is machine-readable for CI.
+- **`doctor --plan`** emits an ordered, checkboxed remediation plan, ready to paste into a GitHub issue.
+- **`MafExplainFinding`** (in an MCP client) deep-dives any single finding by `file:line` — grounded explanation + fix using your host model (Copilot / Claude / Cursor), at no extra LLM cost.
+- The deterministic **auto-fixer is now compile-verified** — a CI guard compiles every rewriter's output, so a fix can never emit uncompilable code. ([full notes →](CHANGELOG.md#130---2026-06-18))
 
 ### What makes it worth trying
 
@@ -20,7 +39,7 @@ Plus a separate **maf-doctor.Analyzers** NuGet package with 3 Roslyn analyzers (
 - 🤖 **Fully agentic loop** — Copilot audits your codebase, generates a tracked migration plan, and executes it task-by-task, building after every step.
 - 🧰 **Deterministic fixes, not guesses** — the obsolete-API registry maps every known CS0618 warning to its exact replacement pattern. No hallucinated fixes.
 - 📖 **It updates itself** — as new MAF versions ship, the toolkit refreshes its own migration knowledge automatically. [How →](#it-updates-itself)
-- 🔐 **Hardened against the named MCP attack lattice** — a comprehensive security pass closes the critical- and high-tier MCP attack classes (path-escape, annotation drift, scaffold code-injection, prompt-injection via release notes, workflow-dispatch input injection), with defense-in-depth helpers and CI-enforced invariants. Cisco mcp-scanner: 25/25 tools SAFE, 0 findings. See [SECURITY.md](SECURITY.md) and [docs/security.md](docs/security.md).
+- 🔐 **Hardened against the named MCP attack lattice** — a comprehensive security pass closes the critical- and high-tier MCP attack classes (path-escape, annotation drift, scaffold code-injection, prompt-injection via release notes, workflow-dispatch input injection), with defense-in-depth helpers and CI-enforced invariants. Cisco mcp-scanner: all tools SAFE, 0 findings. See [SECURITY.md](SECURITY.md) and [docs/security.md](docs/security.md).
 
 ## It updates itself
 
@@ -40,9 +59,9 @@ The practical upshot: you don't pin to a MAF version in these docs, and you don'
 
 MAF Doctor is a **[Model Context Protocol (MCP)](https://modelcontextprotocol.io) server** packaged as a .NET global tool. With no subcommand it runs in MCP mode and exposes:
 
-- **25 executable tools**, each annotated with MCP behavior hints (read-only / destructive / idempotent / open-world) so clients can auto-classify them — registry lookup, code scanning, build-verified CS0618 hunts, NuGet diffing, workflow simulation, scaffolding, PR-scoped audits, version planning, and a single-command health letter. The anti-pattern and fan-out scanners emit SARIF for GitHub Advanced Security; the two destructive tools (auto-fix and auto-fix-all) support a dry-run.
+- **26 executable tools**, each annotated with MCP behavior hints (read-only / destructive / idempotent / open-world) so clients can auto-classify them — registry lookup, code scanning, build-verified CS0618 hunts, NuGet diffing, workflow simulation, scaffolding, PR-scoped audits, version planning, and a single-command health letter. The anti-pattern and fan-out scanners emit SARIF for GitHub Advanced Security; the two destructive tools (auto-fix and auto-fix-all) support a dry-run.
 - **6 resources** — the migration guide, constraints, registry, rules, help, and per-name skills — readable on demand.
-- **7 prompts** — audit, migrate, cs0618-hunt, review, debug, scaffold, and help.
+- **8 prompts** — audit, migrate, cs0618-hunt, review, debug, explain-finding, scaffold, and help.
 - **3 Roslyn analyzers** (in the separate maf-doctor.Analyzers package) — MAF001 (fan-out), MAF002 (DefaultAzureCredential), MAF003 (EnableSensitiveData). Write-time enforcement.
 
 With a subcommand, the same binary runs as a CLI tool — see Quick Start below.
@@ -57,12 +76,14 @@ With a subcommand, the same binary runs as a CLI tool — see Quick Start below.
 # 1. Install the MCP server as a .NET global tool
 dotnet tool install --global maf-doctor
 
-# 2. In your MAF project — writes .vscode/mcp.json + .github/copilot-instructions.md
+# 2. In your MAF project — wires MCP + steering for VS Code, Copilot & Claude Code
 cd your-maf-project
 maf-doctor init
 ```
 
-init wires the MCP server into both **VS Code** (.vscode/mcp.json) and **Claude Code** (.mcp.json), and drops auto-loaded steering in each tool's convention dir — .github/instructions/ for Copilot, .claude/ plus a one-line CLAUDE.md import for Claude Code, and an AGENTS.md managed block. These are refreshed on every re-run and never merged into your own files. Your assistant picks the server up automatically and gains live tool calls, resource reads, and structured prompts.
+`init` is **non-destructive — it attaches and updates only, never overwriting your files.** It adds its own MCP server entry to both **VS Code** (.vscode/mcp.json) and **Claude Code** (.mcp.json), and drops auto-loaded steering as self-contained sidecars in each tool's convention dir — .github/instructions/ for Copilot, .claude/ plus a one-line CLAUDE.md import for Claude Code, and an AGENTS.md managed block. These sidecars are refreshed on every re-run and never merged into your hand-authored files, so re-running `init` after an upgrade is always safe. Your assistant picks the server up automatically and gains live tool calls, resource reads, and structured prompts.
+
+> 📖 **Going deeper:** [what `init` installs (and why)](docs/init-reference.md) · [using MAF Doctor — prompts, tools, agents & natural-language steering](docs/usage.md) · [hands-on workshop](samples/workshop.md).
 
 **First three commands to try:**
 
@@ -134,12 +155,7 @@ The .NET upgrade-assistant handles package version bumps. MAF Doctor handles eve
 
 The MCP tools are called automatically by Copilot during these steps — you don't invoke them directly.
 
-## Roadmap & Status
-
-For an evidence-anchored view of what's done, in progress, and pending:
-
-- **[docs/maf-migration-toolkit-plan.md](docs/maf-migration-toolkit-plan.md)** — phased roadmap + the tracking table (single source of truth)
-- **[docs/project-status-and-vision.md](docs/project-status-and-vision.md)** — stage assessment + the broader vision
+## Distribution
 
 Distribution: **NuGet** (maf-doctor + maf-doctor.Analyzers), **Docker GHCR** (multi-arch amd64 + arm64, semver tags), and the self-updating knowledge base described above. Security model: [docs/security.md](docs/security.md).
 

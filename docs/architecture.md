@@ -2,13 +2,11 @@
 
 > **Last updated:** 2026-05-13 — Phase S landed: multi-target nupkg + central package management.
 
-This document explains what each piece of `maf-autopilot` is, how the pieces fit together, and where the structural choices were deliberate (vs. accidental).
-
-For *what's pending*, see [`next-steps.md`](./next-steps.md). For history of decisions, see [`maf-migration-toolkit-plan.md`](./maf-migration-toolkit-plan.md).
+This document explains what each piece of `maf-doctor` is, how the pieces fit together, and where the structural choices were deliberate (vs. accidental).
 
 ---
 
-## What is `maf-autopilot`?
+## What is `maf-doctor`?
 
 A toolkit that turns **GitHub Copilot Chat into a Microsoft Agent Framework (MAF) expert** for the lifetime of a .NET project.
 
@@ -27,7 +25,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│                          maf-autopilot repo                              │
+│                          maf-doctor repo                                 │
 │                                                                          │
 │  /Directory.Packages.props  ← central package mgmt (CPM)                │
 │  /Directory.Build.props     ← shared compiler settings                  │
@@ -37,7 +35,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 │  │  /src/maf-autopilot/    │   │  /src/maf-autopilot.Analyzers/    │   │
 │  │  ── MCP server          │   │  ── Roslyn analyzers              │   │
 │  │  ── net8.0;net9.0;net10.0   │   │  ── netstandard2.0 (compiler host)│
-│  │  ── NuGet: maf-autopilot│   │  ── NuGet: maf-autopilot.Analyzers│   │
+│  │  ── NuGet: maf-doctor   │   │  ── NuGet: maf-doctor.Analyzers   │   │
 │  │  ── Docker: GHCR (net8) │   │  ── 3 rules (MAF001/002/003)      │   │
 │  └────────┬────────────────┘   └────────┬──────────────────────────┘   │
 │           │ ProjectReference (none)     │ ProjectReference (none)        │
@@ -78,7 +76,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 
 ## What each .NET project IS
 
-### `maf-autopilot` (the MCP server)
+### `maf-doctor` (the MCP server)
 
 **Path:** `/src/maf-autopilot/`
 **Target frameworks:** `net8.0;net9.0;net10.0` (multi-target — NuGet picks the best TFM at install time)
@@ -94,7 +92,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 
 **Embeds at build time** (via `<EmbeddedResource>`): the 12 SKILL.md files, the 3 instruction files, the obsolete-API registry YAML, the migration guide. This is why the runtime container only needs a single .dll — everything ships inline.
 
-### `maf-autopilot.Analyzers` (the Roslyn analyzer NuGet)
+### `maf-doctor.Analyzers` (the Roslyn analyzer NuGet)
 
 **Path:** `/src/maf-autopilot.Analyzers/`
 **Target framework:** **netstandard2.0** (mandatory — Roslyn analyzers load into the compiler host, which targets netstandard2.0).
@@ -106,7 +104,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 - `MAF002` — avoid `DefaultAzureCredential` in production code.
 - `MAF003` — avoid `EnableSensitiveData = true` outside test code.
 
-**Critically: it has ZERO dependencies on the MCP server.** A consumer can install just the analyzers without ever touching `maf-autopilot` the tool.
+**Critically: it has ZERO dependencies on the MCP server.** A consumer can install just the analyzers without ever touching `maf-doctor` the tool.
 
 ### `maf-autopilot.Tests`
 
@@ -173,7 +171,7 @@ maf-autopilot.sln
 
 ## Multi-targeting
 
-The MCP server NuGet `maf-autopilot` ships TFM assemblies for **net8.0 + net9.0 + net10.0** inside a single `nupkg`. NuGet's TFM resolution selects the best match at consumer install time:
+The MCP server NuGet `maf-doctor` ships TFM assemblies for **net8.0 + net9.0 + net10.0** inside a single `nupkg`. NuGet's TFM resolution selects the best match at consumer install time:
 
 - A user on the .NET 8 LTS runtime installs the `net8.0` binary.
 - A user on the .NET 9 STS runtime installs the `net9.0` binary.
@@ -189,7 +187,7 @@ This pattern matches the sibling [`AgentEval`](https://github.com/joslat/AgentEv
 | `Directory.Build.props` | Shared compiler settings (`LangVersion`, `ImplicitUsings`, `Nullable`). Per-project csprojs may override (the analyzer uses its own `LangVersion=latest` + locked `netstandard2.0`). |
 | `global.json` | Pins `sdk.version=8.0.100` with `rollForward: latestMajor` + `allowPrerelease: true`. Any installed SDK ≥ 8.x can build the solution. |
 
-**The Roslyn analyzer (`maf-autopilot.Analyzers`) is excluded from multi-targeting.** It MUST stay on `netstandard2.0` — analyzers load into the compiler host (csc.exe / VS / OmniSharp), which itself runs on the netstandard2.0 surface. Multi-targeting an analyzer would not change consumer reach (consumer csproj loads the netstandard2.0 DLL regardless of consumer TFM) and would break compatibility with older compiler hosts.
+**The Roslyn analyzer (`maf-doctor.Analyzers`) is excluded from multi-targeting.** It MUST stay on `netstandard2.0` — analyzers load into the compiler host (csc.exe / VS / OmniSharp), which itself runs on the netstandard2.0 surface. Multi-targeting an analyzer would not change consumer reach (consumer csproj loads the netstandard2.0 DLL regardless of consumer TFM) and would break compatibility with older compiler hosts.
 
 **The Dockerfile is excluded.** Only the multi-target NuGet ships all 3 TFMs; the container can only choose one runtime. Net8 LTS is the smallest, longest-supported runtime image — picked for the smallest container footprint.
 
@@ -201,8 +199,8 @@ This pattern matches the sibling [`AgentEval`](https://github.com/joslat/AgentEv
 
 | Channel | What ships | Who consumes | Where |
 |---|---|---|---|
-| NuGet (server) | `maf-autopilot` .NET global tool | Developers installing via `dotnet tool install` | `nuget.org/packages/maf-doctor` |
-| NuGet (analyzer) | `maf-autopilot.Analyzers` analyzer | Consumer .csproj `<PackageReference>` | `nuget.org/packages/maf-doctor.Analyzers` |
+| NuGet (server) | `maf-doctor` .NET global tool | Developers installing via `dotnet tool install` | `nuget.org/packages/maf-doctor` |
+| NuGet (analyzer) | `maf-doctor.Analyzers` analyzer | Consumer .csproj `<PackageReference>` | `nuget.org/packages/maf-doctor.Analyzers` |
 | Docker | Multi-arch image (amd64+arm64) | Developers without .NET SDK on host | `ghcr.io/joslat/maf-doctor:<semver>` |
 | Skills-only | The `.github/` directory copied into a consumer repo | Users wanting agents+skills without the MCP server | `git clone` |
 

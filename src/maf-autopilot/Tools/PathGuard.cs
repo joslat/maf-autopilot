@@ -10,7 +10,7 @@ namespace MafDoctor.Tools;
 /// (path traversal), and non-existent directories.
 ///
 /// Extracted 2026-05-12 — was previously duplicated (or absent) across
-/// 12+ tool classes. See Phase E.1 in `docs/maf-migration-toolkit-plan.md`.
+/// 12+ tool classes (Phase E.1).
 /// </summary>
 internal static class PathGuard
 {
