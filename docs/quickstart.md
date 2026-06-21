@@ -39,9 +39,11 @@ maf-doctor doctor .
 
 You'll see a **🔴 grade F** — with the top fixes. These include **silent fan-out/fan-in starvation** bugs: code that compiles clean and exits "successfully" but produces no output. No build warning, no exception — invisible without this tool.
 
-> 🎙️ *"Grade F. Ten anti-pattern errors, three of them silent-starvation risks — they compile clean and break at runtime."*
+> 🎙️ *"Grade F. Seven anti-pattern errors, plus three silent-starvation risks — they compile clean and break at runtime."*
 >
 > *Tip:* in a monorepo, scope the scan with `maf-doctor doctor . --exclude samples/ --exclude '**/*.Tests/**'`.
+
+> 💡 **New in 1.3.0:** every finding now shows a one-line **Why** + **Fix**. Add `--all` to list them all (grouped by rule), or `--plan` to get a checkboxed remediation plan you can paste straight into a GitHub issue. And in an MCP client (Copilot / Claude / Cursor), ask *"explain the finding at `Executors/OsintInvestigator.cs:25`"* — it calls **`MafExplainFinding`** to return that code in context + why + the fix, using your host model (no extra LLM cost).
 
 ## Beat 4 — Fix the mechanical issues, deterministically (30s)
 
@@ -56,9 +58,9 @@ maf-doctor autofix-all .
 maf-doctor doctor .
 ```
 
-Grade climbs to **🟢 A** (or close). The fixes are deterministic Roslyn rewriters — the same machinery you'd trust in a Microsoft refactor extension, not guesses.
+The grade stays **🔴 F** — but **three mechanical errors are gone (7 → 4)**, deterministically, in under 30 seconds, no LLM in the loop. The rest are *semantic* (a hard-coded key, shared provider state, the fan-out starvation bugs) and need judgment — that's the hand-off to the `@maf-migration` agent, which is what drives the grade to A. The fixes are deterministic Roslyn rewriters — the same machinery you'd trust in a Microsoft refactor extension, not guesses.
 
-> 🎙️ *"Apply for real. Roslyn rewriters. Re-grade — F to A in under 30 seconds, deterministically."*
+> 🎙️ *"Apply for real. Roslyn rewriters — three mechanical errors gone, 7 down to 4, deterministically, no LLM. The rest are semantic; the agent takes those the rest of the way to A."*
 
 ## Beat 5 — Upgrade to the latest MAF (60s)
 

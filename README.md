@@ -22,6 +22,15 @@ Plus a separate **maf-doctor.Analyzers** NuGet package with 3 Roslyn analyzers (
   <em>Install, then run maf-doctor doctor on any MAF codebase — an A–F health letter + the top fixes, in seconds.</em>
 </p>
 
+### 🆕 New in 1.3.0 — findings you can act on in one read
+
+Every finding now tells you **Why** it matters, the **Fix**, and whether it's auto-fixable:
+
+- **`doctor`** surfaces each finding's Why + Fix + the offending source line — `--all` groups every finding by rule, `--json` is machine-readable for CI.
+- **`doctor --plan`** emits an ordered, checkboxed remediation plan, ready to paste into a GitHub issue.
+- **`MafExplainFinding`** (in an MCP client) deep-dives any single finding by `file:line` — grounded explanation + fix using your host model (Copilot / Claude / Cursor), at no extra LLM cost.
+- The deterministic **auto-fixer is now compile-verified** — a CI guard compiles every rewriter's output, so a fix can never emit uncompilable code. ([full notes →](CHANGELOG.md#130---2026-06-18))
+
 ### What makes it worth trying
 
 - 🔍 **Catches the bugs that compile clean** — detects fan-out/fan-in silent failures where a workflow exits successfully but produces no output. Runtime-only, zero build signal, invisible without this tool.
