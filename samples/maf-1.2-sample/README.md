@@ -8,7 +8,7 @@
 ║   This codebase is a DELIBERATE collection of MAF anti-patterns, pinned to   ║
 ║   MAF 1.2.0 (the version BEFORE the 1.3 obsoletion wave). Every "broken"     ║
 ║   pattern is on purpose. Do NOT copy any of this code into a real project    ║
-║   — it's bait for the maf-autopilot toolkit to find and fix.                 ║
+║   — it's bait for the maf-doctor toolkit to find and fix.                    ║
 ║                                                                              ║
 ║   This sample exists alongside maf-1.3-sample/ and maf-1.0-sample/ as a      ║
 ║   version-parity fixture: same anti-patterns, different MAF pin, so the      ║
@@ -75,8 +75,8 @@ inaccuracies worth noting:
    been removed BEFORE 1.2.0 (likely pre-1.0 or from the removed
    `Microsoft.Agents.AI.DevUI` + `Microsoft.Agents.AI.Hosting` packages).
    The labels imply a 1.2 → 1.3 obsoletion event but in reality the
-   transition happened earlier. **Documented as Phase T.7 registry
-   chronology gap in next-steps.md.**
+   transition happened earlier. **Documented as the Phase T.7 registry
+   chronology gap.**
 
 2. **The compatibility-matrix's minimum-version pins for 1.2.0 are wrong.**
    It listed `Microsoft.Extensions.AI >= 10.3.0` and `Azure.AI.OpenAI >= 2.6.0`.

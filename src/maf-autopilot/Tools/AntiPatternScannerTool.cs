@@ -10,7 +10,7 @@ namespace MafDoctor.Tools;
 /// <summary>
 /// MCP tool: MafScanAntiPatterns
 ///
-/// Walks a MAF 1.3.0 codebase looking for known anti-patterns AFTER migration is complete.
+/// Walks a MAF codebase looking for known anti-patterns AFTER migration is complete.
 /// Rules canonical: see <c>.github/skills/maf-anti-pattern-scanner/SKILL.md</c>.
 ///
 /// This is the **identity-unlock** tool — it materialises the "co-pilot beyond migration"
@@ -22,9 +22,9 @@ public sealed class AntiPatternScannerTool
 {
     [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
-        Scan a MAF 1.3.0 codebase for known anti-patterns (security, concurrency,
+        Scan a MAF codebase for known anti-patterns (security, concurrency,
         observability, identity, topology). Distinct from migration tooling —
-        this checks idiom and configuration on code that's already on 1.3.0.
+        this checks idiom and configuration on code that's already on a recent MAF release.
 
         Input:
           - repoPath: absolute path to the repo root. All *.cs files are scanned recursively
@@ -105,7 +105,7 @@ public sealed class AntiPatternScannerTool
 
     // Phase 5.9 — ReDoS hygiene on every rule pattern.
     //
-    // All AntiPatternScanner regexes carry NonBacktracking + a 100ms
+    // All AntiPatternScanner regexes carry NonBacktracking + a 2s
     // MatchTimeout. The patterns are simple enough that catastrophic
     // backtracking is unlikely in practice, but `MAF-AP-SEC-002` (the
     // API-key matcher) and `MAF-AP-CONC-002` (the .Result/.Wait matcher)
@@ -117,7 +117,46 @@ public sealed class AntiPatternScannerTool
     // confirms the contract.
     private const RegexOptions RegexHygiene =
         RegexOptions.Compiled | RegexOptions.NonBacktracking;
-    private static readonly TimeSpan RegexBudget = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan RegexBudget = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// The hard-coded-secret literal pattern (rule MAF-AP-SEC-002). Exposed as
+    /// the single source of truth for "what is a secret" so other tools can
+    /// redact any source line containing one — e.g. DoctorTool's snippet
+    /// renderer redacts content-aware, regardless of which rule surfaced the line.
+    /// </summary>
+    internal static readonly Regex SecretLiteralPattern =
+        new(@"""(?:sk-|api[-_]?key=)[A-Za-z0-9_\-]{16,}""", RegexHygiene | RegexOptions.IgnoreCase, RegexBudget);
+
+    /// <summary>
+    /// Broader, best-effort REDACTION pattern (decoupled from the precise SEC-002
+    /// rule pattern). Used only to decide whether a source line is too risky to
+    /// echo into a report — so it errs toward over-matching (redact-on-doubt is
+    /// safe; it just hides a line). Covers OpenAI/api keys, quoted connection-string
+    /// secrets (AccountKey/Password/Secret/Token=…), GitHub tokens, AWS access-key
+    /// ids, JWTs, and PEM private-key headers. NOT exhaustive — high-entropy secrets
+    /// in unrecognized shapes can still slip through; this is defense-in-depth, not
+    /// the primary control.
+    /// </summary>
+    // Pattern text in a const so the multi-line literal doesn't push the
+    // `new(...)` options outside the ci-invariants regex-hygiene detection window.
+    private const string SecretRedactionRegexText =
+        // Leading quote OPTIONAL (`"?`) so bare `sk-…` / `api-key=…` in a comment or
+        // raw-string body is redacted too, not just the quoted finding-style line.
+        @"""?(?:sk-|api[-_]?key\s*=\s*)[A-Za-z0-9_\-]{16,}"
+        + @"|""[^""]*(?:accountkey|sharedaccesskey|password|pwd|secret|token)\s*=\s*[^""]{4,}[^""]*"""
+        + @"|gh[opsru]_[A-Za-z0-9]{20,}"
+        + @"|AKIA[0-9A-Z]{16}"
+        + @"|eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]+"
+        + @"|-----BEGIN [A-Z ]*PRIVATE KEY-----";
+    internal static readonly Regex SecretRedactionPattern = new(SecretRedactionRegexText, RegexHygiene | RegexOptions.IgnoreCase, RegexBudget);
+
+    /// <summary>
+    /// Best-effort: true if the text looks like it contains a secret, for REDACTION
+    /// purposes. Broader than the SEC-002 finding rule (<see cref="SecretLiteralPattern"/>)
+    /// on purpose — see <see cref="SecretRedactionPattern"/>. Not a guarantee.
+    /// </summary>
+    internal static bool LooksLikeSecret(string text) => SecretRedactionPattern.IsMatch(text);
 
     internal static readonly IReadOnlyList<AntiPatternRule> AllRules = new AntiPatternRule[]
     {
@@ -133,51 +172,125 @@ public sealed class AntiPatternScannerTool
             name: "Hard-coded API key literal",
             severity: AntiPatternSeverity.Error,
             // Matches "sk-XXXXXXXXXXXXXXXX" or "api-key=XXXXXXXXXXXXXXXX" style strings.
-            pattern: new Regex(@"""(?:sk-|api[-_]?key=)[A-Za-z0-9_\-]{16,}""", RegexHygiene | RegexOptions.IgnoreCase, RegexBudget),
-            skipInTestFiles: false),
+            // Shared with DoctorTool's snippet redactor via SecretLiteralPattern.
+            pattern: SecretLiteralPattern,
+            skipInTestFiles: false,
+            // This rule deliberately matches inside string literals (a hard-coded
+            // key IS a string), so it must NOT be skipped by the string-literal filter.
+            matchesStringContent: true),
 
-        new RegexRule(
+        // Syntax-aware (RoslynRule) so it matches the actual assignment shapes the
+        // EnableSensitiveDataRewriter fixes — object-initializer, dictionary/
+        // collection-initializer (`["EnableSensitiveData"] = true`), member-access,
+        // and element-access — and does NOT false-fire on comments / string
+        // literals that merely mention it. A regex (`EnableSensitiveData\s*=\s*true`)
+        // both missed the dictionary form (the `"]` breaks it) AND matched comments,
+        // so its "auto-fixable" tag was a no-op. This keeps detector ⇆ rewriter in parity.
+        new RoslynRule(
             id: "MAF-AP-SEC-003",
             name: "EnableSensitiveData = true outside development",
             severity: AntiPatternSeverity.Error,
-            pattern: new Regex(@"EnableSensitiveData\s*=\s*true", RegexHygiene, RegexBudget),
-            skipInTestFiles: true),
+            skipInTestFiles: true,
+            scan: (root, file) =>
+            {
+                var findings = new List<AntiPatternFinding>();
+                foreach (var assign in root.DescendantNodes().OfType<AssignmentExpressionSyntax>())
+                {
+                    if (assign.Right is not LiteralExpressionSyntax rhs
+                        || rhs.RawKind != (int)SyntaxKind.TrueLiteralExpression)
+                        continue;
+
+                    // Match ONLY the contexts the rewriter can actually fix, so every
+                    // finding is genuinely auto-fixable (true detector ⇆ rewriter parity):
+                    // initializer entries (VisitInitializerExpression) and statement-position
+                    // assignments (VisitExpressionStatement — this DOES include a statement
+                    // inside a block-bodied lambda). Expression-bodied lambdas
+                    // (`() => o.X = true`) and nested/parenthesized assignments
+                    // (`b = (o.X = true)`) are intentionally excluded — the rewriter can't reach them.
+                    var match = assign.Left switch
+                    {
+                        IdentifierNameSyntax id => id.Identifier.ValueText == "EnableSensitiveData"
+                            && assign.Parent is InitializerExpressionSyntax,                                   // new O { EnableSensitiveData = true }
+                        ImplicitElementAccessSyntax iea => IsEnableSensitiveDataKey(iea.ArgumentList)
+                            && assign.Parent is InitializerExpressionSyntax,                                   // new D { ["EnableSensitiveData"] = true }
+                        MemberAccessExpressionSyntax mae => mae.Name.Identifier.ValueText == "EnableSensitiveData"
+                            && assign.Parent is ExpressionStatementSyntax,                                     // x.EnableSensitiveData = true;
+                        ElementAccessExpressionSyntax eae => IsEnableSensitiveDataKey(eae.ArgumentList)
+                            && assign.Parent is ExpressionStatementSyntax,                                     // dict["EnableSensitiveData"] = true;
+                        _ => false,
+                    };
+                    if (!match) continue;
+
+                    var loc = assign.GetLocation().GetLineSpan();
+                    findings.Add(new AntiPatternFinding(
+                        "MAF-AP-SEC-003",
+                        "EnableSensitiveData = true outside development",
+                        AntiPatternSeverity.Error,
+                        file,
+                        loc.StartLinePosition.Line + 1,
+                        assign.ToString()));
+                }
+                return findings;
+            }),
 
         new RegexRule(
             id: "MAF-AP-CONC-002",
             name: "Sync-over-async (.Result / .Wait())",
             severity: AntiPatternSeverity.Warning,
-            pattern: new Regex(@"\b\)\s*\.(Result|Wait)\s*(\(\))?", RegexHygiene, RegexBudget),
+            // Anchor on the call's close-paren `\)` (NOT a leading `\b`, which
+            // required a word char before `)` and so MISSED the canonical
+            // parameterless `Foo().Result` / `Foo().Wait()`). The trailing `\b`
+            // after the member name avoids `.Results` / `.WaitHandle` false hits.
+            pattern: new Regex(@"\)\s*\.(?:Result|Wait)\b(\s*\(\s*\))?", RegexHygiene, RegexBudget),
             skipInTestFiles: true),
 
-        new RegexRule(
+        // MAF-AP-OBS-001 — file builds an agent but never chains UseOpenTelemetry.
+        // RoslynRule (not a raw-text scan): detection walks syntax NODES, so an
+        // `AIAgentBuilder` / `new ChatClientAgent(` / `UseOpenTelemetry` that appears
+        // only inside a comment or a string literal no longer false-fires — comments
+        // are trivia (never nodes) and a string body is a literal token, not an
+        // identifier. The reported line is the real builder node, not the first
+        // textual match.
+        new RoslynRule(
             id: "MAF-AP-OBS-001",
             name: "Missing UseOpenTelemetry in file that builds an agent",
             severity: AntiPatternSeverity.Warning,
-            // Two conditions in the same file: builder type AND no UseOpenTelemetry call.
-            pattern: null,
-            skipInTestFiles: true,
-            customScan: (source, _, file) =>
+            scan: (root, file) =>
             {
-                var hasBuilder = source.Contains("AIAgentBuilder")
-                              || Regex.IsMatch(source, @"\bnew\s+ChatClientAgent\s*\(");
-                var hasOTel = source.Contains("UseOpenTelemetry");
-                if (hasBuilder && !hasOTel)
+                // An agent is BUILT via a `new AIAgentBuilder(...)` or a
+                // `new ChatClientAgent(...)` CONSTRUCTION. Match construction (object
+                // creation), NOT a bare type reference — a parameter type, field type,
+                // `nameof(AIAgentBuilder)` or `typeof(...)` is not building an agent and
+                // must not fire (the earlier identifier-match over-flagged those).
+                Microsoft.CodeAnalysis.SyntaxNode? builderNode = null;
+                foreach (var n in root.DescendantNodes())
                 {
-                    var line = FirstLineMatching(source, @"AIAgentBuilder|new\s+ChatClientAgent\s*\(");
-                    return new[]
+                    if (n is BaseObjectCreationExpressionSyntax oce
+                        && ObjectCreationTypeName(oce) is "AIAgentBuilder" or "ChatClientAgent")
                     {
-                        new AntiPatternFinding(
-                            "MAF-AP-OBS-001",
-                            "Missing UseOpenTelemetry in file that builds an agent",
-                            AntiPatternSeverity.Warning,
-                            file,
-                            line,
-                            "(agent built without telemetry chained)")
-                    };
+                        builderNode = n;
+                        break;
+                    }
                 }
-                return Array.Empty<AntiPatternFinding>();
-            }),
+                if (builderNode is null) return Array.Empty<AntiPatternFinding>();
+
+                var hasOTel = root.DescendantNodes().OfType<IdentifierNameSyntax>()
+                    .Any(id => id.Identifier.ValueText == "UseOpenTelemetry");
+                if (hasOTel) return Array.Empty<AntiPatternFinding>();
+
+                var line = builderNode.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+                return new[]
+                {
+                    new AntiPatternFinding(
+                        "MAF-AP-OBS-001",
+                        "Missing UseOpenTelemetry in file that builds an agent",
+                        AntiPatternSeverity.Warning,
+                        file,
+                        line,
+                        "(agent built without telemetry chained)")
+                };
+            },
+            skipInTestFiles: true),
 
         new RoslynRule(
             id: "MAF-AP-CONC-001",
@@ -223,12 +336,12 @@ public sealed class AntiPatternScannerTool
                 var findings = new List<AntiPatternFinding>();
                 // Find object initializers on ChatClientAgentOptions where an Instructions
                 // assignment appears at the OUTER level (not nested inside `ChatOptions = new { ... }`).
-                foreach (var oce in root.DescendantNodes().OfType<ObjectCreationExpressionSyntax>())
+                // Handles both `new ChatClientAgentOptions { … }` AND target-typed
+                // `ChatClientAgentOptions opts = new() { … }` (declared type visible).
+                foreach (var oce in root.DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>())
                 {
-                    var typeName = oce.Type.ToString();
-                    var simpleName = typeName.Contains('.') ? typeName[(typeName.LastIndexOf('.') + 1)..] : typeName;
-                    if (simpleName != "ChatClientAgentOptions") continue;
                     if (oce.Initializer is null) continue;
+                    if (ObjectCreationTypeName(oce) != "ChatClientAgentOptions") continue;
 
                     foreach (var expr in oce.Initializer.Expressions.OfType<AssignmentExpressionSyntax>())
                     {
@@ -258,9 +371,10 @@ public sealed class AntiPatternScannerTool
                 var findings = new List<AntiPatternFinding>();
                 foreach (var cls in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
                 {
-                    // Only consider classes that inherit from `Executor` and have [MessageHandler] methods.
-                    var baseList = cls.BaseList?.Types.Select(t => t.Type.ToString()) ?? [];
-                    if (!baseList.Any(b => b == "Executor" || b.EndsWith(".Executor", StringComparison.Ordinal)))
+                    // Only consider classes that inherit from `Executor` (plain OR
+                    // generic `Executor<…>`, qualified or not) and have [MessageHandler]
+                    // methods. Shared predicate keeps this in lockstep with the rewriter.
+                    if (!(cls.BaseList?.Types.Any(t => IsExecutorBaseType(t.Type)) ?? false))
                         continue;
                     if (!cls.Members.OfType<MethodDeclarationSyntax>().Any(m =>
                         m.AttributeLists.SelectMany(a => a.Attributes).Any(a =>
@@ -272,6 +386,14 @@ public sealed class AntiPatternScannerTool
                         continue;
 
                     var modifiers = cls.Modifiers.Select(m => m.ValueText).ToHashSet();
+                    // Skip abstract AND static Executors: an abstract Executor can never
+                    // be `sealed` (abstract precludes sealed), and a static class can't
+                    // derive from Executor at all — neither is fixable, so flagging them
+                    // with an auto-fixable rule would be dishonest. This also keeps the
+                    // scanner in lockstep with ExecutorSealedRewriter, which leaves both
+                    // untouched (detector⇆rewriter parity). The dispatched concrete
+                    // subclass is what must be `sealed partial`.
+                    if (modifiers.Contains("abstract") || modifiers.Contains("static")) continue;
                     var hasPartial = modifiers.Contains("partial");
                     var hasSealed = modifiers.Contains("sealed");
                     if (hasPartial && hasSealed) continue;
@@ -358,16 +480,22 @@ public sealed class AntiPatternScannerTool
                 {
                     if (invocation.Expression is not MemberAccessExpressionSyntax member) continue;
                     if (member.Name.Identifier.ValueText != "Use") continue;
-                    var argText = invocation.ArgumentList.ToString();
 
-                    // Heuristic: if `runFunc` appears but `runStreamingFunc` doesn't, or
-                    // either is explicitly set to `null`, the streaming path bypasses.
-                    var hasRunFunc = argText.Contains("runFunc", StringComparison.Ordinal);
-                    var hasStreaming = argText.Contains("runStreamingFunc", StringComparison.Ordinal);
-                    var streamingIsNull = argText.Contains("runStreamingFunc: null", StringComparison.Ordinal)
-                                       || argText.Contains("runStreamingFunc:null", StringComparison.Ordinal);
-                    if (!hasRunFunc) continue;
-                    if (hasStreaming && !streamingIsNull) continue;
+                    // Match the NAMED-callback middleware form via the AST, not a raw
+                    // substring of the argument text. The old `argText.Contains("runFunc")`
+                    // false-fired on any `.Use(...)` whose text merely CONTAINED the
+                    // substring — a positional local named `runFunc`, or an unrelated
+                    // identifier like `computeMyrunFunc()`. NameColon pins the actual
+                    // `runFunc:` / `runStreamingFunc:` argument labels.
+                    var args = invocation.ArgumentList.Arguments;
+                    ArgumentSyntax? Named(string n) =>
+                        args.FirstOrDefault(a => a.NameColon?.Name.Identifier.ValueText == n);
+
+                    if (Named("runFunc") is null) continue;          // not the named middleware form
+                    var streaming = Named("runStreamingFunc");
+                    var streamingIsNull = streaming is { Expression: LiteralExpressionSyntax sl }
+                        && sl.RawKind == (int)SyntaxKind.NullLiteralExpression;
+                    if (streaming is not null && !streamingIsNull) continue; // both callbacks present
 
                     var loc = invocation.GetLocation().GetLineSpan();
                     var why = streamingIsNull
@@ -399,15 +527,53 @@ public sealed class AntiPatternScannerTool
             skipInTestFiles: false),
     };
 
-    private static int FirstLineMatching(string source, string regex)
+    /// <summary>
+    /// The constructed type's simple name for an object-creation, resolving the
+    /// target-typed <c>new()</c> form only when the declared type is syntactically
+    /// visible (a <c>T x = new() {…}</c> variable declaration). Pure-source — returns
+    /// null when the type can't be determined without a semantic model.
+    /// </summary>
+    private static string? ObjectCreationTypeName(BaseObjectCreationExpressionSyntax oce)
     {
-        // Phase 5.9 — hygiene policy applies to scanner-internal regexes too.
-        var rx = new Regex(regex, RegexHygiene, RegexBudget);
-        var lines = source.Split('\n');
-        for (var i = 0; i < lines.Length; i++)
-            if (rx.IsMatch(lines[i])) return i + 1;
-        return 1;
+        static string Simple(string t) => t.Contains('.') ? t[(t.LastIndexOf('.') + 1)..] : t;
+
+        if (oce is ObjectCreationExpressionSyntax explicitOce)
+            return Simple(explicitOce.Type.ToString());
+
+        // Target-typed `new()` — only resolvable from a visible declared type.
+        if (oce.Parent is EqualsValueClauseSyntax { Parent: VariableDeclaratorSyntax { Parent: VariableDeclarationSyntax vd } })
+            return Simple(vd.Type.ToString());
+
+        return null;
     }
+
+    /// <summary>
+    /// True if a base-type syntax names the MAF workflow <c>Executor</c> base in any
+    /// form: plain <c>Executor</c>, generic <c>Executor&lt;…&gt;</c>, namespace-qualified
+    /// (<c>Microsoft.Agents.AI.Workflows.Executor</c>), or alias-qualified. Shared by
+    /// the WF-001 scanner rule AND <see cref="Rewriters.ExecutorSealedRewriter"/> so
+    /// detector and rewriter agree on which classes derive from Executor — without
+    /// this, the scanner would flag a generic-base Executor as auto-fixable while the
+    /// rewriter silently no-op'd it (a detector⇆rewriter parity break).
+    /// </summary>
+    internal static bool IsExecutorBaseType(TypeSyntax type) => SimpleTypeName(type) == "Executor";
+
+    /// <summary>The rightmost simple identifier of a (possibly generic / qualified) type name.</summary>
+    private static string? SimpleTypeName(TypeSyntax type) => type switch
+    {
+        IdentifierNameSyntax id => id.Identifier.ValueText,
+        GenericNameSyntax g => g.Identifier.ValueText,
+        QualifiedNameSyntax q => SimpleTypeName(q.Right),
+        AliasQualifiedNameSyntax a => SimpleTypeName(a.Name),
+        _ => null,
+    };
+
+    /// <summary>True if a bracketed indexer argument list is the single string key "EnableSensitiveData".</summary>
+    private static bool IsEnableSensitiveDataKey(BracketedArgumentListSyntax args)
+        => args.Arguments.Count == 1
+           && args.Arguments[0].Expression is LiteralExpressionSyntax keyLit
+           && keyLit.RawKind == (int)SyntaxKind.StringLiteralExpression
+           && keyLit.Token.ValueText == "EnableSensitiveData";
 
     /// <summary>
     /// Returns the inclusive line ranges that lie inside a <c>#if</c> block whose
@@ -481,7 +647,7 @@ public sealed class AntiPatternScannerTool
         AppendSection(sb, "ℹ️ Info (consider)", infos);
 
         if (findings.Count == 0)
-            sb.AppendLine("✅ No anti-patterns detected. Codebase follows current MAF 1.3.0 best practices for the scanned ruleset.");
+            sb.AppendLine("✅ No anti-patterns detected. Codebase follows current MAF best practices for the scanned ruleset.");
 
         sb.AppendLine();
         sb.AppendLine("**Rule list source:** `maf://skills?name=maf-anti-pattern-scanner`");
@@ -496,7 +662,13 @@ public sealed class AntiPatternScannerTool
         sb.AppendLine("| Rule | File | Line | Match |");
         sb.AppendLine("|---|---|---:|---|");
         foreach (var f in findings)
-            sb.AppendLine($"| `{f.RuleId}` — {f.RuleName} | `{f.File}` | {f.Line} | `{f.Match}` |");
+        {
+            // The Match column echoes the matched source — redact it if it looks
+            // like a secret (e.g. the SEC-002 key literal), and neutralize backticks
+            // so the value can't break the markdown code span / table cell.
+            var match = LooksLikeSecret(f.Match) ? "(redacted)" : f.Match.Replace('`', '\'').Replace('|', '\\');
+            sb.AppendLine($"| `{f.RuleId}` — {f.RuleName} | `{f.File.Replace('`', '\'')}` | {f.Line} | `{match}` |");
+        }
         sb.AppendLine();
     }
 }
@@ -530,11 +702,13 @@ internal sealed class RegexRule : AntiPatternRule
 {
     private readonly Regex? _pattern;
     private readonly Func<string, Microsoft.CodeAnalysis.SyntaxNode, string, IEnumerable<AntiPatternFinding>>? _custom;
+    private readonly bool _matchesStringContent;
 
     public RegexRule(
         string id, string name, AntiPatternSeverity severity,
         Regex? pattern, bool skipInTestFiles = false,
-        Func<string, Microsoft.CodeAnalysis.SyntaxNode, string, IEnumerable<AntiPatternFinding>>? customScan = null)
+        Func<string, Microsoft.CodeAnalysis.SyntaxNode, string, IEnumerable<AntiPatternFinding>>? customScan = null,
+        bool matchesStringContent = false)
     {
         Id = id;
         Name = name;
@@ -542,6 +716,7 @@ internal sealed class RegexRule : AntiPatternRule
         SkipInTestFiles = skipInTestFiles;
         _pattern = pattern;
         _custom = customScan;
+        _matchesStringContent = matchesStringContent;
     }
 
     public override IEnumerable<AntiPatternFinding> Scan(string source, Microsoft.CodeAnalysis.SyntaxNode root, string file)
@@ -553,13 +728,55 @@ internal sealed class RegexRule : AntiPatternRule
 
         var findings = new List<AntiPatternFinding>();
         var lines = source.Split('\n');
+        var lineStart = 0;
         for (var i = 0; i < lines.Length; i++)
         {
-            var match = _pattern.Match(lines[i]);
-            if (match.Success)
-                findings.Add(new AntiPatternFinding(Id, Name, Severity, file, i + 1, match.Value));
+            // Inspect EVERY match on the line, not just the first: a real code
+            // match can follow a comment/string match on the same physical line.
+            // Emit the first match that isn't in skipped trivia (one per line,
+            // preserving prior behavior); only skip the line if all are filtered.
+            foreach (Match m in _pattern.Matches(lines[i]))
+            {
+                if (IsInCommentOrSkippedLiteral(root, lineStart + m.Index, _matchesStringContent))
+                    continue;
+                findings.Add(new AntiPatternFinding(Id, Name, Severity, file, i + 1, m.Value));
+                break;
+            }
+            lineStart += lines[i].Length + 1; // +1 for the '\n' that Split removed
         }
         return findings;
+    }
+
+    /// <summary>
+    /// True if the matched span lies in a comment (skip for ALL rules — a
+    /// commented-out / documented pattern is not a real finding) or, for rules
+    /// that don't target string content, inside a string-literal token (a pattern
+    /// inside a string is data, not code). The hard-coded-secret rule sets
+    /// <paramref name="matchesStringContent"/> so it keeps matching string bodies.
+    /// Offset-based (not line-based), so it's robust to CRLF/LF/CR differences.
+    /// </summary>
+    private static bool IsInCommentOrSkippedLiteral(
+        Microsoft.CodeAnalysis.SyntaxNode root, int offset, bool matchesStringContent)
+    {
+        if (offset < 0 || offset >= root.FullSpan.End) return false;
+
+        var triviaKind = (SyntaxKind)root.FindTrivia(offset).RawKind;
+        if (triviaKind is SyntaxKind.SingleLineCommentTrivia
+            or SyntaxKind.MultiLineCommentTrivia
+            or SyntaxKind.SingleLineDocumentationCommentTrivia
+            or SyntaxKind.MultiLineDocumentationCommentTrivia)
+            return true;
+
+        if (matchesStringContent) return false;
+
+        var token = root.FindToken(offset);
+        var tokenKind = (SyntaxKind)token.RawKind;
+        return token.Span.Contains(offset)
+            && tokenKind is SyntaxKind.StringLiteralToken
+                or SyntaxKind.InterpolatedStringTextToken
+                or SyntaxKind.SingleLineRawStringLiteralToken
+                or SyntaxKind.MultiLineRawStringLiteralToken
+                or SyntaxKind.Utf8StringLiteralToken;
     }
 }
 

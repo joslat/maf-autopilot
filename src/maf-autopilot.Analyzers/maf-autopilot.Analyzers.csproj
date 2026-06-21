@@ -10,17 +10,18 @@
     <Nullable>enable</Nullable>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <RootNamespace>MafDoctor.Analyzers</RootNamespace>
-    <AssemblyName>maf-autopilot.Analyzers</AssemblyName>
+    <AssemblyName>maf-doctor.Analyzers</AssemblyName>
 
     <!-- NuGet packaging -->
-    <PackageId>maf-autopilot.Analyzers</PackageId>
-    <Version>1.1.0</Version>
+    <PackageId>maf-doctor.Analyzers</PackageId>
+    <Version>1.3.0</Version>
     <Authors>joslat</Authors>
-    <Description>Roslyn analyzers for Microsoft Agent Framework (MAF) 1.3.0 — write-time enforcement of fan-out safety, secure credentials, and observability defaults. Pairs with the maf-autopilot MCP server.</Description>
+    <Description>Roslyn analyzers for Microsoft Agent Framework (MAF) — write-time enforcement of fan-out safety, secure credentials, and observability defaults (MAF001-MAF003). Companion to the maf-doctor .NET global tool / MCP server.</Description>
     <PackageTags>maf;agent-framework;analyzer;roslyn;dotnet</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/joslat/maf-doctor</RepositoryUrl>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReadmeFile>NUGET_README.md</PackageReadmeFile>
+    <PackageIcon>MAFDoctorIcon.png</PackageIcon>
     <DevelopmentDependency>true</DevelopmentDependency>
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
@@ -65,7 +66,8 @@
   <ItemGroup>
     <!-- Ship the analyzer DLL inside the analyzers/ NuGet folder so it's picked up automatically. -->
     <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
-    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="..\..\NUGET_README.md" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="..\..\assets\MAFDoctorIcon.png" Pack="true" PackagePath="\" Visible="false" />
   </ItemGroup>
 
 </Project>

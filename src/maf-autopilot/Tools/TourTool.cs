@@ -20,7 +20,7 @@ public sealed class TourTool
 {
     [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
-        List every maf-autopilot capability — MCP tools, agents, resources, prompts —
+        List every maf-doctor capability — MCP tools, agents, resources, prompts —
         with a one-line "when to use" each. Use this when a new user asks "what can
         this thing do?". For the same content as a static resource, read maf://help.
 
@@ -50,7 +50,7 @@ public sealed class TourTool
     private static string BuildCatalogue(string section)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("# 🗺️ maf-autopilot — capability tour");
+        sb.AppendLine("# 🗺️ maf-doctor — capability tour");
         sb.AppendLine();
         sb.AppendLine("> Single-page catalogue of what this MCP server exposes. Use this to answer \"what tool / agent fits my task?\".");
         sb.AppendLine();
@@ -78,12 +78,12 @@ public sealed class TourTool
     internal static readonly IReadOnlyList<ToolEntry> ToolCatalogue = new ToolEntry[]
     {
         // — Registry / lookup —
-        new("MafApiSafety", "Registry lookup", "Is this MAF API call safe in 1.3.0? Returns the registry entry if the symbol is known-obsolete; SAFE otherwise. Pure read."),
+        new("MafApiSafety", "Registry lookup", "Is this MAF API call safe in the latest MAF version? Returns the registry entry if the symbol is known-obsolete; SAFE otherwise. Pure read."),
         new("MafRegistryLookup", "Registry lookup", "Pull the full registry entry by ID (e.g. `MAF130-THREAD-001`). Use after `MafApiSafety` finds a hit."),
         new("MafRegistryList", "Registry lookup", "Enumerate every registry entry ID. Useful for discovery and CI auditing."),
 
         // — Scanners —
-        new("MafScanAntiPatterns", "Scanner", "Walk a repo for known anti-patterns (security / concurrency / observability / identity / topology). 10 rules. Supports `format: \"sarif\"` for CI."),
+        new("MafScanAntiPatterns", "Scanner", "Walk a repo for known anti-patterns (security / concurrency / observability / identity / topology). 11 rules. Supports `format: \"sarif\"` for CI."),
         new("MafValidateFanOut", "Scanner", "Find handlers that return `void` / non-generic `Task` (silent fan-in starvation risk). Supports `format: \"sarif\"`."),
         new("MafLintAgentPrompt", "Scanner", "Lint every agent `Instructions` literal. 4 rules: empty / token bloat / missing refusal / untrusted-input concat (prompt injection)."),
         new("MafEstimateCost", "Scanner", "Find every `RunAsync` / `RunStreamingAsync` site missing a `MaxOutputTokens` cap. Production cost governance."),
@@ -115,7 +115,8 @@ public sealed class TourTool
         new("MafMigrationPath", "Upgrade", "Multi-step migration planner — walks version-keyed guide metadata, returns ordered intermediate-step sections."),
 
         // — Health —
-        new("MafDoctor", "Health", "Single-command A/B/C/F grade. Aggregates 4 scanners + reports the top 3 fixes. Best triage signal in the toolkit."),
+        new("MafDoctor", "Health", "Single-command A/B/C/F grade. Aggregates 4 scanners + reports the top 3 fixes (or every finding with `full: true`). Best triage signal in the toolkit."),
+        new("MafExplainFinding", "Health", "Deep-dive ONE doctor finding (file + line): the offending code in context plus the rule's why / fix / auto-fixability. Grounded substrate for explaining or fixing it — pair with the `maf-explain-finding` prompt."),
 
         // — Discovery (this very tool) —
         new("MafTour", "Discovery", "This catalogue. Returns every capability with one-line descriptions. Use as the first stop for new users."),
@@ -132,7 +133,7 @@ public sealed class TourTool
         new("@maf", "Primary triage. Picks the right tool / specialist for the user's intent. NEVER auto-handoffs — always recommends. Start here.", IsPrimary: true),
         new("@maf-migration", "Build-verified task-by-task MAF version migration. Loads the plan, executes one row at a time, gates on `dotnet build` green."),
         new("@maf-auditor", "Pre-migration plan generator. Scans the codebase, cross-references the registry + constraints, produces `migration-plan.md`."),
-        new("@maf-best-practice-reviewer", "Steady-state audit on a clean 1.3.0 codebase. Produces `audit-report.md`. Use post-migration."),
+        new("@maf-best-practice-reviewer", "Steady-state audit on a clean MAF codebase. Produces `audit-report.md`. Use post-migration."),
         new("@maf-incident-responder", "Production failure → MAF pattern responsible → deterministic fix. Maps symptom (silent exit / auth failure / cost spike) to known-bad pattern."),
         new("@maf-rollback", "Surgical 1.3.0 → 1.2.0 retreat. Inverse of migration. Preserves unrelated work that landed on top."),
         new("@maf-onboarding", "Personalised codebase tour for a new dev. Topology + top-touched files + dialect."),
@@ -141,7 +142,7 @@ public sealed class TourTool
     internal static readonly IReadOnlyList<(string Uri, string Description)> ResourceCatalogue = new[]
     {
         ("maf://constraints", "Hard constraints + breaking-changes table. Always-loaded by every agent."),
-        ("maf://guide", "Full MAF 1.3.0 migration guide (21 sections). Read on demand."),
+        ("maf://guide", "Full MAF migration guide (21 sections). Read on demand."),
         ("maf://registry", "Machine-readable obsolete-API registry YAML."),
         ("maf://rules", "Live rule catalogue — anti-pattern + prompt-lint + analyzer + cross-references. Auto-generated from runtime data."),
         ("maf://help", "Same content as `MafTour()` but as a resource — useful for static discovery without a tool call."),
@@ -155,6 +156,7 @@ public sealed class TourTool
         ("maf-cs0618-hunt", "Starter prompt for finding + fixing CS0618 obsolete-API warnings."),
         ("maf-review", "Best-practices code review starter — day-to-day development, PR review, post-migration validation. Routes to MafDoctor / MafScanAntiPatterns / MafValidateFanOut."),
         ("maf-debug", "Reactive-debugging starter — paste an error or symptom, the prompt routes to the right diagnostic tool by symptom class."),
+        ("maf-explain-finding", "Deep-dive + fix ONE doctor finding (file + line). Calls MafExplainFinding for grounded context, then explains + proposes the fix using maf://constraints + maf://guide."),
         ("maf-scaffold", "Boilerplate generation starter — routes to MafNewAgent or MafNewExecutor depending on what you want to build."),
         ("maf-help", "3-question interactive flow for new users. Routes to the right tool / agent based on intent."),
     };

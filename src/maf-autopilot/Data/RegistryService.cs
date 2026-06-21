@@ -40,7 +40,7 @@ public sealed class RegistryService
     /// <summary>Every entry in the registry (in YAML declaration order). Read-only.</summary>
     public IReadOnlyList<RegistryEntry> AllEntries => _registry.Entries;
 
-    /// <summary>MAF version this registry targets (e.g. "1.3.0").</summary>
+    /// <summary>MAF version this registry targets (e.g. the latest stable release).</summary>
     public string TargetVersion => _registry.TargetMafVersion;
 
     /// <summary>Date the registry was last updated.</summary>

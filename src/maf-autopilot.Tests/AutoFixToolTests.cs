@@ -318,6 +318,22 @@ public class AutoFixToolTests
         Assert.Equal(input, output.TrimEnd());
     }
 
+    [Fact]
+    public void ExecutorSealedRewriter_GenericExecutorBase_AddsSealedPartial()
+    {
+        // Round-8 parity: a generic `Executor<…>` base must be sealed/partial'd too,
+        // matching the now generic-aware WF-001 scanner (shared IsExecutorBaseType).
+        var input = """
+            public class MyExec : Microsoft.Agents.AI.Workflows.Executor<string, int>
+            {
+                [MessageHandler]
+                public Task<int> Handle(string s) => Task.FromResult(0);
+            }
+            """;
+        var output = ApplyRewriter(new ExecutorSealedRewriter(), input);
+        Assert.Contains("sealed partial class MyExec", output);
+    }
+
     // -------------------------------------------------------------------------
     // FanInArgOrderRewriter (MAF130-FAN-IN-001)
     // -------------------------------------------------------------------------
@@ -376,6 +392,54 @@ public class AutoFixToolTests
         // Named labels stripped + args reordered.
         Assert.DoesNotContain("target:", output);
         Assert.DoesNotContain("sources:", output);
+    }
+
+    [Fact]
+    public void FanInArgOrderRewriter_DoesNotDropInterArgComment()
+    {
+        // Round-8 regression: a comment carried on the separator (between the two
+        // arguments) must survive the swap — the old SeparatedList(values) discarded
+        // the original separator and lost it.
+        var input = """
+            class C
+            {
+                void F(object builder, object target, object s1, object s2)
+                {
+                    builder.AddFanInBarrierEdge(
+                        target,            // the join node
+                        new[] { s1, s2 });
+                }
+            }
+            """;
+        var output = ApplyRewriter(new FanInArgOrderRewriter(), input);
+        Assert.Contains("// the join node", output); // preserved, not dropped
+    }
+
+    [Fact]
+    public void FanInArgOrderRewriter_KeepsEachValuesOwnTrailingComment()
+    {
+        // Round-8 regression: each argument's own trailing comment travels with its
+        // VALUE, not its slot. Pre-fix WithTriviaFrom swapped them onto wrong args.
+        var input = """
+            class C
+            {
+                void F(object builder, object targetNode, object s1, object s2)
+                {
+                    builder.AddFanInBarrierEdge(targetNode /*T*/, new[] { s1, s2 } /*S*/);
+                }
+            }
+            """;
+        var output = ApplyRewriter(new FanInArgOrderRewriter(), input);
+        // New order: `new[] { s1, s2 } /*S*/, targetNode /*T*/`.
+        var idxArray = output.IndexOf("new[]", StringComparison.Ordinal);
+        var idxS = output.IndexOf("/*S*/", StringComparison.Ordinal);
+        var callStart = output.IndexOf("AddFanInBarrierEdge", StringComparison.Ordinal);
+        var idxTargetInCall = output.IndexOf("targetNode", callStart, StringComparison.Ordinal);
+        var idxT = output.IndexOf("/*T*/", StringComparison.Ordinal);
+        Assert.Contains("/*T*/", output);
+        Assert.Contains("/*S*/", output);
+        Assert.True(idxArray < idxS && idxS < idxTargetInCall, $"/*S*/ must stay with the array. Output:\n{output}");
+        Assert.True(idxTargetInCall < idxT, $"/*T*/ must stay with targetNode. Output:\n{output}");
     }
 
     // -------------------------------------------------------------------------
@@ -740,12 +804,14 @@ public class AutoFixToolTests
     // mutually exclusive). Pre-fix the rewriter happily inserted `sealed` on
     // any class deriving from Executor with a [MessageHandler], producing
     // uncompilable user code when the source class was abstract. Same for
-    // `sealed static class` (also rejected by the compiler). Now: skip the
-    // rewrite and emit a leading-trivia comment explaining why.
+    // `sealed static class` (also rejected by the compiler). Now: leave abstract
+    // and static Executors UNCHANGED — parity with the scanner, which skips them
+    // (so autofix/preview honestly report "no change" instead of dirtying a
+    // scanner-clean file with an advisory comment).
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void ExecutorSealedRewriter_AbstractClass_NotRewritten_WithWarningComment()
+    public void ExecutorSealedRewriter_AbstractClass_LeftUnchanged()
     {
         var src = """
             using Microsoft.Agents.AI.Workflow;
@@ -757,12 +823,12 @@ public class AutoFixToolTests
             """;
         var output = ApplyRewriter(new ExecutorSealedRewriter(), src);
 
-        // The output must NOT contain the uncompilable `sealed abstract` order
-        // (the unguarded path would insert `sealed` right after `abstract`,
-        // producing `abstract sealed class`).
+        // Parity with the scanner: an abstract Executor is left UNTOUCHED — no
+        // `sealed` (which would be the uncompilable `abstract sealed`), and no
+        // advisory comment that would dirty a scanner-clean file.
         Assert.DoesNotContain("sealed", output);
-        // The skip-warning comment is present.
-        Assert.Contains("cannot seal an abstract Executor", output);
+        Assert.DoesNotContain("cannot seal", output);
+        Assert.Equal(src, output.TrimEnd());
     }
 
     [Fact]

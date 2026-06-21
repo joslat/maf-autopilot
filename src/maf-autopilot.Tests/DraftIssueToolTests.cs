@@ -172,7 +172,7 @@ public sealed class DraftIssueToolTests
         Assert.Contains("### Steps to reproduce", body);
         Assert.Contains("### Expected behaviour", body);
         Assert.Contains("### Actual behaviour", body);
-        Assert.Contains("### maf-autopilot interpretation", body);
+        Assert.Contains("### maf-doctor interpretation", body);
         Assert.Contains("### Filing checklist", body);
         Assert.Contains("### How to post this", body);
     }

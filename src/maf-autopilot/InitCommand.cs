@@ -5,18 +5,22 @@ using System.Text.Json.Nodes;
 namespace MafDoctor;
 
 /// <summary>
-/// CLI init subcommand: `maf-autopilot init [--with-cursor]`
+/// CLI init subcommand: `maf-doctor init [--with-cursor]`
 ///
 /// Configures a target repository for MAF migration:
-///   1. Writes (or merges) .vscode/mcp.json with the maf-autopilot global-tool server entry.
-///   2. Creates .github/copilot-instructions.md (MAF hard constraints) — only if it doesn't exist.
-///   3. Drops steering snippets: CLAUDE.md and AGENTS.md with merge-not-overwrite semantics.
-///   4. With --with-cursor: also drops .cursorrules.
+///   1. Writes (or merges) the maf-doctor global-tool server entry into both
+///      .vscode/mcp.json (VS Code / Copilot) and .mcp.json (Claude Code).
+///   2. Drops overwrite-on-reinit steering sidecars in each tool's auto-loaded
+///      convention location (never merging into the user's own files):
+///        • .github/instructions/maf-doctor.instructions.md   (Copilot)
+///        • .claude/maf-doctor.md + an @import line in CLAUDE.md (Claude Code)
+///        • AGENTS.md — a sentinel-delimited managed block (no sidecar convention)
+///   3. With --with-cursor: also .cursor/rules/maf-doctor.mdc.
 ///
 /// Run from the root of the repository you want to configure:
 ///   cd /path/to/your-repo
-///   maf-autopilot init
-///   maf-autopilot init --with-cursor   # also drops .cursorrules
+///   maf-doctor init
+///   maf-doctor init --with-cursor   # also drops .cursorrules
 /// </summary>
 internal static class InitCommand
 {
@@ -59,26 +63,34 @@ internal static class InitCommand
         var withCursor = args != null && args.Contains("--with-cursor", StringComparer.OrdinalIgnoreCase);
         var targetDir = Directory.GetCurrentDirectory();
 
-        Console.WriteLine("maf-autopilot init");
+        Console.WriteLine("maf-doctor init");
         Console.WriteLine($"  Configuring: {targetDir}");
         if (withCursor) Console.WriteLine("  --with-cursor: .cursorrules will also be dropped");
         Console.WriteLine();
 
         await WriteMcpJsonAsync(targetDir);
-        await WriteCopilotInstructionsAsync(targetDir);
-        await DropSteeringFileAsync(targetDir, "steering/copilot-instructions.md", ".github/copilot-instructions.md");
-        await DropSteeringFileAsync(targetDir, "steering/claude-instructions.md", "CLAUDE.md");
-        await DropSteeringFileAsync(targetDir, "steering/agents.md", "AGENTS.md");
+        await WriteClaudeMcpJsonAsync(targetDir);
+
+        // Steering — overwrite-on-reinit sidecars in each tool's auto-loaded
+        // convention dir. We never merge into the user's own copilot-instructions.md
+        // / CLAUDE.md, and re-running init refreshes the guidance (no duplicates).
+        await WriteSidecarAsync(targetDir, "steering/copilot-instructions.md",
+            ".github/instructions/maf-doctor.instructions.md", "---\napplyTo: '**'\n---\n\n");
+        await WriteClaudeSteeringAsync(targetDir);
+        await UpsertManagedBlockAsync(targetDir, "steering/agents.md", "AGENTS.md");
         if (withCursor)
-            await DropSteeringFileAsync(targetDir, "steering/cursor-rules.md", ".cursorrules");
+            await WriteSidecarAsync(targetDir, "steering/cursor-rules.md",
+                ".cursor/rules/maf-doctor.mdc",
+                "---\ndescription: MAF Doctor — use the MCP tools for Microsoft Agent Framework code\nalwaysApply: true\n---\n\n");
 
         Console.WriteLine();
         Console.WriteLine("Done. ⚡ Try these three commands first:");
         Console.WriteLine();
-        Console.WriteLine("  maf-autopilot doctor .            # instant A/B/C/F health letter");
-        Console.WriteLine("  maf-autopilot new agent ChatBot   # scaffold a clean 1.3.0 agent");
+        Console.WriteLine("  maf-doctor doctor .            # instant A/B/C/F health letter");
+        Console.WriteLine("  maf-doctor new agent ChatBot   # scaffold a clean MAF agent");
         Console.WriteLine();
-        Console.WriteLine("Then open this folder in VS Code. In Copilot Chat:");
+        Console.WriteLine("The MCP server is now wired for both VS Code (.vscode/mcp.json) and");
+        Console.WriteLine("Claude Code (.mcp.json). In Copilot Chat or Claude Code:");
         Console.WriteLine("  @maf-auditor                      # pre-migration scan + plan");
         Console.WriteLine("  @maf-best-practice-reviewer       # steady-state best-practice audit");
         Console.WriteLine("  @maf-migration                    # execute a migration-plan.md");
@@ -95,19 +107,47 @@ internal static class InitCommand
 
     internal static async Task WriteMcpJsonAsync(string targetDir)
     {
-        var vscodeDir = Path.Combine(targetDir, ".vscode");
-        var mcpJsonPath = Path.Combine(vscodeDir, "mcp.json");
+        // VS Code reads .vscode/mcp.json with a top-level "servers" object and
+        // expects an explicit "type": "stdio" on each entry.
+        await WriteMcpServerEntryAsync(
+            Path.Combine(targetDir, ".vscode", "mcp.json"),
+            serversKey: "servers",
+            label: ".vscode/mcp.json (VS Code / Copilot)",
+            includeType: true);
+    }
 
-        Directory.CreateDirectory(vscodeDir);
+    internal static async Task WriteClaudeMcpJsonAsync(string targetDir)
+    {
+        // Claude Code reads .mcp.json at the repo root with a top-level "mcpServers"
+        // object. Its entries are {command, args, env} — stdio is the implied default,
+        // so we OMIT the "type" field (older Claude Code builds don't recognize it).
+        await WriteMcpServerEntryAsync(
+            Path.Combine(targetDir, ".mcp.json"),
+            serversKey: "mcpServers",
+            label: ".mcp.json (Claude Code)",
+            includeType: false);
+    }
 
-        // Read existing file if present. VS Code's mcp.json spec allows // and /* */
-        // comments and trailing commas (JSON-with-comments / JSONC), so use lenient
-        // parser options before deciding the file is malformed. On a true parse failure,
-        // back up the original so we never silently destroy other MCP-server entries.
-        // Security: cap the JSON read at 1 MB. A malicious or corrupt mcp.json (from a
+    /// <summary>
+    /// Adds the maf-doctor stdio server entry to an MCP config file, MERGING into any
+    /// existing config rather than overwriting. <paramref name="serversKey"/> is the
+    /// top-level object that holds server entries — "servers" for VS Code's
+    /// .vscode/mcp.json, "mcpServers" for Claude Code's .mcp.json. Recognizes the legacy
+    /// "maf-autopilot" server key so re-running init on a pre-rename repo never duplicates.
+    /// </summary>
+    private static async Task WriteMcpServerEntryAsync(string mcpJsonPath, string serversKey, string label, bool includeType)
+    {
+        var dir = Path.GetDirectoryName(mcpJsonPath);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+
+        // Read existing file if present. The mcp.json spec allows // and /* */ comments
+        // and trailing commas (JSONC), so use lenient parser options before deciding the
+        // file is malformed. On a true parse failure, back up the original so we never
+        // silently destroy other MCP-server entries.
+        // Security: cap the JSON read at 1 MB. A malicious or corrupt config (from a
         // template repo, a stale upstream, or a paste accident) could otherwise OOM the
-        // host on the very first `maf-autopilot init` invocation. Real mcp.json files
-        // are kilobytes at most.
+        // host on the very first `maf-doctor init`. Real config files are kilobytes at most.
         const long McpJsonMaxBytes = 1 * 1024 * 1024;
         JsonObject root;
         if (File.Exists(mcpJsonPath))
@@ -116,7 +156,7 @@ internal static class InitCommand
             if (info.Length > McpJsonMaxBytes)
             {
                 var backupPath = CreateBackupWithRetry(mcpJsonPath);
-                Console.WriteLine($"  ⚠ .vscode/mcp.json is {info.Length / 1024} KB — exceeds the 1 MB safety cap.");
+                Console.WriteLine($"  ⚠ {label} is {info.Length / 1024} KB — exceeds the 1 MB safety cap.");
                 Console.WriteLine($"    Backed up to: {backupPath}");
                 Console.WriteLine($"    Starting fresh — restore any other server entries from the backup manually.");
                 root = new JsonObject();
@@ -131,7 +171,7 @@ internal static class InitCommand
                 catch
                 {
                     var backupPath = CreateBackupWithRetry(mcpJsonPath);
-                    Console.WriteLine($"  ⚠ .vscode/mcp.json exists but could not be parsed as JSON (even allowing // comments).");
+                    Console.WriteLine($"  ⚠ {label} exists but could not be parsed as JSON (even allowing // comments).");
                     Console.WriteLine($"    Backed up to: {backupPath}");
                     Console.WriteLine($"    Starting fresh — restore any other server entries from the backup manually.");
                     root = new JsonObject();
@@ -143,161 +183,164 @@ internal static class InitCommand
             root = new JsonObject();
         }
 
-        if (!root.ContainsKey("servers"))
-            root["servers"] = new JsonObject();
+        if (!root.ContainsKey(serversKey))
+            root[serversKey] = new JsonObject();
 
-        var servers = root["servers"]!.AsObject();
+        var servers = root[serversKey]!.AsObject();
 
-        // Brand-only rename (task 6.2): the server key is "maf-doctor" (the
-        // brand), but the command stays "maf-autopilot" (the frozen global-tool
-        // binary). Recognize the legacy "maf-autopilot" key too so re-running
-        // init on a repo configured by an older build doesn't add a duplicate.
+        // Server key + command are both "maf-doctor" (full rename). Recognize the
+        // LEGACY "maf-autopilot" server key too, so re-running init on a repo
+        // configured by a pre-rename build doesn't add a duplicate entry.
         if (servers.ContainsKey("maf-doctor") || servers.ContainsKey("maf-autopilot"))
         {
-            Console.WriteLine("  ✓ .vscode/mcp.json — MAF Doctor server entry already present, no change");
+            Console.WriteLine($"  ✓ {label} — MAF Doctor server entry already present, no change");
             return;
         }
 
-        // Add the global-tool entry (assumes `dotnet tool install -g maf-autopilot`).
-        // Key = brand (maf-doctor); command = frozen binary (maf-autopilot).
-        servers["maf-doctor"] = new JsonObject
-        {
-            ["type"] = "stdio",
-            ["command"] = "maf-autopilot",
-            ["args"] = new JsonArray(),
-            ["env"] = new JsonObject()
-        };
+        // Add the global-tool entry (assumes `dotnet tool install -g maf-doctor`).
+        // VS Code wants an explicit "type": "stdio"; Claude Code's .mcp.json omits it.
+        var entry = new JsonObject();
+        if (includeType) entry["type"] = "stdio";
+        entry["command"] = "maf-doctor";
+        entry["args"] = new JsonArray();
+        entry["env"] = new JsonObject();
+        servers["maf-doctor"] = entry;
 
         var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(mcpJsonPath, json + Environment.NewLine);
-        Console.WriteLine("  ✓ .vscode/mcp.json — added MAF Doctor (maf-doctor) global-tool server entry");
+        Console.WriteLine($"  ✓ {label} — added MAF Doctor (maf-doctor) global-tool server entry");
     }
 
     // ------------------------------------------------------------------ //
-    //  .github/copilot-instructions.md                                     //
+    //  Steering — overwrite-on-reinit sidecars in each tool's convention dir
     // ------------------------------------------------------------------ //
-
-    private static async Task WriteCopilotInstructionsAsync(string targetDir)
-    {
-        var githubDir = Path.Combine(targetDir, ".github");
-        var instructionsPath = Path.Combine(githubDir, "copilot-instructions.md");
-
-        if (File.Exists(instructionsPath))
-        {
-            Console.WriteLine("  ℹ .github/copilot-instructions.md already exists — not overwriting");
-            Console.WriteLine("    (Add the constraint rules manually, or delete it and re-run init)");
-            return;
-        }
-
-        Directory.CreateDirectory(githubDir);
-
-        // Write a thin POINTER, not a copy. The previous version embedded the full
-        // constraints content here, which drifted the moment the MCP server bundle
-        // shipped a new revision. A pointer file is always current — Copilot fetches
-        // `maf://constraints` from the live MCP server on every chat turn.
-        //
-        // Rationale: a fixed-at-install-time copy of a living document is technical
-        // debt. See plan #66.
-        var pointer = """
-            # MAF Migration — Auto-Loaded Constraints
-
-            > **Auto-generated by `maf-autopilot init`. Do not hand-edit.**
-            > This file is a stable pointer; the authoritative content lives in the MCP server.
-            > **Regenerate:** delete this file and re-run `maf-autopilot init`.
-
-            ## How constraints work in this workspace
-
-            The `maf-autopilot` MCP server (configured in `.vscode/mcp.json`) exposes the
-            current MAF best-practice constraints at the resource URI **`maf://constraints`**.
-            GitHub Copilot Chat reads that resource on demand — the constraints stay current
-            with whatever version of `maf-autopilot` is installed, with no manual sync.
-
-            To read the constraints right now, in Copilot Chat:
-            > Read `maf://constraints` and summarise the hard rules.
-
-            ## How constraints are enforced
-
-            The `maf-autopilot` MCP server exposes executable tools that verify each constraint:
-
-            | Constraint                                     | Verify by calling                                  |
-            |------------------------------------------------|----------------------------------------------------|
-            | Instance state in `AIContextProvider`          | `MafScanAntiPatterns(repoPath)` → `MAF-AP-CONC-001` |
-            | `DefaultAzureCredential` in production         | `MafScanAntiPatterns(repoPath)` → `MAF-AP-SEC-001`  |
-            | `EnableSensitiveData = true` outside dev       | `MafScanAntiPatterns(repoPath)` → `MAF-AP-SEC-003`  |
-            | `Instructions` outside `ChatOptions` (silent ignore) | `MafScanAntiPatterns(repoPath)` → `MAF-AP-AGENT-001` |
-            | Executor class must be `sealed partial`        | `MafScanAntiPatterns(repoPath)` → `MAF-AP-WF-001`   |
-            | Middleware `Use()` missing `runStreamingFunc`  | `MafScanAntiPatterns(repoPath)` → `MAF-AP-MID-001`  |
-            | DevUI references must be `#if DEVUI_ENABLED`   | `MafScanAntiPatterns(repoPath)` → `MAF-AP-DEVUI-001` |
-            | Fan-out handler must return `Task<T>`          | `MafValidateFanOut(repoPath)` (or `MafSimulateWorkflow`) |
-            | `AddFanInBarrierEdge` argument order / removed attrs | `MafRunCs0618Hunt(projectPath)`               |
-            | Agent prompt quality (injection, bloat, refusals)    | `MafLintAgentPrompt(repoPath)`                |
-            | Quick "is this API safe in 1.3.0?"             | `MafApiSafety(apiName)`                             |
-            | Explain any MAF snippet inline                 | `MafExplain(snippet)`                               |
-            | Scaffold a new MAF agent / executor            | `MafNewAgent(projectPath, name)` / `MafNewExecutor` |
-            | Workflow topology proof + Mermaid diagram      | `MafSimulateWorkflow(repoPath)`                     |
-            | Single-command health letter (A/B/C/F)         | `MafDoctor(repoPath)` — or CLI `maf-autopilot doctor` |
-
-            For IDE-time enforcement (red squigglies as you type), add the `maf-autopilot.Analyzers`
-            NuGet package to your project — ships rules `MAF001` / `MAF002` / `MAF003`.
-            """;
-
-        await File.WriteAllTextAsync(instructionsPath, pointer);
-        Console.WriteLine("  ✓ .github/copilot-instructions.md — pointer to maf://constraints installed");
-        Console.WriteLine("    (Always-current — fetched from the live MCP server, not a stale copy)");
-    }
-
-    // ------------------------------------------------------------------ //
-    //  Steering snippets (CLAUDE.md, AGENTS.md, .github/copilot-instructions.md, .cursorrules)
-    // ------------------------------------------------------------------ //
+    //
+    //  We do NOT merge into the user's own copilot-instructions.md / CLAUDE.md.
+    //  Each tool auto-loads a convention-specific location; we own a dedicated file
+    //  there and overwrite it on every init, so the guidance refreshes with the
+    //  installed maf-doctor version and can never stack duplicate sections.
 
     /// <summary>
-    /// Drops a steering snippet from embedded resources into the target repository.
-    /// Merge-not-overwrite: if the file already exists AND already contains the
-    /// steering snippet marker ("Using maf-autopilot" section), we skip. If the file
-    /// exists but does NOT contain the section, we append. If the file does not exist,
-    /// we create it. The HTML comment header at the top of each snippet is stripped
-    /// when appending to avoid duplicate meta-comments.
+    /// Writes a steering sidecar from an embedded snippet, OVERWRITING any prior copy
+    /// (re-running init refreshes the guidance). The snippet's leading HTML-comment
+    /// header is stripped; optional convention-specific frontmatter is prepended.
     /// </summary>
-    internal static async Task DropSteeringFileAsync(
-        string targetDir,
-        string embeddedResourceName,
-        string outputRelativePath)
+    internal static async Task WriteSidecarAsync(
+        string targetDir, string embeddedResourceName, string outputRelativePath, string? frontmatter = null)
     {
-        var asm = Assembly.GetExecutingAssembly();
-        var resourceContent = ReadEmbeddedResource(asm, embeddedResourceName);
-        if (resourceContent is null)
+        var body = ReadSteeringBody(embeddedResourceName);
+        if (body is null)
         {
-            // Embedded resource not found — skip silently (may happen if csproj
-            // didn't include the file yet during development).
             Console.WriteLine($"  ⚠ Steering resource '{embeddedResourceName}' not found in assembly — skipped");
             return;
         }
 
         var outputPath = Path.Combine(targetDir, outputRelativePath);
-        var markerText = "## Using maf-autopilot";
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+
+        var content = (frontmatter ?? string.Empty) + body;
+        if (!content.EndsWith("\n", StringComparison.Ordinal)) content += "\n";
+        await File.WriteAllTextAsync(outputPath, content);
+        Console.WriteLine($"  ✓ {outputRelativePath} — written (refreshed on each init)");
+    }
+
+    /// <summary>
+    /// Claude Code auto-loads CLAUDE.md. We keep the steering body in a sidecar
+    /// (.claude/maf-doctor.md, overwritten each init) and ensure CLAUDE.md pulls it in
+    /// via a single stable `@.claude/maf-doctor.md` import — added once, never
+    /// duplicated; the rest of the user's CLAUDE.md is never touched.
+    /// </summary>
+    internal static async Task WriteClaudeSteeringAsync(string targetDir)
+    {
+        var body = ReadSteeringBody("steering/claude-instructions.md");
+        if (body is null)
+        {
+            Console.WriteLine("  ⚠ Steering resource 'steering/claude-instructions.md' not found — skipped");
+            return;
+        }
+
+        // Sidecar — overwrite-always.
+        var sidecarPath = Path.Combine(targetDir, ".claude", "maf-doctor.md");
+        Directory.CreateDirectory(Path.GetDirectoryName(sidecarPath)!);
+        await File.WriteAllTextAsync(sidecarPath, body.EndsWith("\n", StringComparison.Ordinal) ? body : body + "\n");
+        Console.WriteLine("  ✓ .claude/maf-doctor.md — written (refreshed on each init)");
+
+        // Ensure CLAUDE.md imports it (one stable line; add only if absent).
+        const string importLine = "@.claude/maf-doctor.md";
+        const string managedComment = "<!-- MAF Doctor steering — managed by `maf-doctor init`; .claude/maf-doctor.md is overwritten on re-run -->";
+        var claudePath = Path.Combine(targetDir, "CLAUDE.md");
+        if (File.Exists(claudePath))
+        {
+            var existing = await File.ReadAllTextAsync(claudePath);
+            if (existing.Contains(importLine, StringComparison.Ordinal))
+            {
+                Console.WriteLine("  ✓ CLAUDE.md — already imports MAF Doctor steering, no change");
+                return;
+            }
+            var sep = existing.Length == 0 || existing.EndsWith("\n", StringComparison.Ordinal) ? string.Empty : "\n";
+            await File.AppendAllTextAsync(claudePath, $"{sep}\n{managedComment}\n{importLine}\n");
+            Console.WriteLine("  ✓ CLAUDE.md — added @import for MAF Doctor steering");
+        }
+        else
+        {
+            await File.WriteAllTextAsync(claudePath, $"{managedComment}\n{importLine}\n");
+            Console.WriteLine("  ✓ CLAUDE.md — created with @import for MAF Doctor steering");
+        }
+    }
+
+    /// <summary>
+    /// Upserts a sentinel-delimited managed block into a shared file that has no
+    /// auto-loaded sidecar convention (AGENTS.md). The block between the BEGIN/END
+    /// markers is REPLACED on re-init (refreshes, never duplicates); appended if the
+    /// markers are absent; the file is created if missing. Content outside the block
+    /// is left untouched.
+    /// </summary>
+    internal static async Task UpsertManagedBlockAsync(
+        string targetDir, string embeddedResourceName, string outputRelativePath)
+    {
+        var body = ReadSteeringBody(embeddedResourceName);
+        if (body is null)
+        {
+            Console.WriteLine($"  ⚠ Steering resource '{embeddedResourceName}' not found — skipped");
+            return;
+        }
+
+        const string begin = "<!-- BEGIN maf-doctor (managed by `maf-doctor init` — overwritten on re-run) -->";
+        const string end = "<!-- END maf-doctor -->";
+        var block = $"{begin}\n{body.TrimEnd()}\n{end}";
+
+        var outputPath = Path.Combine(targetDir, outputRelativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
 
         if (File.Exists(outputPath))
         {
             var existing = await File.ReadAllTextAsync(outputPath);
-            if (existing.Contains(markerText, StringComparison.OrdinalIgnoreCase)
-                || existing.Contains("## Microsoft Agent Framework", StringComparison.OrdinalIgnoreCase))
+            var bi = existing.IndexOf(begin, StringComparison.Ordinal);
+            var ei = existing.IndexOf(end, StringComparison.Ordinal);
+            if (bi >= 0 && ei > bi)
             {
-                Console.WriteLine($"  ✓ {outputRelativePath} — maf-autopilot section already present, no change");
-                return;
+                var updated = existing[..bi] + block + existing[(ei + end.Length)..];
+                await File.WriteAllTextAsync(outputPath, updated);
+                Console.WriteLine($"  ✓ {outputRelativePath} — refreshed managed maf-doctor block");
             }
-
-            // Append: strip the leading HTML comment block from the snippet content
-            var body = StripLeadingHtmlComment(resourceContent);
-            Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
-            await File.AppendAllTextAsync(outputPath, $"\n\n{body}");
-            Console.WriteLine($"  ✓ {outputRelativePath} — merged maf-autopilot steering section");
+            else
+            {
+                var sep = existing.Length == 0 || existing.EndsWith("\n", StringComparison.Ordinal) ? string.Empty : "\n";
+                await File.AppendAllTextAsync(outputPath, $"{sep}\n{block}\n");
+                Console.WriteLine($"  ✓ {outputRelativePath} — added managed maf-doctor block");
+            }
         }
         else
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
-            await File.WriteAllTextAsync(outputPath, resourceContent);
-            Console.WriteLine($"  ✓ {outputRelativePath} — created");
+            await File.WriteAllTextAsync(outputPath, block + "\n");
+            Console.WriteLine($"  ✓ {outputRelativePath} — created with managed maf-doctor block");
         }
+    }
+
+    private static string? ReadSteeringBody(string embeddedResourceName)
+    {
+        var raw = ReadEmbeddedResource(Assembly.GetExecutingAssembly(), embeddedResourceName);
+        return raw is null ? null : StripLeadingHtmlComment(raw);
     }
 
     private static string? ReadEmbeddedResource(Assembly asm, string logicalName)

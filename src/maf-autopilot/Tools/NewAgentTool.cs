@@ -9,7 +9,7 @@ namespace MafDoctor.Tools;
 /// <summary>
 /// MCP tools: MafNewAgent and MafNewExecutor
 ///
-/// Greenfield magic — generates clean MAF 1.3.0 code from templates that
+/// Greenfield magic — generates clean MAF code from templates that
 /// pass the anti-pattern scanner and fan-out validator out of the box.
 /// </summary>
 [McpServerToolType]
@@ -24,14 +24,14 @@ public sealed class NewAgentTool
     //   OpenWorld   = false → purely local: no network calls.
     [McpServerTool(Destructive = true, Idempotent = true, OpenWorld = false)]
     [Description("""
-        Generate a new MAF 1.3.0 agent class + xUnit smoke test.
+        Generate a new MAF agent class + xUnit smoke test.
 
         Creates `Agents/<Name>.cs` and `Tests/<Name>Tests.cs` under the target
         project directory. The generated agent:
           - uses `ChatClientAgent` (not the legacy `AIAgent` base)
           - wires `UseOpenTelemetry` on the IChatClient
           - sets `MaxOutputTokens = 1024` so the cost auditor is happy
-          - puts Instructions inside `ChatOptions` (the correct 1.3.0 placement)
+          - puts Instructions inside `ChatOptions` (the correct placement)
           - includes a hermetic test using a `ScriptedChatClient` mock — zero LLM cost
 
         Input:
@@ -85,11 +85,11 @@ public sealed class NewAgentTool
     // the user's project tree; idempotent on second call; no network.
     [McpServerTool(Destructive = true, Idempotent = true, OpenWorld = false)]
     [Description("""
-        Generate a new MAF 1.3.0 workflow executor + xUnit smoke test.
+        Generate a new MAF workflow executor + xUnit smoke test.
 
         Creates `Workflows/<Name>Executor.cs` and `Tests/<Name>ExecutorTests.cs`.
         The generated executor:
-          - is a `sealed partial class : Executor` (correct 1.3.0 shape)
+          - is a `sealed partial class : Executor` (correct shape)
           - has a `[MessageHandler]` returning `Task<TOutput>` (fan-out-safe)
           - includes a reflection-based smoke test that fails at build time if the
             return type ever regresses to void / non-generic Task — catches the
@@ -150,15 +150,15 @@ public sealed class NewAgentTool
     // Phase 7.G fixup — regex hygiene applied to all Regex declarations.
     // NamespaceRegex matches user-controlled .csproj content; the bounded
     // `[^<]+` class is backtracking-safe but the policy requires
-    // NonBacktracking + 100ms timeout regardless.
+    // NonBacktracking + 2s timeout regardless.
     private static readonly Regex IdentifierRegex = new(
         @"^[A-Za-z][A-Za-z0-9_]*$",
         RegexOptions.Compiled | RegexOptions.NonBacktracking,
-        TimeSpan.FromMilliseconds(100));
+        TimeSpan.FromSeconds(2));
     private static readonly Regex NamespaceRegex = new(
         @"<RootNamespace>([^<]+)</RootNamespace>",
         RegexOptions.Compiled | RegexOptions.NonBacktracking,
-        TimeSpan.FromMilliseconds(100));
+        TimeSpan.FromSeconds(2));
 
     internal static bool IsSafeIdentifier(string s) =>
         !string.IsNullOrWhiteSpace(s) && IdentifierRegex.IsMatch(s);

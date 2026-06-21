@@ -1,6 +1,6 @@
 # MAF Compatibility Matrix
 
-<!-- auto-updated-by: maf-release-watcher | last-updated: 2026-05-17 -->
+<!-- auto-updated-by: maf-release-watcher | last-updated: 2026-06-14 -->
 
 <!--
   Note on the Azure.AI.OpenAI column: MAF doesn't pin Azure.AI.OpenAI directly.
@@ -13,7 +13,7 @@
 -->
 
 > This file is the single source of truth for MAF version ↔ dependency version compatibility.
-> It is referenced by `maf-autopilot` MCP server tools (`maf_compatibility`) and auto-updated by the `maf-release-watcher` skill and GitHub Actions workflow.
+> It is referenced by `maf-doctor` MCP server tools (`maf_compatibility`) and auto-updated by the `maf-release-watcher` skill and GitHub Actions workflow.
 
 ---
 
@@ -21,7 +21,7 @@
 
 | MAF Version | Microsoft.Extensions.AI | .NET | Azure.AI.OpenAI | Generators Package | Notes |
 |-------------|------------------------|------|-----------------|--------------------|-------|
-| **1.10.0** | `>= unknown` | `>= 8.0` | `>= unknown` | `1.10.0` | Auto-detected — verify versions in PR review. |
+| **1.10.0** | `≥ 10.6.0` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.10.0` | Breaking: skill `Content`/`Resources`/`Scripts` properties removed; `ToolApprovalAgent` constructor takes `ToolApprovalAgentOptions?` instead of `JsonSerializerOptions?`; `SubAgentsProvider` / `SubTaskInfo` / `SubTaskStatus` removed; `GroupChatWorkflowBuilder`/`MagenticWorkflowBuilder` `.WithName`/`.WithDescription` removed. |
 | **1.6.1** | `≥ 10.5.1` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.6.1` | Additive release; adds `expectedOutput` parameter to `WorkflowEvaluationExtensions.EvaluateAsync` for ground-truth evaluation. |
 | **1.5.0** | `≥ 10.5.1` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.5.0` | Additive release; new `ToolApprovalAgent`. |
 | **1.4.0** | `≥ 10.5.0` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.4.0` | `AgentSkillScript` surface changed: `AIFunctionArguments` → `JsonElement?` + `IServiceProvider?`. |
@@ -65,7 +65,7 @@
 
 The `.maf-version` file at the repository root records the latest MAF version this toolkit's data covers. The `maf-release-watcher` GitHub Actions workflow compares this against the NuGet feed to detect new releases.
 
-Current tracked version: **`1.6.1`** (see `.maf-version`)
+Current tracked version: **`1.10.0`** (see `.maf-version`)
 
 ---
 
@@ -82,4 +82,4 @@ When a new MAF version ships:
 
 ---
 
-*Maintained by maf-autopilot | See `.github/skills/maf-release-watcher/SKILL.md` for update process*
+*Maintained by maf-doctor | See `.github/skills/maf-release-watcher/SKILL.md` for update process*

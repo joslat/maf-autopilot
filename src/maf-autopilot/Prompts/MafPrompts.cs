@@ -56,7 +56,7 @@ public static class MafPrompts
         sb.AppendLine($"Repository: {safeRepoPath}");
         if (!string.IsNullOrEmpty(safeFromVersion))
             sb.AppendLine($"Current MAF version: {safeFromVersion}");
-        sb.AppendLine("Target MAF version: 1.3.0");
+        sb.AppendLine("Target MAF version: the latest stable release (confirm with the MafCompatibility tool or maf://registry)");
         sb.AppendLine();
         sb.AppendLine("BEFORE STARTING:");
         sb.AppendLine("1. Read the hard constraints at maf://constraints — these must never be violated.");
@@ -166,7 +166,7 @@ public static class MafPrompts
     [McpServerPrompt(Name = "maf-review",
         Title = "MAF Review: Best-Practices Code Review")]
     [Description(
-        "Starter prompt for a MAF 1.3.0 best-practices code review (not migration). " +
+        "Starter prompt for a MAF best-practices code review (not migration). " +
         "Useful for day-to-day development, PR review, and post-migration validation. " +
         "Covers executors, sessions, fan-out topology, security, streaming, A2A.")]
     public static IList<PromptMessage> Review(
@@ -184,7 +184,7 @@ public static class MafPrompts
         var safeFocusArea = LlmFencing.StripHtmlComments(focusArea);
 
         var sb = new StringBuilder();
-        sb.AppendLine("Review the supplied MAF 1.3.0 code for best-practice compliance. This is NOT a migration audit — focus on correctness + idiom for an already-migrated 1.3.0 codebase.");
+        sb.AppendLine("Review the supplied MAF code for best-practice compliance. This is NOT a migration audit — focus on correctness + idiom for an already-migrated codebase.");
         sb.AppendLine();
         if (!string.IsNullOrEmpty(safeTarget)) sb.AppendLine($"Target: `{safeTarget}`");
         if (!string.IsNullOrEmpty(safeFocusArea)) sb.AppendLine($"Focus area: `{safeFocusArea}`");
@@ -192,13 +192,13 @@ public static class MafPrompts
         sb.AppendLine("**Suggested tool calls** (most-to-least lightweight):");
         sb.AppendLine();
         sb.AppendLine("- `MafDoctor(repoPath)` — A/B/C/F grade + top 3 fixes. Best triage signal.");
-        sb.AppendLine("- `MafScanAntiPatterns(repoPath)` — 10-rule security/concurrency/observability scan.");
+        sb.AppendLine("- `MafScanAntiPatterns(repoPath)` — 11-rule security/concurrency/observability scan.");
         sb.AppendLine("- `MafValidateFanOut(repoPath)` — silent fan-in starvation detector.");
         sb.AppendLine("- `MafLintAgentPrompt(repoPath)` — agent-prompt safety (empty / bloat / refusal / injection).");
         sb.AppendLine("- `MafEstimateCost(repoPath)` — token-cost auditor (missing `MaxOutputTokens` cap).");
         sb.AppendLine("- `MafExplain(snippet)` — annotate a suspicious snippet inline.");
         sb.AppendLine();
-        sb.AppendLine("**Review checklist (MAF 1.3.0):**");
+        sb.AppendLine("**Review checklist (MAF):**");
         sb.AppendLine("1. Executors: `sealed partial class : Executor` + `[MessageHandler]` on handlers. NO `ReflectingExecutor<T>`, NO `IMessageHandler<>`, NO `[StreamsMessage]` / `[YieldsMessage]`.");
         sb.AppendLine("2. Sessions: `AgentSession` via `CreateSessionAsync` (NOT `AgentThread.GetNewThread()`). State in `ProviderSessionState<T>`, NEVER instance fields on providers.");
         sb.AppendLine("3. Fan-out / fan-in: handlers MUST return `Task<T>` / `ValueTask<T>` / `IAsyncEnumerable<T>` (void or non-generic Task starves the barrier). `AddFanInBarrierEdge(sources, target)` — sources first.");
@@ -224,7 +224,7 @@ public static class MafPrompts
         [Description("Path to the .NET project or solution, if relevant.")] string? projectPath = null)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("You are diagnosing a MAF 1.3.0 issue. Identify the root cause and provide the exact fix (or recommend the right specialist agent).");
+        sb.AppendLine("You are diagnosing a MAF issue. Identify the root cause and provide the exact fix (or recommend the right specialist agent).");
         sb.AppendLine();
         if (!string.IsNullOrWhiteSpace(errorOrSymptom))
         {
@@ -283,10 +283,56 @@ public static class MafPrompts
         return [new PromptMessage { Role = Role.User, Content = new TextContentBlock { Text = sb.ToString() } }];
     }
 
-    [McpServerPrompt(Name = "maf-scaffold",
-        Title = "MAF Scaffold: Generate MAF 1.3.0 Boilerplate")]
+    [McpServerPrompt(Name = "maf-explain-finding",
+        Title = "MAF Explain Finding: deep-dive and fix one doctor finding")]
     [Description(
-        "Starter prompt for scaffolding MAF 1.3.0 boilerplate. Routes to the right " +
+        "Deep-dive a single MAF Doctor finding (file + line from the report) and turn it " +
+        "into a precise explanation and proposed fix. Calls MafExplainFinding for the grounded " +
+        "code context + rule rationale, then uses maf://constraints and maf://guide as grounding " +
+        "so the explanation and fix are accurate, not hallucinated.")]
+    public static IList<PromptMessage> ExplainFinding(
+        [Description("Repo-relative file path of the finding, exactly as shown in the doctor report (e.g. 'Executors/Foo.cs').")] string file,
+        [Description("1-based line number of the finding.")] string line,
+        [Description("Path to the repository root. Leave empty to let the assistant infer it.")] string? repoPath = null)
+    {
+        // Phase 5.G fixup — length caps before sanitization. See Audit for rationale.
+        try { BoundedInput.Validate(file,     BoundedInput.PathBytes,      nameof(file)); }
+        catch (ArgumentException) { file = string.Empty; }
+        try { BoundedInput.Validate(line,     BoundedInput.ShortTextBytes, nameof(line)); }
+        catch (ArgumentException) { line = string.Empty; }
+        try { BoundedInput.Validate(repoPath, BoundedInput.PathBytes,      nameof(repoPath)); }
+        catch (ArgumentException) { repoPath = null; }
+
+        // Phase 2.G fixup (Finding 3) — strip HTML comments from echoed values.
+        var safeFile = LlmFencing.StripHtmlComments(file);
+        var safeLine = LlmFencing.StripHtmlComments(line);
+        var safeRepoPath = LlmFencing.StripHtmlComments(repoPath);
+
+        var sb = new StringBuilder();
+        sb.AppendLine("Explain ONE MAF Doctor finding and propose the exact fix in the user's code. Be precise — ground every claim in the served resources, do not guess.");
+        sb.AppendLine();
+        sb.AppendLine($"Finding location: `{(string.IsNullOrEmpty(safeFile) ? "<file>" : safeFile)}:{(string.IsNullOrEmpty(safeLine) ? "<line>" : safeLine)}`");
+        if (!string.IsNullOrEmpty(safeRepoPath))
+            sb.AppendLine($"Repository: {safeRepoPath}");
+        sb.AppendLine();
+        var repoArg = string.IsNullOrEmpty(safeRepoPath) ? "<repo>" : safeRepoPath;
+        sb.AppendLine("STEPS:");
+        sb.AppendLine($"1. Call `MafExplainFinding(repoPath: \"{repoArg}\", file: \"{(string.IsNullOrEmpty(safeFile) ? "<file>" : safeFile)}\", line: {(string.IsNullOrEmpty(safeLine) ? "<line>" : safeLine)})` to get the offending code in context plus the rule's rationale, fix, and auto-fixability.");
+        sb.AppendLine("2. Read `maf://constraints` (the hard rules) and the relevant section of `maf://guide`. For an obsolete / removed-surface finding (e.g. `MAF-AP-EXEC-001`), also call `MafRegistryLookup` for the canonical before/after.");
+        sb.AppendLine("3. Explain to the user, grounded in those sources:");
+        sb.AppendLine("   - **What** the finding is and **why it matters** (the concrete failure mode, not a restatement of the rule name).");
+        sb.AppendLine("   - **The fix.** If the tool reports it is *auto-fixable*, tell the user to run `maf-doctor autofix-all .` (or call `MafAutoFixAll`) — the rewrite is deterministic. If it *needs judgment*, propose the exact change as a minimal diff against the shown code.");
+        sb.AppendLine("4. Before finalizing a hand-written fix, re-check it against `maf://constraints` so the fix doesn't violate a hard rule.");
+        sb.AppendLine();
+        sb.AppendLine("Keep it tight: one finding, one clear fix. If `MafExplainFinding` reports no finding at that line, say so and suggest re-running `MafDoctor` for the current `file:line`.");
+
+        return [new PromptMessage { Role = Role.User, Content = new TextContentBlock { Text = sb.ToString() } }];
+    }
+
+    [McpServerPrompt(Name = "maf-scaffold",
+        Title = "MAF Scaffold: Generate MAF Boilerplate")]
+    [Description(
+        "Starter prompt for scaffolding MAF boilerplate. Routes to the right " +
         "scaffolder MCP tool based on what you want to build.")]
     public static IList<PromptMessage> Scaffold(
         [Description("What to scaffold: \"agent\" (chat-client agent class) or \"executor\" (workflow message handler).")] string template = "agent",
@@ -309,7 +355,7 @@ public static class MafPrompts
 
         var sb = new StringBuilder();
         var t = (template ?? "agent").Trim().ToLowerInvariant();
-        sb.AppendLine("Scaffold MAF 1.3.0 boilerplate that passes every scanner and analyzer out of the box.");
+        sb.AppendLine("Scaffold MAF boilerplate that passes every scanner and analyzer out of the box.");
         sb.AppendLine();
 
         switch (t)
@@ -318,7 +364,7 @@ public static class MafPrompts
                 sb.AppendLine($"**Call:** `MafNewAgent(projectPath: \"<your-project>\", agentName: \"{(string.IsNullOrEmpty(safeName) ? "MyAgent" : safeName)}\", instructions: \"<optional system prompt>\")`");
                 sb.AppendLine();
                 sb.AppendLine("Generates:");
-                sb.AppendLine("- `Agents/<Name>.cs` — `ChatClientAgent`-based class with `UseOpenTelemetry`, `MaxOutputTokens = 1024`, `Instructions` inside `ChatOptions` (the correct 1.3.0 placement)");
+                sb.AppendLine("- `Agents/<Name>.cs` — `ChatClientAgent`-based class with `UseOpenTelemetry`, `MaxOutputTokens = 1024`, `Instructions` inside `ChatOptions` (the correct placement)");
                 sb.AppendLine("- `Tests/<Name>Tests.cs` — hermetic xUnit smoke test using a `ScriptedChatClient` mock (zero LLM cost)");
                 sb.AppendLine();
                 sb.AppendLine("Generator contract: the output passes `MafScanAntiPatterns` + `MafValidateFanOut` + compile-validation on first run.");
@@ -358,8 +404,8 @@ public static class MafPrompts
         sb.AppendLine("You are `@maf` triaging a new user. Walk them through the **3-question intake**:");
         sb.AppendLine();
         sb.AppendLine("**Q1.** What's the current MAF state in your codebase?");
-        sb.AppendLine("- *(a)* Already on MAF 1.3.0 — clean build, no CS0618 warnings.");
-        sb.AppendLine("- *(b)* Pre-1.3.0 (on 1.0/1.1/1.2) and want to upgrade.");
+        sb.AppendLine("- *(a)* Already on a current MAF version — clean build, no CS0618 warnings.");
+        sb.AppendLine("- *(b)* On an older MAF (e.g. 1.0 / 1.1 / 1.2) and want to upgrade.");
         sb.AppendLine("- *(c)* Greenfield — no MAF code yet, planning a new project.");
         sb.AppendLine("- *(d)* I don't know — help me find out.");
         sb.AppendLine();

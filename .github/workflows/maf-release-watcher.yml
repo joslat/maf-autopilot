@@ -2,7 +2,7 @@ name: MAF Release Watcher
 
 on:
   schedule:
-    - cron: '0 9 * * *'   # Daily 09:00 UTC (task 3.6 — cuts detection latency 7d→1d; no-op path is cheap)
+    - cron: '0 6 * * 4'   # Thursday 06:00 UTC (~08:00 Europe/Zurich) — aligned with MAF's .NET Thursday-morning ship cadence. Manual workflow_dispatch covers off-cadence releases.
   workflow_dispatch:        # Manual trigger anytime
     inputs:
       maf_version:
@@ -98,7 +98,6 @@ jobs:
             # shell block's indentation, so Python raised "IndentationError:
             # unexpected indent" on EVERY scheduled run (the explicit-version
             # dispatch path skips this branch, which is why manual runs worked).
-            # See docs/self-update-remediation-plan.md task 1.1.
             LATEST=$(echo "$RAW" | python3 .github/scripts/get_latest_stable.py)
             if [ -z "$LATEST" ]; then
               echo "ℹ️ No stable version found on NuGet — only prereleases. Skipping."
@@ -266,8 +265,8 @@ jobs:
         continue-on-error: true   # never block the PR on registry extraction
         run: |
           # Install maf-autopilot itself so we can call the registry-extract subcommand.
-          dotnet tool install --global maf-autopilot --prerelease \
-            || dotnet tool update --global maf-autopilot --prerelease
+          dotnet tool install --global maf-doctor --prerelease \
+            || dotnet tool update --global maf-doctor --prerelease
 
           REGISTRY=".github/skills/maf-obsolete-api-registry/registry.yaml"
           TMP_ENTRIES="/tmp/draft-registry-entries.yaml"
@@ -276,7 +275,7 @@ jobs:
           : > "$TMP_ENTRIES"
           for pkg in Microsoft.Agents.AI Microsoft.Agents.AI.Workflows; do
             echo "=== Extracting draft entries for $pkg ($OLD → $NEW) ==="
-            maf-autopilot registry-extract "$pkg" "$OLD" "$NEW" >> "$TMP_ENTRIES" || true
+            maf-doctor registry-extract "$pkg" "$OLD" "$NEW" >> "$TMP_ENTRIES" || true
             echo "" >> "$TMP_ENTRIES"
           done
 
@@ -423,7 +422,7 @@ jobs:
             echo "Major bump already tracked in issue #${NUM} — leaving as-is."
           else
             gh issue create --title "${TITLE}" --label "maf-release,needs-review" \
-              --body "A new **major** MAF release was detected: \`${OLD}\` → \`${NEW}\`. Major bumps are not auto-committed to main (breaking-change risk). The breaking-API diffs are attached as artifacts on the run: ${RUN_URL}. To process: review the diffs, then dispatch the watcher manually for this version or apply the changes by hand. See docs/self-update-remediation-plan.md (task 3.2)."
+              --body "A new **major** MAF release was detected: \`${OLD}\` → \`${NEW}\`. Major bumps are not auto-committed to main (breaking-change risk). The breaking-API diffs are attached as artifacts on the run: ${RUN_URL}. To process: review the diffs, then dispatch the watcher manually for this version or apply the changes by hand."
             echo "Opened escalation issue for major bump ${OLD} → ${NEW}."
           fi
 

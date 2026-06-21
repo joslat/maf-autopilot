@@ -43,7 +43,7 @@ public static class FraudClaimsWorkflow
 
         // ⚠️ MAF130-FAN-IN-001 — OBSOLETE overload (target first, sources second).
         // The compiler emits CS0618 here. We intentionally let the warning flow
-        // through (no #pragma suppression) so the maf-autopilot CS0618 hunter
+        // through (no #pragma suppression) so the maf-doctor CS0618 hunter
         // (`MafRunCs0618Hunt`) can find this exact call site.
         // The corrected pattern would be:
         //   builder.AddFanInBarrierEdge(new ExecutorBinding[] { osint, history, transactions }, aggregator);
