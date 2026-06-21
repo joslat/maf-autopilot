@@ -169,7 +169,7 @@ jobs:
       - name: AI inference (GitHub Models)
         if: steps.build.outputs.skip != 'true'
         id: ai
-        uses: actions/ai-inference@b81b2afb8390ee6839b494a404766bef6493c7d9  # v1.2.8
+        uses: actions/ai-inference@a7805884c80886efc241e94a5351df715968a0ad  # v2.1.1
         with:
           model: ${{ inputs.model != '' && inputs.model || 'openai/gpt-4o' }}
           prompt-file: .ai-review-prompt.txt
