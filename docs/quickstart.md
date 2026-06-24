@@ -23,7 +23,7 @@ dotnet tool update --global maf-doctor
 
 > 🎙️ *"One global tool. It's an MCP server for Copilot/Claude/Cursor **and** a standalone CLI — we'll use the CLI."*
 >
-> ⚠️ **Upgrade says "file is locked by another process"?** Your editor keeps the MCP server (`maf-doctor`) running, which locks the binary. Kill it first, then update — `Get-Process maf-doctor | Stop-Process -Force` (Windows) / `pkill -f maf-doctor` (macOS/Linux), or just close the editor → update → reopen. After upgrading, re-run `maf-doctor init` to refresh the steering.
+> ⚠️ **Upgrade says "file is locked by another process"?** Your editor keeps the MCP server (`maf-doctor`) running, which locks the binary. Kill **every** instance first (both VS Code and Claude Code if open) — `Get-Process maf-doctor | Stop-Process -Force` (Windows) / `pkill -f maf-doctor` (macOS/Linux) — then update. **After upgrading**, re-run `maf-doctor init` and **reload the editor** (VS Code: `Developer: Reload Window`) so it loads the new binary; a bare restart keeps the cached old descriptors. (Full guide: [TROUBLESHOOTING.md](../TROUBLESHOOTING.md).)
 
 ## Beat 2 — Drop it into a repo (20s)
 
@@ -48,7 +48,7 @@ You'll see a **🔴 grade F** — with the top fixes. These include **silent fan
 >
 > *Tip:* in a monorepo, scope the scan with `maf-doctor doctor . --exclude samples/ --exclude '**/*.Tests/**'`.
 
-> 💡 **New in 1.3.0:** every finding now shows a one-line **Why** + **Fix**. Add `--all` to list them all (grouped by rule), or `--plan` to get a checkboxed remediation plan you can paste straight into a GitHub issue. And in an MCP client (Copilot / Claude / Cursor), ask *"explain the finding at `Executors/OsintInvestigator.cs:25`"* — it calls **`MafExplainFinding`** to return that code in context + why + the fix, using your host model (no extra LLM cost).
+> 💡 **Act on it:** every finding shows a one-line **Why** + **Fix** and a **`confidence`** (`certain`/`high`/`heuristic` — *heuristic* ones are flagged "⚠ verify it's real first", your false-positive signal). Add `--all` to list them grouped by rule, `--plan` for a checkboxed remediation plan (`--plan --json` for a structured manifest). In an MCP client (Copilot / Claude / Cursor), ask *"explain the finding at `Executors/OsintInvestigator.cs:25`"* — it calls **`MafExplainFinding`** to return that code in context + why + fix, using your host model (no extra LLM cost).
 
 ## Beat 4 — Fix the mechanical issues, deterministically (30s)
 

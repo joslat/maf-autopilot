@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-06-24
+
+Diagnose → triage → fix, end to end: human-readable `autofix-all`, a first-class finding **confidence** signal, the **`maf-remediate`** fix-it-all conductor (+ playbook skill), the **`doctor --plan --json`** manifest, and a false-positive hardening sweep across the detectors. Hardened by two multi-agent review passes (every finding verified) that also caught and fixed 3 real bugs. 922 tests green across net8/9/10.
+
 ### Added
 - **`doctor --plan --json` — structured remediation manifest.** The machine-readable sibling of `--plan`: a phased plan (Phase 1 = one `autofix-all` command + the rules it clears; Phase 2 = semantic findings grouped by rule) where every finding carries `confidence` + a `verify_first` flag and all its `occurrences`. Built so the `maf-remediate` loop can iterate deterministically and triage false positives without parsing markdown. `--plan` alone stays the human checklist; `--json` alone stays the flat findings array. (Schema v1; see docs/output-schemas.md.)
 - **Finding `confidence` for false-positive triage.** Every `doctor` finding now carries a `confidence` — `certain` (compiler ground-truth) / `high` (structural AST, low FP) / `heuristic` (name-only / text / scope-limited — verify before fixing), derived from the detector audit. Surfaced in the markdown report (heuristic non-auto findings tagged **"⚠ heuristic — verify it's real first"**), in `--plan` (a heuristic count + per-item marker), and in `--json` (additive `confidence` field, schema stays v1). Unknown rules default to `heuristic` (verify-first).
@@ -567,8 +571,10 @@ Internal alpha; superseded by `1.3.0-alpha-3`. Not announced.
 
 Initial MCP server prototype. Three tools (`MafApiSafety`, `MafRegistryLookup`, `MafRegistryList`), 11 skills, 2 agents, 10 registry entries. Validated against one real migration (`maf-claims-fraud-guardian` 1.2.0 → 1.3.0). Internal alpha; not announced.
 
-[Unreleased]: https://github.com/joslat/maf-autopilot/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/joslat/maf-autopilot/releases/tag/v1.0.0
+[Unreleased]: https://github.com/joslat/maf-doctor/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.4.0
+[1.3.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.3.0
+[1.0.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.0.0
 [1.3.0-alpha-3]: https://www.nuget.org/packages/maf-autopilot/1.3.0-alpha-3
 [1.3.0-alpha-2]: https://www.nuget.org/packages/maf-autopilot/1.3.0-alpha-2
 [1.3.0-alpha-1]: https://www.nuget.org/packages/maf-autopilot/1.3.0-alpha-1

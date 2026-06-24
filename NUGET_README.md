@@ -42,8 +42,10 @@ Uninstall is just as clean: `dotnet tool uninstall --global maf-doctor`, then de
 
 - 🔍 **Catches bugs that compile clean** — fan-out/fan-in silent failures where a workflow exits successfully but produces no output. Zero build signal.
 - 🩺 **Compiler ground-truth for CS0618** — obsolete-API usage mapped to its exact replacement pattern. Deterministic fixes, not hallucinated ones.
+- 🆕 **Confidence triage (1.4.0)** — every finding carries a `confidence` (`certain`/`high`/`heuristic`); the *heuristic* ones (likely false positives) are flagged "⚠ verify it's real first", in `doctor`, `--plan`, and `--json`.
+- 🆕 **`maf-remediate` — fix it all (1.4.0)** — an MCP prompt that grades, plans, runs `autofix-all`, then works each semantic finding *confirming heuristic ones before editing*, building + re-grading. Backed by the `maf-remediation-playbook` skill. `doctor --plan --json` gives an automatable manifest.
 - 🆕 **`doctor --all`** — list *every* finding (not just the top 3), grouped by rule and ordered by impact, each with a one-line *why* and the offending source line. Full triage in one pass.
-- 🆕 **`doctor --plan`** — turn the findings into an ordered, checkboxed **remediation plan** (Phase 1: one `autofix-all` for the mechanical fixes; Phase 2: the semantic fixes as impact-ordered tasks) you can drop straight into a GitHub issue.
+- 🆕 **`autofix-all` is human-readable** — a per-rule breakdown + changed files + next step by default (`--json` for the machine shape); the deterministic fixes turn the findings into an ordered, checkboxed **remediation plan** via `doctor --plan`.
 - 📖 **It updates itself** — a weekly GitHub Actions watcher refreshes the migration guide, compatibility matrix, and obsolete-API registry as new MAF versions ship, so you don't pin to a MAF version or wait on a maintainer release.
 - 🔐 **Security-hardened** — closes the named MCP attack lattice (path-escape, annotation drift, scaffold code-injection, prompt-injection, workflow-dispatch input injection). Cisco mcp-scanner: all tools SAFE, 0 findings.
 
