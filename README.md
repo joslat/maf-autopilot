@@ -83,6 +83,27 @@ maf-doctor init
 
 `init` is **non-destructive — it attaches and updates only, never overwriting your files.** It adds its own MCP server entry to both **VS Code** (.vscode/mcp.json) and **Claude Code** (.mcp.json), and drops auto-loaded steering as self-contained sidecars in each tool's convention dir — .github/instructions/ for Copilot, .claude/ plus a one-line CLAUDE.md import for Claude Code, and an AGENTS.md managed block. These sidecars are refreshed on every re-run and never merged into your hand-authored files, so re-running `init` after an upgrade is always safe. Your assistant picks the server up automatically and gains live tool calls, resource reads, and structured prompts.
 
+#### Keeping it up to date
+
+```powershell
+dotnet tool update --global maf-doctor   # upgrade to the latest release
+maf-doctor --version                      # confirm
+cd your-maf-project && maf-doctor init    # re-run init to refresh the steering sidecars
+```
+
+> ⚠️ **"The file is locked by another process" on update?** Your editor keeps the MCP server (`maf-doctor`) **running**, which locks the tool binary — so `dotnet tool update` can't replace it. Stop the running server first, then update:
+>
+> ```powershell
+> # Windows: kill the running MCP server, then update
+> Get-Process maf-doctor -ErrorAction SilentlyContinue | Stop-Process -Force
+> dotnet tool update --global maf-doctor
+> ```
+> ```bash
+> # macOS / Linux
+> pkill -f maf-doctor; dotnet tool update --global maf-doctor
+> ```
+> Or just **close the editor (or disable the maf-doctor MCP server) → update → reopen.** The editor relaunches the server automatically.
+
 > 📖 **Going deeper:** [what `init` installs (and why)](docs/init-reference.md) · [using MAF Doctor — prompts, tools, agents & natural-language steering](docs/usage.md) · [hands-on workshop](samples/workshop.md).
 
 **First three commands to try:**

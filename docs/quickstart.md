@@ -16,9 +16,14 @@ dotnet tool install --global maf-doctor
 
 # Verify it's on PATH
 maf-doctor --version
+
+# Later, to upgrade to the newest release:
+dotnet tool update --global maf-doctor
 ```
 
 > 🎙️ *"One global tool. It's an MCP server for Copilot/Claude/Cursor **and** a standalone CLI — we'll use the CLI."*
+>
+> ⚠️ **Upgrade says "file is locked by another process"?** Your editor keeps the MCP server (`maf-doctor`) running, which locks the binary. Kill it first, then update — `Get-Process maf-doctor | Stop-Process -Force` (Windows) / `pkill -f maf-doctor` (macOS/Linux), or just close the editor → update → reopen. After upgrading, re-run `maf-doctor init` to refresh the steering.
 
 ## Beat 2 — Drop it into a repo (20s)
 
@@ -63,6 +68,8 @@ maf-doctor doctor .
 The grade stays **🔴 F** — but **three mechanical errors are gone (7 → 4)**, deterministically, in under 30 seconds, no LLM in the loop. The rest are *semantic* (a hard-coded key, shared provider state, the fan-out starvation bugs) and need judgment — that's the hand-off to the `@maf-migration` agent, which is what drives the grade to A. The fixes are deterministic Roslyn rewriters — the same machinery you'd trust in a Microsoft refactor extension, not guesses.
 
 > 🎙️ *"Apply for real. Roslyn rewriters — three mechanical errors gone, 7 down to 4, deterministically, no LLM. The rest are semantic; the agent takes those the rest of the way to A."*
+
+> 💡 **Fix *everything* (in an MCP client — Copilot / Claude / Cursor):** just ask *"analyze this repo and fix all the issues maf-doctor finds."* The model runs the `maf-remediate` loop: it grades, gets a plan where **every finding carries a `confidence`** (`certain` / `high` / `heuristic`), applies the mechanical fixes, then works each semantic finding — **auto-triaging the `heuristic` ones (likely false positives), confirming each before it edits** — building after every step until the grade stops climbing, and reports what it fixed vs skipped-as-false-positive. The per-rule fixes + false-positive rules come from the bundled **`maf-remediation-playbook`** skill. Prefer a checklist? `maf-doctor doctor . --plan` (human) or `--plan --json` (a structured manifest for automation).
 
 ## Beat 5 — Upgrade to the latest MAF (60s)
 
