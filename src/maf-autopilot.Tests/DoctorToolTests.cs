@@ -1395,11 +1395,14 @@ public class DoctorToolTests
     }
 
     [Fact]
-    public void DoctorCli_Parse_LastFormatFlagWins()
+    public void DoctorCli_Parse_PlanAndJsonTogether_IsManifest()
     {
-        // Documented contract: the last format flag wins.
-        Assert.Equal("plan", MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--json", "--plan" }).Format);
-        Assert.Equal("json", MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--plan", "--json" }).Format);
+        // New contract: `--plan --json` (either order) = the structured remediation
+        // manifest ("plan-json"); each flag alone keeps its own format.
+        Assert.Equal("plan-json", MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--json", "--plan" }).Format);
+        Assert.Equal("plan-json", MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--plan", "--json" }).Format);
+        Assert.Equal("plan", MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--plan" }).Format);
+        Assert.Equal("json", MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--json" }).Format);
     }
 
     [Fact]

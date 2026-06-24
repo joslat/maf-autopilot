@@ -42,11 +42,15 @@ if (args.Length > 0 && (args[0] is "--help" or "-h" or "help"))
         Commands:
           init [--with-cursor]              Wire the MCP server + steering into the current repo
                                             (.vscode/mcp.json, .mcp.json, instructions, agents).
-          doctor [path] [--exclude <s>] [--all] [--json|--plan]
+          doctor [path] [--exclude <s>] [--all|--full] [--json] [--plan]
                                             A/B/C/F health report. --all = every finding (grouped),
-                                            not just the top 3; --json = machine-readable output;
-                                            --plan = ordered, checkboxed remediation plan.
-          autofix-all [path] [--dry-run]    Apply deterministic Roslyn fixes.
+                                            not just the top 3; --json = machine-readable findings;
+                                            --plan = ordered, checkboxed remediation plan;
+                                            --plan --json = structured remediation manifest (for an automated fix loop).
+          autofix-all [path] [--dry-run] [--json]
+                                            Apply deterministic Roslyn fixes. Human-readable summary
+                                            by default; --dry-run = preview only (no writes);
+                                            --json = machine-readable output.
           new agent <Name>                  Scaffold a MAF agent + smoke test.
           new executor <Name> [In] [Out]    Scaffold a workflow executor + smoke test.
           badge [path]                      Emit a shields.io health-badge JSON payload.
@@ -101,12 +105,24 @@ if (args.Length >= 1 && args[0] == "autofix-all")
 {
     // Phase W bonus + #8 enabler — surface MafAutoFixAll on the CLI so the
     // migration-cast.tape can drive the auto-fix flow without going through
-    // Copilot Chat. Usage: `maf-doctor autofix-all [path] [--dry-run]`.
-    var positional = args.Skip(1).Where(a => !a.StartsWith("--")).ToList();
-    var path = positional.Count > 0 ? positional[0] : Directory.GetCurrentDirectory();
-    var dryRun = args.Contains("--dry-run");
-    var report = new MafDoctor.Tools.AutoFixTool().MafAutoFixAll(path, dryRun: dryRun);
-    Console.WriteLine(report);
+    // Copilot Chat. Usage: `maf-doctor autofix-all [path] [--dry-run] [--json]`.
+    // Default output is human-readable; `--json` emits the machine-readable
+    // (MCP-tool) shape. Parsing lives in AutoFixCli so it's unit-testable.
+    var (parsedPath, json, dryRun) = MafDoctor.Commands.AutoFixCli.Parse(args);
+    var path = parsedPath ?? Directory.GetCurrentDirectory();
+    var tool = new MafDoctor.Tools.AutoFixTool();
+    if (json)
+    {
+        // Machine-readable: identical to the MafAutoFixAll MCP tool output.
+        Console.WriteLine(tool.MafAutoFixAll(path, dryRun: dryRun));
+    }
+    else
+    {
+        var report = tool.RunAll(path, specificFile: null, dryRun: dryRun, out var error);
+        Console.WriteLine(error is not null
+            ? $"❌ {error}"
+            : MafDoctor.Commands.AutoFixCli.Format(report!));
+    }
     Environment.Exit(0);
     return;
 }

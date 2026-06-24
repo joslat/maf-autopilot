@@ -67,6 +67,98 @@ public class FanOutValidatorToolTests
     }
 
     [Fact]
+    public void AnalyzeSource_NonGenericValueTask_ButEmitsViaSendMessageAsync_IsOk()
+    {
+        // The idiomatic non-fan-out-edge pattern: void/ValueTask return + explicit
+        // context.SendMessageAsync. This produces a downstream message, so it is NOT
+        // a silent-starvation dead-end (was the false-positive flood before body-awareness).
+        var source = """
+            using System.Threading.Tasks;
+            using Microsoft.Agents.AI.Workflows;
+
+            public sealed partial class MyExecutor
+            {
+                [MessageHandler]
+                public async ValueTask Handle(string input, IWorkflowContext context)
+                {
+                    await context.SendMessageAsync(input.ToUpper());
+                }
+            }
+            """;
+
+        var findings = FanOutValidatorTool.AnalyzeSource(source);
+        Assert.Equal(FanOutVerdict.Ok, Assert.Single(findings).Verdict);
+    }
+
+    [Fact]
+    public void AnalyzeSource_VoidHandler_ButEmitsViaYieldOutputAsync_IsOk()
+    {
+        var source = """
+            using System.Threading.Tasks;
+            using Microsoft.Agents.AI.Workflows;
+
+            public sealed partial class MyExecutor
+            {
+                [MessageHandler]
+                public async ValueTask Handle(string input, IWorkflowContext context)
+                {
+                    await context.YieldOutputAsync($"Processed: {input}");
+                }
+            }
+            """;
+
+        var findings = FanOutValidatorTool.AnalyzeSource(source);
+        Assert.Equal(FanOutVerdict.Ok, Assert.Single(findings).Verdict);
+    }
+
+    [Fact]
+    public void AnalyzeSource_GenericSendMessageAsync_IsOk()
+    {
+        // context.SendMessageAsync<T>(x) — the invoked name is a GenericName; must still match.
+        var source = """
+            using System.Threading.Tasks;
+            using Microsoft.Agents.AI.Workflows;
+
+            public sealed partial class MyExecutor
+            {
+                [MessageHandler]
+                public async ValueTask Handle(string input, IWorkflowContext context)
+                {
+                    await context.SendMessageAsync<string>(input);
+                }
+            }
+            """;
+
+        var findings = FanOutValidatorTool.AnalyzeSource(source);
+        Assert.Equal(FanOutVerdict.Ok, Assert.Single(findings).Verdict);
+    }
+
+    [Fact]
+    public void AnalyzeSource_NonGenericValueTask_DiscardsResult_StaysSilentStarvationRisk()
+    {
+        // The genuine dead-end (mirrors the sample investigators): computes a value,
+        // emits nothing via the context, returns nothing. Must STILL be flagged.
+        var source = """
+            using System.Threading.Tasks;
+            using Microsoft.Agents.AI.Workflows;
+
+            public sealed partial class MyExecutor
+            {
+                [MessageHandler]
+                public async ValueTask Handle(string input, IWorkflowContext context)
+                {
+                    await Task.Yield();
+                    var finding = input.ToUpper();
+                    _ = finding; // thrown away — nothing reaches the fan-in barrier
+                }
+            }
+            """;
+
+        var findings = FanOutValidatorTool.AnalyzeSource(source);
+        Assert.Equal(FanOutVerdict.SilentStarvationRisk, Assert.Single(findings).Verdict);
+    }
+
+    [Fact]
     public void AnalyzeSource_GenericValueTaskHandler_IsOk()
     {
         var source = """

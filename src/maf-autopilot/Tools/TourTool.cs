@@ -146,13 +146,14 @@ public sealed class TourTool
         ("maf://registry", "Machine-readable obsolete-API registry YAML."),
         ("maf://rules", "Live rule catalogue — anti-pattern + prompt-lint + analyzer + cross-references. Auto-generated from runtime data."),
         ("maf://help", "Same content as `MafTour()` but as a resource — useful for static discovery without a tool call."),
-        ("maf://skills?name=<X>", "Individual skill SKILL.md by name. 12 skills available."),
+        ("maf://skills?name=<X>", "Individual skill SKILL.md by name. 13 skills available."),
     };
 
     internal static readonly IReadOnlyList<(string Name, string Description)> PromptCatalogue = new[]
     {
         ("maf-audit", "Starter prompt for the auditor agent. Generates a migration plan."),
         ("maf-migrate", "Starter prompt for the migration agent. Executes specific tasks from an existing plan."),
+        ("maf-remediate", "Fix-it-all conductor: grade + plan → MafAutoFixAll (mechanical) → verify each heuristic (possible false-positive) finding before fixing → build → re-grade until the grade stops improving."),
         ("maf-cs0618-hunt", "Starter prompt for finding + fixing CS0618 obsolete-API warnings."),
         ("maf-review", "Best-practices code review starter — day-to-day development, PR review, post-migration validation. Routes to MafDoctor / MafScanAntiPatterns / MafValidateFanOut."),
         ("maf-debug", "Reactive-debugging starter — paste an error or symptom, the prompt routes to the right diagnostic tool by symptom class."),

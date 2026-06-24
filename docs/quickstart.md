@@ -16,9 +16,14 @@ dotnet tool install --global maf-doctor
 
 # Verify it's on PATH
 maf-doctor --version
+
+# Later, to upgrade to the newest release:
+dotnet tool update --global maf-doctor
 ```
 
 > 🎙️ *"One global tool. It's an MCP server for Copilot/Claude/Cursor **and** a standalone CLI — we'll use the CLI."*
+>
+> ⚠️ **Upgrade says "file is locked by another process"?** Your editor keeps the MCP server (`maf-doctor`) running, which locks the binary. Kill it first, then update — `Get-Process maf-doctor | Stop-Process -Force` (Windows) / `pkill -f maf-doctor` (macOS/Linux), or just close the editor → update → reopen. After upgrading, re-run `maf-doctor init` to refresh the steering.
 
 ## Beat 2 — Drop it into a repo (20s)
 
@@ -27,9 +32,9 @@ cd samples/maf-1.3-sample      # or: cd your-own-maf-project
 maf-doctor init
 ```
 
-`init` wires the MCP server for VS Code (`.vscode/mcp.json`) and Claude Code (`.mcp.json`), and drops auto-loaded steering sidecars (Copilot / Claude / Cursor / AGENTS.md) — refreshed on re-run, never merged into your own files. The 12 skills are served by the MCP server, not written as files. Idempotent — safe to re-run. (details: [init-reference.md](./init-reference.md)).
+`init` wires the MCP server for VS Code (`.vscode/mcp.json`) and Claude Code (`.mcp.json`), and drops auto-loaded steering sidecars (Copilot / Claude / Cursor / AGENTS.md) — refreshed on re-run, never merged into your own files. The 13 skills are served by the MCP server, not written as files. Idempotent — safe to re-run. (details: [init-reference.md](./init-reference.md)).
 
-> 🎙️ *"`init` makes any repo MAF-aware: MCP config for the IDE, plus steering rules and 12 skills for Copilot's agent loop."*
+> 🎙️ *"`init` makes any repo MAF-aware: MCP config for the IDE, plus steering rules and 13 skills for Copilot's agent loop."*
 
 ## Beat 3 — Analyze: the health grade (30s)
 
@@ -58,9 +63,13 @@ maf-doctor autofix-all .
 maf-doctor doctor .
 ```
 
+`autofix-all` prints a **human-readable summary** by default — a per-rule breakdown, the files it changed, and the next step. Add **`--json`** if you want the machine-readable output for CI/scripts. (And `0 files changed` is normal: it only means none of the 5 *mechanical* rules matched — your semantic findings are still there; run `doctor` to see them.)
+
 The grade stays **🔴 F** — but **three mechanical errors are gone (7 → 4)**, deterministically, in under 30 seconds, no LLM in the loop. The rest are *semantic* (a hard-coded key, shared provider state, the fan-out starvation bugs) and need judgment — that's the hand-off to the `@maf-migration` agent, which is what drives the grade to A. The fixes are deterministic Roslyn rewriters — the same machinery you'd trust in a Microsoft refactor extension, not guesses.
 
 > 🎙️ *"Apply for real. Roslyn rewriters — three mechanical errors gone, 7 down to 4, deterministically, no LLM. The rest are semantic; the agent takes those the rest of the way to A."*
+
+> 💡 **Fix *everything* (in an MCP client — Copilot / Claude / Cursor):** just ask *"analyze this repo and fix all the issues maf-doctor finds."* The model runs the `maf-remediate` loop: it grades, gets a plan where **every finding carries a `confidence`** (`certain` / `high` / `heuristic`), applies the mechanical fixes, then works each semantic finding — **auto-triaging the `heuristic` ones (likely false positives), confirming each before it edits** — building after every step until the grade stops climbing, and reports what it fixed vs skipped-as-false-positive. The per-rule fixes + false-positive rules come from the bundled **`maf-remediation-playbook`** skill. Prefer a checklist? `maf-doctor doctor . --plan` (human) or `--plan --json` (a structured manifest for automation).
 
 ## Beat 5 — Upgrade to the latest MAF (60s)
 

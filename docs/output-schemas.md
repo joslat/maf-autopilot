@@ -23,7 +23,8 @@ Pass `format: "json"` to get machine-readable output.
       "issue": "EnableSensitiveData = true",
       "fix_description": "Remove EnableSensitiveData = true from non-dev configurations.",
       "auto_fixable": true,
-      "why": "Sensitive-data logging writes prompts and responses (often PII / secrets) to your telemetry sink — acceptable in dev, a data-leak in production."
+      "why": "Sensitive-data logging writes prompts and responses (often PII / secrets) to your telemetry sink — acceptable in dev, a data-leak in production.",
+      "confidence": "high"
     }
   ],
   "summary_md": "...the full markdown report that format:markdown would emit..."
@@ -48,6 +49,7 @@ Pass `format: "json"` to get machine-readable output.
   - `fix_description`: one-line actionable fix; `MafAutoFixAll` uses this as its rewrite spec
   - `auto_fixable`: `true` if `MafAutoFixAll` has a deterministic rewriter for this rule
   - `why`: one-line consequence / rationale for the finding. **Always present**; the empty string `""` when no rationale is defined for the rule.
+  - `confidence`: detector trust level for **false-positive triage** — `"certain"` (compiler ground-truth) | `"high"` (structural AST, low FP) | `"heuristic"` (name-only / text / scope-limited — **verify before fixing**). Additive within schema v1; consumers that don't recognize it can ignore it. The `maf-remediate` prompt reads this to decide which findings to confirm before changing code.
 - `summary_md`: the same markdown that `format: "markdown"` would emit (for hybrid consumers). It includes the offending source line per finding, so it inherits the markdown report's **best-effort, content-aware secret redaction** — the structured `top_fixes` array carries no source text and is the safer channel for machine consumers.
 
 ### Usage in CI
@@ -86,6 +88,47 @@ punch list you can paste into a GitHub issue:
 
 It **always covers every finding**, ignoring `--all` / `full`, and emits **no source
 snippets** — only `file:line` — so it never echoes a secret.
+
+---
+
+## `MafDoctor` remediation manifest (`--plan --json`)
+
+The machine-readable sibling of `--plan` — the same phased plan, structured so an
+automated remediation loop (the `maf-remediate` prompt) can iterate it and triage
+false positives without parsing prose. Schema version `"1"`.
+
+```jsonc
+{
+  "schema_version": "1",
+  "verdict": "F",
+  "repo": "C:/path/to/repo",
+  "counts": { "total": 13, "auto_fixable": 3, "manual": 10, "heuristic": 3 },
+  "phase1_autofix": {                         // null when nothing is auto-fixable
+    "command": "maf-doctor autofix-all .",
+    "finding_count": 3,
+    "clears_rules": ["MAF-AP-SEC-001", "MAF-AP-SEC-003", "MAF-AP-WF-001"]
+  },
+  "phase2_semantic": [                         // grouped by rule, impact-ordered
+    {
+      "rule_id": "COST-001",
+      "title": "uncapped agent call — no MaxOutputTokens",
+      "severity": "cost",
+      "confidence": "heuristic",              // certain | high | heuristic
+      "verify_first": true,                   // true ⇔ confidence == "heuristic"
+      "auto_fixable": false,
+      "why": "An agent call with no MaxOutputTokens cap can emit an unbounded response…",
+      "fix": "Set MaxOutputTokens on the nearest ChatOptions to cap the per-call cost.",
+      "occurrences": [ { "file": "AGUIClient/Program.cs", "line": 90 } ]
+    }
+  ]
+}
+```
+
+- `counts.heuristic` — how many Phase-2 findings are `heuristic` (likely false positives; confirm before fixing).
+- `phase1_autofix` — `null` if there are no auto-fixable findings; otherwise the single command + the rules it clears.
+- `phase2_semantic[].verify_first` — `true` for `heuristic` findings: confirm the finding is real (e.g. via `MafExplainFinding`) **before** editing.
+- `phase2_semantic[].occurrences` — every `file`/`line` for that rule (a group of N hits is one entry with N occurrences).
+- Invalid path / scan failure returns the same `{ "schema_version": "1", "error": "…" }` shape as `--json`.
 
 ---
 

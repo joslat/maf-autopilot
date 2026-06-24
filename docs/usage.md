@@ -28,6 +28,7 @@ Prompts are pre-built workflows the server exposes; your client surfaces them as
 |---|---|---|
 | `maf-audit` | Scan a codebase, cross-reference constraints + registry, emit a tracked `migration-plan.md` | `@maf-auditor` |
 | `maf-migrate` | Execute migration tasks from a plan, build-verified per step | `@maf-migration` |
+| `maf-remediate` | Fix-it-all: grade + plan → autofix → **verify each heuristic (possible false-positive) finding** → build → re-grade | `@maf-migration` |
 | `maf-cs0618-hunt` | Find + fix every CS0618 obsolete-API usage | — |
 | `maf-review` | Best-practice review of already-migrated code | `@maf-best-practice-reviewer` |
 | `maf-debug` | Diagnose a MAF failure → root cause + fix | `@maf-incident-responder` |
@@ -61,7 +62,7 @@ Readable on demand; the assistant pulls them when relevant:
 | `maf://registry` | Obsolete-API registry (CS0618 → exact fix) |
 | `maf://rules` | Live catalogue of every scanner + analyzer rule |
 | `maf://help` | How to use the toolkit |
-| `maf://skills?name=<name>` | Any of the 12 bundled skills |
+| `maf://skills?name=<name>` | Any of the 13 bundled skills |
 
 ## 5. Specialist agents (`@…`)
 
@@ -75,7 +76,7 @@ The same binary, with a subcommand, runs as a CLI (no chat needed):
 
 ```bash
 maf-doctor doctor [path] [--exclude <s>]… [--all] [--json|--plan]   # A/B/C/F health report (--all = every finding; --json = machine output; --plan = remediation plan)
-maf-doctor autofix-all [path] [--dry-run]   # apply deterministic Roslyn fixes
+maf-doctor autofix-all [path] [--dry-run] [--json]   # apply deterministic Roslyn fixes (human-readable; --json = machine output; --dry-run = preview)
 maf-doctor new agent <Name>                 # scaffold an agent + smoke test
 maf-doctor new executor <Name> [In] [Out]   # scaffold a workflow executor
 maf-doctor init [--with-cursor]             # wire MCP + steering into a repo

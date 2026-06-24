@@ -56,6 +56,7 @@ public class MafResourcesTests
     [InlineData("maf-migration-retrospective")]
     [InlineData("maf-obsolete-api-registry")]
     [InlineData("maf-release-watcher")]
+    [InlineData("maf-remediation-playbook")]
     [InlineData("maf-workflow-smoke-tester")]
     [InlineData("nuget-diff-analyzer")]
     public void GetSkill_AllAllowlistedNames_Resolve(string name)

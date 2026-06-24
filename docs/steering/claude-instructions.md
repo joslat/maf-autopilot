@@ -28,9 +28,16 @@ and the maf-doctor registry is kept current via an AI-fill loop.
    training data — MAF ships breaking changes every minor version, so
    training data is likely outdated.
 
-3. **Before manually editing MAF code to fix an anti-pattern** — call
-   `MafAutoFixAll --dry-run` and offer to apply the deterministic
-   rewrites first. Manual edits drift; the rewrites are tested.
+3. **To fix issues** — `MafAutoFixAll --dry-run` then apply handles the
+   *mechanical* rules deterministically (offer this first; the rewrites are
+   tested). To fix **everything**, run the `maf-remediate` prompt (or just
+   ask "fix all the issues maf-doctor found"): it grades → plans → autofixes
+   → then works each semantic finding. Every finding carries a **`confidence`**
+   (`certain` / `high` / `heuristic`); a **`heuristic`** finding may be a
+   **false positive** — confirm it with `MafExplainFinding` before editing.
+   Get the plan via `MafDoctor(format: "plan")` (human) or `--plan --json`
+   (structured manifest); per-rule fix + false-positive guidance lives in the
+   `maf-remediation-playbook` skill.
 
 4. **When designing a new MAF agent or workflow** — call `MafNewAgent` /
    `MafNewExecutor` for scaffolds, or `MafSimulateWorkflow` for topology
