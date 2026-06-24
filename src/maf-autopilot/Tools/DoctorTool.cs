@@ -251,6 +251,9 @@ public sealed class DoctorTool
                     FixDescription: GetAntiPatternFix(a.RuleId),
                     AutoFixable: IsAutoFixable(a.RuleId),
                     Why: GetWhy(a.RuleId))))
+            // Stamp the detector trust level once, from the rule id (single source
+            // of truth — the markdown tag, --plan, and --json all read this).
+            .Select(r => r with { Confidence = ConfidenceFor(r.RuleId) })
             // Deterministic within a priority bucket (matches GroupByRule's order),
             // so the top-3 markdown headline + JSON top_fixes don't depend on
             // filesystem enumeration order.
@@ -291,7 +294,8 @@ public sealed class DoctorTool
                 Issue: f.Issue,
                 FixDescription: f.FixDescription,
                 AutoFixable: f.AutoFixable,
-                Why: f.Why))
+                Why: f.Why,
+                Confidence: f.Confidence))
             .ToList();
 
         return new DoctorJsonResult(
@@ -324,6 +328,30 @@ public sealed class DoctorTool
         // a blanket auto-fix — the rewriter only rewrites already-async contexts and
         // declines the rest. The doctor lists CONC-002 as "needs your judgment".
         _ => false,
+    };
+
+    /// <summary>
+    /// Detector trust level per rule — drives false-positive triage in `doctor`,
+    /// `--plan`, `--json`, and the `maf-remediate` loop. Derived from the multi-agent
+    /// detector audit (mechanism + calibrated FP risk):
+    ///   • "certain"   — compiler ground-truth (CS0618 paths). No false positives by construction.
+    ///   • "high"      — structural AST rules with low residual FP (post-hardening). Fix with light verification.
+    ///   • "heuristic" — name-only / text / scope-limited rules. VERIFY each is real before changing code.
+    /// Default is "heuristic" (verify-first) so a new/unclassified rule errs toward human review.
+    /// </summary>
+    internal static string ConfidenceFor(string ruleId) => ruleId switch
+    {
+        // Structural AST rules, low residual false-positive risk after the hardening batch.
+        "MAF001"
+            or "MAF-AP-SEC-001" or "MAF-AP-SEC-003"
+            or "MAF-AP-CONC-001" or "MAF-AP-CONC-002"
+            or "MAF-AP-WF-001" or "MAF-AP-AGENT-001"
+            or "MAF-AP-DEVUI-001" or "MAF-AP-EXEC-001" => "high",
+        // Compiler ground-truth, if ever surfaced through the doctor aggregate.
+        _ when ruleId.StartsWith("CS06", StringComparison.Ordinal) => "certain",
+        // COST-001, MAF-AP-SEC-002, MAF-AP-OBS-001, MAF-AP-MID-001, PROMPT-00x, …
+        // — name-only / text / scope-limited. Verify before fixing.
+        _ => "heuristic",
     };
 
     /// <summary>One-line actionable fix description per anti-pattern rule ID.</summary>
@@ -511,6 +539,16 @@ public sealed class DoctorTool
         return sb.ToString();
     }
 
+    /// <summary>
+    /// The per-finding tag shown after a fix header: auto-fixable vs needs-judgment,
+    /// and — for non-auto, heuristic findings — an explicit "verify it's real" nudge
+    /// (these are the ones most likely to be false positives).
+    /// </summary>
+    private static string FixTag(DoctorRecommendation r) =>
+        r.AutoFixable ? "auto-fixable"
+        : r.Confidence == "heuristic" ? "needs your judgment · ⚠ heuristic — verify it's real first"
+        : "needs your judgment";
+
     /// <summary>Default view — the top fixes, each enriched with Why / Fix / the offending source line.</summary>
     private static void AppendTopFixes(
         StringBuilder sb, string repoPath, DoctorSummary s, Dictionary<string, string[]?> lineCache)
@@ -520,8 +558,7 @@ public sealed class DoctorTool
         var i = 1;
         foreach (var fix in s.TopFixes)
         {
-            var tag = fix.AutoFixable ? "auto-fixable" : "needs your judgment";
-            sb.AppendLine($"{i}. **[{fix.Source}]** {fix.Description} · _{tag}_");
+            sb.AppendLine($"{i}. **[{fix.Source}]** {fix.Description} · _{FixTag(fix)}_");
             if (!string.IsNullOrEmpty(fix.Why)) sb.AppendLine($"   - **Why:** {fix.Why}");
             if (!string.IsNullOrEmpty(fix.FixDescription)) sb.AppendLine($"   - **Fix:** {fix.FixDescription}");
             var (src, redacted) = TryReadSourceLine(repoPath, fix.File, fix.Line, lineCache);
@@ -553,7 +590,7 @@ public sealed class DoctorTool
         foreach (var g in groups)
         {
             var rep = g.Rep;
-            var tag = rep.AutoFixable ? "auto-fixable" : "needs your judgment";
+            var tag = FixTag(rep);
             var count = g.Items.Count > 1 ? $" ×{g.Items.Count}" : "";
             // Use a rule-generic title (not the representative's per-instance Issue),
             // so a group of distinct fan-out methods / cost sites isn't mislabeled
@@ -662,7 +699,10 @@ public sealed class DoctorTool
 
         var auto = all.Where(f => f.AutoFixable).ToList();
         var manual = all.Where(f => !f.AutoFixable).ToList();
+        var heuristic = manual.Where(f => f.Confidence == "heuristic").ToList();
         sb.AppendLine($"{all.Count} finding(s): **{auto.Count} auto-fixable**, **{manual.Count} need your judgment**.");
+        if (heuristic.Count > 0)
+            sb.AppendLine($"⚠ **{heuristic.Count} of the {manual.Count}** are **heuristic** (marked below) — confirm each is a real issue in your code before changing it; some may be false positives.");
         sb.AppendLine();
 
         if (auto.Count > 0)
@@ -688,7 +728,8 @@ public sealed class DoctorTool
             foreach (var (rep, items) in GroupByRule(manual))
             {
                 var count = items.Count > 1 ? $" ×{items.Count}" : "";
-                sb.AppendLine($"- [ ] **{PrioritySeverityLabel(rep.Priority)} `{rep.RuleId}` — {GroupHeaderTitle(rep)}**{count}");
+                var heuristicTag = rep.Confidence == "heuristic" ? " · ⚠ _heuristic — verify first_" : "";
+                sb.AppendLine($"- [ ] **{PrioritySeverityLabel(rep.Priority)} `{rep.RuleId}` — {GroupHeaderTitle(rep)}**{count}{heuristicTag}");
                 if (!string.IsNullOrEmpty(rep.Why)) sb.AppendLine($"  - **Why:** {rep.Why}");
                 if (!string.IsNullOrEmpty(rep.FixDescription)) sb.AppendLine($"  - **Fix:** {rep.FixDescription}");
                 foreach (var it in items)
@@ -781,7 +822,8 @@ public sealed record DoctorRecommendation(
     string Issue,          // short title for JSON
     string FixDescription, // actionable fix string
     bool AutoFixable,      // whether MafAutoFix can apply a deterministic rewriter
-    string Why = "");      // Tier 1 — one-line consequence ("why it bites you"); "" = none known
+    string Why = "",       // Tier 1 — one-line consequence ("why it bites you"); "" = none known
+    string Confidence = "high"); // detector trust: "certain" | "high" | "heuristic" (verify before fixing)
 
 // -------------------------------------------------------------------------
 // JSON output schema types (format: "json")
@@ -814,7 +856,10 @@ public sealed record DoctorJsonFinding(
     [property: JsonPropertyName("issue")] string Issue,
     [property: JsonPropertyName("fix_description")] string FixDescription,
     [property: JsonPropertyName("auto_fixable")] bool AutoFixable,
-    [property: JsonPropertyName("why")] string Why = "");
+    [property: JsonPropertyName("why")] string Why = "",
+    // Detector trust for false-positive triage: "certain" | "high" | "heuristic".
+    // Additive within schema_version "1" (consumers ignore unknown fields).
+    [property: JsonPropertyName("confidence")] string Confidence = "high");
 
 [JsonSerializable(typeof(DoctorJsonResult))]
 [JsonSerializable(typeof(DoctorJsonFinding))]

@@ -8,9 +8,9 @@
 
 **MAF Doctor** is a **.NET global tool** (installed from NuGet) that does three things in one install:
 
-1. **An MCP server** — exposes 26 executable tools, 6 resources, and 8 prompts to GitHub Copilot / Claude Code / Cursor.
+1. **An MCP server** — exposes 26 executable tools, 6 resources, and 9 prompts to GitHub Copilot / Claude Code / Cursor.
 2. **A CLI** — **doctor** for an A–F health letter, **autofix-all** for deterministic rewriters, **new agent** to scaffold, **init** to wire up your repo, and more.
-3. **A plugin** — init drops steering snippets and wires the MCP server into both VS Code and Claude Code, so Copilot's and Claude's agentic loops gain MAF-specific knowledge (12 bundled skills + 7 specialist agents).
+3. **A plugin** — init drops steering snippets and wires the MCP server into both VS Code and Claude Code, so Copilot's and Claude's agentic loops gain MAF-specific knowledge (13 bundled skills + 7 specialist agents).
 
 Plus a separate **maf-doctor.Analyzers** NuGet package with 3 Roslyn analyzers (MAF001 / MAF002 / MAF003) for IDE write-time enforcement, and a curated, version-keyed **obsolete-API registry** that maps every known CS0618 warning to its exact replacement.
 
@@ -61,7 +61,7 @@ MAF Doctor is a **[Model Context Protocol (MCP)](https://modelcontextprotocol.io
 
 - **26 executable tools**, each annotated with MCP behavior hints (read-only / destructive / idempotent / open-world) so clients can auto-classify them — registry lookup, code scanning, build-verified CS0618 hunts, NuGet diffing, workflow simulation, scaffolding, PR-scoped audits, version planning, and a single-command health letter. The anti-pattern and fan-out scanners emit SARIF for GitHub Advanced Security; the two destructive tools (auto-fix and auto-fix-all) support a dry-run.
 - **6 resources** — the migration guide, constraints, registry, rules, help, and per-name skills — readable on demand.
-- **8 prompts** — audit, migrate, cs0618-hunt, review, debug, explain-finding, scaffold, and help.
+- **9 prompts** — audit, migrate, remediate, cs0618-hunt, review, debug, explain-finding, scaffold, and help.
 - **3 Roslyn analyzers** (in the separate maf-doctor.Analyzers package) — MAF001 (fan-out), MAF002 (DefaultAzureCredential), MAF003 (EnableSensitiveData). Write-time enforcement.
 
 With a subcommand, the same binary runs as a CLI tool — see Quick Start below.

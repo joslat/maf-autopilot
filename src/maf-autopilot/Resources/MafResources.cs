@@ -153,6 +153,7 @@ public static class MafResources
             "maf-migration-retrospective",
             "maf-obsolete-api-registry",
             "maf-release-watcher",
+            "maf-remediation-playbook",
             "maf-workflow-smoke-tester",
             "nuget-diff-analyzer",
         };

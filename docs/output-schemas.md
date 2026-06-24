@@ -23,7 +23,8 @@ Pass `format: "json"` to get machine-readable output.
       "issue": "EnableSensitiveData = true",
       "fix_description": "Remove EnableSensitiveData = true from non-dev configurations.",
       "auto_fixable": true,
-      "why": "Sensitive-data logging writes prompts and responses (often PII / secrets) to your telemetry sink — acceptable in dev, a data-leak in production."
+      "why": "Sensitive-data logging writes prompts and responses (often PII / secrets) to your telemetry sink — acceptable in dev, a data-leak in production.",
+      "confidence": "high"
     }
   ],
   "summary_md": "...the full markdown report that format:markdown would emit..."
@@ -48,6 +49,7 @@ Pass `format: "json"` to get machine-readable output.
   - `fix_description`: one-line actionable fix; `MafAutoFixAll` uses this as its rewrite spec
   - `auto_fixable`: `true` if `MafAutoFixAll` has a deterministic rewriter for this rule
   - `why`: one-line consequence / rationale for the finding. **Always present**; the empty string `""` when no rationale is defined for the rule.
+  - `confidence`: detector trust level for **false-positive triage** — `"certain"` (compiler ground-truth) | `"high"` (structural AST, low FP) | `"heuristic"` (name-only / text / scope-limited — **verify before fixing**). Additive within schema v1; consumers that don't recognize it can ignore it. The `maf-remediate` prompt reads this to decide which findings to confirm before changing code.
 - `summary_md`: the same markdown that `format: "markdown"` would emit (for hybrid consumers). It includes the offending source line per finding, so it inherits the markdown report's **best-effort, content-aware secret redaction** — the structured `top_fixes` array carries no source text and is the safer channel for machine consumers.
 
 ### Usage in CI

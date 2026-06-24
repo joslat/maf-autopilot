@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Finding `confidence` for false-positive triage.** Every `doctor` finding now carries a `confidence` — `certain` (compiler ground-truth) / `high` (structural AST, low FP) / `heuristic` (name-only / text / scope-limited — verify before fixing), derived from the detector audit. Surfaced in the markdown report (heuristic non-auto findings tagged **"⚠ heuristic — verify it's real first"**), in `--plan` (a heuristic count + per-item marker), and in `--json` (additive `confidence` field, schema stays v1). Unknown rules default to `heuristic` (verify-first).
+- **`maf-remediate` prompt — the "fix it all" conductor.** Drives the full loop end-to-end: `MafDoctor(plan)` → `MafAutoFixAll` (mechanical) → for each semantic finding, **triage by confidence — confirm every `heuristic` finding with `MafExplainFinding` + the code before editing** → `dotnet build` → re-grade until the grade stops improving, then report fixed vs **skipped-as-false-positive**. Composes existing tools; no own LLM budget. `safe` (default) / `thorough` modes.
+- **`maf-remediation-playbook` skill** (served at `maf://skills?name=maf-remediation-playbook`) — the per-rule canonical fix + how to recognize a false positive, keyed by confidence tier. Backs the `maf-remediate` prompt. (Bundled skills 12 → 13; prompts 8 → 9.)
+- **`@maf` primary agent** now routes "fix everything / fix all the issues" to `maf-remediate`, distinguishes diagnose (`MafDoctor`) vs mechanical (`autofix-all`) vs full-loop (`maf-remediate`), and has a standing rule that `heuristic` findings may be false positives — never recommend a blind "fix all."
+
 ### Fixed
 - **False-positive hardening batch across 6 detectors.** A multi-agent audit (every detector, adversarially verified) found the same root cause repeated: name/text matching without binding to the actual type or scope. Fixed the highest-impact ones, each with a regression test pinning the verified over-match snippet (FP gone) and its true positive (still fires):
   - **`MAF-AP-DEVUI-001`** no longer flags the **supported** A2A hosting family (`Microsoft.Agents.AI.Hosting.A2A` / `.A2A.AspNetCore`) — it substring-matched `…Hosting`. Now matches dotted segments and carves out A2A. Dropped the bare-identifier `DevUI` arm that flagged a project's own `namespace DevUI;` / `using DevUI;`.
