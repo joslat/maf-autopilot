@@ -58,6 +58,8 @@ maf-doctor autofix-all .
 maf-doctor doctor .
 ```
 
+`autofix-all` prints a **human-readable summary** by default — a per-rule breakdown, the files it changed, and the next step. Add **`--json`** if you want the machine-readable output for CI/scripts. (And `0 files changed` is normal: it only means none of the 5 *mechanical* rules matched — your semantic findings are still there; run `doctor` to see them.)
+
 The grade stays **🔴 F** — but **three mechanical errors are gone (7 → 4)**, deterministically, in under 30 seconds, no LLM in the loop. The rest are *semantic* (a hard-coded key, shared provider state, the fan-out starvation bugs) and need judgment — that's the hand-off to the `@maf-migration` agent, which is what drives the grade to A. The fixes are deterministic Roslyn rewriters — the same machinery you'd trust in a Microsoft refactor extension, not guesses.
 
 > 🎙️ *"Apply for real. Roslyn rewriters — three mechanical errors gone, 7 down to 4, deterministically, no LLM. The rest are semantic; the agent takes those the rest of the way to A."*

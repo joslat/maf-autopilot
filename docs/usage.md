@@ -75,7 +75,7 @@ The same binary, with a subcommand, runs as a CLI (no chat needed):
 
 ```bash
 maf-doctor doctor [path] [--exclude <s>]… [--all] [--json|--plan]   # A/B/C/F health report (--all = every finding; --json = machine output; --plan = remediation plan)
-maf-doctor autofix-all [path] [--dry-run]   # apply deterministic Roslyn fixes
+maf-doctor autofix-all [path] [--dry-run] [--json]   # apply deterministic Roslyn fixes (human-readable; --json = machine output; --dry-run = preview)
 maf-doctor new agent <Name>                 # scaffold an agent + smoke test
 maf-doctor new executor <Name> [In] [Out]   # scaffold a workflow executor
 maf-doctor init [--with-cursor]             # wire MCP + steering into a repo

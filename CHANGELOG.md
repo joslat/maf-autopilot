@@ -9,9 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Fan-out / `MAF001` starvation detection no longer floods false positives.** The detector classified `[MessageHandler]` methods by **return type only** — so *every* handler returning `void` / non-generic `Task` / `ValueTask` was reported as a "fan-out starvation risk," even when it correctly emits downstream via `await context.SendMessageAsync(...)` / `YieldOutputAsync` / `AddEventAsync` (the idiomatic pattern in sequential / group-chat / handoff workflows). It's now **body-aware**: a handler that emits via the workflow context is treated as **OK**; only a handler that returns nothing *and* emits nothing is flagged as a genuine silent dead-end. The narrower fan-out-*edge* rule (an `AddFanOutEdge` source must return `ValueTask<T>`, since `SendMessageAsync` doesn't broadcast there) is topology-specific and remains handled by the cross-file `MafSimulateWorkflow`. This propagates to the `doctor` grade, SARIF, PR-audit, and risk-score, which all consumed the same verdict. The `MAF001` finding's **Why/Fix** text was corrected to match (and notes these findings remain **needs-your-judgment**, not auto-fixable: changing `ValueTask` → `ValueTask<T>` requires choosing the message type and adding a `return`, which a deterministic rewriter can't synthesize).
+
+### Changed
+- **`autofix-all` (CLI) now prints a human-readable summary by default** instead of raw JSON. It shows a per-rule breakdown, the changed-file list, and a clear **next step**. The machine-readable JSON (the MCP-tool shape) is still available via the new **`--json`** flag, so scripts/CI are unaffected. The `MafAutoFixAll` MCP tool is unchanged — it still returns JSON to its clients.
+  - The **0-files-changed** output is now self-explanatory (this was the most-misread result): it states that 0 ≠ clean, lists the 5 mechanical rules it *can* fix, and routes you to `maf-doctor doctor .` for the full grade and to the `@maf-migration` agent for the semantic findings a deterministic rewriter can't touch.
+- **`doctor`** now opens with a one-line note that it's a **read-only diagnosis** — it grades and lists findings but never edits files; the fix path is `autofix-all` (mechanical) + the `@maf-migration` agent (semantic). Clears up the common "doctor didn't fix anything" first-run confusion.
+
 ### Docs
 - README now leads with a **"New in 1.3.0"** highlight (Tiers 1–3 + the compile-verified auto-fixer).
 - Quickstart: added an **"explain a finding"** (`MafExplainFinding`) snippet for discoverability, and corrected the numbers — the sample reports **7** anti-pattern errors (was "ten"), and deterministic `autofix-all` takes it **F (7 → 4 errors)**, not "F → A" (Grade A is the `@maf-migration` agent phase, not the deterministic fixer).
+- Quickstart Beat 4 documents the human-readable `autofix-all` default + the `--json` opt-in.
 
 ## [1.3.0] - 2026-06-18
 

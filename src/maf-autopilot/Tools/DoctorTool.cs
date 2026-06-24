@@ -165,9 +165,9 @@ public sealed class DoctorTool
                 File: h.File,
                 Line: h.Line,
                 Issue: $"`{h.MethodName}` returns `{h.ReturnType}` — fan-out handler must return Task<T>",
-                FixDescription: "Change return type to Task<T>, ValueTask<T>, or IAsyncEnumerable<T> so the fan-in barrier receives messages.",
+                FixDescription: "Return Task<T> / ValueTask<T> / IAsyncEnumerable<T> (the value is sent automatically), OR emit explicitly with `await context.SendMessageAsync(...)`. NOTE: an `AddFanOutEdge` source must use the return-value form — SendMessageAsync doesn't broadcast on that edge.",
                 AutoFixable: false,
-                Why: "A fan-out handler that doesn't return Task<T>, ValueTask<T>, or IAsyncEnumerable<T> yields no message to the fan-in barrier — aggregation silently runs on partial data with no exception."))
+                Why: "This handler produces no downstream message — it neither returns a value (Task<T> / ValueTask<T> / IAsyncEnumerable<T>) nor emits via context.SendMessageAsync/YieldOutputAsync. The fan-in barrier then starves: aggregation silently runs on partial data with no exception. (Handlers that DO emit via the context are not flagged.)"))
             .Concat(antiPatterns
                 .Where(a => a.Severity == AntiPatternSeverity.Error)
                 .Select(a => new DoctorRecommendation(
@@ -440,6 +440,11 @@ public sealed class DoctorTool
         sb.AppendLine($"_{s.Reason}_");
         sb.AppendLine();
         sb.AppendLine($"**Repo:** `{repoPath.Replace('`', '\'')}`");
+        sb.AppendLine();
+        // `doctor` is read-only by design — it diagnoses and grades but never
+        // edits files. Spelled out here because "doctor didn't fix anything" is
+        // a common first-run misread; the fix path is autofix-all + the agent.
+        sb.AppendLine("> 🩺 This is a **read-only diagnosis** — `doctor` never edits your files. To fix: run `maf-doctor autofix-all .` for the mechanical issues, then hand the rest to the `@maf-migration` agent.");
         sb.AppendLine();
         sb.AppendLine("| Metric | Count |");
         sb.AppendLine("|---|---:|");
