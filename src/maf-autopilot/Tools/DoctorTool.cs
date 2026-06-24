@@ -478,6 +478,21 @@ public sealed class DoctorTool
                 sb.AppendLine($"💡 **{autoCount} of {s.AllFixes.Count} finding(s) are auto-fixable** — apply the deterministic Roslyn rewriters with `maf-doctor autofix-all .` (CLI) or `MafAutoFixAll(repoPath)` (MCP). The rest need your judgment (or hand them to the `@maf-migration` agent).");
                 sb.AppendLine();
             }
+
+            // Legend — what the per-finding tags mean, and how to act on each.
+            // Spelled out because "needs your judgment" is easy to read as
+            // "the tool gave up"; in fact it's the hand-off point to an LLM.
+            var manualCount = s.AllFixes.Count(f => !f.AutoFixable);
+            sb.AppendLine("**What the tags mean**");
+            sb.AppendLine();
+            sb.AppendLine("- _auto-fixable_ — a deterministic **Roslyn rewriter** exists. Run `maf-doctor autofix-all .` — no LLM involved. That is the **only** class of fix `autofix-all` can apply; it is purely mechanical/syntactic.");
+            sb.AppendLine("- _needs your judgment_ — there is **no mechanical fix**: the right change depends on what your code is meant to do (e.g. which token cap, what message type, whether a `#if` guard belongs there). These are also **heuristic**, so some may be **false positives** in your codebase — read each and confirm it's real before changing anything.");
+            sb.AppendLine();
+            if (manualCount > 0)
+            {
+                sb.AppendLine($"To work through the {manualCount} _needs-your-judgment_ finding(s), let an LLM drive maf-doctor: run `maf-doctor doctor . --plan` for an ordered, checkboxed remediation plan — or, in an MCP client (Copilot / Claude / Cursor), just ask **\"make me a plan to fix these issues\"** and the model will work through them using maf-doctor's tools and the `@maf-migration` agent.");
+                sb.AppendLine();
+            }
         }
         else
         {

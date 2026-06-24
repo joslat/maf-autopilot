@@ -52,8 +52,8 @@ internal static class AutoFixCli
         var verb = report.DryRun ? "would change" : "changed";
 
         sb.AppendLine(report.DryRun
-            ? "🔧 maf-doctor autofix-all — dry run (no files written)"
-            : "🔧 maf-doctor autofix-all — deterministic Roslyn fixes");
+            ? "🔧 maf-doctor autofix-all — dry run (deterministic Roslyn fixes, mechanical only)"
+            : "🔧 maf-doctor autofix-all — deterministic Roslyn fixes (mechanical only)");
         sb.AppendLine();
 
         var total = report.TotalDistinctFilesChanged;
@@ -73,8 +73,9 @@ internal static class AutoFixCli
             sb.AppendLine();
             sb.AppendLine("      maf-doctor doctor .        # full A–F health grade + every finding");
             sb.AppendLine();
-            sb.AppendLine("  Then hand the semantic ones to the @maf-migration agent. Also double-check");
-            sb.AppendLine("  the path — pointing at a folder with no .cs files also yields 0 changes.");
+            AppendRemediationGuidance(sb);
+            sb.AppendLine();
+            sb.AppendLine("  (Also double-check the path — a folder with no .cs files also yields 0 changes.)");
             return sb.ToString().TrimEnd();
         }
 
@@ -94,9 +95,33 @@ internal static class AutoFixCli
         sb.AppendLine();
         if (report.DryRun)
             sb.AppendLine("  Dry run — re-run without --dry-run to apply these changes.");
-        sb.AppendLine("  Next: `maf-doctor doctor .` to re-grade. Semantic findings (hard-coded keys,");
-        sb.AppendLine("  fan-out/fan-in starvation) aren't auto-fixable — hand those to @maf-migration.");
+        sb.AppendLine("  Next: `maf-doctor doctor .` to re-grade.");
+        sb.AppendLine();
+        AppendRemediationGuidance(sb);
         return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>
+    /// Shared footer that both the zero-change and the with-changes branches end
+    /// on: states plainly that this command is mechanical-only and tells the user
+    /// how to get at the rest (an LLM-driven plan). Kept in one place so the two
+    /// branches never drift.
+    /// </summary>
+    private static void AppendRemediationGuidance(StringBuilder sb)
+    {
+        sb.AppendLine("  ⚙️  autofix-all only applies DETERMINISTIC, MECHANICAL fixes — that's all a");
+        sb.AppendLine("     Roslyn rewriter can safely do without understanding your code's intent.");
+        sb.AppendLine("     The semantic findings (hard-coded keys, shared state, fan-out starvation,");
+        sb.AppendLine("     DevUI guards, cost caps) need judgment. To work through them, let an LLM");
+        sb.AppendLine("     drive maf-doctor:");
+        sb.AppendLine();
+        sb.AppendLine("       maf-doctor doctor . --plan      # ordered, checkboxed remediation plan");
+        sb.AppendLine();
+        sb.AppendLine("     …or in an MCP client (Copilot / Claude / Cursor) just ask:");
+        sb.AppendLine("       \"make me a plan to fix these issues\"");
+        sb.AppendLine("     and the model works through them with maf-doctor's tools + the");
+        sb.AppendLine("     @maf-migration agent. Some findings are heuristic and may be FALSE");
+        sb.AppendLine("     POSITIVES in your codebase — verify each before changing it.");
     }
 
     private static string Describe(string ruleId) =>
