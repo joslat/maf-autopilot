@@ -1,20 +1,20 @@
-# Troubleshooting maf-autopilot
+# Troubleshooting maf-doctor
 
 If you hit something that isn't here, please open an issue with the failing command and its output — the troubleshooting catalog grows from real reports.
 
 ## Installation
 
-### `dotnet tool install --global maf-autopilot` fails with "no compatible packages"
+### `dotnet tool install --global maf-doctor` fails with "no compatible packages"
 
-All published versions are currently prereleases (`1.3.0-alpha-1` … `1.3.0-alpha-3`). NuGet's tool installer ignores prereleases by default. Use:
+`maf-doctor` ships **stable** on NuGet, so the plain command works (no `--prerelease` flag needed):
 
 ```bash
-dotnet tool install --global maf-autopilot --prerelease
+dotnet tool install --global maf-doctor
 ```
 
-Once a stable `1.3.0` ships (plan row #50), the plain command will work.
+If you still hit "no compatible packages," your feed config is probably filtering nuget.org — confirm `dotnet nuget list source` includes `https://api.nuget.org/v3/index.json`. (The old `maf-autopilot` package is deprecated — install `maf-doctor`.)
 
-### `dotnet tool install` succeeds but `maf-autopilot` is not on PATH
+### `dotnet tool install` succeeds but `maf-doctor` is not on PATH
 
 `dotnet` installs global tools to `~/.dotnet/tools` (Linux/macOS) or `%USERPROFILE%\.dotnet\tools` (Windows). Add that directory to `PATH`:
 
@@ -26,18 +26,34 @@ export PATH="$PATH:$HOME/.dotnet/tools"
 [Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:USERPROFILE\.dotnet\tools", "User")
 ```
 
-### Update or downgrade
+### Update / upgrade (and the "file is locked" error)
 
 ```bash
-dotnet tool update --global maf-autopilot --prerelease
-dotnet tool uninstall --global maf-autopilot
+dotnet tool update --global maf-doctor
+dotnet tool uninstall --global maf-doctor   # if you need to remove it
 ```
 
-## `maf-autopilot init`
+> ⚠️ **Update fails with "The file is locked by another process"?** Your editor keeps the `maf-doctor` MCP server **running**, which holds the tool binary, so `dotnet tool update` can't replace it. Stop every running instance first, then update:
+>
+> ```powershell
+> # Windows — kills all running instances, then update
+> Get-Process maf-doctor -ErrorAction SilentlyContinue | Stop-Process -Force
+> dotnet tool update --global maf-doctor
+> ```
+> ```bash
+> # macOS / Linux
+> pkill -f maf-doctor; dotnet tool update --global maf-doctor
+> ```
+>
+> If you have **both** VS Code and Claude Code open, each holds its **own** lock — the `Stop-Process`/`pkill` commands above kill every instance (more reliable than closing editors one at a time). The alternative is to close **all** editors running the server (or disable it in each), update, then reopen.
+>
+> **After updating:** re-run `maf-doctor init` to refresh the steering sidecars, **and reload the editor / MCP server** so it loads the new binary — VS Code: `Developer: Reload Window`; Claude Code: reload the project. A bare process restart isn't enough: the MCP host caches tool/resource descriptors, so without a full reload you'll keep talking to the old version ("I upgraded but nothing changed").
+
+## `maf-doctor init`
 
 ### "⚠ .vscode/mcp.json exists but could not be parsed as JSON"
 
-Your existing `.vscode/mcp.json` has a syntax error (or trailing comments, which are not valid JSON). `init` has backed it up to `.vscode/mcp.json.bak.<UTC-timestamp>`. Inspect the backup, fix the JSON manually, then re-run `maf-autopilot init`.
+Your existing `.vscode/mcp.json` has a syntax error (or trailing comments, which are not valid JSON). `init` has backed it up to `.vscode/mcp.json.bak.<UTC-timestamp>`. Inspect the backup, fix the JSON manually, then re-run `maf-doctor init`.
 
 ### "ℹ .github/copilot-instructions.md already exists — not overwriting"
 
@@ -49,15 +65,15 @@ Currently `init` does not clean its own backups. Safe to delete them yourself on
 
 ### `mcp.json` had JSON-with-comments — was it backed up?
 
-VS Code officially treats `mcp.json` as JSONC: `//` line comments, `/* */` block comments, and trailing commas are valid. As of the post-2026-05-11 build, `maf-autopilot init` uses lenient JSONC parsing — your comment-bearing file is preserved untouched, no `.bak` is created, and the `maf-autopilot` server entry is merged in. If you see a `.bak.*` despite using only valid JSONC, you're on an older alpha. Update with `dotnet tool update --global maf-autopilot --prerelease`.
+VS Code officially treats `mcp.json` as JSONC: `//` line comments, `/* */` block comments, and trailing commas are valid. `maf-doctor init` uses lenient JSONC parsing — your comment-bearing file is preserved untouched, no `.bak` is created, and the `maf-doctor` server entry is merged in. If you see a `.bak.*` despite using only valid JSONC, you're on an older build — update with `dotnet tool update --global maf-doctor`.
 
 ## MCP server not visible in Copilot Chat
 
-### "Server: maf-autopilot is not connected"
+### "Server: maf-doctor is not connected"
 
 1. Open the **Output** panel → channel **MCP**. If startup failed, the stack trace is there.
-2. Confirm `.vscode/mcp.json` lists `maf-autopilot` under `servers`. Run `maf-autopilot init` if not.
-3. Confirm the command resolves: in a terminal, run `maf-autopilot --version` (or just `maf-autopilot` and Ctrl-C). If "command not found," go back to the PATH section above.
+2. Confirm `.vscode/mcp.json` lists `maf-doctor` under `servers`. Run `maf-doctor init` if not.
+3. Confirm the command resolves: in a terminal, run `maf-doctor --version` (or just `maf-doctor` and Ctrl-C). If "command not found," go back to the PATH section above.
 4. Reload VS Code (`Developer: Reload Window`). MCP servers are started on workspace load.
 
 ### Tools appear but resources don't (or vice versa)

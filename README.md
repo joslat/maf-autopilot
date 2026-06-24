@@ -22,14 +22,15 @@ Plus a separate **maf-doctor.Analyzers** NuGet package with 3 Roslyn analyzers (
   <em>Install, then run maf-doctor doctor on any MAF codebase — an A–F health letter + the top fixes, in seconds.</em>
 </p>
 
-### 🆕 New in 1.3.0 — findings you can act on in one read
+### 🆕 New in 1.4.0 — diagnose → triage → fix, end to end
 
-Every finding now tells you **Why** it matters, the **Fix**, and whether it's auto-fixable:
+Findings you can act on, with the false positives flagged before you touch code:
 
-- **`doctor`** surfaces each finding's Why + Fix + the offending source line — `--all` groups every finding by rule, `--json` is machine-readable for CI.
-- **`doctor --plan`** emits an ordered, checkboxed remediation plan, ready to paste into a GitHub issue.
-- **`MafExplainFinding`** (in an MCP client) deep-dives any single finding by `file:line` — grounded explanation + fix using your host model (Copilot / Claude / Cursor), at no extra LLM cost.
-- The deterministic **auto-fixer is now compile-verified** — a CI guard compiles every rewriter's output, so a fix can never emit uncompilable code. ([full notes →](CHANGELOG.md#130---2026-06-18))
+- **`autofix-all` is human-readable by default** — a per-rule breakdown + the changed files + the next step (add `--json` for the machine-readable shape). The `0 files changed` case explains *why* and *what to do next*.
+- **Every finding carries a `confidence`** — `certain` / `high` / `heuristic`. The `heuristic` ones (name/text-based) are flagged **"⚠ verify it's real first"** — your false-positive triage signal, surfaced in `doctor`, `--plan`, and `--json`.
+- **`maf-remediate` — the fix-it-all conductor** (MCP prompt): grade → plan → `autofix-all` → work each semantic finding, **confirming heuristic ones before editing** → build → re-grade. Backed by the new **`maf-remediation-playbook`** skill. Just ask *"fix all the issues maf-doctor finds."*
+- **`doctor --plan --json`** — a structured, phased remediation manifest (per-finding `confidence` + `verify_first`) an automated loop can iterate.
+- **Fewer false positives** — a hardening sweep across the detectors (supported `Hosting.A2A` packages, MediatR `IMessageHandler<T>`, `app.RunAsync()` host calls, `AgentResponse<T>.Result`, `#if DEBUG` guards, … no longer mis-flagged). ([full notes →](CHANGELOG.md#140---2026-06-24))
 
 ### What makes it worth trying
 
@@ -91,10 +92,10 @@ maf-doctor --version                      # confirm
 cd your-maf-project && maf-doctor init    # re-run init to refresh the steering sidecars
 ```
 
-> ⚠️ **"The file is locked by another process" on update?** Your editor keeps the MCP server (`maf-doctor`) **running**, which locks the tool binary — so `dotnet tool update` can't replace it. Stop the running server first, then update:
+> ⚠️ **"The file is locked by another process" on update?** Your editor keeps the MCP server (`maf-doctor`) **running**, which locks the tool binary — so `dotnet tool update` can't replace it. Stop every running instance first, then update:
 >
 > ```powershell
-> # Windows: kill the running MCP server, then update
+> # Windows: kill all running instances, then update
 > Get-Process maf-doctor -ErrorAction SilentlyContinue | Stop-Process -Force
 > dotnet tool update --global maf-doctor
 > ```
@@ -102,7 +103,9 @@ cd your-maf-project && maf-doctor init    # re-run init to refresh the steering 
 > # macOS / Linux
 > pkill -f maf-doctor; dotnet tool update --global maf-doctor
 > ```
-> Or just **close the editor (or disable the maf-doctor MCP server) → update → reopen.** The editor relaunches the server automatically.
+> If you have **both** VS Code and Claude Code open, each holds its **own** lock — the commands above kill every instance (more reliable than closing editors one by one). Alternatively, close **all** editors running the server (or disable it in each) → update → reopen.
+>
+> **After updating:** re-run `maf-doctor init` to refresh the steering, **and reload the editor / MCP server** so it loads the new binary — VS Code: `Developer: Reload Window`; Claude Code: reload the project. (A bare restart isn't enough — the MCP host caches tool/resource descriptors, so without a full reload you'll keep talking to the old version.)
 
 > 📖 **Going deeper:** [what `init` installs (and why)](docs/init-reference.md) · [using MAF Doctor — prompts, tools, agents & natural-language steering](docs/usage.md) · [hands-on workshop](samples/workshop.md).
 
