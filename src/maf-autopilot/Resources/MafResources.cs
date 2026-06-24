@@ -15,7 +15,7 @@ namespace MafDoctor.Resources;
 ///   maf://guide        — full MAF migration guide
 ///
 /// Template resource (one per skill):
-///   maf://skills?name=&lt;skillName&gt;  — any of the 12 skill SKILL.md files
+///   maf://skills?name=&lt;skillName&gt;  — any of the 13 skill SKILL.md files
 ///</summary>
 [McpServerResourceType]
 public static class MafResources
@@ -124,7 +124,7 @@ public static class MafResources
         "maf-fan-out-validator, maf-issue-reporter, maf-migration-guide, " +
         "maf-migration-plan-creator, maf-migration-retrospective, " +
         "maf-obsolete-api-registry, maf-release-watcher, " +
-        "maf-workflow-smoke-tester, nuget-diff-analyzer")]
+        "maf-remediation-playbook, maf-workflow-smoke-tester, nuget-diff-analyzer")]
     public static string GetSkill(string name)
     {
         if (!AllowedSkillNames.TryGetValue(name ?? string.Empty, out var canonical))

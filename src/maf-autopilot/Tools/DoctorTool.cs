@@ -523,7 +523,7 @@ public sealed class DoctorTool
             sb.AppendLine("**What the tags mean**");
             sb.AppendLine();
             sb.AppendLine("- _auto-fixable_ — a deterministic **Roslyn rewriter** exists. Run `maf-doctor autofix-all .` — no LLM involved. That is the **only** class of fix `autofix-all` can apply; it is purely mechanical/syntactic.");
-            sb.AppendLine("- _needs your judgment_ — there is **no mechanical fix**: the right change depends on what your code is meant to do (e.g. which token cap, what message type, whether a `#if` guard belongs there). These are also **heuristic**, so some may be **false positives** in your codebase — read each and confirm it's real before changing anything.");
+            sb.AppendLine("- _needs your judgment_ — there is **no mechanical fix**: the right change depends on what your code is meant to do (e.g. which token cap, what message type, whether a `#if` guard belongs there). The ones tagged **⚠ heuristic** are name/text-based and may be **false positives** in your codebase — confirm each is real before changing it; the rest are high-confidence structural findings.");
             sb.AppendLine();
             if (manualCount > 0)
             {

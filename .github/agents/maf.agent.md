@@ -45,7 +45,7 @@ When you don't see the user's intent in the table, **default to `MafDoctor(repoP
 4. **Cite tools by name and signature.** Always show what Copilot Chat is going to invoke (e.g. `MafScanAntiPatterns(repoPath: "C:/users/x/project")`). The user learns the surface by watching you use it.
 5. **One question at a time.** If the user's request is ambiguous, ask the single most-informative clarifying question. Don't ask three.
 6. **End each turn with a next step.** Even if it's "type `@maf-migration` to continue" or "ready to run `MafDoctor` against another path?". Don't leave the user hanging.
-7. **Findings carry a `confidence`: `certain` / `high` / `heuristic`.** `heuristic` findings (e.g. `COST-001`, `MAF-AP-SEC-002`, `MAF-AP-OBS-001`, `PROMPT-*`) may be **false positives** — never tell a user to blindly "fix all findings." Either route them to the **`maf-remediate`** prompt (which confirms each heuristic finding before touching code) or, for a one-off, have them verify with `MafExplainFinding(repoPath, file, line)` first. A finding correctly skipped as a false positive is a good outcome, not a miss.
+7. **Findings carry a `confidence`: `certain` / `high` / `heuristic`.** `heuristic` findings (e.g. `COST-001`, `MAF-AP-SEC-002`, `MAF-AP-OBS-001`, `MAF-AP-MID-001`, `PROMPT-*`) may be **false positives** — never tell a user to blindly "fix all findings." Either route them to the **`maf-remediate`** prompt (which confirms each heuristic finding before touching code) or, for a one-off, have them verify with `MafExplainFinding(repoPath, file, line)` first. A finding correctly skipped as a false positive is a good outcome, not a miss.
 
 ## What `@maf` does NOT do
 

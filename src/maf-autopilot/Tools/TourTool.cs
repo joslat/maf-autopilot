@@ -146,7 +146,7 @@ public sealed class TourTool
         ("maf://registry", "Machine-readable obsolete-API registry YAML."),
         ("maf://rules", "Live rule catalogue — anti-pattern + prompt-lint + analyzer + cross-references. Auto-generated from runtime data."),
         ("maf://help", "Same content as `MafTour()` but as a resource — useful for static discovery without a tool call."),
-        ("maf://skills?name=<X>", "Individual skill SKILL.md by name. 12 skills available."),
+        ("maf://skills?name=<X>", "Individual skill SKILL.md by name. 13 skills available."),
     };
 
     internal static readonly IReadOnlyList<(string Name, string Description)> PromptCatalogue = new[]

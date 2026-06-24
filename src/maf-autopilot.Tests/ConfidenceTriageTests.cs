@@ -18,14 +18,20 @@ public sealed class ConfidenceTriageTests
     [InlineData("MAF-AP-CONC-002", "high")]
     [InlineData("MAF-AP-DEVUI-001", "high")]
     [InlineData("MAF-AP-EXEC-001", "high")]
+    [InlineData("MAF-AP-AGENT-001", "high")]
+    [InlineData("MAF-AP-SEC-001", "high")]
+    [InlineData("MAF-AP-WF-001", "high")]
     // Name-only / text / scope-limited → heuristic (verify first).
     [InlineData("COST-001", "heuristic")]
     [InlineData("MAF-AP-SEC-002", "heuristic")]
     [InlineData("MAF-AP-OBS-001", "heuristic")]
     [InlineData("MAF-AP-MID-001", "heuristic")]
     [InlineData("PROMPT-004", "heuristic")]
-    // Compiler ground-truth → certain.
+    // Compiler ground-truth → certain. The branch is a CS06 PREFIX (not an exact
+    // CS0618), so another CS06xx obsolete code is also certain; a non-CS06 code is not.
     [InlineData("CS0618", "certain")]
+    [InlineData("CS0612", "certain")]
+    [InlineData("CS1998", "heuristic")]
     public void ConfidenceFor_MapsRuleToExpectedTier(string ruleId, string expected)
     {
         Assert.Equal(expected, DoctorTool.ConfidenceFor(ruleId));
@@ -119,6 +125,54 @@ public sealed class ConfidenceTriageTests
         Assert.Equal("heuristic", cost.GetProperty("confidence").GetString());
         Assert.True(cost.GetProperty("verify_first").GetBoolean());
         Assert.NotEmpty(cost.GetProperty("occurrences").EnumerateArray());
+    }
+
+    [Fact]
+    public void PlanJson_NothingAutoFixable_Phase1IsNull()
+    {
+        // Only a heuristic, non-auto-fixable finding (COST-001) — phase1_autofix must
+        // serialize to JSON null while phase2 still carries the finding.
+        using var repo = new TempRepo(
+            ("Program.cs", """
+                public class Program
+                {
+                    public static async System.Threading.Tasks.Task Main(dynamic agent)
+                    {
+                        var r = await agent.RunAsync("hi");   // COST-001 only — nothing mechanical
+                    }
+                }
+                """));
+
+        var json = new DoctorTool().Run(repo.Path, format: "plan-json", excludes: new List<string>(), full: true);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("phase1_autofix").ValueKind);
+        Assert.Equal(0, root.GetProperty("counts").GetProperty("auto_fixable").GetInt32());
+        Assert.Contains(root.GetProperty("phase2_semantic").EnumerateArray(),
+            f => f.GetProperty("rule_id").GetString() == "COST-001");
+    }
+
+    [Fact]
+    public void PlanJson_HighConfidenceFinding_VerifyFirstIsFalse()
+    {
+        // CONC-002 is high-confidence AND not auto-fixable → lands in phase2 with
+        // confidence "high" and verify_first false (the negative branch of the flag).
+        using var repo = new TempRepo(
+            ("Demo.cs", """
+                public class Demo
+                {
+                    public string M(dynamic client) => client.GetDataAsync().Result;   // CONC-002
+                }
+                """));
+
+        var json = new DoctorTool().Run(repo.Path, format: "plan-json", excludes: new List<string>(), full: true);
+        using var doc = JsonDocument.Parse(json);
+
+        var conc = doc.RootElement.GetProperty("phase2_semantic").EnumerateArray()
+            .First(f => f.GetProperty("rule_id").GetString() == "MAF-AP-CONC-002");
+        Assert.Equal("high", conc.GetProperty("confidence").GetString());
+        Assert.False(conc.GetProperty("verify_first").GetBoolean());
     }
 
     [Fact]

@@ -11,8 +11,8 @@ description: "The fix-everything playbook for the maf-remediate loop: per-rule c
 
 1. `MafDoctor(repoPath, format: "plan")` + `MafDoctor(repoPath, format: "json", full: true)` — the plan + every finding with a `confidence`.
 2. `MafAutoFixAll(repoPath)` — the deterministic, mechanical fixes. `dotnet build` (green).
-3. For each remaining finding **in plan order**: triage by `confidence` (below) → fix or skip → `dotnet build`.
-4. Re-`MafDoctor` until the grade stops improving. Report fixed vs skipped-as-false-positive.
+3. For each remaining finding **in plan order**: triage by `confidence` (below) → fix or skip → `dotnet build` → confirm the finding actually cleared (re-scan), not just a green build.
+4. Re-pull `MafDoctor(format: "json", full: true)` (line numbers shift after edits) and keep working findings until the only ones left are explicitly skipped (false positive) or deferred to human judgment — **NOT** merely until the A/B/C/F letter stops moving (the grade has wide bands and won't shift for most single fixes). Report fixed vs skipped-as-false-positive.
 
 ## Confidence tiers (the triage signal)
 
@@ -26,7 +26,7 @@ Every finding carries `confidence`:
 
 | Rule | Confidence | Canonical fix | If it's a FALSE POSITIVE (skip) |
 |---|---|---|---|
-| **MAF001** (fan-out starvation) | high | Return `ValueTask<T>` — the value is auto-broadcast; **required** on an `AddFanOutEdge` source (`SendMessageAsync` does NOT broadcast on a fan-out edge). Emitting via `await context.SendMessageAsync(...)` is valid only for a plain `AddEdge` target. | Handler emits downstream via `SendMessageAsync`/`YieldOutputAsync` **and** the executor is NOT a fan-out (`AddFanOutEdge`) source. On a fan-out source, a `SendMessageAsync`-only handler is a REAL bug — do **not** skip it. |
+| **MAF001** (fan-out starvation) | high | Return `ValueTask<T>` — the value is auto-broadcast; **required** on an `AddFanOutEdge` source (`SendMessageAsync` does NOT broadcast on a fan-out edge). For a plain `AddEdge` target, `await context.SendMessageAsync(...)` is also valid. | **Rarely a false positive.** The source-level detector already treats any handler that emits via `context.SendMessageAsync`/`YieldOutputAsync`/`AddEventAsync` as OK, so a MAF001 finding means the handler returns nothing *and* emits nothing — a genuine dead-end. (The fan-out-EDGE nuance — a `SendMessageAsync`-only handler that happens to sit on an `AddFanOutEdge` source — is resolved cross-file by `MafSimulateWorkflow`, not by MAF001.) |
 | **MAF-AP-EXEC-001** (legacy executor) | high | Delete `[StreamsMessage]`/`[YieldsMessage]`; migrate `ReflectingExecutor<>` → `sealed partial : Executor` + `[MessageHandler]`. | An `IMessageHandler<T>` that is MediatR / NServiceBus / a hand-rolled bus (no `Microsoft.Agents.AI.Workflows`). |
 | **MAF-AP-DEVUI-001** (DevUI/Hosting) | high | Wrap the unsupported preview reference in `#if DEVUI_ENABLED`. | A supported `Microsoft.Agents.AI.Hosting.A2A[.AspNetCore]` using, or a project's own `namespace DevUI;`. |
 | **MAF-AP-SEC-001** (DefaultAzureCredential) | high | `ManagedIdentityCredential` in production. | Already inside an `env.IsDevelopment()` / `#if DEBUG` dev-only branch. |

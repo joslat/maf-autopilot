@@ -42,7 +42,7 @@ if (args.Length > 0 && (args[0] is "--help" or "-h" or "help"))
         Commands:
           init [--with-cursor]              Wire the MCP server + steering into the current repo
                                             (.vscode/mcp.json, .mcp.json, instructions, agents).
-          doctor [path] [--exclude <s>] [--all] [--json] [--plan]
+          doctor [path] [--exclude <s>] [--all|--full] [--json] [--plan]
                                             A/B/C/F health report. --all = every finding (grouped),
                                             not just the top 3; --json = machine-readable findings;
                                             --plan = ordered, checkboxed remediation plan;

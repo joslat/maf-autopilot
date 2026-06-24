@@ -41,6 +41,22 @@ public sealed class FalsePositiveHardeningTests
     }
 
     [Fact]
+    public void DevUi001_QualifiedExpressionCall_Flags()
+    {
+        // A fully-qualified DevUI reference in EXPRESSION position (a static call) parses
+        // as a member-access chain, not a QualifiedName — it must still be flagged.
+        // Regression guard for the dropped member-access form.
+        const string source = """
+            public class Boot
+            {
+                public void Run() => Microsoft.Agents.AI.DevUI.DevUiHost.Launch();
+            }
+            """;
+        var findings = AntiPatternScannerTool.ScanFile(source, "src/Boot.cs");
+        Assert.Contains(findings, f => f.RuleId == "MAF-AP-DEVUI-001");
+    }
+
+    [Fact]
     public void DevUi001_LocalNamespaceNamedDevUI_DoesNotFlag()
     {
         // The friend's repo had a project whose OWN namespace is `DevUI` — the old
@@ -136,6 +152,22 @@ public sealed class FalsePositiveHardeningTests
         Assert.Contains(findings, f => f.RuleId == "MAF-AP-CONC-002");
     }
 
+    [Fact]
+    public void Conc002_WaitWithArgument_DoesNotFlag()
+    {
+        // Only the parameterless blocking `foo().Wait()` is sync-over-async. A
+        // `.Wait(timeout)` / `.Wait(cancellationToken)` overload is excluded by the
+        // arg-count guard — the symmetric counterpart to the Match.Result(...) exclusion.
+        const string source = """
+            public class Demo
+            {
+                public void M(dynamic client) => client.GetDataAsync().Wait(5000);
+            }
+            """;
+        var findings = AntiPatternScannerTool.ScanFile(source, "src/Demo.cs");
+        Assert.DoesNotContain(findings, f => f.RuleId == "MAF-AP-CONC-002");
+    }
+
     // -------------------------------------------------------------------------
     // MAF-AP-SEC-003 — EnableSensitiveData behind a dev guard is sanctioned.
     // -------------------------------------------------------------------------
@@ -168,6 +200,29 @@ public sealed class FalsePositiveHardeningTests
         Assert.Contains(findings, f => f.RuleId == "MAF-AP-SEC-003");
     }
 
+    [Fact]
+    public void Sec003_ProductionElseBranch_StillFlags()
+    {
+        // The #else arm of an #if DEBUG guard is the PRODUCTION path — its
+        // EnableSensitiveData=true must STILL be flagged (the guarded range must not
+        // span into the #else). Regression guard for the #else/#elif range bug.
+        const string source = """
+            public class Setup
+            {
+                public void X(dynamic cfg)
+                {
+            #if DEBUG
+                    cfg.EnableSensitiveData = true;
+            #else
+                    cfg.EnableSensitiveData = true;
+            #endif
+                }
+            }
+            """;
+        var findings = AntiPatternScannerTool.ScanFile(source, "src/Setup.cs");
+        Assert.Contains(findings, f => f.RuleId == "MAF-AP-SEC-003");
+    }
+
     // -------------------------------------------------------------------------
     // COST-001 — host / workflow runners are not uncapped agent calls.
     // -------------------------------------------------------------------------
@@ -185,7 +240,9 @@ public sealed class FalsePositiveHardeningTests
             }
             """;
         var findings = EstimateCostTool.AnalyzeSource(source, "src/Program.cs");
-        Assert.DoesNotContain(findings, f => f.ReceiverExpression == "app");
+        // Stronger than "no finding named app": the single call site must produce NO
+        // unbounded-cost finding at all.
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -201,7 +258,7 @@ public sealed class FalsePositiveHardeningTests
             }
             """;
         var findings = EstimateCostTool.AnalyzeSource(source, "src/Program.cs");
-        Assert.DoesNotContain(findings, f => f.ReceiverExpression == "InProcessExecution");
+        Assert.Empty(findings); // the workflow RUNNER is not an agent call
     }
 
     [Fact]
@@ -218,5 +275,24 @@ public sealed class FalsePositiveHardeningTests
             """;
         var findings = EstimateCostTool.AnalyzeSource(source, "src/Program.cs");
         Assert.Contains(findings, f => f.ReceiverExpression == "agent" && f.HasCapWarning);
+    }
+
+    [Fact]
+    public void Cost001_WorkflowAsAgent_StillFlags()
+    {
+        // A workflow-as-agent IS a real AIAgent — a variable named `workflow` must NOT
+        // be denylisted (regression guard: the denylist used to exclude `workflow`).
+        const string source = """
+            public class Program
+            {
+                public static async System.Threading.Tasks.Task Run(dynamic chatClient, string msg)
+                {
+                    var workflow = chatClient.CreateAIAgent("instructions");
+                    var r = await workflow.RunAsync(msg);   // uncapped agent call
+                }
+            }
+            """;
+        var findings = EstimateCostTool.AnalyzeSource(source, "src/Program.cs");
+        Assert.Contains(findings, f => f.ReceiverExpression == "workflow" && f.HasCapWarning);
     }
 }

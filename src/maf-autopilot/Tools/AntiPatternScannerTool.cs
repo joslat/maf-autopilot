@@ -492,14 +492,21 @@ public sealed class AntiPatternScannerTool
                         // sub-names would surface a bare `Microsoft.Agents.AI.Hosting`
                         // fragment of `...Hosting.A2A` and wrongly trip the carve-out below.
                         QualifiedNameSyntax q when q.Parent is not QualifiedNameSyntax => q.ToString(),
+                        // Fully-qualified reference in EXPRESSION position parses as a
+                        // member-access chain (e.g. a static call `Microsoft.Agents.AI.DevUI.X.Run()`).
+                        // Take only the outermost so nested fragments don't trip the carve-out.
+                        // The full-namespace substring check below means a stray `.DevUI`
+                        // member on an unrelated object is NOT matched.
+                        MemberAccessExpressionSyntax ma when ma.Parent is not MemberAccessExpressionSyntax => ma.ToString(),
                         _ => null,
                     };
                     if (string.IsNullOrEmpty(text)) continue;
                     // Flag ONLY the unsupported preview surface. The 1.3.0 A2A hosting
                     // family (Microsoft.Agents.AI.Hosting.A2A[.AspNetCore]) is fully
                     // supported and must NOT be guarded. The old bare-`DevUI` identifier
-                    // arm was removed: it flagged any local symbol named DevUI (e.g. a
-                    // project's own `namespace DevUI;` / `using DevUI;`).
+                    // arm was removed (it flagged any local symbol named DevUI, e.g. a
+                    // project's own `namespace DevUI;`); using / qualified-type / qualified
+                    // expression forms are all still covered.
                     if (!IsUnsupportedDevUiOrHostingReference(text!)) continue;
 
                     var loc = node.GetLocation().GetLineSpan();
@@ -733,37 +740,52 @@ public sealed class AntiPatternScannerTool
         Microsoft.CodeAnalysis.SyntaxNode root, Func<string, bool> conditionMatches)
     {
         var ranges = new List<(int Start, int End)>();
+        // Each stack entry = the open line of a guarded branch, or -1 for a non-guarded
+        // branch (sentinel keeps #if/#endif nesting balanced). A guarded branch's range
+        // ends at the NEXT directive at its level (#elif/#else/#endif) — crucially NOT
+        // spanning into the alternate (#else/#elif) arm, which is the *unguarded*
+        // (typically production) branch and must stay scannable.
         var openStack = new Stack<int>();
+
+        static int LineOf(Microsoft.CodeAnalysis.SyntaxNode n)
+            => n.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+
+        // Close the current branch: pop it and, if it was guarded, record its range.
+        static void CloseBranch(Stack<int> stack, List<(int Start, int End)> ranges, int closeLine)
+        {
+            if (stack.Count == 0) return;
+            var openLine = stack.Pop();
+            if (openLine > 0 && closeLine >= openLine) ranges.Add((openLine, closeLine));
+        }
 
         foreach (var trivia in root.DescendantTrivia())
         {
-            if (trivia.HasStructure)
+            if (!trivia.HasStructure) continue;
+            switch (trivia.GetStructure())
             {
-                var structure = trivia.GetStructure();
-                if (structure is IfDirectiveTriviaSyntax ifDir)
-                {
-                    var conditionText = ifDir.Condition.ToString();
-                    if (conditionMatches(conditionText))
-                    {
-                        var line = ifDir.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
-                        openStack.Push(line);
-                    }
-                    else
-                    {
-                        // A non-DevUI `#if` — push a sentinel so #endif balance is preserved.
-                        openStack.Push(-1);
-                    }
-                }
-                else if (structure is EndIfDirectiveTriviaSyntax endIf)
-                {
-                    if (openStack.Count == 0) continue;
-                    var openLine = openStack.Pop();
-                    if (openLine > 0)
-                    {
-                        var closeLine = endIf.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
-                        ranges.Add((openLine, closeLine));
-                    }
-                }
+                case IfDirectiveTriviaSyntax ifDir:
+                    openStack.Push(conditionMatches(ifDir.Condition.ToString()) ? LineOf(ifDir) : -1);
+                    break;
+
+                case ElifDirectiveTriviaSyntax elifDir:
+                    // End the prior branch at the line before this directive, then open
+                    // the elif branch (guarded only if its own condition matches).
+                    CloseBranch(openStack, ranges, LineOf(elifDir) - 1);
+                    openStack.Push(conditionMatches(elifDir.Condition.ToString()) ? LineOf(elifDir) : -1);
+                    break;
+
+                case ElseDirectiveTriviaSyntax elseDir:
+                    // End the prior branch; an #else arm is treated as NOT guarded — the
+                    // common `#if DEBUG … #else <prod> … #endif` leaves the production arm
+                    // scannable. (Exotic `#if !SYMBOL` inversions are out of scope for this
+                    // substring heuristic.)
+                    CloseBranch(openStack, ranges, LineOf(elseDir) - 1);
+                    openStack.Push(-1);
+                    break;
+
+                case EndIfDirectiveTriviaSyntax endIf:
+                    CloseBranch(openStack, ranges, LineOf(endIf));
+                    break;
             }
         }
 

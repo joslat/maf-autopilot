@@ -120,6 +120,10 @@ public class AutoFixCliTests
         Assert.Contains("A.cs", output);
         Assert.Contains("B.cs", output);
         Assert.DoesNotContain("does NOT mean your code is clean", output);
+        // Pin the apply-vs-dry-run wording split in the OTHER direction too: the real-apply
+        // path must NOT leak the dry-run verb or footer.
+        Assert.DoesNotContain("would change", output);
+        Assert.DoesNotContain("re-run without --dry-run", output);
     }
 
     [Fact]
