@@ -47,6 +47,19 @@ public static class MafResources
     [Description("Full MAF migration reference guide with API signatures, before/after code patterns, and section-by-section explanations.")]
     public static string GetGuide() => ReadEmbedded("guide.md");
 
+    [McpServerResource(UriTemplate = "maf://migrate-from{?source}",
+        MimeType = "text/markdown",
+        Name = "maf-migrate-from",
+        Title = "MAF cross-framework migration guide")]
+    [Description("Migration mapping FROM another agent framework TO MAF (construct-by-construct, with the interop bridges and the bridgeable/rewrite/re-architect strategy per construct). Pass source= one of: semantic-kernel.")]
+    public static string GetMigrationFrom(string? source)
+        => (source ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "semantic-kernel" or "sk" => ReadEmbedded("migrate-from/semantic-kernel.md"),
+            _ => throw new ArgumentException(
+                $"Unknown migration source '{source}'. Available: semantic-kernel"),
+        };
+
     [McpServerResource(UriTemplate = "maf://rules",
         MimeType = "text/markdown",
         Name = "maf-rules",

@@ -113,6 +113,7 @@ public sealed class TourTool
         new("MafPreUpgradeDryRun", "Upgrade", "\"What would break if I upgraded X to Y?\" — combines `MafDiffPackage` with repo grep. Run before any version bump."),
         new("MafDiffPackage", "Upgrade", "Wrap `dotnet-inspect@0.7.8 diff` for two NuGet versions. Surfaces every API change."),
         new("MafMigrationPath", "Upgrade", "Multi-step migration planner — walks version-keyed guide metadata, returns ordered intermediate-step sections."),
+        new("MafDetectSourceFramework", "Cross-framework migration", "Inventory Semantic Kernel usage and tag each construct by migration strategy (🌉 bridgeable / 🔁 rewrite / 🏗 re-architect) + an EASY/MEDIUM/HARD verdict. The work-list for the `maf-migrate-from` flow. CLI: `maf-doctor migrate-scan`. Mappings: `maf://migrate-from?source=semantic-kernel`."),
 
         // — Health —
         new("MafDoctor", "Health", "Single-command A/B/C/F grade. Aggregates 4 scanners + reports the top 3 fixes (or every finding with `full: true`). Best triage signal in the toolkit."),
@@ -154,6 +155,7 @@ public sealed class TourTool
         ("maf-audit", "Starter prompt for the auditor agent. Generates a migration plan."),
         ("maf-migrate", "Starter prompt for the migration agent. Executes specific tasks from an existing plan."),
         ("maf-remediate", "Fix-it-all conductor: grade + plan → MafAutoFixAll (mechanical) → verify each heuristic (possible false-positive) finding before fixing → build → re-grade until the grade stops improving."),
+        ("maf-migrate-from", "Migrate a Semantic Kernel codebase TO MAF, side-by-side: detect SK usage → classify each construct (bridge / rewrite / re-architect) → plan → scaffold a new MAF project beside the original → port construct-by-construct with build gates. Non-destructive."),
         ("maf-cs0618-hunt", "Starter prompt for finding + fixing CS0618 obsolete-API warnings."),
         ("maf-review", "Best-practices code review starter — day-to-day development, PR review, post-migration validation. Routes to MafDoctor / MafScanAntiPatterns / MafValidateFanOut."),
         ("maf-debug", "Reactive-debugging starter — paste an error or symptom, the prompt routes to the right diagnostic tool by symptom class."),

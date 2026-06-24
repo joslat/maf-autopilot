@@ -20,6 +20,7 @@ When the user invokes you for the first time in a conversation:
 |---|---|
 | "What can you do?" / "Help" / "Get me started" | Call **`MafTour()`**. Show the capability matrix. Offer the `maf-help` prompt for an interactive flow. |
 | "I'm upgrading MAF 1.x → 1.3.0" (or any minor) | Recommend **`@maf-migration`**. Optionally pre-generate the plan with **`@maf-auditor`** and hand off. |
+| "Migrate my **Semantic Kernel** app to MAF" (cross-framework, not a version bump) | First call **`MafDetectSourceFramework(repoPath)`** (CLI: `maf-doctor migrate-scan`) to inventory SK usage + scope it (🌉 bridge / 🔁 rewrite / 🏗 re-architect + EASY/MEDIUM/HARD). Then run the **`maf-migrate-from`** prompt (source: `semantic-kernel`) — it plans, scaffolds a **new MAF project beside the original** (non-destructive), and ports it construct-by-construct with build gates. Mappings live at `maf://migrate-from?source=semantic-kernel`. |
 | "Audit / review my codebase" | If already on 1.3.0: **`@maf-best-practice-reviewer`**. If pre-migration: **`@maf-auditor`**. If unsure: call **`MafRunCs0618Hunt(projectPath)`** first to find out. |
 | "Something failed in production / runtime exception / silent workflow exit" | **`@maf-incident-responder`**. |
 | "Roll back the migration — we shipped a regression" | **`@maf-rollback`**. |

@@ -53,6 +53,9 @@ if (args.Length > 0 && (args[0] is "--help" or "-h" or "help"))
                                             --json = machine-readable output.
           new agent <Name>                  Scaffold a MAF agent + smoke test.
           new executor <Name> [In] [Out]    Scaffold a workflow executor + smoke test.
+          migrate-scan [path] [--json]      Inventory Semantic Kernel usage and tag each construct
+                                            by migration strategy (bridgeable / rewrite / re-architect)
+                                            + a complexity verdict. (--source semantic-kernel)
           badge [path]                      Emit a shields.io health-badge JSON payload.
           verify-registry                   Validate the obsolete-API registry (CI gate).
           registry-extract                  Extract registry entries (CI helper).
@@ -123,6 +126,28 @@ if (args.Length >= 1 && args[0] == "autofix-all")
             ? $"❌ {error}"
             : MafDoctor.Commands.AutoFixCli.Format(report!));
     }
+    Environment.Exit(0);
+    return;
+}
+if (args.Length >= 1 && args[0] == "migrate-scan")
+{
+    // Cross-framework migration — Phase 1. Inventory Semantic Kernel usage and tag
+    // each construct by migration strategy (bridgeable / rewrite / re-architect).
+    // Usage: `maf-doctor migrate-scan [path] [--source semantic-kernel] [--json]`.
+    var positional = args.Skip(1).Where(a => !a.StartsWith("--")).ToList();
+    var path = positional.Count > 0 ? positional[0] : Directory.GetCurrentDirectory();
+    // --source is currently always semantic-kernel (AutoGen is a later phase); accept
+    // and validate the flag so the surface is forward-compatible.
+    var sourceIdx = Array.IndexOf(args, "--source");
+    var source = sourceIdx >= 0 && sourceIdx + 1 < args.Length ? args[sourceIdx + 1] : "semantic-kernel";
+    if (!string.Equals(source, "semantic-kernel", StringComparison.OrdinalIgnoreCase))
+    {
+        Console.Error.WriteLine($"Only --source semantic-kernel is supported today (got '{source}').");
+        Environment.Exit(2);
+        return;
+    }
+    var fmt = args.Contains("--json") ? "json" : "markdown";
+    Console.WriteLine(new MafDoctor.Tools.SemanticKernelDetectorTool().MafDetectSourceFramework(path, fmt));
     Environment.Exit(0);
     return;
 }

@@ -29,6 +29,7 @@ Prompts are pre-built workflows the server exposes; your client surfaces them as
 | `maf-audit` | Scan a codebase, cross-reference constraints + registry, emit a tracked `migration-plan.md` | `@maf-auditor` |
 | `maf-migrate` | Execute migration tasks from a plan, build-verified per step | `@maf-migration` |
 | `maf-remediate` | Fix-it-all: grade + plan → autofix → **verify each heuristic (possible false-positive) finding** → build → re-grade | `@maf-migration` |
+| `maf-migrate-from` | Migrate a **Semantic Kernel** app to MAF, side-by-side: detect → plan → scaffold a new MAF project → port construct-by-construct (non-destructive) | — |
 | `maf-cs0618-hunt` | Find + fix every CS0618 obsolete-API usage | — |
 | `maf-review` | Best-practice review of already-migrated code | `@maf-best-practice-reviewer` |
 | `maf-debug` | Diagnose a MAF failure → root cause + fix | `@maf-incident-responder` |

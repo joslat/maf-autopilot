@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Cross-framework migration: Semantic Kernel → MAF (Phase 1 + the orchestration prompt).** A new assistant for porting an existing Semantic Kernel codebase *to* Microsoft Agent Framework (vs. the existing MAF *version* upgrade path):
+  - **`MafDetectSourceFramework`** tool + **`maf-doctor migrate-scan`** CLI — inventories SK usage (csproj package refs + Roslyn construct scan) and tags each construct with its migration **strategy**: 🌉 *bridgeable* (reuse via the `KernelFunction.AsAIFunction()` / `IChatCompletionService.AsChatClient()` interop shims), 🔁 *rewrite* (mechanical SK→MAF API swap), or 🏗 *re-architect* (group chat / planners / prompt templates / vector stores) — plus an EASY/MEDIUM/HARD verdict. `--json` for automation.
+  - **`maf-migrate-from`** prompt — the conductor: detect → summarize intent → write `migration-plan.md` → **scaffold a new MAF project beside the original** (non-destructive, side-by-side) → port construct-by-construct with `dotnet build` gates → validate with `MafDoctor`. `@maf` routes "migrate my Semantic Kernel app to MAF" here.
+  - **`maf://migrate-from?source=semantic-kernel`** resource — the construct-by-construct SK→MAF mapping guide (stored from the official Microsoft Learn page with permission + attribution; enriched with the verified interop bridges and the constructs the official page omits — prompt templates, filters→middleware, structured output, `ChatHistory` providers, vector stores, observability). Detector coverage spans all of these. (Prompts 9 → 10.)
+
 ## [1.4.0] - 2026-06-24
 
 Diagnose → triage → fix, end to end: human-readable `autofix-all`, a first-class finding **confidence** signal, the **`maf-remediate`** fix-it-all conductor (+ playbook skill), the **`doctor --plan --json`** manifest, and a false-positive hardening sweep across the detectors. Hardened by two multi-agent review passes (every finding verified) that also caught and fixed 3 real bugs. 922 tests green across net8/9/10.
