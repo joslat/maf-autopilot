@@ -16,8 +16,9 @@ namespace MafDoctor.Tests;
 public sealed class AntiPatternScannerExecutorRuleTests
 {
     [Theory]
+    // ReflectingExecutor<> is a MAF-specific name (low collision) → flagged always.
     [InlineData("public class MyExec : ReflectingExecutor<string> { }")]
-    [InlineData("public class MyExec : IMessageHandler<string, string> { }")]
+    // [StreamsMessage] / [YieldsMessage] are removed MAF attributes → flagged always.
     [InlineData("[StreamsMessage] public void Foo() { }")]
     [InlineData("[YieldsMessage] public void Bar() { }")]
     public void Scan_LegacyExecutorPattern_FiresExecRule(string snippet)
@@ -37,6 +38,44 @@ public sealed class AntiPatternScannerExecutorRuleTests
         var hit = findings.First(f => f.RuleId == "MAF-AP-EXEC-001");
         Assert.Equal(AntiPatternSeverity.Error, hit.Severity);
         Assert.Contains("Pre-1.3.0", hit.RuleName);
+    }
+
+    [Fact]
+    public void Scan_LegacyIMessageHandler_WithWorkflowsUsing_Fires()
+    {
+        // The legacy MAF IMessageHandler<TIn,TOut> in a file that imports the MAF
+        // Workflows namespace IS the real pre-1.3.0 surface → fires.
+        const string source = """
+            using Microsoft.Agents.AI.Workflows;
+            namespace Demo;
+            public class MyExec : IMessageHandler<string, string> { }
+            """;
+
+        var findings = AntiPatternScannerTool.ScanFile(source, "src/Foo.cs");
+        Assert.Contains(findings, f => f.RuleId == "MAF-AP-EXEC-001");
+    }
+
+    [Fact]
+    public void Scan_UnrelatedIMessageHandler_NoWorkflowsUsing_DoesNotFire()
+    {
+        // False-positive guard: `IMessageHandler<T>` is the most common message-bus
+        // interface name (MediatR / NServiceBus / hand-rolled). Without the MAF
+        // Workflows import it must NOT be flagged as a pre-1.3.0 executor pattern.
+        const string source = """
+            namespace MyApp.Messaging;
+            public interface IMessageHandler<TMessage>
+            {
+                System.Threading.Tasks.Task HandleAsync(TMessage message);
+            }
+            public sealed class OrderPlacedHandler : IMessageHandler<string>
+            {
+                public System.Threading.Tasks.Task HandleAsync(string message)
+                    => System.Threading.Tasks.Task.CompletedTask;
+            }
+            """;
+
+        var findings = AntiPatternScannerTool.ScanFile(source, "src/Handlers.cs");
+        Assert.DoesNotContain(findings, f => f.RuleId == "MAF-AP-EXEC-001");
     }
 
     [Fact]

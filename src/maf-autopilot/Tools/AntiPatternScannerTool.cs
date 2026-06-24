@@ -194,6 +194,11 @@ public sealed class AntiPatternScannerTool
             scan: (root, file) =>
             {
                 var findings = new List<AntiPatternFinding>();
+                // The migration guide blesses `EnableSensitiveData = true` inside a dev-only
+                // guard (#if DEBUG / DEVELOPMENT). Suppress findings on those guarded lines.
+                var devGuarded = CollectGuardedLineRanges(root, c =>
+                    c.Contains("DEBUG", StringComparison.Ordinal)
+                    || c.Contains("DEVELOPMENT", StringComparison.Ordinal));
                 foreach (var assign in root.DescendantNodes().OfType<AssignmentExpressionSyntax>())
                 {
                     if (assign.Right is not LiteralExpressionSyntax rhs
@@ -222,27 +227,66 @@ public sealed class AntiPatternScannerTool
                     if (!match) continue;
 
                     var loc = assign.GetLocation().GetLineSpan();
+                    var line = loc.StartLinePosition.Line + 1;
+                    if (devGuarded.Any(r => line >= r.Start && line <= r.End)) continue; // dev-only guarded — OK
                     findings.Add(new AntiPatternFinding(
                         "MAF-AP-SEC-003",
                         "EnableSensitiveData = true outside development",
                         AntiPatternSeverity.Error,
                         file,
-                        loc.StartLinePosition.Line + 1,
+                        line,
                         assign.ToString()));
                 }
                 return findings;
             }),
 
-        new RegexRule(
+        // MAF-AP-CONC-002 — sync-over-async: blocking on a Task via `.Result` / `.Wait()`.
+        // RoslynRule (was a regex) so it can exclude the look-alikes a text shape can't:
+        //   (await X).Result    — AgentResponse<T>.Result etc. (already awaited; .Result is the payload)
+        //   foo(x).Result("$1") — Regex `Match.Result(...)` substitution, NOT Task<T>.Result
+        // Preserves the old `)`-anchor intent: only a CALL result (`Foo().Result` /
+        // `Foo().Wait()`) is flagged — never a plain `x.Result` property access.
+        new RoslynRule(
             id: "MAF-AP-CONC-002",
             name: "Sync-over-async (.Result / .Wait())",
             severity: AntiPatternSeverity.Warning,
-            // Anchor on the call's close-paren `\)` (NOT a leading `\b`, which
-            // required a word char before `)` and so MISSED the canonical
-            // parameterless `Foo().Result` / `Foo().Wait()`). The trailing `\b`
-            // after the member name avoids `.Results` / `.WaitHandle` false hits.
-            pattern: new Regex(@"\)\s*\.(?:Result|Wait)\b(\s*\(\s*\))?", RegexHygiene, RegexBudget),
-            skipInTestFiles: true),
+            skipInTestFiles: true,
+            scan: (root, file) =>
+            {
+                var findings = new List<AntiPatternFinding>();
+                foreach (var mae in root.DescendantNodes().OfType<MemberAccessExpressionSyntax>())
+                {
+                    var name = mae.Name.Identifier.ValueText;
+                    if (name is not ("Result" or "Wait")) continue;
+
+                    // Only `<call>().Result` / `<call>().Wait()` — receiver is an invocation.
+                    // This preserves the old `)`-anchor scope AND excludes `(await X).Result`
+                    // (receiver is a parenthesized await, not an invocation) and `x.Result`.
+                    if (mae.Expression is not InvocationExpressionSyntax) continue;
+
+                    if (name == "Result")
+                    {
+                        // `foo().Result(args)` is `Match.Result` substitution, not Task.Result — skip.
+                        if (mae.Parent is InvocationExpressionSyntax ri && ri.ArgumentList.Arguments.Count > 0)
+                            continue;
+                    }
+                    else // Wait — only the parameterless blocking `foo().Wait()`.
+                    {
+                        if (mae.Parent is not InvocationExpressionSyntax wi || wi.ArgumentList.Arguments.Count != 0)
+                            continue;
+                    }
+
+                    var loc = mae.Name.GetLocation().GetLineSpan();
+                    findings.Add(new AntiPatternFinding(
+                        "MAF-AP-CONC-002",
+                        "Sync-over-async (.Result / .Wait())",
+                        AntiPatternSeverity.Warning,
+                        file,
+                        loc.StartLinePosition.Line + 1,
+                        $".{name} on a call result blocks the calling thread"));
+                }
+                return findings;
+            }),
 
         // MAF-AP-OBS-001 — file builds an agent but never chains UseOpenTelemetry.
         // RoslynRule (not a raw-text scan): detection walks syntax NODES, so an
@@ -301,15 +345,21 @@ public sealed class AntiPatternScannerTool
                 var findings = new List<AntiPatternFinding>();
                 foreach (var cls in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
                 {
-                    var baseList = cls.BaseList?.Types.Select(t => t.Type.ToString()) ?? [];
-                    var derivesFromProvider = baseList.Any(b =>
-                        b.Contains("AIContextProvider") || b.Contains("ChatHistoryProvider"));
+                    // Exact simple-name match (not substring `Contains`) so an unrelated
+                    // type whose name merely includes "AIContextProvider" doesn't qualify.
+                    var derivesFromProvider = cls.BaseList?.Types.Any(t =>
+                        SimpleTypeName(t.Type) is "AIContextProvider" or "ChatHistoryProvider") ?? false;
                     if (!derivesFromProvider) continue;
 
                     foreach (var field in cls.Members.OfType<FieldDeclarationSyntax>())
                     {
                         var modifiers = field.Modifiers.Select(m => m.ValueText).ToHashSet();
                         if (modifiers.Contains("readonly") || modifiers.Contains("const") || modifiers.Contains("static"))
+                            continue;
+                        // A ProviderSessionState<T> field IS the prescribed per-session
+                        // container — the canonical FIX, not the anti-pattern — so never
+                        // flag it, even when it's (sub-optimally) not marked readonly.
+                        if (SimpleTypeName(field.Declaration.Type) == "ProviderSessionState")
                             continue;
                         var loc = field.GetLocation().GetLineSpan();
                         var variable = field.Declaration.Variables.FirstOrDefault();
@@ -437,15 +487,20 @@ public sealed class AntiPatternScannerTool
                     var text = node switch
                     {
                         UsingDirectiveSyntax u => u.Name?.ToString(),
-                        QualifiedNameSyntax q => q.ToString(),
-                        IdentifierNameSyntax id when id.Identifier.ValueText == "DevUI" => "DevUI",
+                        // Only the OUTERMOST qualified name (e.g. the full type in
+                        // `new Microsoft.Agents.AI.DevUI.X()`). Descending into nested
+                        // sub-names would surface a bare `Microsoft.Agents.AI.Hosting`
+                        // fragment of `...Hosting.A2A` and wrongly trip the carve-out below.
+                        QualifiedNameSyntax q when q.Parent is not QualifiedNameSyntax => q.ToString(),
                         _ => null,
                     };
                     if (string.IsNullOrEmpty(text)) continue;
-                    if (!text!.Contains("Microsoft.Agents.AI.DevUI", StringComparison.Ordinal)
-                        && !text.Contains("Microsoft.Agents.AI.Hosting", StringComparison.Ordinal)
-                        && text != "DevUI")
-                        continue;
+                    // Flag ONLY the unsupported preview surface. The 1.3.0 A2A hosting
+                    // family (Microsoft.Agents.AI.Hosting.A2A[.AspNetCore]) is fully
+                    // supported and must NOT be guarded. The old bare-`DevUI` identifier
+                    // arm was removed: it flagged any local symbol named DevUI (e.g. a
+                    // project's own `namespace DevUI;` / `using DevUI;`).
+                    if (!IsUnsupportedDevUiOrHostingReference(text!)) continue;
 
                     var loc = node.GetLocation().GetLineSpan();
                     var line = loc.StartLinePosition.Line + 1;
@@ -518,12 +573,60 @@ public sealed class AntiPatternScannerTool
         // are also in the registry (`MAF130-EXEC-001`, `MAF130-ATTR-001/002`), but a
         // syntax-only scan catches them BEFORE you run `dotnet build` — useful for
         // the auditor agent's pre-migration pass.
-        new RegexRule(
+        // RoslynRule (was a regex). The bare token `IMessageHandler<` over-matched every
+        // MediatR / NServiceBus / hand-rolled `IMessageHandler<T>` — an extremely common
+        // name unrelated to the removed Microsoft.Agents.AI.Workflows.IMessageHandler<T>.
+        // Now: the MAF-specific attributes ([StreamsMessage] / [YieldsMessage]) are flagged
+        // wherever they appear (low collision), but the generic legacy types
+        // (ReflectingExecutor<…> / IMessageHandler<…>) are flagged ONLY when the file
+        // actually imports the MAF Workflows namespace.
+        new RoslynRule(
             id: "MAF-AP-EXEC-001",
             name: "Pre-1.3.0 executor pattern (ReflectingExecutor / IMessageHandler / [StreamsMessage] / [YieldsMessage])",
             severity: AntiPatternSeverity.Error,
-            // Matches any of the four legacy surfaces in one pass.
-            pattern: new Regex(@"\bReflectingExecutor\s*<|\bIMessageHandler\s*<|\[\s*StreamsMessage\s*\]|\[\s*YieldsMessage\s*\]", RegexHygiene, RegexBudget),
+            scan: (root, file) =>
+            {
+                var findings = new List<AntiPatternFinding>();
+
+                // [StreamsMessage] / [YieldsMessage] — removed MAF attributes; MAF-specific
+                // names, so flag wherever they appear (and AST-matching never hits comments).
+                foreach (var attr in root.DescendantNodes().OfType<AttributeSyntax>())
+                {
+                    var n = attr.Name.ToString();
+                    var s = n.Contains('.') ? n[(n.LastIndexOf('.') + 1)..] : n;
+                    if (s is "StreamsMessage" or "StreamsMessageAttribute" or "YieldsMessage" or "YieldsMessageAttribute")
+                    {
+                        var loc = attr.GetLocation().GetLineSpan();
+                        findings.Add(new AntiPatternFinding(
+                            "MAF-AP-EXEC-001",
+                            "Pre-1.3.0 executor pattern (ReflectingExecutor / IMessageHandler / [StreamsMessage] / [YieldsMessage])",
+                            AntiPatternSeverity.Error, file, loc.StartLinePosition.Line + 1, $"[{s}]"));
+                    }
+                }
+
+                // Generic legacy types. `ReflectingExecutor<…>` is a MAF-specific name
+                // (low collision) → flag wherever it appears. `IMessageHandler<…>` is an
+                // extremely common name (MediatR / NServiceBus / hand-rolled buses), so it
+                // is flagged ONLY when the file imports the MAF Workflows namespace.
+                var importsWorkflows = root.DescendantNodes().OfType<UsingDirectiveSyntax>()
+                    .Any(u => u.Name?.ToString().Contains("Microsoft.Agents.AI.Workflows", StringComparison.Ordinal) == true);
+                foreach (var g in root.DescendantNodes().OfType<GenericNameSyntax>())
+                {
+                    var id = g.Identifier.ValueText;
+                    var isLegacy = id == "ReflectingExecutor"
+                        || (id == "IMessageHandler" && importsWorkflows);
+                    if (!isLegacy) continue;
+
+                    var loc = g.GetLocation().GetLineSpan();
+                    findings.Add(new AntiPatternFinding(
+                        "MAF-AP-EXEC-001",
+                        "Pre-1.3.0 executor pattern (ReflectingExecutor / IMessageHandler / [StreamsMessage] / [YieldsMessage])",
+                        AntiPatternSeverity.Error, file, loc.StartLinePosition.Line + 1, $"{id}<…>"));
+                }
+
+                // Collapse multiple legacy surfaces on the same line.
+                return findings.GroupBy(f => (f.File, f.Line)).Select(grp => grp.First()).ToList();
+            },
             skipInTestFiles: false),
     };
 
@@ -576,12 +679,58 @@ public sealed class AntiPatternScannerTool
            && keyLit.Token.ValueText == "EnableSensitiveData";
 
     /// <summary>
+    /// True if a using/qualified-name reference points at the UNSUPPORTED DevUI /
+    /// Hosting preview surface that has no 1.3.0 equivalent (and therefore must be
+    /// guarded). The A2A hosting family
+    /// (<c>Microsoft.Agents.AI.Hosting.A2A</c> / <c>.A2A.AspNetCore</c>) is a fully
+    /// supported 1.3.0 package and is deliberately NOT flagged.
+    /// </summary>
+    internal static bool IsUnsupportedDevUiOrHostingReference(string text)
+    {
+        // DevUI preview channel — no 1.3.0 equivalent, always guard.
+        if (text.Contains("Microsoft.Agents.AI.DevUI", StringComparison.Ordinal))
+            return true;
+
+        // Hosting: only the bare namespace / non-A2A children are preview surface.
+        if (text.Contains("Microsoft.Agents.AI.Hosting", StringComparison.Ordinal))
+            return !IsSupportedHostingNamespace(text);
+
+        return false;
+    }
+
+    /// <summary>
+    /// True if the reference is in the supported 1.3.0 A2A hosting family. Matches the
+    /// dotted segment AFTER <c>Hosting.</c> so it can't collide on substrings: the bare
+    /// <c>Microsoft.Agents.AI.Hosting</c> (no child segment) is NOT supported.
+    /// </summary>
+    private static bool IsSupportedHostingNamespace(string text)
+    {
+        const string prefix = "Microsoft.Agents.AI.Hosting.";
+        var idx = text.IndexOf(prefix, StringComparison.Ordinal);
+        if (idx < 0) return false; // bare "...Hosting" with no child → unsupported
+        var rest = text[(idx + prefix.Length)..];
+        var segment = rest.Split('.', 2)[0];
+        return segment == "A2A"; // .Hosting.A2A and .Hosting.A2A.AspNetCore
+    }
+
+    /// <summary>
     /// Returns the inclusive line ranges that lie inside a <c>#if</c> block whose
     /// condition mentions <c>DEVUI_ENABLED</c> (the canonical guard symbol per the
     /// 1.3.0 migration guide §14). Used by <c>MAF-AP-DEVUI-001</c> to suppress
     /// findings for code that IS correctly guarded.
     /// </summary>
     internal static IReadOnlyList<(int Start, int End)> CollectDevUiGuardedLineRanges(Microsoft.CodeAnalysis.SyntaxNode root)
+        => CollectGuardedLineRanges(root, c => c.Contains("DEVUI_ENABLED", StringComparison.Ordinal));
+
+    /// <summary>
+    /// Inclusive line ranges inside an <c>#if</c> whose condition satisfies
+    /// <paramref name="conditionMatches"/>. Used to suppress findings on code that is
+    /// intentionally fenced behind a build symbol — <c>DEVUI_ENABLED</c> for DevUI,
+    /// <c>DEBUG</c>/<c>DEVELOPMENT</c> for dev-only diagnostics (e.g. SEC-003's
+    /// <c>EnableSensitiveData</c>, which the migration guide blesses inside a dev guard).
+    /// </summary>
+    internal static IReadOnlyList<(int Start, int End)> CollectGuardedLineRanges(
+        Microsoft.CodeAnalysis.SyntaxNode root, Func<string, bool> conditionMatches)
     {
         var ranges = new List<(int Start, int End)>();
         var openStack = new Stack<int>();
@@ -594,7 +743,7 @@ public sealed class AntiPatternScannerTool
                 if (structure is IfDirectiveTriviaSyntax ifDir)
                 {
                     var conditionText = ifDir.Condition.ToString();
-                    if (conditionText.Contains("DEVUI_ENABLED", StringComparison.Ordinal))
+                    if (conditionMatches(conditionText))
                     {
                         var line = ifDir.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
                         openStack.Push(line);

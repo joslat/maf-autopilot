@@ -91,6 +91,16 @@ public sealed class EstimateCostTool
                 || receiver.EndsWith(".ValueTask", StringComparison.Ordinal))
                 continue;
 
+            // Skip well-known NON-agent `RunAsync`/`RunStreamingAsync` receivers. Without a
+            // SemanticModel the rule can't resolve types, and matching by method name alone
+            // flagged the ASP.NET host run loop (`app.RunAsync()`) and the workflow runners
+            // (`InProcessExecution.RunStreamingAsync(workflow, …)`, `workflow.RunAsync(…)`)
+            // as uncapped *agent* calls — neither takes ChatOptions/MaxOutputTokens. A
+            // genuine agent named exactly one of these is vanishingly unlikely. (A future
+            // SemanticModel pass should replace this denylist with an AIAgent-type check.)
+            if (IsNonAgentRunReceiver(member.Expression))
+                continue;
+
             var loc = invocation.GetLocation().GetLineSpan();
             var line = loc.StartLinePosition.Line + 1;
 
@@ -125,6 +135,32 @@ public sealed class EstimateCostTool
         }
 
         return findings;
+    }
+
+    /// <summary>
+    /// Well-known non-agent receivers of a <c>RunAsync</c>/<c>RunStreamingAsync</c> call:
+    /// the ASP.NET host run loop and the MAF workflow runners. Matched by the receiver's
+    /// rightmost identifier, so it covers `app.RunAsync()`, `host.RunAsync()`,
+    /// `webApp.RunAsync()`, `workflow.RunAsync(…)`, and `InProcessExecution.RunStreamingAsync(…)`.
+    /// Syntactic denylist (no SemanticModel) — see call site.
+    /// </summary>
+    private static readonly HashSet<string> NonAgentRunReceivers = new(StringComparer.Ordinal)
+    {
+        "app", "host", "webApp", "webApplication", "application",   // ASP.NET / generic host
+        "WebApplication", "IHost", "Host",                          // host types (static-ish refs)
+        "InProcessExecution", "workflow", "Workflow",               // MAF workflow runners
+    };
+
+    /// <summary>True if the call's receiver is a known non-agent host/workflow runner.</summary>
+    private static bool IsNonAgentRunReceiver(ExpressionSyntax receiver)
+    {
+        var simple = receiver switch
+        {
+            IdentifierNameSyntax id => id.Identifier.ValueText,
+            MemberAccessExpressionSyntax ma => ma.Name.Identifier.ValueText,
+            _ => null,
+        };
+        return simple is not null && NonAgentRunReceivers.Contains(simple);
     }
 
     private static bool IsChatOptionsCreation(ObjectCreationExpressionSyntax oce)
