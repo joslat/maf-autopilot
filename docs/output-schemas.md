@@ -91,6 +91,47 @@ snippets** — only `file:line` — so it never echoes a secret.
 
 ---
 
+## `MafDoctor` remediation manifest (`--plan --json`)
+
+The machine-readable sibling of `--plan` — the same phased plan, structured so an
+automated remediation loop (the `maf-remediate` prompt) can iterate it and triage
+false positives without parsing prose. Schema version `"1"`.
+
+```jsonc
+{
+  "schema_version": "1",
+  "verdict": "F",
+  "repo": "C:/path/to/repo",
+  "counts": { "total": 13, "auto_fixable": 3, "manual": 10, "heuristic": 3 },
+  "phase1_autofix": {                         // null when nothing is auto-fixable
+    "command": "maf-doctor autofix-all .",
+    "finding_count": 3,
+    "clears_rules": ["MAF-AP-SEC-001", "MAF-AP-SEC-003", "MAF-AP-WF-001"]
+  },
+  "phase2_semantic": [                         // grouped by rule, impact-ordered
+    {
+      "rule_id": "COST-001",
+      "title": "uncapped agent call — no MaxOutputTokens",
+      "severity": "cost",
+      "confidence": "heuristic",              // certain | high | heuristic
+      "verify_first": true,                   // true ⇔ confidence == "heuristic"
+      "auto_fixable": false,
+      "why": "An agent call with no MaxOutputTokens cap can emit an unbounded response…",
+      "fix": "Set MaxOutputTokens on the nearest ChatOptions to cap the per-call cost.",
+      "occurrences": [ { "file": "AGUIClient/Program.cs", "line": 90 } ]
+    }
+  ]
+}
+```
+
+- `counts.heuristic` — how many Phase-2 findings are `heuristic` (likely false positives; confirm before fixing).
+- `phase1_autofix` — `null` if there are no auto-fixable findings; otherwise the single command + the rules it clears.
+- `phase2_semantic[].verify_first` — `true` for `heuristic` findings: confirm the finding is real (e.g. via `MafExplainFinding`) **before** editing.
+- `phase2_semantic[].occurrences` — every `file`/`line` for that rule (a group of N hits is one entry with N occurrences).
+- Invalid path / scan failure returns the same `{ "schema_version": "1", "error": "…" }` shape as `--json`.
+
+---
+
 ## (Reserved) `MafAuditPullRequest`
 
 Same shape as `MafDoctor` with an additional `pr_metadata` field. Implementation pending.

@@ -20,13 +20,13 @@ Every finding carries `confidence`:
 
 - **`certain`** — compiler ground-truth (CS0618). No false positives. Fix it.
 - **`high`** — structural AST rule, low false-positive risk. Apply the canonical fix with a quick sanity check.
-- **`heuristic`** — name-only / text / scope-limited. **May be a false positive.** Call `MafExplainFinding(repoPath, file, line)`, read the surrounding code, and confirm it's a *real* problem **before** changing anything. When unsure in `safe` mode, skip and flag for human review.
+- **`heuristic`** — name-only / text / scope-limited. **May be a false positive.** Call `MafExplainFinding(repoPath, file, line)`, read the surrounding code, and confirm it's a *real* problem **before** changing anything. When unsure after reading the code — in **either** mode — skip and flag for human review; never edit on a maybe.
 
 ## Per-rule playbook
 
 | Rule | Confidence | Canonical fix | If it's a FALSE POSITIVE (skip) |
 |---|---|---|---|
-| **MAF001** (fan-out starvation) | high | Return `ValueTask<T>` (auto-sent; **required** on an `AddFanOutEdge` source), or emit via `await context.SendMessageAsync(...)`. | Handler already emits downstream via a helper that calls `SendMessageAsync`/`YieldOutputAsync`. |
+| **MAF001** (fan-out starvation) | high | Return `ValueTask<T>` — the value is auto-broadcast; **required** on an `AddFanOutEdge` source (`SendMessageAsync` does NOT broadcast on a fan-out edge). Emitting via `await context.SendMessageAsync(...)` is valid only for a plain `AddEdge` target. | Handler emits downstream via `SendMessageAsync`/`YieldOutputAsync` **and** the executor is NOT a fan-out (`AddFanOutEdge`) source. On a fan-out source, a `SendMessageAsync`-only handler is a REAL bug — do **not** skip it. |
 | **MAF-AP-EXEC-001** (legacy executor) | high | Delete `[StreamsMessage]`/`[YieldsMessage]`; migrate `ReflectingExecutor<>` → `sealed partial : Executor` + `[MessageHandler]`. | An `IMessageHandler<T>` that is MediatR / NServiceBus / a hand-rolled bus (no `Microsoft.Agents.AI.Workflows`). |
 | **MAF-AP-DEVUI-001** (DevUI/Hosting) | high | Wrap the unsupported preview reference in `#if DEVUI_ENABLED`. | A supported `Microsoft.Agents.AI.Hosting.A2A[.AspNetCore]` using, or a project's own `namespace DevUI;`. |
 | **MAF-AP-SEC-001** (DefaultAzureCredential) | high | `ManagedIdentityCredential` in production. | Already inside an `env.IsDevelopment()` / `#if DEBUG` dev-only branch. |

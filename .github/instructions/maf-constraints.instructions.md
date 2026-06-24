@@ -80,4 +80,4 @@ The `maf-autopilot` MCP server provides executable tools that enforce most const
 | No `[StreamsMessage]` / `[YieldsMessage]`      | `MafRunCs0618Hunt(projectPath)` (CS0246 path)            |
 | Always run tracking-table updates              | (process — agents enforce this)                     |
 
-Also useful: `MafApiSafety(apiName)` for a quick SAFE/UNSAFE check on any MAF API, `MafExplain(snippet)` to annotate a code fragment with guide citations, and the `maf-autopilot.Analyzers` NuGet package for write-time IDE squigglies (`MAF001`/`MAF002`/`MAF003`).
+Also useful: `MafApiSafety(apiName)` for a quick SAFE/UNSAFE check on any MAF API, `MafExplain(snippet)` to annotate a code fragment with guide citations, and the `maf-doctor.Analyzers` NuGet package for write-time IDE squigglies (`MAF001`/`MAF002`/`MAF003`).

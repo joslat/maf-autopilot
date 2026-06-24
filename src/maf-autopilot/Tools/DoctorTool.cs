@@ -71,7 +71,9 @@ public sealed class DoctorTool
         // breaks their parser.
         if (PathGuard.ValidateRepoPath(repoPath) is { } err)
         {
-            if (format.Equals("json", StringComparison.OrdinalIgnoreCase))
+            // Any JSON-shaped format must get a JSON error, not a plain-text string.
+            if (format.Equals("json", StringComparison.OrdinalIgnoreCase)
+                || format.Equals("plan-json", StringComparison.OrdinalIgnoreCase))
                 return JsonSerializer.Serialize(
                     new DoctorJsonError("1", err), DoctorJsonContext.Default.DoctorJsonError);
             if (format.Equals("plan", StringComparison.OrdinalIgnoreCase))
@@ -86,6 +88,13 @@ public sealed class DoctorTool
             var result = BuildJsonResult(repoPath, summary, full);
             return JsonSerializer.Serialize(result, DoctorJsonContext.Default.DoctorJsonResult);
         }
+
+        // `--plan --json` — the machine-readable remediation manifest: the same phased
+        // plan as `--plan`, but structured so an automated loop (maf-remediate) can
+        // iterate it with per-finding confidence instead of parsing markdown.
+        if (format.Equals("plan-json", StringComparison.OrdinalIgnoreCase))
+            return JsonSerializer.Serialize(
+                BuildPlanJson(repoPath, summary), DoctorJsonContext.Default.DoctorPlanJson);
 
         if (format.Equals("plan", StringComparison.OrdinalIgnoreCase))
             return FormatPlan(repoPath, summary); // always covers every finding
@@ -745,6 +754,46 @@ public sealed class DoctorTool
     }
 
     /// <summary>
+    /// `--plan --json` — the machine-readable remediation manifest. Same content as the
+    /// markdown plan (Phase 1 = one mechanical command; Phase 2 = impact-ordered semantic
+    /// findings grouped by rule), but structured + carrying each finding's `confidence`
+    /// and a `verify_first` flag, so an automated loop (the maf-remediate prompt) can
+    /// iterate it deterministically and triage false positives without parsing prose.
+    /// </summary>
+    private static DoctorPlanJson BuildPlanJson(string repoPath, DoctorSummary s)
+    {
+        var all = s.AllFixes;
+        var auto = all.Where(f => f.AutoFixable).ToList();
+        var manual = all.Where(f => !f.AutoFixable).ToList();
+        var heuristicCount = manual.Count(f => f.Confidence == "heuristic");
+
+        var phase1 = auto.Count == 0 ? null : new PlanPhase1(
+            Command: "maf-doctor autofix-all .",
+            FindingCount: auto.Count,
+            ClearsRules: GroupByRule(auto).Select(g => g.Rep.RuleId).ToList());
+
+        var phase2 = GroupByRule(manual).Select(g => new PlanFinding(
+            RuleId: g.Rep.RuleId,
+            Title: GroupHeaderTitle(g.Rep),
+            Severity: SeverityFor(g.Rep.Priority).Json,
+            Confidence: g.Rep.Confidence,
+            VerifyFirst: g.Rep.Confidence == "heuristic",
+            AutoFixable: false,
+            Why: g.Rep.Why,
+            Fix: g.Rep.FixDescription,
+            Occurrences: g.Items.Select(it => new PlanOccurrence(it.File, it.Line)).ToList()))
+            .ToList();
+
+        return new DoctorPlanJson(
+            SchemaVersion: "1",
+            Verdict: s.Grade.ToString(),
+            Repo: repoPath,
+            Counts: new PlanCounts(all.Count, auto.Count, manual.Count, heuristicCount),
+            Phase1Autofix: phase1,
+            Phase2Semantic: phase2);
+    }
+
+    /// <summary>
     /// Reads the offending source line for a finding so the report shows the
     /// actual code, not just a location. Best-effort: returns null (no snippet)
     /// if the file is missing, the line is out of range, or anything throws.
@@ -861,8 +910,51 @@ public sealed record DoctorJsonFinding(
     // Additive within schema_version "1" (consumers ignore unknown fields).
     [property: JsonPropertyName("confidence")] string Confidence = "high");
 
+/// <summary>
+/// `--plan --json` manifest schema. Schema version "1". A structured, phased
+/// remediation plan with per-finding confidence — the machine-readable sibling of
+/// the markdown `--plan`, built for the maf-remediate loop. See docs/output-schemas.md.
+/// </summary>
+public sealed record DoctorPlanJson(
+    [property: JsonPropertyName("schema_version")] string SchemaVersion,
+    [property: JsonPropertyName("verdict")] string Verdict,
+    [property: JsonPropertyName("repo")] string Repo,
+    [property: JsonPropertyName("counts")] PlanCounts Counts,
+    [property: JsonPropertyName("phase1_autofix")] PlanPhase1? Phase1Autofix,
+    [property: JsonPropertyName("phase2_semantic")] IReadOnlyList<PlanFinding> Phase2Semantic);
+
+public sealed record PlanCounts(
+    [property: JsonPropertyName("total")] int Total,
+    [property: JsonPropertyName("auto_fixable")] int AutoFixable,
+    [property: JsonPropertyName("manual")] int Manual,
+    [property: JsonPropertyName("heuristic")] int Heuristic);
+
+/// <summary>Phase 1 — the single deterministic command that clears the mechanical findings.</summary>
+public sealed record PlanPhase1(
+    [property: JsonPropertyName("command")] string Command,
+    [property: JsonPropertyName("finding_count")] int FindingCount,
+    [property: JsonPropertyName("clears_rules")] IReadOnlyList<string> ClearsRules);
+
+/// <summary>One Phase 2 semantic finding (grouped by rule), with triage metadata.</summary>
+public sealed record PlanFinding(
+    [property: JsonPropertyName("rule_id")] string RuleId,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("severity")] string Severity,
+    [property: JsonPropertyName("confidence")] string Confidence,
+    // True when confidence == "heuristic": confirm the finding is real BEFORE editing.
+    [property: JsonPropertyName("verify_first")] bool VerifyFirst,
+    [property: JsonPropertyName("auto_fixable")] bool AutoFixable,
+    [property: JsonPropertyName("why")] string Why,
+    [property: JsonPropertyName("fix")] string Fix,
+    [property: JsonPropertyName("occurrences")] IReadOnlyList<PlanOccurrence> Occurrences);
+
+public sealed record PlanOccurrence(
+    [property: JsonPropertyName("file")] string File,
+    [property: JsonPropertyName("line")] int Line);
+
 [JsonSerializable(typeof(DoctorJsonResult))]
 [JsonSerializable(typeof(DoctorJsonFinding))]
 [JsonSerializable(typeof(DoctorJsonError))]
+[JsonSerializable(typeof(DoctorPlanJson))]
 [JsonSourceGenerationOptions(WriteIndented = true)]
 internal sealed partial class DoctorJsonContext : JsonSerializerContext { }

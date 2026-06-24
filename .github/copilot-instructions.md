@@ -81,4 +81,4 @@ AddFanInBarrierEdge argument order:
 | Scaffold a new MAF agent / executor            | `MafNewAgent(projectPath, name)` / `MafNewExecutor` |
 | Workflow topology proof + Mermaid diagram      | `MafSimulateWorkflow(repoPath)`                     |
 
-For IDE-time enforcement (red squigglies as you type), add the `maf-autopilot.Analyzers` NuGet package to your project — ships rules `MAF001` / `MAF002` / `MAF003`.
+For IDE-time enforcement (red squigglies as you type), add the `maf-doctor.Analyzers` NuGet package to your project — ships rules `MAF001` / `MAF002` / `MAF003`.

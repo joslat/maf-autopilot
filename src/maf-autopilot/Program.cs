@@ -42,10 +42,11 @@ if (args.Length > 0 && (args[0] is "--help" or "-h" or "help"))
         Commands:
           init [--with-cursor]              Wire the MCP server + steering into the current repo
                                             (.vscode/mcp.json, .mcp.json, instructions, agents).
-          doctor [path] [--exclude <s>] [--all] [--json|--plan]
+          doctor [path] [--exclude <s>] [--all] [--json] [--plan]
                                             A/B/C/F health report. --all = every finding (grouped),
-                                            not just the top 3; --json = machine-readable output;
-                                            --plan = ordered, checkboxed remediation plan.
+                                            not just the top 3; --json = machine-readable findings;
+                                            --plan = ordered, checkboxed remediation plan;
+                                            --plan --json = structured remediation manifest (for an automated fix loop).
           autofix-all [path] [--dry-run] [--json]
                                             Apply deterministic Roslyn fixes. Human-readable summary
                                             by default; --dry-run = preview only (no writes);

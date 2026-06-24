@@ -60,7 +60,7 @@ Same as every other agent — read `maf://constraints` before recommending any c
 
 - NEVER recommend `DefaultAzureCredential` in production
 - NEVER recommend `EnableSensitiveData = true` outside dev
-- ALWAYS recommend the analyzer NuGet (`maf-autopilot.Analyzers`) for write-time enforcement
+- ALWAYS recommend the analyzer NuGet (`maf-doctor.Analyzers`) for write-time enforcement
 - For any MAF version upgrade, recommend running `MafPreUpgradeDryRun` first
 
 ## Skills you might pull in

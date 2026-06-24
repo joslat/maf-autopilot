@@ -49,7 +49,7 @@ Run **`MafDoctor(repoPath)`** to get the current health grade. Then:
 
 - Quote the grade ("This codebase currently grades **B**.") — calibrate expectations.
 - List the top 3 fixes the doctor surfaces — these are the patterns the codebase ALREADY cares about and the new dev will see in code review feedback.
-- Mention any analyzer rules in `maf-autopilot.Analyzers` that are currently being enforced (check the `<AnalyzerConfigInclude>` blocks in csproj files, if any).
+- Mention any analyzer rules in `maf-doctor.Analyzers` that are currently being enforced (check the `<AnalyzerConfigInclude>` blocks in csproj files, if any).
 
 ### Phase E — First-day suggestions
 

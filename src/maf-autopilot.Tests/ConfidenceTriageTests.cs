@@ -86,6 +86,49 @@ public sealed class ConfidenceTriageTests
         Assert.Contains("verify first", plan, System.StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void PlanJson_Manifest_PhasesFindingsAndTriage()
+    {
+        using var repo = new TempRepo(
+            ("Program.cs", """
+                using Azure.Identity;
+                public class Program
+                {
+                    public static async System.Threading.Tasks.Task Main(dynamic agent)
+                    {
+                        var cred = new DefaultAzureCredential();   // MAF-AP-SEC-001 — auto-fixable
+                        var r = await agent.RunAsync("hi");        // COST-001 — heuristic
+                    }
+                }
+                """));
+
+        var json = new DoctorTool().Run(repo.Path, format: "plan-json", excludes: new List<string>(), full: true);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        Assert.Equal("1", root.GetProperty("schema_version").GetString());
+        // Phase 1 batches the mechanical fix(es) into one command.
+        var phase1 = root.GetProperty("phase1_autofix");
+        Assert.Equal("maf-doctor autofix-all .", phase1.GetProperty("command").GetString());
+        Assert.Contains(phase1.GetProperty("clears_rules").EnumerateArray(),
+            e => e.GetString() == "MAF-AP-SEC-001");
+
+        // Phase 2 carries per-finding confidence + verify_first for the loop to triage.
+        var cost = root.GetProperty("phase2_semantic").EnumerateArray()
+            .First(f => f.GetProperty("rule_id").GetString() == "COST-001");
+        Assert.Equal("heuristic", cost.GetProperty("confidence").GetString());
+        Assert.True(cost.GetProperty("verify_first").GetBoolean());
+        Assert.NotEmpty(cost.GetProperty("occurrences").EnumerateArray());
+    }
+
+    [Fact]
+    public void PlanJson_InvalidPath_ReturnsJsonError()
+    {
+        var json = new DoctorTool().Run("C:/no/such/repo/xyz", format: "plan-json", excludes: new List<string>(), full: true);
+        using var doc = JsonDocument.Parse(json); // must be valid JSON, not a plain-text string
+        Assert.True(doc.RootElement.TryGetProperty("error", out _));
+    }
+
     /// <summary>A throwaway directory with seeded .cs files, deleted on dispose.</summary>
     private sealed class TempRepo : System.IDisposable
     {
