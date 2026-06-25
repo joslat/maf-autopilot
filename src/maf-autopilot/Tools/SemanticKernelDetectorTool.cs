@@ -426,14 +426,24 @@ public sealed class SemanticKernelDetectorTool
         public int Rearchitect => Constructs.Count(c => c.Strategy == MigrationStrategy.Rearchitect);
 
         /// <summary>
+        /// Distinct re-architect construct KINDS — collapses the same kind appearing in
+        /// multiple files (per-file records) to one, so the HARD threshold counts genuinely
+        /// different re-architectures, matching the <see cref="Verdict"/> doc.
+        /// </summary>
+        private int DistinctRearchitectKinds =>
+            Constructs.Where(c => c.Strategy == MigrationStrategy.Rearchitect)
+                      .Select(c => c.Kind).Distinct(StringComparer.Ordinal).Count();
+
+        /// <summary>
         /// EASY — only bridges / a tiny rewrite footprint.
         /// MEDIUM — mechanical rewrites, a single re-architecture, or a large footprint (&gt; <see cref="LargeFootprintThreshold"/> occurrences).
         /// HARD — two or more <em>distinct</em> re-architecture kinds (e.g. group chat + planners + vector store).
-        /// A lone re-architecture is MEDIUM, not HARD: one redesign is tractable, several compound.
+        /// A lone re-architecture — even if it appears in several files — is MEDIUM, not HARD:
+        /// one redesign is tractable, several distinct ones compound.
         /// </summary>
         public string Verdict =>
-            Rearchitect >= 2 ? "HARD"
-            : (Rearchitect >= 1 || Rewrite > 0 || TotalOccurrences > LargeFootprintThreshold) ? "MEDIUM"
+            DistinctRearchitectKinds >= 2 ? "HARD"
+            : (DistinctRearchitectKinds >= 1 || Rewrite > 0 || TotalOccurrences > LargeFootprintThreshold) ? "MEDIUM"
             : "EASY";
 
         public string ToMarkdown()

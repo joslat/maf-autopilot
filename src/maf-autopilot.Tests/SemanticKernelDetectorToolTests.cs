@@ -490,6 +490,28 @@ public sealed class SemanticKernelDetectorToolTests
     }
 
     [Fact]
+    public void Scan_SameRearchitectKindAcrossFiles_IsNotHard()
+    {
+        // The SAME re-architect kind (AgentGroupChat) in two files is ONE distinct kind →
+        // MEDIUM, not HARD. Regression: the verdict counted per-file records, not kinds.
+        using var repo = new TempDir(
+            ("A.cs", """
+                using Microsoft.SemanticKernel.Agents;
+                using Microsoft.SemanticKernel.Agents.Chat;
+                public class A { public void Run(AgentGroupChat chat) { } }
+                """),
+            ("B.cs", """
+                using Microsoft.SemanticKernel.Agents;
+                using Microsoft.SemanticKernel.Agents.Chat;
+                public class B { public void Run(AgentGroupChat chat) { } }
+                """));
+
+        var result = SemanticKernelDetectorTool.Scan(repo.Path);
+        Assert.Equal(2, result.Rearchitect);    // two per-file records (display count unchanged)
+        Assert.Equal("MEDIUM", result.Verdict); // but only ONE distinct kind → not HARD
+    }
+
+    [Fact]
     public void Scan_OnlyBridgeable_VerdictIsEasy()
     {
         using var repo = new TempDir(
