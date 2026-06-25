@@ -111,6 +111,25 @@ internal static class SourceFileWalker
     }
 
     /// <summary>
+    /// Enumerates every file under <paramref name="repoRoot"/> matching
+    /// <paramref name="searchPattern"/>, using the SAME hardened options as the
+    /// <c>.cs</c> walk (no symlinks / hidden / system, inaccessible subdirs skipped)
+    /// and excluding <c>/bin/</c> + <c>/obj/</c> artefact paths. For non-<c>.cs</c>
+    /// project metadata such as <c>Directory.Packages.props</c>, so those walks don't
+    /// reintroduce the raw <c>Directory.EnumerateFiles</c> symlink-following risk.
+    /// </summary>
+    public static IEnumerable<string> EnumerateFiles(string repoRoot, string searchPattern)
+    {
+        foreach (var path in Directory.EnumerateFiles(repoRoot, searchPattern, RecursiveCsOptions))
+        {
+            var n = path.Replace('\\', '/');
+            if (n.Contains("/bin/", StringComparison.Ordinal)) continue;
+            if (n.Contains("/obj/", StringComparison.Ordinal)) continue;
+            yield return path;
+        }
+    }
+
+    /// <summary>
     /// Returns the path of <paramref name="file"/> relative to
     /// <paramref name="root"/>, with forward-slash separators.
     ///

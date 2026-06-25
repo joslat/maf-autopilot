@@ -88,7 +88,9 @@ public sealed class SemanticKernelDetectorTool
             if (File.Exists(path)
                 && (path.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)
                     || path.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)))
-                return Path.GetDirectoryName(path);
+                // GetFullPath first so a RELATIVE project path (e.g. `migrate-scan MyApp.csproj`)
+                // resolves to its real containing directory instead of "" / null.
+                return Path.GetDirectoryName(Path.GetFullPath(path));
         }
         catch { /* fall through — let PathGuard report the malformed path */ }
         return null;
@@ -179,11 +181,13 @@ public sealed class SemanticKernelDetectorTool
         List<string> propsFiles;
         try
         {
-            // .ToList() forces enumeration inside the try so a mid-walk IO error
-            // (access denied on a subtree) degrades to "no central versions" rather
-            // than throwing out of the scan.
-            propsFiles = Directory
-                .EnumerateFiles(repoPath, "Directory.Packages.props", SearchOption.AllDirectories)
+            // Use the hardened shared walker (skips symlinks / hidden / system / bin / obj,
+            // ignores inaccessible subdirs) rather than a raw recursive EnumerateFiles.
+            // .OrderBy makes "first id wins" deterministic across machines when several
+            // Directory.Packages.props exist; .ToList() forces enumeration inside the try.
+            propsFiles = SourceFileWalker
+                .EnumerateFiles(repoPath, "Directory.Packages.props")
+                .OrderBy(p => p, StringComparer.Ordinal)
                 .ToList();
         }
         catch { return map; }
