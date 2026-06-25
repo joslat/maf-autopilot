@@ -142,7 +142,8 @@ public static class MafResources
     {
         if (!_allowedSkillNames.TryGetValue(name ?? string.Empty, out var canonical))
             throw new ArgumentException(
-                $"Unknown skill '{name}'. Available: {string.Join(", ", _allowedSkillNames)}");
+                // Sort so the "Available:" list is deterministic (HashSet order is not).
+                $"Unknown skill '{name}'. Available: {string.Join(", ", _allowedSkillNames.OrderBy(n => n, StringComparer.Ordinal))}");
 
         // Embedded-resource names are case-sensitive; use the canonical allowlist form
         // so the public API can remain case-insensitive without leaking that asymmetry.

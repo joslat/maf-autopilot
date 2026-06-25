@@ -237,7 +237,7 @@ public sealed class SemanticKernelDetectorTool
         var root = CSharpSyntaxTree.ParseText(source).GetRoot();
 
         var importsSk = root.DescendantNodes().OfType<UsingDirectiveSyntax>()
-            .Any(u => u.Name?.ToString().StartsWith("Microsoft.SemanticKernel", StringComparison.Ordinal) == true);
+            .Any(u => ImportsSemanticKernel(u.Name?.ToString()));
         if (!importsSk)
             return Array.Empty<SkConstruct>();
 
@@ -371,6 +371,19 @@ public sealed class SemanticKernelDetectorTool
         var n = attr.Name.ToString();
         n = n.Contains('.') ? n[(n.LastIndexOf('.') + 1)..] : n;
         return n.EndsWith("Attribute", StringComparison.Ordinal) ? n[..^"Attribute".Length] : n;
+    }
+
+    /// <summary>
+    /// True when a using-directive name imports a <c>Microsoft.SemanticKernel</c> namespace,
+    /// tolerating the <c>global::</c> qualifier (e.g. <c>using global::Microsoft.SemanticKernel;</c>).
+    /// Namespaces are case-sensitive, so the comparison is Ordinal.
+    /// </summary>
+    private static bool ImportsSemanticKernel(string? usingName)
+    {
+        if (usingName is null) return false;
+        if (usingName.StartsWith("global::", StringComparison.Ordinal))
+            usingName = usingName["global::".Length..];
+        return usingName.StartsWith("Microsoft.SemanticKernel", StringComparison.Ordinal);
     }
 
     /// <summary>

@@ -41,6 +41,18 @@ public sealed class SemanticKernelDetectorToolTests
     }
 
     [Fact]
+    public void GlobalQualifiedSkUsing_IsRecognized()
+    {
+        // `using global::Microsoft.SemanticKernel;` must still mark the file as SK.
+        const string source = """
+            using global::Microsoft.SemanticKernel;
+            public class P { [KernelFunction] public string A() => ""; }
+            """;
+        var c = One(source, "[KernelFunction] plugin method");
+        Assert.Equal(MigrationStrategy.Bridgeable, c.Strategy);
+    }
+
+    [Fact]
     public void AgentGroupChat_IsRearchitect()
     {
         const string source = """
