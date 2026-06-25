@@ -324,6 +324,20 @@ public sealed class SemanticKernelDetectorToolTests
     }
 
     [Fact]
+    public void MethodGroupInvokeReference_IsNotFlagged()
+    {
+        // A bare method-group reference (no call) must NOT be flagged as an invocation —
+        // only actual call sites are.
+        const string source = """
+            using Microsoft.SemanticKernel.Agents;
+            public class R { void M(dynamic agent) { var f = agent.InvokeAsync; } }
+            """;
+        Assert.DoesNotContain(
+            SemanticKernelDetectorTool.AnalyzeSource(source, "src/R.cs"),
+            c => c.Kind.Contains("invocation", System.StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void KernelAgentReceiver_InvokeAsync_IsAgentInvocation()
     {
         // `kernelAgent` is an AGENT (whole-word root is not a kernel) — must classify as

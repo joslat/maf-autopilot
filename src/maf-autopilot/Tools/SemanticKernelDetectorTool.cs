@@ -263,8 +263,10 @@ public sealed class SemanticKernelDetectorTool
                 // (`kernel.InvokeAsync(fn)`) from agent invocation (`agent.InvokeAsync(input)`)
                 // — they map to different MAF code. The kernel-vs-agent decision keys on the
                 // chain's ROOT identifier (whole-word), not a substring, so `kernelAgent.X`
-                // resolves as an agent (correct) rather than by accident.
-                case MemberAccessExpressionSyntax m when m.Name.Identifier.ValueText is "InvokeAsync" or "InvokeStreamingAsync":
+                // resolves as an agent (correct) rather than by accident. Matched on the
+                // INVOCATION (a real call), not a bare member access / method-group reference.
+                case InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax m }
+                        when m.Name.Identifier.ValueText is "InvokeAsync" or "InvokeStreamingAsync":
                     if (IsKernelReceiver(m.Expression))
                         Record("Kernel function invocation (`kernel.Invoke*Async`)", MigrationStrategy.Rewrite,
                             "→ call the tool method directly, or let MAF's automatic function-calling loop invoke it (no manual `kernel.Invoke`).",
@@ -278,9 +280,9 @@ public sealed class SemanticKernelDetectorTool
                 // Kernel-level OpenTelemetry wiring -> 🔁 .UseOpenTelemetry() on the IChatClient
                 // chain. Gated on a kernel / kernel-builder ROOT receiver (whole-identifier
                 // match) so host-level `services.AddOpenTelemetry()` — or a same-substring
-                // var like `kernelMetricsServices` — is NOT flagged.
-                case MemberAccessExpressionSyntax ot when ot.Name.Identifier.ValueText == "AddOpenTelemetry"
-                        && IsKernelReceiver(ot.Expression):
+                // var like `kernelMetricsServices` — is NOT flagged. Matched on the call site.
+                case InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax ot }
+                        when ot.Name.Identifier.ValueText == "AddOpenTelemetry" && IsKernelReceiver(ot.Expression):
                     Record("Observability (`AddOpenTelemetry`)", MigrationStrategy.Rewrite,
                         "→ `.UseOpenTelemetry()` on the `IChatClient` build chain (subscribe to source `Microsoft.Extensions.AI`).",
                         LineOf(ot));
