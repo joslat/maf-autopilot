@@ -507,6 +507,27 @@ public sealed class SemanticKernelDetectorToolTests
     }
 
     [Fact]
+    public void DetectPackages_ConflictingPins_AreSurfacedDeterministically()
+    {
+        // Two projects pinning the same SK id to DIFFERENT versions → both surfaced
+        // (sorted, deterministic) so the mismatch is visible, not silently collapsed.
+        using var repo = new TempDir(
+            ("A.csproj", """
+                <Project Sdk="Microsoft.NET.Sdk"><ItemGroup>
+                  <PackageReference Include="Microsoft.SemanticKernel" Version="1.45.0" />
+                </ItemGroup></Project>
+                """),
+            ("B.csproj", """
+                <Project Sdk="Microsoft.NET.Sdk"><ItemGroup>
+                  <PackageReference Include="Microsoft.SemanticKernel" Version="1.40.0" />
+                </ItemGroup></Project>
+                """));
+
+        var sk = Assert.Single(SemanticKernelDetectorTool.DetectPackages(repo.Path));
+        Assert.Equal("1.40.0, 1.45.0", sk.Version);
+    }
+
+    [Fact]
     public void MafDetectSourceFramework_CsprojFilePath_ScansContainingDirectory()
     {
         // Passing a .csproj / .sln FILE path scans its directory (advertised "repo or project").

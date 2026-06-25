@@ -161,9 +161,26 @@ public sealed class SemanticKernelDetectorTool
             // NuGet IDs are case-insensitive — group/order accordingly so casing variants
             // collapse to one entry.
             .GroupBy(p => p.Id, StringComparer.OrdinalIgnoreCase)
-            // If the same id appears pinned in one project and unpinned in another,
-            // keep the pinned reading.
-            .Select(g => g.OrderByDescending(p => p.Version != "(unpinned)").First())
+            .Select(g =>
+            {
+                // Prefer a pinned version over "(unpinned)". If projects pin the SAME id to
+                // DIFFERENT versions, surface ALL of them (sorted, so the result is
+                // deterministic across machines / enumeration order) rather than silently
+                // picking whichever csproj happened to be walked first — a version mismatch
+                // is exactly what migration planning needs to see.
+                var pinned = g.Select(p => p.Version)
+                    .Where(v => v != "(unpinned)")
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(v => v, StringComparer.Ordinal)
+                    .ToList();
+                var version = pinned.Count switch
+                {
+                    0 => "(unpinned)",
+                    1 => pinned[0],
+                    _ => string.Join(", ", pinned),
+                };
+                return new SkPackage(g.Key, version);
+            })
             .OrderBy(p => p.Id, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
