@@ -456,6 +456,57 @@ public sealed class SemanticKernelDetectorToolTests
     }
 
     [Fact]
+    public void DetectPackages_IsCaseInsensitive()
+    {
+        // NuGet IDs are case-insensitive — a lowercase Include must still be detected.
+        using var repo = new TempDir(
+            ("App.csproj", """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <ItemGroup>
+                    <PackageReference Include="microsoft.semantickernel" Version="1.45.0" />
+                  </ItemGroup>
+                </Project>
+                """));
+
+        var sk = Assert.Single(SemanticKernelDetectorTool.DetectPackages(repo.Path));
+        Assert.Equal("1.45.0", sk.Version);
+    }
+
+    [Fact]
+    public void DetectPackages_CpmResolution_IsCaseInsensitive()
+    {
+        // A differently-cased PackageReference must resolve against the central pin.
+        using var repo = new TempDir(
+            ("Directory.Packages.props", """
+                <Project><ItemGroup>
+                  <PackageVersion Include="Microsoft.SemanticKernel" Version="1.45.0" />
+                </ItemGroup></Project>
+                """),
+            ("App.csproj", """
+                <Project Sdk="Microsoft.NET.Sdk"><ItemGroup>
+                  <PackageReference Include="microsoft.semantickernel" />
+                </ItemGroup></Project>
+                """));
+
+        var sk = Assert.Single(SemanticKernelDetectorTool.DetectPackages(repo.Path));
+        Assert.Equal("1.45.0", sk.Version);
+    }
+
+    [Fact]
+    public void MafDetectSourceFramework_CsprojFilePath_ScansContainingDirectory()
+    {
+        // Passing a .csproj / .sln FILE path scans its directory (advertised "repo or project").
+        using var repo = new TempDir(
+            ("App.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>"),
+            ("Plugin.cs", "using Microsoft.SemanticKernel;\npublic class P { [KernelFunction] public string A() => \"\"; }"));
+        var csproj = System.IO.Path.Combine(repo.Path, "App.csproj");
+
+        var report = new SemanticKernelDetectorTool().MafDetectSourceFramework(csproj);
+        Assert.Contains("Semantic Kernel → MAF", report);
+        Assert.DoesNotContain("Error:", report);
+    }
+
+    [Fact]
     public void Scan_SingleRearchitect_VerdictIsMedium()
     {
         // A lone re-architecture is tractable → MEDIUM, not HARD (one redesign).

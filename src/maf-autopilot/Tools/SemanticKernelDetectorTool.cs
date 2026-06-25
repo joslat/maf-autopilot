@@ -49,15 +49,21 @@ public sealed class SemanticKernelDetectorTool
         `maf-migrate-from` flow. Read-only; nothing is written.
 
         Input:
-          - repoPath: absolute path to the repo to scan.
+          - repoPath: absolute path to the repo, or a .csproj / .sln file (its
+            containing directory is scanned).
           - format: "markdown" (default) for a human report, or "json".
 
         Returns the inventory. If no Semantic Kernel usage is found, says so.
         """)]
     public string MafDetectSourceFramework(
-        [Description("Absolute path to the repo or project to scan.")] string repoPath,
+        [Description("Absolute path to the repo directory, or a .csproj / .sln file (its directory is scanned).")] string repoPath,
         [Description("Output format: \"markdown\" (default) or \"json\".")] string format = "markdown")
     {
+        // Accept a project/solution FILE path by scanning its containing directory —
+        // the advertised surface is "repo or project", but the scan walks a directory.
+        if (TryNormalizeToDirectory(repoPath) is { } dir)
+            repoPath = dir;
+
         if (PathGuard.ValidateRepoPath(repoPath) is { } err)
             return format.Equals("json", StringComparison.OrdinalIgnoreCase)
                 ? JsonSerializer.Serialize(new { error = err })
@@ -67,6 +73,25 @@ public sealed class SemanticKernelDetectorTool
         return format.Equals("json", StringComparison.OrdinalIgnoreCase)
             ? JsonSerializer.Serialize(report.ToJson(), new JsonSerializerOptions { WriteIndented = true })
             : report.ToMarkdown();
+    }
+
+    /// <summary>
+    /// If <paramref name="path"/> is an existing <c>.csproj</c> / <c>.sln</c> file, returns
+    /// its containing directory (the scan walks a directory, not a file); otherwise null so
+    /// the caller leaves the input untouched for <see cref="PathGuard"/> to validate/report.
+    /// </summary>
+    private static string? TryNormalizeToDirectory(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        try
+        {
+            if (File.Exists(path)
+                && (path.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)
+                    || path.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)))
+                return Path.GetDirectoryName(path);
+        }
+        catch { /* fall through — let PathGuard report the malformed path */ }
+        return null;
     }
 
     // -------------------------------------------------------------------------
@@ -118,7 +143,8 @@ public sealed class SemanticKernelDetectorTool
             foreach (var pr in doc.Descendants().Where(e => e.Name.LocalName == "PackageReference"))
             {
                 var id = (string?)pr.Attribute("Include") ?? (string?)pr.Attribute("Update");
-                if (id is null || !id.StartsWith("Microsoft.SemanticKernel", StringComparison.Ordinal))
+                // NuGet package IDs are case-insensitive.
+                if (id is null || !id.StartsWith("Microsoft.SemanticKernel", StringComparison.OrdinalIgnoreCase))
                     continue;
                 // VersionOverride beats the central pin under CPM; then a local
                 // Version attr/element; then the central pin; else genuinely unpinned.
@@ -130,11 +156,13 @@ public sealed class SemanticKernelDetectorTool
             }
         }
         return packages
-            .GroupBy(p => p.Id, StringComparer.Ordinal)
+            // NuGet IDs are case-insensitive — group/order accordingly so casing variants
+            // collapse to one entry.
+            .GroupBy(p => p.Id, StringComparer.OrdinalIgnoreCase)
             // If the same id appears pinned in one project and unpinned in another,
             // keep the pinned reading.
             .Select(g => g.OrderByDescending(p => p.Version != "(unpinned)").First())
-            .OrderBy(p => p.Id, StringComparer.Ordinal)
+            .OrderBy(p => p.Id, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
@@ -145,7 +173,9 @@ public sealed class SemanticKernelDetectorTool
     /// </summary>
     private static IReadOnlyDictionary<string, string> ReadCentralPackageVersions(string repoPath)
     {
-        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        // NuGet IDs are case-insensitive, so a `PackageReference Include="microsoft.semantickernel"`
+        // still resolves against a `PackageVersion Include="Microsoft.SemanticKernel"` pin.
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         List<string> propsFiles;
         try
         {
@@ -168,8 +198,8 @@ public sealed class SemanticKernelDetectorTool
                 var id = (string?)pv.Attribute("Include") ?? (string?)pv.Attribute("Update");
                 var ver = (string?)pv.Attribute("Version")
                     ?? pv.Elements().FirstOrDefault(e => e.Name.LocalName == "Version")?.Value;
-                if (id is not null && ver is not null && !map.ContainsKey(id))
-                    map[id] = ver;
+                if (id is not null && ver is not null)
+                    map.TryAdd(id, ver);
             }
         }
         return map;

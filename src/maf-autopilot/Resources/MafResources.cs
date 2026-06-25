@@ -140,9 +140,9 @@ public static class MafResources
         "maf-remediation-playbook, maf-workflow-smoke-tester, nuget-diff-analyzer")]
     public static string GetSkill(string name)
     {
-        if (!AllowedSkillNames.TryGetValue(name ?? string.Empty, out var canonical))
+        if (!_allowedSkillNames.TryGetValue(name ?? string.Empty, out var canonical))
             throw new ArgumentException(
-                $"Unknown skill '{name}'. Available: {string.Join(", ", AllowedSkillNames)}");
+                $"Unknown skill '{name}'. Available: {string.Join(", ", _allowedSkillNames)}");
 
         // Embedded-resource names are case-sensitive; use the canonical allowlist form
         // so the public API can remain case-insensitive without leaking that asymmetry.
@@ -153,7 +153,12 @@ public static class MafResources
     //  Internal helpers                                                    //
     // ------------------------------------------------------------------ //
 
-    internal static readonly HashSet<string> AllowedSkillNames =
+    /// <summary>
+    /// The skill allowlist — the security boundary for <c>maf://skills?name=...</c>. Kept
+    /// PRIVATE and mutable only here; exposed to the assembly (drift tests) as an immutable
+    /// view via <see cref="AllowedSkillNames"/>, so nothing else can add a name to it.
+    /// </summary>
+    private static readonly HashSet<string> _allowedSkillNames =
         new(StringComparer.OrdinalIgnoreCase)
         {
             "cs0618-hunter",
@@ -171,6 +176,9 @@ public static class MafResources
             "maf-workflow-smoke-tester",
             "nuget-diff-analyzer",
         };
+
+    /// <summary>Read-only view of the skill allowlist (for drift tests; cannot be mutated).</summary>
+    internal static IReadOnlyCollection<string> AllowedSkillNames => _allowedSkillNames;
 
     private static string ReadEmbedded(string logicalName)
     {
