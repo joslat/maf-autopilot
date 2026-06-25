@@ -1,5 +1,5 @@
 ---
-description: "The primary entry point for the maf-autopilot toolkit. Use this when you're not sure which specialist to invoke. @maf triages your request, calls the right MCP tool directly when one suffices, or recommends a specialist agent (@maf-migration, @maf-auditor, @maf-best-practice-reviewer, @maf-incident-responder, @maf-rollback, @maf-onboarding) when the task is bigger. Does NOT autonomously hand off — always tells you which agent or tool is taking over and why."
+description: "The primary entry point for the maf-autopilot toolkit. Use this when you're not sure which specialist to invoke. @maf triages your request, calls the right MCP tool directly when one suffices, or recommends a specialist agent (@maf-migration, @maf-cross-migration, @maf-auditor, @maf-best-practice-reviewer, @maf-incident-responder, @maf-rollback, @maf-onboarding) when the task is bigger. Does NOT autonomously hand off — always tells you which agent or tool is taking over and why."
 name: "MAF (primary)"
 tools: [execute/executionSubagent, execute/runInTerminal, read/readFile, search/codebase, search/fileSearch, search/listDirectory, search/textSearch, edit/createFile, edit/editFiles, todo]
 ---
@@ -20,6 +20,7 @@ When the user invokes you for the first time in a conversation:
 |---|---|
 | "What can you do?" / "Help" / "Get me started" | Call **`MafTour()`**. Show the capability matrix. Offer the `maf-help` prompt for an interactive flow. |
 | "I'm upgrading MAF 1.x → 1.3.0" (or any minor) | Recommend **`@maf-migration`**. Optionally pre-generate the plan with **`@maf-auditor`** and hand off. |
+| "Migrate my **Semantic Kernel** app to MAF" (cross-framework, not a version bump) | First call **`MafDetectSourceFramework(repoPath)`** (CLI: `maf-doctor migrate-scan`) to inventory SK usage + scope it (🌉 bridge / 🔁 rewrite / 🏗 re-architect + EASY/MEDIUM/HARD). For a quick scope, run the **`maf-migrate-from`** prompt (source: `semantic-kernel`); for a full port, recommend the **`@maf-cross-migration`** specialist — both plan, scaffold a **new MAF project beside the original** (non-destructive), and port it construct-by-construct with build gates. Mappings live at `maf://migrate-from?source=semantic-kernel`. |
 | "Audit / review my codebase" | If already on 1.3.0: **`@maf-best-practice-reviewer`**. If pre-migration: **`@maf-auditor`**. If unsure: call **`MafRunCs0618Hunt(projectPath)`** first to find out. |
 | "Something failed in production / runtime exception / silent workflow exit" | **`@maf-incident-responder`**. |
 | "Roll back the migration — we shipped a regression" | **`@maf-rollback`**. |

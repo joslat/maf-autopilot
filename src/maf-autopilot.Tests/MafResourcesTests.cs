@@ -1,3 +1,4 @@
+using System.Reflection;
 using MafDoctor.Resources;
 using Xunit;
 
@@ -45,24 +46,55 @@ public class MafResourcesTests
     // Template resource: skill allowlist
     // -------------------------------------------------------------------------
 
-    [Theory]
-    [InlineData("cs0618-hunter")]
-    [InlineData("dotnet-inspect")]
-    [InlineData("maf-anti-pattern-scanner")]
-    [InlineData("maf-fan-out-validator")]
-    [InlineData("maf-issue-reporter")]
-    [InlineData("maf-migration-guide")]
-    [InlineData("maf-migration-plan-creator")]
-    [InlineData("maf-migration-retrospective")]
-    [InlineData("maf-obsolete-api-registry")]
-    [InlineData("maf-release-watcher")]
-    [InlineData("maf-remediation-playbook")]
-    [InlineData("maf-workflow-smoke-tester")]
-    [InlineData("nuget-diff-analyzer")]
-    public void GetSkill_AllAllowlistedNames_Resolve(string name)
+    [Fact]
+    public void GetSkill_EveryAllowlistedName_Resolves()
     {
-        var body = MafResources.GetSkill(name);
-        Assert.False(string.IsNullOrWhiteSpace(body));
+        // Source of truth = the allowlist itself (which the drift test below pins to the
+        // on-disk skill folders). Every allowlisted skill must resolve to embedded content;
+        // a name in the allowlist but missing from the csproj <EmbeddedResource> list throws.
+        Assert.NotEmpty(MafResources.AllowedSkillNames);
+        foreach (var name in MafResources.AllowedSkillNames)
+            Assert.False(string.IsNullOrWhiteSpace(MafResources.GetSkill(name)), $"skill '{name}' did not resolve");
+    }
+
+    [Fact]
+    public void AllowedSkillNames_MatchSkillFolders_NoDrift()
+    {
+        // Guard the allowlist against the on-disk .github/skills/<name>/SKILL.md folders:
+        // a skill folder added/renamed without an allowlist edit (or vice versa) fails here.
+        var skillsDir = ResolveSkillsDir();
+        var folders = Directory.GetDirectories(skillsDir)
+            .Where(d => File.Exists(Path.Combine(d, "SKILL.md")))
+            .Select(d => Path.GetFileName(d))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var allow = MafResources.AllowedSkillNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var missing = folders.Except(allow).OrderBy(s => s).ToList();
+        var extra = allow.Except(folders).OrderBy(s => s).ToList();
+
+        Assert.True(missing.Count == 0, $"Skill folders not in AllowedSkillNames: {string.Join(", ", missing)}");
+        Assert.True(extra.Count == 0, $"AllowedSkillNames entries with no skill folder: {string.Join(", ", extra)}");
+    }
+
+    [Fact]
+    public void GetSkill_DescriptionLists_EveryAllowlistedName()
+    {
+        // The `name=` enumeration in the [Description] attribute is user/LLM-facing and is a
+        // hand-maintained literal — pin it to AllowedSkillNames so it can't silently drift.
+        var desc = typeof(MafResources).GetMethod(nameof(MafResources.GetSkill))!
+            .GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+        foreach (var name in MafResources.AllowedSkillNames)
+            Assert.Contains(name, desc, StringComparison.Ordinal);
+    }
+
+    private static string ResolveSkillsDir()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".github", "skills")))
+            dir = dir.Parent;
+        Assert.NotNull(dir);
+        return Path.Combine(dir!.FullName, ".github", "skills");
     }
 
     [Theory]

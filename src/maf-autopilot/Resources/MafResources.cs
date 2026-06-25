@@ -15,7 +15,7 @@ namespace MafDoctor.Resources;
 ///   maf://guide        — full MAF migration guide
 ///
 /// Template resource (one per skill):
-///   maf://skills?name=&lt;skillName&gt;  — any of the 13 skill SKILL.md files
+///   maf://skills?name=&lt;skillName&gt;  — any of the 14 skill SKILL.md files
 ///</summary>
 [McpServerResourceType]
 public static class MafResources
@@ -46,6 +46,19 @@ public static class MafResources
         Title = "MAF Migration Guide")]
     [Description("Full MAF migration reference guide with API signatures, before/after code patterns, and section-by-section explanations.")]
     public static string GetGuide() => ReadEmbedded("guide.md");
+
+    [McpServerResource(UriTemplate = "maf://migrate-from{?source}",
+        MimeType = "text/markdown",
+        Name = "maf-migrate-from",
+        Title = "MAF cross-framework migration guide")]
+    [Description("Migration mapping FROM another agent framework TO MAF (construct-by-construct, with the interop bridges and the bridgeable/rewrite/re-architect strategy per construct). Pass source= one of: semantic-kernel (alias: sk).")]
+    public static string GetMigrationFrom(string? source)
+        => MigrationSources.Canonicalize(source) switch
+        {
+            MigrationSources.SemanticKernel => ReadEmbedded("migrate-from/semantic-kernel.md"),
+            _ => throw new ArgumentException(
+                $"Unknown migration source '{source}'. Available: {MigrationSources.SupportedDescription}"),
+        };
 
     [McpServerResource(UriTemplate = "maf://rules",
         MimeType = "text/markdown",
@@ -121,15 +134,16 @@ public static class MafResources
     [Description(
         "A specific MAF skill document. Pass name= one of: " +
         "cs0618-hunter, dotnet-inspect, maf-anti-pattern-scanner, " +
-        "maf-fan-out-validator, maf-issue-reporter, maf-migration-guide, " +
-        "maf-migration-plan-creator, maf-migration-retrospective, " +
+        "maf-fan-out-validator, maf-from-semantic-kernel, maf-issue-reporter, " +
+        "maf-migration-guide, maf-migration-plan-creator, maf-migration-retrospective, " +
         "maf-obsolete-api-registry, maf-release-watcher, " +
         "maf-remediation-playbook, maf-workflow-smoke-tester, nuget-diff-analyzer")]
     public static string GetSkill(string name)
     {
-        if (!AllowedSkillNames.TryGetValue(name ?? string.Empty, out var canonical))
+        if (!_allowedSkillNames.TryGetValue(name ?? string.Empty, out var canonical))
             throw new ArgumentException(
-                $"Unknown skill '{name}'. Available: {string.Join(", ", AllowedSkillNames)}");
+                // Sort so the "Available:" list is deterministic (HashSet order is not).
+                $"Unknown skill '{name}'. Available: {string.Join(", ", _allowedSkillNames.OrderBy(n => n, StringComparer.Ordinal))}");
 
         // Embedded-resource names are case-sensitive; use the canonical allowlist form
         // so the public API can remain case-insensitive without leaking that asymmetry.
@@ -140,13 +154,19 @@ public static class MafResources
     //  Internal helpers                                                    //
     // ------------------------------------------------------------------ //
 
-    private static readonly HashSet<string> AllowedSkillNames =
+    /// <summary>
+    /// The skill allowlist — the security boundary for <c>maf://skills?name=...</c>. Kept
+    /// PRIVATE and mutable only here; exposed to the assembly (drift tests) as an immutable
+    /// view via <see cref="AllowedSkillNames"/>, so nothing else can add a name to it.
+    /// </summary>
+    private static readonly HashSet<string> _allowedSkillNames =
         new(StringComparer.OrdinalIgnoreCase)
         {
             "cs0618-hunter",
             "dotnet-inspect",
             "maf-anti-pattern-scanner",
             "maf-fan-out-validator",
+            "maf-from-semantic-kernel",
             "maf-issue-reporter",
             "maf-migration-guide",
             "maf-migration-plan-creator",
@@ -157,6 +177,13 @@ public static class MafResources
             "maf-workflow-smoke-tester",
             "nuget-diff-analyzer",
         };
+
+    /// <summary>
+    /// A defensive SNAPSHOT of the skill allowlist (for drift tests). A fresh array each
+    /// call, so a caller can never reach the backing <see cref="_allowedSkillNames"/> by
+    /// down-casting the returned reference — the security boundary stays intact.
+    /// </summary>
+    internal static IReadOnlyCollection<string> AllowedSkillNames => _allowedSkillNames.ToArray();
 
     private static string ReadEmbedded(string logicalName)
     {
