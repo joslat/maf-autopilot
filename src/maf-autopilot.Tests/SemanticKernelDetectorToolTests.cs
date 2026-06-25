@@ -625,6 +625,20 @@ public sealed class SemanticKernelDetectorToolTests
     }
 
     [Fact]
+    public void Scan_GlobalUsingsFile_MakesOtherFilesSkContext()
+    {
+        // A `global using Microsoft.SemanticKernel...` in GlobalUsings.cs puts SK in scope
+        // for the whole project, so a file with NO local using must still be scanned.
+        using var repo = new TempDir(
+            ("GlobalUsings.cs", "global using Microsoft.SemanticKernel;\nglobal using Microsoft.SemanticKernel.Agents;"),
+            ("Agent.cs", "public class Setup { public void M(ChatCompletionAgent agent) { } }"));
+
+        var result = SemanticKernelDetectorTool.Scan(repo.Path);
+        Assert.True(result.SemanticKernelDetected);
+        Assert.Contains(result.Constructs, c => c.Kind.Contains("ChatCompletionAgent", System.StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Scan_NoSemanticKernel_DetectedFalse()
     {
         using var repo = new TempDir(("Plain.cs", "public class C { public int X() => 1; }"));

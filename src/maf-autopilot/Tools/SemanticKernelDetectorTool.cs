@@ -27,8 +27,9 @@ namespace MafDoctor.Tools;
 /// The inventory is the migration work-list the <c>maf-migrate-from</c> flow drives.
 /// Grounded in <c>docs/migration/from-semantic-kernel-to-maf.md</c> (served at
 /// <c>maf://migrate-from?source=semantic-kernel</c>). Detection is purely syntactic
-/// (Roslyn) and scoped to files that import a <c>Microsoft.SemanticKernel</c>
-/// namespace, so it does not over-match unrelated code.
+/// (Roslyn) and scoped to files that import a <c>Microsoft.SemanticKernel</c> namespace —
+/// either a local <c>using</c> or, repo-wide, a <c>global using</c> (the GlobalUsings.cs
+/// pattern) — so it does not over-match unrelated code.
 ///
 /// NOTE: the <c>source</c> dimension is intentionally NOT abstracted yet — this is the
 /// only source framework today, so the detector is deliberately SK-specific (no
@@ -104,7 +105,9 @@ public sealed class SemanticKernelDetectorTool
     internal static SkScanResult Scan(string repoPath)
     {
         var packages = DetectPackages(repoPath);
-        var constructs = new List<SkConstruct>();
+
+        // Read every .cs file once.
+        var sources = new List<(string Rel, string Text)>();
         foreach (var file in SourceFileWalker.EnumerateCsFiles(repoPath))
         {
             string rel;
@@ -116,8 +119,18 @@ public sealed class SemanticKernelDetectorTool
             try { text = File.ReadAllText(file); }
             catch (IOException) { continue; }
             catch (UnauthorizedAccessException) { continue; }
-            constructs.AddRange(AnalyzeSource(text, rel));
+            sources.Add((rel, text));
         }
+
+        // A `global using Microsoft.SemanticKernel;` (commonly in a GlobalUsings.cs) puts SK
+        // in scope for EVERY file in its project, so those files carry no local using. If any
+        // file declares such a global using, treat all scanned files as SK-context so their
+        // constructs aren't missed (a per-file local-using gate alone would under-scope the plan).
+        var repoEstablishesSk = sources.Any(s => HasGlobalSemanticKernelUsing(s.Text));
+
+        var constructs = new List<SkConstruct>();
+        foreach (var (rel, text) in sources)
+            constructs.AddRange(AnalyzeSource(text, rel, repoEstablishesSk));
         return new SkScanResult(packages, constructs);
     }
 
@@ -232,12 +245,16 @@ public sealed class SemanticKernelDetectorTool
     /// <c>[KernelFunction]</c> methods reports one "[KernelFunction] plugin method" ×5.
     /// Scoped to files that import a <c>Microsoft.SemanticKernel</c> namespace.
     /// </summary>
-    public static IReadOnlyList<SkConstruct> AnalyzeSource(string source, string fileName = "<inline>")
+    public static IReadOnlyList<SkConstruct> AnalyzeSource(
+        string source, string fileName = "<inline>", bool repoEstablishesSkContext = false)
     {
         var root = CSharpSyntaxTree.ParseText(source).GetRoot();
 
-        var importsSk = root.DescendantNodes().OfType<UsingDirectiveSyntax>()
-            .Any(u => ImportsSemanticKernel(u.Name?.ToString()));
+        // SK-context if the repo established it globally (a global using elsewhere) OR this
+        // file imports a Microsoft.SemanticKernel namespace locally.
+        var importsSk = repoEstablishesSkContext
+            || root.DescendantNodes().OfType<UsingDirectiveSyntax>()
+                .Any(u => ImportsSemanticKernel(u.Name?.ToString()));
         if (!importsSk)
             return Array.Empty<SkConstruct>();
 
@@ -384,6 +401,19 @@ public sealed class SemanticKernelDetectorTool
         if (usingName.StartsWith("global::", StringComparison.Ordinal))
             usingName = usingName["global::".Length..];
         return usingName.StartsWith("Microsoft.SemanticKernel", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// True when the source declares a <c>global using</c> that imports a
+    /// <c>Microsoft.SemanticKernel</c> namespace (the GlobalUsings.cs pattern) — which
+    /// makes SK in-scope for every file in the project, not just this one.
+    /// </summary>
+    private static bool HasGlobalSemanticKernelUsing(string source)
+    {
+        var root = CSharpSyntaxTree.ParseText(source).GetRoot();
+        return root.DescendantNodes().OfType<UsingDirectiveSyntax>()
+            .Any(u => u.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword)
+                      && ImportsSemanticKernel(u.Name?.ToString()));
     }
 
     /// <summary>
