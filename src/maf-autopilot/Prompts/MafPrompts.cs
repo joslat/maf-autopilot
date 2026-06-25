@@ -181,7 +181,7 @@ public static class MafPrompts
         "+ the maf://migrate-from guide + MafNewAgent/MafNewExecutor + MafDoctor.")]
     public static IList<PromptMessage> MigrateFrom(
         [Description("Path to the repository root or solution to migrate.")] string repoPath,
-        [Description("Source framework. Only \"semantic-kernel\" is supported today.")] string source = "semantic-kernel",
+        [Description("Source framework. Only \"semantic-kernel\" (alias \"sk\") is supported today.")] string source = "semantic-kernel",
         [Description("Name for the new side-by-side MAF project (default: <existing>.Maf).")] string? targetProject = null)
     {
         try { BoundedInput.Validate(repoPath, BoundedInput.PathBytes, nameof(repoPath)); }
@@ -190,6 +190,18 @@ public static class MafPrompts
         catch (ArgumentException) { source = "semantic-kernel"; }
         try { BoundedInput.Validate(targetProject, BoundedInput.IdentifierBytes, nameof(targetProject)); }
         catch (ArgumentException) { targetProject = null; }
+
+        // Gate on the source up front via the shared MigrationSources allow-list (same
+        // authority the CLI + the maf://migrate-from resource use). Empty/whitespace falls
+        // through to the `semantic-kernel` default (the parameter default); only an explicit
+        // unsupported value emits a one-line STOP body instead of walking the agent into the
+        // SK→MAF loop.
+        if (!string.IsNullOrWhiteSpace(source) && !MigrationSources.IsSupported(source))
+        {
+            var stop = $"Source framework '{source}' is not supported. Only `{MigrationSources.SupportedDescription}` is " +
+                       "supported today — STOP, tell the user, and do not attempt the migration.";
+            return [new PromptMessage { Role = Role.User, Content = new TextContentBlock { Text = stop } }];
+        }
 
         var safeRepoPath = LlmFencing.StripHtmlComments(repoPath);
         var safeSource = LlmFencing.StripHtmlComments(string.IsNullOrWhiteSpace(source) ? "semantic-kernel" : source);
@@ -215,7 +227,7 @@ public static class MafPrompts
         sb.AppendLine("1. INVENTORY — call `MafDetectSourceFramework(repoPath)` to get the construct inventory (each tagged 🌉/🔁/🏗 with file:line) + the EASY/MEDIUM/HARD verdict. If no SK is detected, STOP and say so.");
         sb.AppendLine("2. INTENT — for each construct (and each agent/plugin/workflow), read the code and write one line on what it DOES. The port must preserve behaviour, not just types.");
         sb.AppendLine("3. PLAN — write `migration-plan.md`: group by strategy, list every construct (what it does → its MAF target from the guide), ordered tools → agents → orchestration. Flag the 🏗 items for human review.");
-        sb.AppendLine("4. SCAFFOLD — create a NEW project beside the original in the same solution (`<existing>.Maf` unless a name was given): a csproj referencing the MAF package family (`Microsoft.Agents.AI`, `Microsoft.Agents.AI.Workflows` if workflows are used, `Microsoft.Extensions.AI`, the provider client). Add it to the `.sln`. Use `MafNewAgent` / `MafNewExecutor` for clean, anti-pattern-free scaffolds. NEVER edit the original SK project.");
+        sb.AppendLine("4. SCAFFOLD — create a NEW project beside the original in the same solution (`<existing>.Maf` unless a name was given). ORDER MATTERS: first `dotnet new classlib -o <existing>.Maf` so the directory + csproj exist on disk; add the MAF package family to it (`Microsoft.Agents.AI`, `Microsoft.Agents.AI.Workflows` if workflows are used, `Microsoft.Extensions.AI`, the provider client); `dotnet sln add` it; THEN call `MafNewAgent` / `MafNewExecutor` for clean, anti-pattern-free scaffolds (both require the target directory to already exist — they error otherwise). NEVER edit the original SK project.");
         sb.AppendLine("5. PORT — migrate construct-by-construct in plan order. Bridge the 🌉 ones; rewrite the 🔁 ones per the guide; for 🏗 ones, propose the MAF workflow/provider design and confirm before writing. `dotnet build` the new project after EACH construct — green before moving on.");
         sb.AppendLine("6. VALIDATE — `MafDoctor(newProjectPath)` (should be anti-pattern clean) and, for any executor, `MafValidateFanOut`. Re-run until the new project builds + grades clean.");
         sb.AppendLine();

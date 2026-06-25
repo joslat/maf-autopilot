@@ -133,6 +133,7 @@ public sealed class TourTool
     {
         new("@maf", "Primary triage. Picks the right tool / specialist for the user's intent. NEVER auto-handoffs — always recommends. Start here.", IsPrimary: true),
         new("@maf-migration", "Build-verified task-by-task MAF version migration. Loads the plan, executes one row at a time, gates on `dotnet build` green."),
+        new("@maf-cross-migration", "Cross-framework port: Semantic Kernel → MAF (NOT a version bump). Inventories SK usage, classifies each construct (bridge / rewrite / re-architect), scaffolds a new MAF project beside the original, and ports it construct-by-construct. Non-destructive."),
         new("@maf-auditor", "Pre-migration plan generator. Scans the codebase, cross-references the registry + constraints, produces `migration-plan.md`."),
         new("@maf-best-practice-reviewer", "Steady-state audit on a clean MAF codebase. Produces `audit-report.md`. Use post-migration."),
         new("@maf-incident-responder", "Production failure → MAF pattern responsible → deterministic fix. Maps symptom (silent exit / auth failure / cost spike) to known-bad pattern."),
@@ -147,7 +148,8 @@ public sealed class TourTool
         ("maf://registry", "Machine-readable obsolete-API registry YAML."),
         ("maf://rules", "Live rule catalogue — anti-pattern + prompt-lint + analyzer + cross-references. Auto-generated from runtime data."),
         ("maf://help", "Same content as `MafTour()` but as a resource — useful for static discovery without a tool call."),
-        ("maf://skills?name=<X>", "Individual skill SKILL.md by name. 13 skills available."),
+        ("maf://migrate-from?source=semantic-kernel", "Semantic Kernel → MAF construct mapping + interop bridges. The work-list for `MafDetectSourceFramework` / the `maf-migrate-from` flow."),
+        ("maf://skills?name=<X>", "Individual skill SKILL.md by name. 14 skills available."),
     };
 
     internal static readonly IReadOnlyList<(string Name, string Description)> PromptCatalogue = new[]

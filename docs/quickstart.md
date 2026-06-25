@@ -32,9 +32,9 @@ cd samples/maf-1.3-sample      # or: cd your-own-maf-project
 maf-doctor init
 ```
 
-`init` wires the MCP server for VS Code (`.vscode/mcp.json`) and Claude Code (`.mcp.json`), and drops auto-loaded steering sidecars (Copilot / Claude / Cursor / AGENTS.md) — refreshed on re-run, never merged into your own files. The 13 skills are served by the MCP server, not written as files. Idempotent — safe to re-run. (details: [init-reference.md](./init-reference.md)).
+`init` wires the MCP server for VS Code (`.vscode/mcp.json`) and Claude Code (`.mcp.json`), and drops auto-loaded steering sidecars (Copilot / Claude / Cursor / AGENTS.md) — refreshed on re-run, never merged into your own files. The 14 skills are served by the MCP server, not written as files. Idempotent — safe to re-run. (details: [init-reference.md](./init-reference.md)).
 
-> 🎙️ *"`init` makes any repo MAF-aware: MCP config for the IDE, plus steering rules and 13 skills for Copilot's agent loop."*
+> 🎙️ *"`init` makes any repo MAF-aware: MCP config for the IDE, plus steering rules and 14 skills for Copilot's agent loop."*
 
 ## Beat 3 — Analyze: the health grade (30s)
 
@@ -94,6 +94,21 @@ maf-doctor autofix-all .     # auto-apply the mechanical migrations
 `maf-doctor` cross-references the per-version migration guide + the obsolete-API registry (every known `CS0618` → its exact replacement), so you get **named fixes, not hallucinations**.
 
 > 🎙️ *"Bump the package, build to see the breaks, and the toolkit maps each one to its canonical fix — from the registry, deterministic. The `@maf-migration` agent handles the rest."*
+
+## Bonus — coming from Semantic Kernel? (30s)
+
+Not on MAF yet but on **Semantic Kernel**? Scope the port before you write a line:
+
+```bash
+# Inventory SK usage + score the migration (try the bundled SK fixture)
+maf-doctor migrate-scan samples/sk-sample
+```
+
+You'll get every SK construct tagged by strategy — 🌉 **bridge** (reuse via interop shims), 🔁 **rewrite** (mechanical API swap), 🏗 **re-architect** (group chat / planners / vector stores) — plus an **EASY / MEDIUM / HARD** verdict (the sample is **HARD**). Add `--json` for automation.
+
+> 🎙️ *"Coming from Semantic Kernel? `migrate-scan` inventories your SK code and scores the move."*
+>
+> 💡 **Do the port (in an MCP client):** ask *"migrate my Semantic Kernel app to MAF"* — the `maf-migrate-from` prompt (or the `@maf-cross-migration` agent) plans it, **scaffolds a new MAF project beside the original** (non-destructive), and ports it construct-by-construct with build gates. The mapping lives at `maf://migrate-from?source=semantic-kernel`.
 
 ## Reset (for re-recording)
 

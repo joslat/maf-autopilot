@@ -33,9 +33,9 @@ Uninstall is just as clean: `dotnet tool uninstall --global maf-doctor`, then de
 
 ## What you get
 
-- **MCP server** — 26 tools, 6 resources, and 10 prompts for GitHub Copilot / Claude Code / Cursor.
-- **CLI** — `doctor`, `autofix-all`, `new agent`, `init`, and more.
-- **Plugin** — 13 bundled skills + 7 specialist agents wired into Copilot's and Claude's agentic loops.
+- **MCP server** — 27 tools, 7 resources, and 10 prompts for GitHub Copilot / Claude Code / Cursor.
+- **CLI** — `doctor`, `autofix-all`, `new agent`, `migrate-scan`, `init`, and more.
+- **Plugin** — 14 bundled skills + 8 specialist agents wired into Copilot's and Claude's agentic loops.
 - A companion **[maf-doctor.Analyzers](https://www.nuget.org/packages/maf-doctor.Analyzers)** package — 3 Roslyn analyzers (MAF001 / MAF002 / MAF003) for IDE write-time enforcement.
 
 ## Highlights

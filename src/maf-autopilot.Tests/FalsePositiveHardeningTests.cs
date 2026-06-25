@@ -287,7 +287,7 @@ public sealed class FalsePositiveHardeningTests
             {
                 public static async System.Threading.Tasks.Task Run(dynamic chatClient, string msg)
                 {
-                    var workflow = chatClient.CreateAIAgent("instructions");
+                    var workflow = chatClient.AsAIAgent("instructions");
                     var r = await workflow.RunAsync(msg);   // uncapped agent call
                 }
             }

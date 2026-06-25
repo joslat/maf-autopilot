@@ -14,6 +14,7 @@ When working with Microsoft Agent Framework (MAF) code:
 - Before manual anti-pattern fixes: try `MafAutoFixAll --dry-run` first (mechanical rules only).
 - To fix **everything**: run the `maf-remediate` prompt (or ask "fix all the issues maf-doctor found"). Every finding has a **`confidence`** (`certain`/`high`/`heuristic`); a `heuristic` finding may be a **false positive** — confirm it with `MafExplainFinding` before editing. Plan via `MafDoctor(format:"plan")` or `--plan --json`; per-rule fix + FP guidance is in the `maf-remediation-playbook` skill.
 - For new agents/workflows: use `MafNewAgent` / `MafNewExecutor` scaffolds.
+- To migrate FROM Semantic Kernel TO MAF (cross-framework, not a version bump): call `MafDetectSourceFramework` (CLI `maf-doctor migrate-scan`) to scope it, then the `maf-migrate-from` prompt or `@maf-cross-migration` agent — it scaffolds a new MAF project beside the original and ports it construct-by-construct. Mapping: `maf://migrate-from?source=semantic-kernel`.
 - For architecture/security/migration questions: use the `@maf-*` specialist agents.
 
 maf-doctor tools are MAF-version-aware. Defer to them over training data.

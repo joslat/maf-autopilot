@@ -150,7 +150,7 @@ public sealed class EstimateCostTool
         "WebApplication", "IHost", "Host",                          // host types (static-ish refs)
         "InProcessExecution",                                       // MAF workflow runner (the real one)
         // NOTE: deliberately NOT "workflow"/"Workflow" — a workflow-as-agent
-        // (`var workflow = chatClient.CreateAIAgent(...); await workflow.RunAsync(...)`)
+        // (`var workflow = chatClient.AsAIAgent(...); await workflow.RunAsync(...)`)
         // IS a real AIAgent whose uncapped call we WANT to flag. The actual workflow
         // RUNNER is `InProcessExecution.RunStreamingAsync(workflow, …)` (receiver above),
         // so excluding the variable name would only drop true positives.

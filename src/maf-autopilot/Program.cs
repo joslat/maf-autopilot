@@ -134,19 +134,19 @@ if (args.Length >= 1 && args[0] == "migrate-scan")
     // Cross-framework migration — Phase 1. Inventory Semantic Kernel usage and tag
     // each construct by migration strategy (bridgeable / rewrite / re-architect).
     // Usage: `maf-doctor migrate-scan [path] [--source semantic-kernel] [--json]`.
-    var positional = args.Skip(1).Where(a => !a.StartsWith("--")).ToList();
-    var path = positional.Count > 0 ? positional[0] : Directory.GetCurrentDirectory();
-    // --source is currently always semantic-kernel (AutoGen is a later phase); accept
-    // and validate the flag so the surface is forward-compatible.
-    var sourceIdx = Array.IndexOf(args, "--source");
-    var source = sourceIdx >= 0 && sourceIdx + 1 < args.Length ? args[sourceIdx + 1] : "semantic-kernel";
-    if (!string.Equals(source, "semantic-kernel", StringComparison.OrdinalIgnoreCase))
+    // Parsing lives in MigrateScanCli so the flag handling is unit-testable and so the
+    // `--source` value is never mistaken for the path (in either `--source v` form).
+    var (parsedPath, source, json) = MafDoctor.Commands.MigrateScanCli.Parse(args);
+    var path = parsedPath ?? Directory.GetCurrentDirectory();
+    // --source is currently always semantic-kernel (AutoGen is a later phase); validate
+    // the flag so the surface is forward-compatible and an unknown source fails loudly.
+    if (!MafDoctor.Commands.MigrateScanCli.IsSupportedSource(source))
     {
-        Console.Error.WriteLine($"Only --source semantic-kernel is supported today (got '{source}').");
+        Console.Error.WriteLine($"Only --source semantic-kernel (alias sk) is supported today (got '{source}').");
         Environment.Exit(2);
         return;
     }
-    var fmt = args.Contains("--json") ? "json" : "markdown";
+    var fmt = json ? "json" : "markdown";
     Console.WriteLine(new MafDoctor.Tools.SemanticKernelDetectorTool().MafDetectSourceFramework(path, fmt));
     Environment.Exit(0);
     return;

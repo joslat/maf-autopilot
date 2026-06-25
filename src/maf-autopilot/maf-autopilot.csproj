@@ -17,7 +17,7 @@
          release.yml overrides this from the pushed tag and keeps the analyzer
          package in lockstep, so the canonical version is the git tag (`vX.Y.Z`).
          This value is the local/dev default. -->
-    <Version>1.4.0</Version>
+    <Version>1.5.0</Version>
     <Authors>joslat</Authors>
     <Description>MAF Doctor — a .NET global tool and MCP server for Microsoft Agent Framework (MAF). Diagnoses, explains, and auto-fixes MAF agents and workflows: A-F health grades, deterministic Roslyn rewriters, anti-pattern and fan-out scanning, and a self-updating obsolete-API registry. Use it from Copilot / Claude / Cursor via MCP, or standalone as a CLI.</Description>
     <PackageTags>maf;migration;mcp;dotnet;agents</PackageTags>
@@ -87,9 +87,11 @@
     <EmbeddedResource Include="..\..\docs\migration\from-semantic-kernel-to-maf.md"
                       LogicalName="migrate-from/semantic-kernel.md" />
 
-    <!-- All 13 skill SKILL.md files — served at maf://skills?name=<skill-name> -->
+    <!-- All 14 skill SKILL.md files — served at maf://skills?name=<skill-name> -->
     <EmbeddedResource Include="..\..\.github\skills\cs0618-hunter\SKILL.md"
                       LogicalName="skills/cs0618-hunter.md" />
+    <EmbeddedResource Include="..\..\.github\skills\maf-from-semantic-kernel\SKILL.md"
+                      LogicalName="skills/maf-from-semantic-kernel.md" />
     <EmbeddedResource Include="..\..\.github\skills\dotnet-inspect\SKILL.md"
                       LogicalName="skills/dotnet-inspect.md" />
     <EmbeddedResource Include="..\..\.github\skills\maf-fan-out-validator\SKILL.md"

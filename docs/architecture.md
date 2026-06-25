@@ -85,12 +85,12 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 
 **What it does:**
 - Speaks MCP over stdio (when run as a tool) or stdio-in-container (when run via Docker).
-- Exposes **25 tools** (`[McpServerTool]`-decorated methods under `Tools/*.cs`) — see the README for the live catalogue.
-- Exposes **6 resources** (`maf://guide`, `maf://constraints`, `maf://registry`, `maf://rules`, `maf://help`, `maf://skills?name=...`).
-- Exposes **7 prompts** (`maf-audit`, `maf-migrate`, `maf-cs0618-hunt`, `maf-review`, `maf-debug`, `maf-scaffold`, `maf-help`).
-- Provides **CLI subcommands**: `init` (wires `.vscode/mcp.json`), `doctor` (health grade), `new agent` / `new executor` (scaffolders), `registry-extract` (CI helper).
+- Exposes **27 tools** (`[McpServerTool]`-decorated methods under `Tools/*.cs`) — see the README for the live catalogue.
+- Exposes **7 resources** (`maf://guide`, `maf://constraints`, `maf://registry`, `maf://rules`, `maf://help`, `maf://migrate-from?source=...`, `maf://skills?name=...`).
+- Exposes **10 prompts** (`maf-audit`, `maf-migrate`, `maf-remediate`, `maf-migrate-from`, `maf-cs0618-hunt`, `maf-review`, `maf-debug`, `maf-explain-finding`, `maf-scaffold`, `maf-help`).
+- Provides **CLI subcommands**: `init` (wires `.vscode/mcp.json`), `doctor` (health grade), `autofix-all`, `new agent` / `new executor` (scaffolders), `migrate-scan` (SK→MAF inventory), `badge`, `verify-registry` / `registry-extract` (CI helpers).
 
-**Embeds at build time** (via `<EmbeddedResource>`): the 12 SKILL.md files, the 3 instruction files, the obsolete-API registry YAML, the migration guide. This is why the runtime container only needs a single .dll — everything ships inline.
+**Embeds at build time** (via `<EmbeddedResource>`): the 14 SKILL.md files, the 3 instruction files, the obsolete-API registry YAML, the migration guide, and the SK→MAF mapping. This is why the runtime container only needs a single .dll — everything ships inline.
 
 ### `maf-doctor.Analyzers` (the Roslyn analyzer NuGet)
 

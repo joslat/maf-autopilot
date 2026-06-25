@@ -121,6 +121,41 @@ public sealed class TourToolTests
     }
 
     [Fact]
+    public void AgentCatalogue_MatchesAgentFiles_NoDrift()
+    {
+        // The agent catalogue is hand-curated (the @-mention personas are markdown files,
+        // not reflectable types). Guard it against drift the same way tools/prompts are:
+        // every .github/agents/<X>.agent.md must have an `@<X>` catalogue entry and vice
+        // versa. A renamed/added/removed agent file without a catalogue edit fails here.
+        var agentsDir = ResolveRepoSubdir(Path.Combine(".github", "agents"));
+        var fileNames = Directory.GetFiles(agentsDir, "*.agent.md")
+            .Select(f => "@" + Path.GetFileName(f)[..^".agent.md".Length])
+            .ToHashSet(StringComparer.Ordinal);
+
+        var catalogued = TourTool.AgentCatalogue.Select(a => a.Name).ToHashSet(StringComparer.Ordinal);
+
+        var missing = fileNames.Except(catalogued).OrderBy(s => s).ToList();
+        var extra = catalogued.Except(fileNames).OrderBy(s => s).ToList();
+
+        Assert.True(missing.Count == 0,
+            $"AgentCatalogue is missing entries for agent files: {string.Join(", ", missing)}. Add each to TourTool.AgentCatalogue.");
+        Assert.True(extra.Count == 0,
+            $"AgentCatalogue lists agents with no .agent.md file: {string.Join(", ", extra)}. Remove each, or add the file.");
+    }
+
+    /// <summary>Walks up from the test bin dir to the repo root, then to a known subdirectory.</summary>
+    private static string ResolveRepoSubdir(string relative)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".github", "agents")))
+            dir = dir.Parent;
+        Assert.NotNull(dir);
+        var path = Path.Combine(dir!.FullName, relative);
+        Assert.True(Directory.Exists(path), $"Expected directory not found: {path}");
+        return path;
+    }
+
+    [Fact]
     public void Catalogue_ListsEveryMcpServerPrompt_NoDrift()
     {
         // Same drift guard for prompts — every [McpServerPrompt] method must

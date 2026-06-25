@@ -47,6 +47,13 @@ and the maf-doctor registry is kept current via an AI-fill loop.
    `@maf-best-practice-reviewer`, `@maf-auditor`, `@maf-migration`, or
    `@maf-incident-responder` specialist agents.
 
+6. **To migrate FROM Semantic Kernel TO MAF** (a cross-framework port, NOT a
+   MAF version bump) — call `MafDetectSourceFramework` (CLI:
+   `maf-doctor migrate-scan`) to inventory SK usage and scope it, then run the
+   `maf-migrate-from` prompt or the `@maf-cross-migration` agent. It scaffolds a
+   **new MAF project beside the original** and ports it construct-by-construct,
+   non-destructively. The mapping lives at `maf://migrate-from?source=semantic-kernel`.
+
 maf-doctor tools are MAF-version-aware via `applies_to_codebases` markers
 in the registry — they know which fix applies to which MAF version. Defer to
 the tools.

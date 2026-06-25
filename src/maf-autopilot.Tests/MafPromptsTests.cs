@@ -44,6 +44,34 @@ public sealed class MafPromptsTests
         Assert.Contains("TypeNotFound at Foo.Bar", text);
     }
 
+    // -------------------------------------------------------------------------
+    // maf-migrate-from — the source-framework gate (only semantic-kernel / sk)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MigrateFrom_UnsupportedSource_EmitsStopBody()
+    {
+        var text = PromptText(MafPrompts.MigrateFrom(repoPath: "C:/repo", source: "autogen"));
+        Assert.Contains("is not supported", text);
+        Assert.Contains("STOP", text);
+        // The full SK migration loop must NOT be rendered for an unsupported source.
+        Assert.DoesNotContain("MIGRATION LOOP", text);
+    }
+
+    [Theory]
+    [InlineData("semantic-kernel")]
+    [InlineData("sk")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void MigrateFrom_SupportedOrEmptySource_RendersFullLoop(string source)
+    {
+        // Supported sources (and empty/whitespace → the semantic-kernel default) proceed
+        // into the real migration loop, never the STOP body.
+        var text = PromptText(MafPrompts.MigrateFrom(repoPath: "C:/repo", source: source));
+        Assert.Contains("MIGRATION LOOP", text);
+        Assert.DoesNotContain("is not supported", text);
+    }
+
     [Fact]
     public void Debug_HtmlCommentInSymptom_Stripped()
     {

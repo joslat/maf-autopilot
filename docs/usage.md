@@ -17,6 +17,7 @@ After `maf-doctor init` (see [init-reference.md](./init-reference.md)) and an ed
 - *"Upgrade me to the latest MAF and fix what breaks."* → `MafPreUpgradeDryRun`, build, `MafAutoFixAll`, the migration guide.
 - *"Does this workflow actually produce output, or does it silently starve?"* → `MafValidateFanOut` / `MafSimulateWorkflow`.
 - *"Fix the obsolete-API warnings."* → `MafRunCs0618Hunt` → registry fix recipes.
+- *"Port my Semantic Kernel app to MAF."* → `MafDetectSourceFramework` (CLI: `migrate-scan`) → the `maf-migrate-from` prompt / `@maf-cross-migration`.
 
 If the assistant *doesn't* reach for the tools, it usually means the MCP server isn't connected — reload the editor, and confirm `maf-doctor` shows up (`/mcp` in Claude Code; the MCP panel in VS Code).
 
@@ -29,7 +30,7 @@ Prompts are pre-built workflows the server exposes; your client surfaces them as
 | `maf-audit` | Scan a codebase, cross-reference constraints + registry, emit a tracked `migration-plan.md` | `@maf-auditor` |
 | `maf-migrate` | Execute migration tasks from a plan, build-verified per step | `@maf-migration` |
 | `maf-remediate` | Fix-it-all: grade + plan → autofix → **verify each heuristic (possible false-positive) finding** → build → re-grade | `@maf-migration` |
-| `maf-migrate-from` | Migrate a **Semantic Kernel** app to MAF, side-by-side: detect → plan → scaffold a new MAF project → port construct-by-construct (non-destructive) | — |
+| `maf-migrate-from` | Migrate a **Semantic Kernel** app to MAF, side-by-side: detect → plan → scaffold a new MAF project → port construct-by-construct (non-destructive) | `@maf-cross-migration` |
 | `maf-cs0618-hunt` | Find + fix every CS0618 obsolete-API usage | — |
 | `maf-review` | Best-practice review of already-migrated code | `@maf-best-practice-reviewer` |
 | `maf-debug` | Diagnose a MAF failure → root cause + fix | `@maf-incident-responder` |
@@ -63,11 +64,12 @@ Readable on demand; the assistant pulls them when relevant:
 | `maf://registry` | Obsolete-API registry (CS0618 → exact fix) |
 | `maf://rules` | Live catalogue of every scanner + analyzer rule |
 | `maf://help` | How to use the toolkit |
-| `maf://skills?name=<name>` | Any of the 13 bundled skills |
+| `maf://migrate-from?source=semantic-kernel` | Semantic Kernel → MAF construct mapping + interop bridges |
+| `maf://skills?name=<name>` | Any of the 14 bundled skills |
 
 ## 5. Specialist agents (`@…`)
 
-Seven persona agents live in this toolkit's `.github/agents/`: `@maf` (triage), `@maf-auditor`, `@maf-best-practice-reviewer`, `@maf-migration`, `@maf-incident-responder`, `@maf-onboarding`, `@maf-rollback`. They're richer, persistent personas you can `@`-mention mid-conversation.
+Eight persona agents live in this toolkit's `.github/agents/`: `@maf` (triage), `@maf-auditor`, `@maf-best-practice-reviewer`, `@maf-migration`, `@maf-cross-migration` (Semantic Kernel → MAF), `@maf-incident-responder`, `@maf-onboarding`, `@maf-rollback`. They're richer, persistent personas you can `@`-mention mid-conversation.
 
 `init` does **not** install them (see [init-reference.md](./init-reference.md)); to get the `@`-mention versions, copy this repo's `.github/` into your project (**Mode 2** in the README). For most tasks the MCP **prompts** above deliver the same workflows with nothing to install.
 
@@ -80,6 +82,7 @@ maf-doctor doctor [path] [--exclude <s>]… [--all] [--json|--plan]   # A/B/C/F 
 maf-doctor autofix-all [path] [--dry-run] [--json]   # apply deterministic Roslyn fixes (human-readable; --json = machine output; --dry-run = preview)
 maf-doctor new agent <Name>                 # scaffold an agent + smoke test
 maf-doctor new executor <Name> [In] [Out]   # scaffold a workflow executor
+maf-doctor migrate-scan [path] [--json]     # inventory Semantic Kernel usage + scope the SK→MAF migration
 maf-doctor init [--with-cursor]             # wire MCP + steering into a repo
 maf-doctor badge [path]                     # shields.io health-badge JSON
 maf-doctor verify-registry                  # validate the registry (CI gate)

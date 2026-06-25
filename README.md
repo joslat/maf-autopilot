@@ -8,9 +8,9 @@
 
 **MAF Doctor** is a **.NET global tool** (installed from NuGet) that does three things in one install:
 
-1. **An MCP server** — exposes 26 executable tools, 6 resources, and 10 prompts to GitHub Copilot / Claude Code / Cursor.
+1. **An MCP server** — exposes 27 executable tools, 7 resources, and 10 prompts to GitHub Copilot / Claude Code / Cursor.
 2. **A CLI** — **doctor** for an A–F health letter, **autofix-all** for deterministic rewriters, **new agent** to scaffold, **init** to wire up your repo, and more.
-3. **A plugin** — init drops steering snippets and wires the MCP server into both VS Code and Claude Code, so Copilot's and Claude's agentic loops gain MAF-specific knowledge (13 bundled skills + 7 specialist agents).
+3. **A plugin** — init drops steering snippets and wires the MCP server into both VS Code and Claude Code, so Copilot's and Claude's agentic loops gain MAF-specific knowledge (14 bundled skills + 8 specialist agents).
 
 Plus a separate **maf-doctor.Analyzers** NuGet package with 3 Roslyn analyzers (MAF001 / MAF002 / MAF003) for IDE write-time enforcement, and a curated, version-keyed **obsolete-API registry** that maps every known CS0618 warning to its exact replacement.
 
@@ -21,6 +21,14 @@ Plus a separate **maf-doctor.Analyzers** NuGet package with 3 Roslyn analyzers (
   <br/>
   <em>Install, then run maf-doctor doctor on any MAF codebase — an A–F health letter + the top fixes, in seconds.</em>
 </p>
+
+### 🆕 New in 1.5.0 — migrate **FROM Semantic Kernel** to MAF
+
+A cross-framework migration assistant for porting an existing **Semantic Kernel (C#)** app *to* Microsoft Agent Framework — distinct from the MAF *version* upgrade path:
+
+- **`maf-doctor migrate-scan`** (CLI) / **`MafDetectSourceFramework`** (MCP tool) — inventories your SK usage (csproj package refs + a Roslyn construct scan) and tags every construct by migration **strategy**: 🌉 *bridgeable* (reuse via the `KernelFunction.AsAIFunction()` / `IChatCompletionService.AsChatClient()` interop shims), 🔁 *rewrite* (mechanical SK→MAF API swap), or 🏗 *re-architect* (group chat / planners / prompt templates / vector stores) — plus an **EASY / MEDIUM / HARD** verdict. `--json` for automation.
+- **`maf-migrate-from`** prompt + **`@maf-cross-migration`** agent — the conductor: detect → plan → **scaffold a NEW MAF project beside the original** (non-destructive, side-by-side) → port construct-by-construct with `dotnet build` gates → validate with `MafDoctor`.
+- **`maf://migrate-from?source=semantic-kernel`** resource + **`maf-from-semantic-kernel`** skill — the construct-by-construct mapping (+ interop bridges), reachable with or without the MCP server. Try it on the bundled **`samples/sk-sample/`** fixture. ([full notes →](CHANGELOG.md#150---2026-06-25))
 
 ### 🆕 New in 1.4.0 — diagnose → triage → fix, end to end
 
@@ -37,6 +45,7 @@ Findings you can act on, with the false positives flagged before you touch code:
 - 🔍 **Catches the bugs that compile clean** — detects fan-out/fan-in silent failures where a workflow exits successfully but produces no output. Runtime-only, zero build signal, invisible without this tool.
 - 🩺 **Compiler ground-truth for CS0618** — surfaces obsolete-API usage the build would hit, including transitive obsoletions and overload-resolution surprises, and maps each to its canonical fix.
 - ✅ **Best-practice auditing, not just migration** — reviews your agents and workflows against current MAF patterns, catching drift and anti-patterns before they become production bugs.
+- 🌉 **Cross-framework migration** — coming from **Semantic Kernel**? `migrate-scan` inventories your SK constructs, tags each 🌉 bridge / 🔁 rewrite / 🏗 re-architect, scores the effort, and the `maf-migrate-from` flow ports it into a new MAF project beside the original — non-destructively.
 - 🤖 **Fully agentic loop** — Copilot audits your codebase, generates a tracked migration plan, and executes it task-by-task, building after every step.
 - 🧰 **Deterministic fixes, not guesses** — the obsolete-API registry maps every known CS0618 warning to its exact replacement pattern. No hallucinated fixes.
 - 📖 **It updates itself** — as new MAF versions ship, the toolkit refreshes its own migration knowledge automatically. [How →](#it-updates-itself)
@@ -60,8 +69,8 @@ The practical upshot: you don't pin to a MAF version in these docs, and you don'
 
 MAF Doctor is a **[Model Context Protocol (MCP)](https://modelcontextprotocol.io) server** packaged as a .NET global tool. With no subcommand it runs in MCP mode and exposes:
 
-- **26 executable tools**, each annotated with MCP behavior hints (read-only / destructive / idempotent / open-world) so clients can auto-classify them — registry lookup, code scanning, build-verified CS0618 hunts, NuGet diffing, workflow simulation, scaffolding, PR-scoped audits, version planning, and a single-command health letter. The anti-pattern and fan-out scanners emit SARIF for GitHub Advanced Security; the two destructive tools (auto-fix and auto-fix-all) support a dry-run.
-- **6 resources** — the migration guide, constraints, registry, rules, help, and per-name skills — readable on demand.
+- **27 executable tools**, each annotated with MCP behavior hints (read-only / destructive / idempotent / open-world) so clients can auto-classify them — registry lookup, code scanning, build-verified CS0618 hunts, NuGet diffing, workflow simulation, scaffolding, cross-framework (Semantic Kernel → MAF) migration scanning, PR-scoped audits, version planning, and a single-command health letter. The anti-pattern and fan-out scanners emit SARIF for GitHub Advanced Security; the two destructive tools (auto-fix and auto-fix-all) support a dry-run.
+- **7 resources** — the migration guide, constraints, registry, rules, help, the Semantic Kernel → MAF mapping, and per-name skills — readable on demand.
 - **10 prompts** — audit, migrate, remediate, migrate-from, cs0618-hunt, review, debug, explain-finding, scaffold, and help.
 - **3 Roslyn analyzers** (in the separate maf-doctor.Analyzers package) — MAF001 (fan-out), MAF002 (DefaultAzureCredential), MAF003 (EnableSensitiveData). Write-time enforcement.
 

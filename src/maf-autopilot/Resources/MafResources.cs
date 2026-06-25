@@ -15,7 +15,7 @@ namespace MafDoctor.Resources;
 ///   maf://guide        — full MAF migration guide
 ///
 /// Template resource (one per skill):
-///   maf://skills?name=&lt;skillName&gt;  — any of the 13 skill SKILL.md files
+///   maf://skills?name=&lt;skillName&gt;  — any of the 14 skill SKILL.md files
 ///</summary>
 [McpServerResourceType]
 public static class MafResources
@@ -51,13 +51,13 @@ public static class MafResources
         MimeType = "text/markdown",
         Name = "maf-migrate-from",
         Title = "MAF cross-framework migration guide")]
-    [Description("Migration mapping FROM another agent framework TO MAF (construct-by-construct, with the interop bridges and the bridgeable/rewrite/re-architect strategy per construct). Pass source= one of: semantic-kernel.")]
+    [Description("Migration mapping FROM another agent framework TO MAF (construct-by-construct, with the interop bridges and the bridgeable/rewrite/re-architect strategy per construct). Pass source= one of: semantic-kernel (alias: sk).")]
     public static string GetMigrationFrom(string? source)
-        => (source ?? string.Empty).Trim().ToLowerInvariant() switch
+        => MigrationSources.Canonicalize(source) switch
         {
-            "semantic-kernel" or "sk" => ReadEmbedded("migrate-from/semantic-kernel.md"),
+            MigrationSources.SemanticKernel => ReadEmbedded("migrate-from/semantic-kernel.md"),
             _ => throw new ArgumentException(
-                $"Unknown migration source '{source}'. Available: semantic-kernel"),
+                $"Unknown migration source '{source}'. Available: {MigrationSources.SupportedDescription}"),
         };
 
     [McpServerResource(UriTemplate = "maf://rules",
@@ -134,8 +134,8 @@ public static class MafResources
     [Description(
         "A specific MAF skill document. Pass name= one of: " +
         "cs0618-hunter, dotnet-inspect, maf-anti-pattern-scanner, " +
-        "maf-fan-out-validator, maf-issue-reporter, maf-migration-guide, " +
-        "maf-migration-plan-creator, maf-migration-retrospective, " +
+        "maf-fan-out-validator, maf-from-semantic-kernel, maf-issue-reporter, " +
+        "maf-migration-guide, maf-migration-plan-creator, maf-migration-retrospective, " +
         "maf-obsolete-api-registry, maf-release-watcher, " +
         "maf-remediation-playbook, maf-workflow-smoke-tester, nuget-diff-analyzer")]
     public static string GetSkill(string name)
@@ -153,13 +153,14 @@ public static class MafResources
     //  Internal helpers                                                    //
     // ------------------------------------------------------------------ //
 
-    private static readonly HashSet<string> AllowedSkillNames =
+    internal static readonly HashSet<string> AllowedSkillNames =
         new(StringComparer.OrdinalIgnoreCase)
         {
             "cs0618-hunter",
             "dotnet-inspect",
             "maf-anti-pattern-scanner",
             "maf-fan-out-validator",
+            "maf-from-semantic-kernel",
             "maf-issue-reporter",
             "maf-migration-guide",
             "maf-migration-plan-creator",

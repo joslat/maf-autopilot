@@ -28,8 +28,8 @@ maf-doctor init --with-cursor   # also the Cursor rule
 
 ## What it does **not** install
 
-- **The 13 skills** — they're embedded in the `maf-doctor` binary and served live at `maf://skills?name=<name>`; nothing is written to your repo (so they update when you `dotnet tool update`).
-- **The 7 specialist agents** (`@maf-auditor`, …) — these are GitHub-Copilot/Coding-Agent definitions that live in *this* toolkit's `.github/agents/`. `init` doesn't copy them; if you want the `@`-mention personas as files, use **Mode 2** (copy this repo's `.github/`). For most work you don't need them — the same workflows are exposed as MCP **prompts** (see [usage.md](./usage.md)).
+- **The 14 skills** — they're embedded in the `maf-doctor` binary and served live at `maf://skills?name=<name>`; nothing is written to your repo (so they update when you `dotnet tool update`).
+- **The 8 specialist agents** (`@maf-auditor`, …) — these are GitHub-Copilot/Coding-Agent definitions that live in *this* toolkit's `.github/agents/`. `init` doesn't copy them; if you want the `@`-mention personas as files, use **Mode 2** (copy this repo's `.github/`). For most work you don't need them — the same workflows are exposed as MCP **prompts** (see [usage.md](./usage.md)).
 - **No edits to your own `copilot-instructions.md` / `CLAUDE.md` body.**
 
 ## Safety / idempotency

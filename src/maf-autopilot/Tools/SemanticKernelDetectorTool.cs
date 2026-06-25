@@ -29,6 +29,13 @@ namespace MafDoctor.Tools;
 /// <c>maf://migrate-from?source=semantic-kernel</c>). Detection is purely syntactic
 /// (Roslyn) and scoped to files that import a <c>Microsoft.SemanticKernel</c>
 /// namespace, so it does not over-match unrelated code.
+///
+/// NOTE: the <c>source</c> dimension is intentionally NOT abstracted yet — this is the
+/// only source framework today, so the detector is deliberately SK-specific (no
+/// <c>ISourceFrameworkDetector</c> seam). When a second source (AutoGen) lands, extract
+/// that seam and select an implementation by the <c>--source</c> value (whose supported
+/// set already lives in <see cref="MigrationSources"/>); the plumbing is not a broken
+/// multi-source contract, it is forward-compatible input validation.
 /// </summary>
 [McpServerToolType]
 public sealed class SemanticKernelDetectorTool
@@ -76,7 +83,13 @@ public sealed class SemanticKernelDetectorTool
             string rel;
             try { rel = SourceFileWalker.MakeRelative(repoPath, file); }
             catch (InvalidOperationException) { rel = file; }
-            constructs.AddRange(AnalyzeSource(File.ReadAllText(file), rel));
+            string text;
+            // A file locked / deleted / access-denied mid-scan must not abort the whole
+            // repo scan — skip it, consistent with the csproj/props IO handling.
+            try { text = File.ReadAllText(file); }
+            catch (IOException) { continue; }
+            catch (UnauthorizedAccessException) { continue; }
+            constructs.AddRange(AnalyzeSource(text, rel));
         }
         return new SkScanResult(packages, constructs);
     }
@@ -91,6 +104,12 @@ public sealed class SemanticKernelDetectorTool
         if (!Directory.Exists(repoPath))
             return packages;
 
+        // Central Package Management: a csproj using CPM omits Version on its
+        // PackageReference and the pin lives in a Directory.Packages.props
+        // <PackageVersion Include="..." Version="..."/>. Read those first so a
+        // CPM-managed SK package resolves to its real version, not "(unpinned)".
+        var central = ReadCentralPackageVersions(repoPath);
+
         foreach (var csproj in SourceFileWalker.EnumerateCsprojFiles(repoPath))
         {
             XDocument doc;
@@ -101,16 +120,59 @@ public sealed class SemanticKernelDetectorTool
                 var id = (string?)pr.Attribute("Include") ?? (string?)pr.Attribute("Update");
                 if (id is null || !id.StartsWith("Microsoft.SemanticKernel", StringComparison.Ordinal))
                     continue;
-                var version = (string?)pr.Attribute("Version")
-                    ?? pr.Elements().FirstOrDefault(e => e.Name.LocalName == "Version")?.Value;
+                // VersionOverride beats the central pin under CPM; then a local
+                // Version attr/element; then the central pin; else genuinely unpinned.
+                var version = (string?)pr.Attribute("VersionOverride")
+                    ?? (string?)pr.Attribute("Version")
+                    ?? pr.Elements().FirstOrDefault(e => e.Name.LocalName == "Version")?.Value
+                    ?? (central.TryGetValue(id, out var cv) ? cv : null);
                 packages.Add(new SkPackage(id, version ?? "(unpinned)"));
             }
         }
         return packages
             .GroupBy(p => p.Id, StringComparer.Ordinal)
-            .Select(g => g.First())
+            // If the same id appears pinned in one project and unpinned in another,
+            // keep the pinned reading.
+            .Select(g => g.OrderByDescending(p => p.Version != "(unpinned)").First())
             .OrderBy(p => p.Id, StringComparer.Ordinal)
             .ToList();
+    }
+
+    /// <summary>
+    /// Reads every <c>Directory.Packages.props</c> under the repo into an id→version
+    /// map (Central Package Management). Used to resolve the version of a CPM-pinned
+    /// package whose <c>PackageReference</c> deliberately omits <c>Version</c>.
+    /// </summary>
+    private static IReadOnlyDictionary<string, string> ReadCentralPackageVersions(string repoPath)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        List<string> propsFiles;
+        try
+        {
+            // .ToList() forces enumeration inside the try so a mid-walk IO error
+            // (access denied on a subtree) degrades to "no central versions" rather
+            // than throwing out of the scan.
+            propsFiles = Directory
+                .EnumerateFiles(repoPath, "Directory.Packages.props", SearchOption.AllDirectories)
+                .ToList();
+        }
+        catch { return map; }
+
+        foreach (var props in propsFiles)
+        {
+            XDocument doc;
+            try { doc = XDocument.Load(props); }
+            catch { continue; }
+            foreach (var pv in doc.Descendants().Where(e => e.Name.LocalName == "PackageVersion"))
+            {
+                var id = (string?)pv.Attribute("Include") ?? (string?)pv.Attribute("Update");
+                var ver = (string?)pv.Attribute("Version")
+                    ?? pv.Elements().FirstOrDefault(e => e.Name.LocalName == "Version")?.Value;
+                if (id is not null && ver is not null && !map.ContainsKey(id))
+                    map[id] = ver;
+            }
+        }
+        return map;
     }
 
     /// <summary>
@@ -152,23 +214,39 @@ public sealed class SemanticKernelDetectorTool
                         LineOf(attr));
                     break;
 
-                // Any reference to a known SK type (object-creation, base type, generic, identifier).
-                case IdentifierNameSyntax id:
-                    Classify(id.Identifier.ValueText, LineOf(id));
-                    break;
-                case GenericNameSyntax gen:
+                // A reference to a known SK type — but only in *type position*. Skip
+                // member-access names (`agent.Kernel`), assignment / object-initializer
+                // LHS (`new X { Kernel = … }`), and named-argument labels, so a property
+                // called `Kernel` isn't miscounted as a usage of the `Kernel` TYPE.
+                case GenericNameSyntax gen when IsTypeReference(gen):
                     Classify(gen.Identifier.ValueText, LineOf(gen));
                     break;
-
-                // SK invocation pattern: agent.InvokeAsync / InvokeStreamingAsync -> 🔁 RunAsync / RunStreamingAsync.
-                case MemberAccessExpressionSyntax m when m.Name.Identifier.ValueText is "InvokeAsync" or "InvokeStreamingAsync":
-                    Record("Agent invocation (`Invoke*Async`)", MigrationStrategy.Rewrite,
-                        "→ `RunAsync` / `RunStreamingAsync`; adapt to `AgentResponse` / `AgentResponseUpdate`.",
-                        LineOf(m));
+                case IdentifierNameSyntax id when IsTypeReference(id):
+                    Classify(id.Identifier.ValueText, LineOf(id));
                     break;
 
-                // Kernel-level OpenTelemetry wiring -> 🔁 .UseOpenTelemetry() on the IChatClient chain.
-                case MemberAccessExpressionSyntax ot when ot.Name.Identifier.ValueText == "AddOpenTelemetry":
+                // SK invocation pattern. Split kernel-function invocation
+                // (`kernel.InvokeAsync(fn)`) from agent invocation (`agent.InvokeAsync(input)`)
+                // — they map to different MAF code. The kernel-vs-agent decision keys on the
+                // chain's ROOT identifier (whole-word), not a substring, so `kernelAgent.X`
+                // resolves as an agent (correct) rather than by accident.
+                case MemberAccessExpressionSyntax m when m.Name.Identifier.ValueText is "InvokeAsync" or "InvokeStreamingAsync":
+                    if (IsKernelReceiver(m.Expression))
+                        Record("Kernel function invocation (`kernel.Invoke*Async`)", MigrationStrategy.Rewrite,
+                            "→ call the tool method directly, or let MAF's automatic function-calling loop invoke it (no manual `kernel.Invoke`).",
+                            LineOf(m));
+                    else
+                        Record("Agent invocation (`Invoke*Async`)", MigrationStrategy.Rewrite,
+                            "→ `RunAsync` / `RunStreamingAsync`; adapt to `AgentResponse` / `AgentResponseUpdate`.",
+                            LineOf(m));
+                    break;
+
+                // Kernel-level OpenTelemetry wiring -> 🔁 .UseOpenTelemetry() on the IChatClient
+                // chain. Gated on a kernel / kernel-builder ROOT receiver (whole-identifier
+                // match) so host-level `services.AddOpenTelemetry()` — or a same-substring
+                // var like `kernelMetricsServices` — is NOT flagged.
+                case MemberAccessExpressionSyntax ot when ot.Name.Identifier.ValueText == "AddOpenTelemetry"
+                        && IsKernelReceiver(ot.Expression):
                     Record("Observability (`AddOpenTelemetry`)", MigrationStrategy.Rewrite,
                         "→ `.UseOpenTelemetry()` on the `IChatClient` build chain (subscribe to source `Microsoft.Extensions.AI`).",
                         LineOf(ot));
@@ -178,13 +256,6 @@ public sealed class SemanticKernelDetectorTool
 
         void Classify(string typeName, int line)
         {
-            // Planners were removed in SK → re-architect onto MAF's automatic function-calling loop.
-            if (typeName.EndsWith("Planner", StringComparison.Ordinal) && typeName != "Planner")
-            {
-                Record($"Planner (`{typeName}`)", MigrationStrategy.Rearchitect,
-                    "Planners were removed — re-architect onto MAF's automatic function-calling loop.", line);
-                return;
-            }
             // Function-invocation filters → MAF agent middleware. A clean port (defined
             // target), so a 🔁 rewrite rather than a 🏗 re-architecture.
             if (typeName is "IFunctionInvocationFilter" or "IAutoFunctionInvocationFilter" or "IPromptRenderFilter")
@@ -193,9 +264,47 @@ public sealed class SemanticKernelDetectorTool
                     "→ MAF agent middleware (function-calling / agent-run) via `.AsBuilder().Use(...)`.", line);
                 return;
             }
+            // Provider execution settings (`OpenAIPromptExecutionSettings`,
+            // `AzureOpenAIPromptExecutionSettings`, …). Distinctive SK suffix — safe to
+            // match broadly inside an SK-importing file. This is also where structured
+            // output lives (the `responseFormat` property).
+            if (typeName.EndsWith("PromptExecutionSettings", StringComparison.Ordinal))
+            {
+                Record("Execution settings (`*PromptExecutionSettings`)", MigrationStrategy.Rewrite,
+                    "→ `ChatOptions` / `ChatClientAgentRunOptions` (`MaxTokens` → `MaxOutputTokens`; structured-output `responseFormat` → `ChatResponseFormat.ForJsonSchema<T>()` or typed `RunAsync<T>`).", line);
+                return;
+            }
             if (KnownTypes.TryGetValue(typeName, out var rule))
+            {
                 Record(rule.Kind, rule.Strategy, rule.Note, line);
+                return;
+            }
+            // Fallback: any other concrete `*AgentThread` subtype not tailored above
+            // (e.g. `ChatHistoryAgentThread`). `AgentThread` is SK-distinctive enough to
+            // suffix-match inside an SK-importing file; catches `var t = new XAgentThread()`.
+            // Unlike the `*Planner` suffix (removed — `CapacityPlanner` was a real user-type
+            // collision), `*AgentThread` is far more SK-specific, so a user type named
+            // `…AgentThread` flagging here is an accepted, low-likelihood false positive
+            // (pinned by UserTypeEndingInAgentThread_IsFlagged_AcceptedTradeoff).
+            if (typeName.EndsWith("AgentThread", StringComparison.Ordinal) && typeName != "AgentThread")
+                Record($"Thread (`{typeName}`)", MigrationStrategy.Rewrite,
+                    "→ `AgentSession` via `await agent.CreateSessionAsync()` — the agent owns the session.", line);
         }
+
+        // True when a simple name is used as a TYPE reference, not a member/property name
+        // (`x.Kernel`), an assignment / object-initializer target (`{ Kernel = … }`), a
+        // named-argument label (`Kernel: …`), or a `nameof(Kernel)` argument (a string, not a
+        // type). Without this gate, a property *named* like an SK type — or a `nameof` of one
+        // — inflates that type's occurrence count and can mis-tag its strategy.
+        static bool IsTypeReference(SimpleNameSyntax name) => name.Parent switch
+        {
+            MemberAccessExpressionSyntax ma when ReferenceEquals(ma.Name, name) => false,
+            AssignmentExpressionSyntax asn when ReferenceEquals(asn.Left, name) => false,
+            NameColonSyntax => false,
+            NameEqualsSyntax => false,
+            ArgumentSyntax { Parent.Parent: InvocationExpressionSyntax { Expression: IdentifierNameSyntax { Identifier.ValueText: "nameof" } } } => false,
+            _ => true,
+        };
 
         return hits
             .Select(kv => new SkConstruct(kv.Key, kv.Value.Strategy, fileName, kv.Value.Line, kv.Value.Note, kv.Value.Count))
@@ -211,6 +320,51 @@ public sealed class SemanticKernelDetectorTool
         return n.EndsWith("Attribute", StringComparison.Ordinal) ? n[..^"Attribute".Length] : n;
     }
 
+    /// <summary>
+    /// Common identifier names for a Kernel / kernel-builder receiver. Matched
+    /// whole-word (case-insensitive) so <c>kernel</c>/<c>Kernel</c>/<c>kernelBuilder</c>
+    /// hit but a same-substring host variable like <c>kernelMetricsServices</c> does not.
+    /// Purely syntactic (no SemanticModel) — a deliberately small, high-signal set; an
+    /// idiosyncratic alias (<c>kb</c>, <c>sk</c>) is a tolerated false-negative.
+    /// </summary>
+    private static readonly HashSet<string> KernelReceiverNames =
+        new(StringComparer.OrdinalIgnoreCase) { "kernel", "kernelBuilder", "_kernel", "_kernelBuilder" };
+
+    /// <summary>True when the chain's root identifier names a Kernel / kernel-builder.</summary>
+    private static bool IsKernelReceiver(ExpressionSyntax receiver)
+    {
+        var root = RootIdentifierName(receiver);
+        return root is not null && KernelReceiverNames.Contains(root);
+    }
+
+    /// <summary>
+    /// Walks to the left-most identifier of a member-access / invocation / element-access
+    /// chain (the chain's "root receiver"), seeing through parentheses and casts. Returns
+    /// null if the root isn't a plain identifier (e.g. <c>this</c>, a literal, a cast target).
+    /// </summary>
+    private static string? RootIdentifierName(ExpressionSyntax? expr)
+    {
+        while (expr is not null)
+        {
+            switch (expr)
+            {
+                case IdentifierNameSyntax id: return id.Identifier.ValueText;
+                // `this.kernel` / `base.kernel` — the member name IS the meaningful receiver
+                // identifier (a field/property access on the instance), so resolve to it.
+                case MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax or BaseExpressionSyntax } self:
+                    return self.Name.Identifier.ValueText;
+                case MemberAccessExpressionSyntax ma: expr = ma.Expression; break;
+                case InvocationExpressionSyntax inv: expr = inv.Expression; break;
+                case ElementAccessExpressionSyntax ea: expr = ea.Expression; break;
+                case ParenthesizedExpressionSyntax pe: expr = pe.Expression; break;
+                case CastExpressionSyntax ce: expr = ce.Expression; break;
+                case PostfixUnaryExpressionSyntax pue: expr = pue.Operand; break; // x!.Y
+                default: return null;
+            }
+        }
+        return null;
+    }
+
     /// <summary>SK type name → migration construct + strategy. Distinctive SK names only.</summary>
     private static readonly IReadOnlyDictionary<string, (string Kind, MigrationStrategy Strategy, string Note)> KnownTypes =
         new Dictionary<string, (string, MigrationStrategy, string)>(StringComparer.Ordinal)
@@ -220,7 +374,21 @@ public sealed class SemanticKernelDetectorTool
             ["AzureAIAgent"]           = ("SK agent (`AzureAIAgent`)", MigrationStrategy.Rewrite, "→ `aiProjectClient.AsAIAgent(model:, instructions:)`."),
             ["OpenAIAssistantAgent"]   = ("SK agent (`OpenAIAssistantAgent`)", MigrationStrategy.Rewrite, "→ `assistantClient.CreateAIAgentAsync(instructions:)`."),
             ["IChatCompletionService"] = ("Chat service (`IChatCompletionService`)", MigrationStrategy.Bridgeable, "→ bridge with `.AsChatClient()`, or use an `IChatClient` provider directly."),
+            // Threads → sessions (the agent owns the session in MAF). §3/§4 of the guide.
+            ["AgentThread"]                = ("Thread (`AgentThread`)", MigrationStrategy.Rewrite, "→ `AgentSession` via `await agent.CreateSessionAsync()` — the agent creates the session."),
+            ["OpenAIAssistantAgentThread"] = ("Thread (`OpenAIAssistantAgentThread`)", MigrationStrategy.Rewrite, "→ `await agent.CreateSessionAsync()`; for cleanup, track `session.ConversationId` and call the provider SDK."),
+            ["AzureAIAgentThread"]         = ("Thread (`AzureAIAgentThread`)", MigrationStrategy.Rewrite, "→ `await agent.CreateSessionAsync()`."),
+            ["OpenAIResponseAgentThread"]  = ("Thread (`OpenAIResponseAgentThread`)", MigrationStrategy.Rewrite, "→ `await agent.CreateSessionAsync()`."),
             ["KernelArguments"]        = ("Run options (`KernelArguments`)", MigrationStrategy.Rewrite, "→ `ChatOptions` / `ChatClientAgentRunOptions`."),
+            ["AgentInvokeOptions"]     = ("Run options (`AgentInvokeOptions`)", MigrationStrategy.Rewrite, "→ `ChatClientAgentRunOptions` (wraps `ChatOptions`)."),
+            // Planners were removed in SK — re-architect onto MAF's automatic function-calling
+            // loop. Explicit names only (no `*Planner` suffix match — that flagged user types
+            // like `CapacityPlanner`).
+            ["FunctionCallingStepwisePlanner"] = ("Planner (`FunctionCallingStepwisePlanner`)", MigrationStrategy.Rearchitect, "Planners were removed — re-architect onto MAF's automatic function-calling loop."),
+            ["StepwisePlanner"]        = ("Planner (`StepwisePlanner`)", MigrationStrategy.Rearchitect, "Planners were removed — re-architect onto MAF's automatic function-calling loop."),
+            ["HandlebarsPlanner"]      = ("Planner (`HandlebarsPlanner`)", MigrationStrategy.Rearchitect, "Planners were removed — re-architect onto MAF's automatic function-calling loop."),
+            ["SequentialPlanner"]      = ("Planner (`SequentialPlanner`)", MigrationStrategy.Rearchitect, "Planners were removed — re-architect onto MAF's automatic function-calling loop."),
+            ["ActionPlanner"]          = ("Planner (`ActionPlanner`)", MigrationStrategy.Rearchitect, "Planners were removed — re-architect onto MAF's automatic function-calling loop."),
             ["KernelPlugin"]           = ("Plugin wrapper (`KernelPlugin`)", MigrationStrategy.Bridgeable, "→ no plugin concept; bridge each function via `.AsAIFunction()` or pass methods to `tools:`."),
             ["KernelPluginFactory"]    = ("Plugin factory (`KernelPluginFactory`)", MigrationStrategy.Rewrite, "→ pass methods directly to `tools:` (no plugin wrapper)."),
             ["KernelFunctionFactory"]  = ("Function factory (`KernelFunctionFactory`)", MigrationStrategy.Rewrite, "→ `AIFunctionFactory.Create(...)`."),
@@ -249,15 +417,23 @@ public sealed class SemanticKernelDetectorTool
     {
         public bool SemanticKernelDetected => Packages.Count > 0 || Constructs.Count > 0;
 
+        /// <summary>Occurrence count above which a bridge-only repo still escalates EASY → MEDIUM.</summary>
+        public const int LargeFootprintThreshold = 8;
+
         public int TotalOccurrences => Constructs.Sum(c => c.Count);
         public int Bridgeable => Constructs.Count(c => c.Strategy == MigrationStrategy.Bridgeable);
         public int Rewrite => Constructs.Count(c => c.Strategy == MigrationStrategy.Rewrite);
         public int Rearchitect => Constructs.Count(c => c.Strategy == MigrationStrategy.Rearchitect);
 
-        /// <summary>EASY (bridge/rewrite only, small), MEDIUM (rewrites), HARD (re-architecture present).</summary>
+        /// <summary>
+        /// EASY — only bridges / a tiny rewrite footprint.
+        /// MEDIUM — mechanical rewrites, a single re-architecture, or a large footprint (&gt; <see cref="LargeFootprintThreshold"/> occurrences).
+        /// HARD — two or more <em>distinct</em> re-architecture kinds (e.g. group chat + planners + vector store).
+        /// A lone re-architecture is MEDIUM, not HARD: one redesign is tractable, several compound.
+        /// </summary>
         public string Verdict =>
-            Rearchitect > 0 ? "HARD"
-            : (Rewrite > 0 || TotalOccurrences > 8) ? "MEDIUM"
+            Rearchitect >= 2 ? "HARD"
+            : (Rearchitect >= 1 || Rewrite > 0 || TotalOccurrences > LargeFootprintThreshold) ? "MEDIUM"
             : "EASY";
 
         public string ToMarkdown()

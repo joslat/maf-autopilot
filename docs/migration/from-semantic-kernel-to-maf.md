@@ -89,20 +89,20 @@ await foreach (WorkflowEvent evt in run.WatchStreamAsync())
 
 ## Beyond the official page — constructs it doesn't cover
 
-A real SK app uses more than the official page maps. The detector also flags these, with their MAF target and strategy:
+A real SK app uses more than the official page maps. The detector flags the rows below that have a distinctive SK type; rows marked **⚠ no type signature** have no reliable syntactic marker (they're patterns, not named types), so the migration agent must surface those by reading intent rather than relying on the scan.
 
-| SK construct | MAF target | Strategy |
-|---|---|---|
-| **Prompt templates** — `KernelPromptTemplate`, `PromptTemplateConfig`, Handlebars/Liquid factories, `KernelFunctionFromPrompt` | **No built-in template engine.** Render the template yourself (Handlebars.NET / Scriban / interpolation) and pass the result as the agent's `instructions`; or move dynamic data into a Context Provider. | 🏗 re-architect |
-| **Function-invocation filters** — `IFunctionInvocationFilter`, `IAutoFunctionInvocationFilter`, `IPromptRenderFilter` | **Agent middleware** (function-calling / agent-run / `IChatClient`), wired via `agent.AsBuilder().Use(...)`. Function-calling middleware needs a `FunctionInvokingChatClient` (i.e. `ChatClientAgent`). | 🔁 rewrite |
-| **Structured output** — `responseFormat` on `OpenAIPromptExecutionSettings` | `AgentRunOptions.ResponseFormat = ChatResponseFormat.ForJsonSchema<T>()`, or the typed `agent.RunAsync<T>(...)` → `AgentResponse<T>` (`.Result`). Wrap top-level primitives/arrays in an object type. | 🔁 rewrite |
-| **`ChatHistory`** (manual serialize) | `InMemoryChatHistoryProvider`, a custom `ChatHistoryProvider` subclass, or whole-session `agent.SerializeSession(...)` / `DeserializeSessionAsync(...)`. | 🔁 rewrite |
-| **Vector stores / RAG** — `IVectorStore`, `ITextSearch`, `VectorStoreTextSearch` | A `TextSearchProvider` attached via `ChatClientAgentOptions.AIContextProviders` (storage via `Microsoft.Extensions.VectorData`). | 🏗 re-architect |
-| **Hand-rolled memory injection** | An `AIContextProvider` (override `InvokingAsync` → return `AIContext`). | 🏗 re-architect |
-| **Observability** — `Kernel`-level `AddOpenTelemetry` | `.UseOpenTelemetry()` on the `IChatClient` build chain (before `UseFunctionInvocation()`); subscribe to source `Microsoft.Extensions.AI`. `EnableSensitiveData = true` is dev-only (also enforced by `MAF-AP-SEC-003`). | 🔁 rewrite |
-| **Multi-agent beyond group chat** — handoff, magentic, SK Process Framework | MAF workflow orchestrations: handoff, magentic, fan-out/fan-in, nested, with checkpoint/resume. | 🏗 re-architect |
+| SK construct | MAF target | Strategy | Detected? |
+|---|---|---|---|
+| **Prompt templates** — `KernelPromptTemplate`, `PromptTemplateConfig`, Handlebars/Liquid factories, `KernelFunctionFromPrompt` | **No built-in template engine.** Render the template yourself (Handlebars.NET / Scriban / interpolation) and pass the result as the agent's `instructions`; or move dynamic data into a Context Provider. | 🏗 re-architect | ✅ |
+| **Function-invocation filters** — `IFunctionInvocationFilter`, `IAutoFunctionInvocationFilter`, `IPromptRenderFilter` | **Agent middleware** (function-calling / agent-run / `IChatClient`), wired via `agent.AsBuilder().Use(...)`. Function-calling middleware needs a `FunctionInvokingChatClient` (i.e. `ChatClientAgent`). | 🔁 rewrite | ✅ |
+| **Structured output** — `responseFormat` on `*PromptExecutionSettings` | `AgentRunOptions.ResponseFormat = ChatResponseFormat.ForJsonSchema<T>()`, or the typed `agent.RunAsync<T>(...)` → `AgentResponse<T>` (`.Result`). Wrap top-level primitives/arrays in an object type. | 🔁 rewrite | ✅ (via the settings type) |
+| **`ChatHistory`** (manual serialize) | `InMemoryChatHistoryProvider`, a custom `ChatHistoryProvider` subclass, or whole-session `agent.SerializeSession(...)` / `DeserializeSessionAsync(...)`. | 🔁 rewrite | ✅ |
+| **Vector stores / RAG** — `IVectorStore`, `ITextSearch`, `VectorStoreTextSearch` | A `TextSearchProvider` attached via `ChatClientAgentOptions.AIContextProviders` (storage via `Microsoft.Extensions.VectorData`). | 🏗 re-architect | ✅ |
+| **Observability** — `Kernel`-level `AddOpenTelemetry` | `.UseOpenTelemetry()` on the `IChatClient` build chain (before `UseFunctionInvocation()`); subscribe to source `Microsoft.Extensions.AI`. `EnableSensitiveData = true` is dev-only (also enforced by `MAF-AP-SEC-003`). | 🔁 rewrite | ✅ (kernel-builder receiver) |
+| **Hand-rolled memory injection** | An `AIContextProvider` (override `InvokingAsync` → return `AIContext`). | 🏗 re-architect | ⚠ no type signature |
+| **Multi-agent beyond group chat** — handoff, magentic, SK Process Framework | MAF workflow orchestrations: handoff, magentic, fan-out/fan-in, nested, with checkpoint/resume. | 🏗 re-architect | ⚠ no type signature |
 
-> Biggest watch-outs: **prompt templates** (MAF has no template engine — render externally) and **hand-rolled memory/context** (re-architect onto Context Providers).
+> Biggest watch-outs: **prompt templates** (MAF has no template engine — render externally) and **hand-rolled memory/context** (re-architect onto Context Providers). The two **⚠** rows won't show up in the scan — review the code for them by hand.
 
 ---
 
@@ -122,7 +122,7 @@ using Microsoft.Agents.AI;
 ### 2. Agent creation (no Kernel)
 ```csharp
 // Semantic Kernel — every agent needs a Kernel
-Kernel kernel = Kernel.AddOpenAIChatClient(modelId, apiKey).Build();
+Kernel kernel = Kernel.CreateBuilder().AddOpenAIChatCompletion(modelId, apiKey).Build();
 ChatCompletionAgent agent = new() { Instructions = agentInstructions, Kernel = kernel };
 
 // Agent Framework — created straight from the client
