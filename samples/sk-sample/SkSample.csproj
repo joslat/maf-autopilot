@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <!-- A class library (NOT an Exe): this is a scan-only fixture with no entry point,
+         so a stray `dotnet build` here won't fail with CS5001. -->
+    <OutputType>Library</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <IsPackable>false</IsPackable>
     <Nullable>enable</Nullable>
@@ -9,12 +11,13 @@
     <RootNamespace>SkSample</RootNamespace>
     <AssemblyName>SkSample</AssemblyName>
 
-    <!-- Standalone fixture — NOT in maf-autopilot.sln, NOT built by CI. It exists
-         so `maf-doctor migrate-scan` (and the SK→MAF detector tests) have a real
-         on-disk Semantic Kernel app to inventory: a csproj that references
-         Microsoft.SemanticKernel plus source spanning all three migration
-         strategies (bridge / rewrite / re-architect). Pinned versions live here
-         (NOT routed through /Directory.Packages.props). -->
+    <!-- Standalone fixture — NOT in maf-autopilot.sln, NOT built by CI. It exists so
+         `maf-doctor migrate-scan` (and the SK→MAF detector tests) have a real on-disk
+         Semantic Kernel app to *inventory*: a csproj that references Microsoft.SemanticKernel
+         plus source spanning all three migration strategies (bridge / rewrite / re-architect).
+         The detector reads it as text/XML — it is never compiled, and the SK API usage is
+         illustrative (it is not guaranteed to build against the SK packages). Pinned versions
+         live here (NOT routed through /Directory.Packages.props). -->
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <NoWarn>$(NoWarn);CS8618;CS1591</NoWarn>

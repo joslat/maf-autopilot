@@ -177,8 +177,12 @@ public static class MafResources
             "nuget-diff-analyzer",
         };
 
-    /// <summary>Read-only view of the skill allowlist (for drift tests; cannot be mutated).</summary>
-    internal static IReadOnlyCollection<string> AllowedSkillNames => _allowedSkillNames;
+    /// <summary>
+    /// A defensive SNAPSHOT of the skill allowlist (for drift tests). A fresh array each
+    /// call, so a caller can never reach the backing <see cref="_allowedSkillNames"/> by
+    /// down-casting the returned reference — the security boundary stays intact.
+    /// </summary>
+    internal static IReadOnlyCollection<string> AllowedSkillNames => _allowedSkillNames.ToArray();
 
     private static string ReadEmbedded(string logicalName)
     {
