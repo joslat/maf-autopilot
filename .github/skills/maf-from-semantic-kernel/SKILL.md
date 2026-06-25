@@ -38,7 +38,7 @@ This SKILL.md is the **index** — find the construct you're porting, read its s
 | `kernel.InvokeAsync(fn)` (function) | call the tool directly, or rely on automatic function-calling | 🔁 | 5 |
 | `KernelArguments` / `AgentInvokeOptions` / `*PromptExecutionSettings` | `ChatOptions` / `ChatClientAgentRunOptions` | 🔁 | 9 |
 | Structured output (`responseFormat`) | `ChatResponseFormat.ForJsonSchema<T>()` or typed `RunAsync<T>` | 🔁 | "Beyond the official page" |
-| `ChatHistory` | `ChatHistoryProvider` / `InMemoryChatHistoryProvider` / `SerializeSession` | 🔁 | "Beyond the official page" |
+| `ChatHistory` | `ChatHistoryProvider` / `InMemoryChatHistoryProvider` / `await agent.SerializeSessionAsync(session)` (async — the sync `SerializeSession` is gone on 1.3.0+) | 🔁 | "Beyond the official page" |
 | Function-invocation filters (`IFunctionInvocationFilter`, …) | agent **middleware** via `.AsBuilder().Use(...)` | 🔁 | "Beyond the official page" |
 | `AddOpenTelemetry` (kernel-level) | `.UseOpenTelemetry()` on the `IChatClient` chain | 🔁 | "Beyond the official page" |
 | `AgentGroupChat` | a MAF **group-chat workflow** (`AgentWorkflowBuilder.CreateGroupChatBuilderWith`) | 🏗 | "Multi-agent" |

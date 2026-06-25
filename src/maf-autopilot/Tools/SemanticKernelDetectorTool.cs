@@ -396,7 +396,7 @@ public sealed class SemanticKernelDetectorTool
             ["Kernel"]                 = ("Kernel (`Kernel`)", MigrationStrategy.Rewrite, "Removed in MAF — create the agent straight from the chat client; delete the `Kernel`."),
             ["IKernelBuilder"]         = ("Kernel builder (`IKernelBuilder`)", MigrationStrategy.Rewrite, "Removed in MAF — no kernel to build."),
             // Chat history persistence — maps to a MAF provider / session serialization.
-            ["ChatHistory"]            = ("Chat history (`ChatHistory`)", MigrationStrategy.Rewrite, "→ `ChatHistoryProvider` / `InMemoryChatHistoryProvider`, or `agent.SerializeSession(...)` for whole-session persistence."),
+            ["ChatHistory"]            = ("Chat history (`ChatHistory`)", MigrationStrategy.Rewrite, "→ `ChatHistoryProvider` / `InMemoryChatHistoryProvider`, or `await agent.SerializeSessionAsync(session)` / `DeserializeSessionAsync(...)` for whole-session persistence (the sync `SerializeSession` shown in some docs does not exist on 1.3.0+)."),
             // Vector stores / RAG — re-architect onto a Context Provider.
             ["IVectorStore"]           = ("Vector store (`IVectorStore`)", MigrationStrategy.Rearchitect, "→ a `TextSearchProvider` attached via `ChatClientAgentOptions.AIContextProviders` (storage via `Microsoft.Extensions.VectorData`)."),
             ["ITextSearch"]            = ("Text search (`ITextSearch`)", MigrationStrategy.Rearchitect, "→ `TextSearchProvider` (RAG via Context Providers)."),
