@@ -166,7 +166,7 @@ This list of changes was [auto generated](https://msdata.visualstudio.com/Vienna
 
 ## Breaking Changes (requires human verification)
 
-- `AgentFileStore.SearchFilesAsync`, `FileSystemAgentFileStore.SearchFilesAsync`, and `InMemoryAgentFileStore.SearchFilesAsync` now include a new optional `bool recursive = false` parameter before `CancellationToken`.
+- `AgentFileStore.SearchFilesAsync`, `FileSystemAgentFileStore.SearchFilesAsync`, and `InMemoryAgentFileStore.SearchFilesAsync` now include a new optional `bool recursive = false` parameter inserted before the existing `CancellationToken` parameter.
 - `AgentInlineSkill` constructor overloads now include a new trailing optional `argumentMarshaler` delegate parameter.
 - `TodoProvider.GetAllTodosAsync` now includes a trailing optional `CancellationToken`.
 - `TodoProvider.GetRemainingTodosAsync` now includes a trailing optional `CancellationToken`.
