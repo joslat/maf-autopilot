@@ -17,6 +17,7 @@ before merge. Run AFTER registry-extract + classify, BEFORE commit.
 Reads NEW_VERSION and VERDICT from the environment.
 """
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -37,17 +38,14 @@ def main() -> int:
         print(f"::warning::{REGISTRY} not found; cannot append the sentinel.")
         return 0
 
-    import yaml
-    try:
-        data = yaml.safe_load(REGISTRY.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError as exc:
-        print(f"::error::registry.yaml is not valid YAML: {exc}")
-        return 1
-
-    has_current = any(
-        str(e.get("version_introduced", "")).strip() == new
-        for e in data.get("entries", [])
-    )
+    # Regex (not PyYAML) so the watcher job needs no extra Python deps — matching
+    # the sibling dedupe_registry_entries.py approach. A `version_introduced:` line
+    # for the new version (quoted or bare, optional trailing comment) means the
+    # registry already carries an entry for this release.
+    text = REGISTRY.read_text(encoding="utf-8")
+    has_current = bool(re.search(
+        rf'^\s*version_introduced:\s*["\']?{re.escape(new)}["\']?\s*(?:#.*)?$',
+        text, re.MULTILINE))
     if has_current:
         print(f"Registry already has >=1 entry for {new}; the keep-breaking-red gate will fire normally.")
         return 0

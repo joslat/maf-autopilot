@@ -110,22 +110,37 @@ def test_safe_members_drops_trailing_newline_name():
     assert dropped == 3
 
 
-def test_diff_package_usage_token_is_not_trustworthy():
+def test_usage_token_and_header_alone_are_not_trustworthy():
     # 'diff --package' is invocation/usage syntax, not proof a diff parsed.
     usage = "Usage: dotnet-inspect diff --package <id>\nerror: missing required argument"
     assert diff_is_trustworthy(usage) is False
     assert is_additive("## Changes:\n* .NET: x\n", usage) is False
-    # The real dotnet-inspect report header IS trustworthy.
-    assert diff_is_trustworthy("# API Diff: Microsoft.Agents.AI\n") is True
+    # The report HEADER alone is the FIRST line — a truncated diff carries it with
+    # no content bullets, so it must NOT count as a completed diff (fail-closed).
+    assert diff_is_trustworthy("# API Diff: Microsoft.Agents.AI\n") is False
+    # A completed diff carries at least one content marker.
+    assert diff_is_trustworthy("# API Diff: X\n- Member 'A' was added\n") is True
 
 
 def test_new_obsolete_member_is_not_additive():
-    # A newly-added [Obsolete] member is a deprecation: source-compatible but
-    # needs review + a registry entry, so it must NOT classify additive (else the
-    # PR is labeled additive-green while the keep-breaking-red gate holds it red).
-    diff = "- Member 'OldWay' was added [Obsolete]\n"
+    # The REAL dotnet-inspect form carries a message: [Obsolete("...")].
+    diff = "- Member 'OldWay' was added: `[Obsolete(\"Use NewWay\")] void OldWay()`\n"
     assert is_additive("## Changes:\n* .NET: deprecate OldWay\n", diff) is False
     assert classify("", diff)["obsolete"] is True
+    # Bare and Attribute forms also match.
+    assert is_additive("", "- Member 'X' was added [ObsoleteAttribute]\n") is False
+    assert is_additive("", "- Member 'Y' was added [Obsolete]\n") is False
+
+
+def test_summary_breaking_count_forces_breaking_on_truncated_diff():
+    # Additive bullet present (trustworthy) but the summary claims breaking>0 with
+    # the breaking bullets truncated => must classify breaking.
+    diff = "# API Diff: X\n**Summary:** 3 breaking, 1 additive\n- Member 'New' was added\n"
+    assert is_additive("## Changes:\n* .NET: x\n", diff) is False
+    assert classify("", diff)["summary_breaking"] == 3
+    # A clean summary (0 breaking) does not block additive.
+    diff2 = "**Summary:** 0 breaking, 2 additive\n- Member 'New' was added\n"
+    assert is_additive("## Changes:\n* .NET: x\n", diff2) is True
 
 
 def test_breaking_marker_is_order_independent():

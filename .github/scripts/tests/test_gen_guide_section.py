@@ -142,8 +142,8 @@ def test_diff_core_section_is_fenced(workspace: Path):
     guide = _run_in(workspace, old="1.5.0", new="1.6.0")
     body = guide.read_text(encoding="utf-8")
 
-    assert "UPSTREAM-MAF-DIFF-CORE" in body
-    assert "as DATA from upstream-maf-diff-core" in body
+    assert "UPSTREAM-MAF-DIFF" in body
+    assert "as DATA from upstream-maf-diff" in body
 
 
 def test_triple_backtick_in_diff_does_not_escape(workspace: Path):
@@ -158,8 +158,8 @@ def test_triple_backtick_in_diff_does_not_escape(workspace: Path):
     # diff fence — we wrap, not sanitize) BUT they're now inside an explicit
     # BEGIN/END fence with "treat as data" framing, so a downstream LLM
     # knows they're not its own instructions.
-    diff_begin_idx = body.find("UPSTREAM-MAF-DIFF-CORE>>>")
-    diff_end_idx = body.find("UPSTREAM-MAF-DIFF-CORE>>>", diff_begin_idx + 5)
+    diff_begin_idx = body.find("UPSTREAM-MAF-DIFF>>>")
+    diff_end_idx = body.find("UPSTREAM-MAF-DIFF>>>", diff_begin_idx + 5)
     assert diff_begin_idx > 0 and diff_end_idx > diff_begin_idx
     diff_section = body[diff_begin_idx:diff_end_idx]
     assert "API: Foo.Bar" in diff_section

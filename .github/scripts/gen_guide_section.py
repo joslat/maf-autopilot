@@ -115,16 +115,20 @@ def build_chain_banner(old_version: str, new_version: str) -> str:
     )
 
 
-diff_lines = read_file('diff-core.txt', '(diff not available)').splitlines()
+# Display BOTH package diffs (core + workflows) — the verdict below is computed
+# from this same combined text, so the reviewer sees the full surface it weighed
+# (a Workflows-package break must not be invisible in the guide).
+raw_diff_all = combined_diff_text()
+diff_lines = (raw_diff_all or '(diff not available)').splitlines()
 # Trim to a reasonable length — full diffs can be huge.
-raw_diff = '\n'.join(diff_lines[:120])
+raw_diff = '\n'.join(diff_lines[:160])
 # Phase 2.G fixup (Finding 1) — fence the dotnet-inspect diff. The diff is the
 # sibling input to release notes — same TA-1 threat (malicious upstream NuGet
 # author can put HTML-comment-disguised payloads or stray triple-backticks in
 # a public-API XML doc or type name, which dotnet-inspect surfaces verbatim).
 # Without the fence, those flow into the AI-fill issue body alongside the
 # (already-fenced) release notes.
-diff = fence('upstream-maf-diff-core', raw_diff, max_bytes=32 * 1024)
+diff = fence('upstream-maf-diff', raw_diff, max_bytes=32 * 1024)
 raw_notes = read_file('release-notes.txt', '(no release notes available)').strip()
 # Phase 2.2 — fence the release notes. 32 KB cap is generous: release notes
 # typically run a few KB; anything over 32 KB is almost certainly an attempt
@@ -135,7 +139,7 @@ notes = fence('upstream-maf-release-notes', raw_notes, max_bytes=32 * 1024)
 # removed members) gets its analysis sections filled deterministically so the
 # scaffold PR comes up green; a breaking release keeps TODO stubs — the human
 # writes the migration, and the registry gate holds the PR red until they do.
-verdict = classify(raw_notes, combined_diff_text())
+verdict = classify(raw_notes, raw_diff_all)
 
 
 if verdict['additive']:

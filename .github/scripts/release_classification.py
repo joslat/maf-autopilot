@@ -49,21 +49,31 @@ _SIGNATURE_CHANGED_RE = re.compile(r"(?:Member|Type)\s+'([^'\n]+)'\s+signature c
 # registry-extract DOES emit a draft for it. So it is NOT "purely additive" — we
 # route it to the breaking/needs-review path so the verdict and the extractor
 # agree (otherwise the PR is labeled additive-green while the gate holds it red).
-_OBSOLETE_RE = re.compile(r'\[Obsolete\]', re.IGNORECASE)
+# Matches `[Obsolete]`, `[Obsolete("msg")]`, and `[ObsoleteAttribute]` — the real
+# dotnet-inspect form carries a message, so a bare `\[Obsolete\]` would miss it.
+# Kept in lockstep with DiffPackageTool's parser (`\[Obsolete(?:Attribute)?\b`).
+_OBSOLETE_RE = re.compile(r'\[Obsolete(?:Attribute)?\b', re.IGNORECASE)
+
+# dotnet-inspect prints a `**Summary:** N breaking, M additive` line. If it claims
+# breaking changes we honor that even when the breaking BULLETS were truncated
+# (a partially-written diff that still passed diff_is_trustworthy via an additive
+# bullet). `0 breaking` is fine.
+_SUMMARY_BREAKING_RE = re.compile(r'(\d+)\s+breaking', re.IGNORECASE)
 
 # A member/type name is only safe to echo into generated SOURCE or docs if it is
 # a plain C# identifier. Names come from untrusted upstream (TA-1). `\A…\Z` (not
 # `^…$`) so a trailing newline cannot slip through ($ matches before a final \n).
 _SAFE_MEMBER_RE = re.compile(r'\A[A-Za-z_][A-Za-z0-9_]*\Z')
 
-# Markers whose presence proves the diff actually PARSED (vs. an error dump).
-# `API Diff:` is dotnet-inspect's real report header (`# API Diff: <package>`);
-# we do NOT trust `diff --package` (that's invocation/usage syntax echoed by
-# help/error text, never emitted by a successful diff — admitting it would let
-# an error dump masquerade as a parsed diff and re-open the fail-open hole).
+# Markers whose presence proves the diff actually COMPLETED parsing — content
+# bullets, or the explicit no-changes banner. We deliberately do NOT trust the
+# report HEADER (`# API Diff: …`) or the invocation token `diff --package`: the
+# header is the FIRST line, so a header-printed-then-truncated diff would carry it
+# while the breaking bullets never arrived — that would let a truncated breaking
+# diff masquerade as additive (fail-open). Every COMPLETE diff carries at least
+# one of these content markers.
 _DIFF_PARSED_MARKERS = (
-    'was added', 'was removed', 'signature changed',
-    'No API changes detected', 'API Diff:',
+    'was added', 'was removed', 'signature changed', 'No API changes detected',
 )
 
 
@@ -108,6 +118,12 @@ def has_obsolete_annotation(diff_text: str) -> bool:
     return bool(_OBSOLETE_RE.search(diff_text or ""))
 
 
+def summary_breaking_count(diff_text: str) -> int:
+    """Largest `N breaking` count from any dotnet-inspect `Summary:` line, or 0."""
+    counts = [int(n) for n in _SUMMARY_BREAKING_RE.findall(diff_text or "")]
+    return max(counts) if counts else 0
+
+
 def safe_members(names) -> tuple[list[str], int]:
     """Filter member names to plain C# identifiers (no newlines). Returns
     (safe, dropped_count)."""
@@ -125,6 +141,7 @@ def is_additive(release_notes: str, diff_text: str = "") -> bool:
         and not removed_members(diff_text)
         and not signature_changed_members(diff_text)
         and not has_obsolete_annotation(diff_text)
+        and summary_breaking_count(diff_text) == 0
     )
 
 
@@ -134,14 +151,17 @@ def classify(release_notes: str, diff_text: str = "") -> dict:
     removed = removed_members(diff_text)
     sig_changed = signature_changed_members(diff_text)
     obsolete = has_obsolete_annotation(diff_text)
+    summary_breaking = summary_breaking_count(diff_text)
     trustworthy = diff_is_trustworthy(diff_text)
     return {
-        "additive": trustworthy and not breaking_notes and not removed and not sig_changed and not obsolete,
+        "additive": (trustworthy and not breaking_notes and not removed and not sig_changed
+                     and not obsolete and summary_breaking == 0),
         "diff_trustworthy": trustworthy,
         "breaking_notes": breaking_notes,
         "removed": removed,
         "signature_changed": sig_changed,
         "obsolete": obsolete,
+        "summary_breaking": summary_breaking,
         "added": added_members(diff_text),
     }
 
