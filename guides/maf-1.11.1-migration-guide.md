@@ -95,19 +95,30 @@ This list of changes was [auto generated](https://msdata.visualstudio.com/Vienna
 
 ## Breaking Changes (requires human verification)
 
-<!-- TODO: Review the diff above and list breaking changes here -->
+1.11.1 is a patch release but carries **two .NET breaking changes**. Both are confirmed from the upstream release notes; the public-surface `dotnet-inspect` diff only reports the member removals, **not** the behavioral default change — treat the release notes as authoritative.
+
+- **`AgentSkillsProvider` tools now require approval by default** (#6729). The opt-in approval surface was **removed**:
+  - `AgentSkillsProviderBuilder.UseScriptApproval()` — removed (CS0246). Delete the call; approval is applied automatically.
+  - `AgentSkillsProviderOptions.ScriptApproval` — removed (CS0246). Remove the assignment.
+
+  If your code previously relied on skill scripts/tools executing **without** approval, that path is gone — execution now flows through the approval mechanism. Re-validate any unattended or automated skill-execution code before upgrading.
+
+- **`AgentMcpSkillsSource` now supports archive-type skills** (#6631), tagged breaking upstream. If you implement or consume `AgentMcpSkillsSource`, review the updated skill-resolution behavior.
 
 ## New Patterns
 
-<!-- TODO: Document any new recommended patterns from release notes -->
+Additive members new in 1.11.1 (source-compatible — no action required to upgrade):
+
+- `AgentSkillsProviderBuilder.UseSource(...)` — configure the skills source via the builder.
+- `ReadSkillResourceToolName` / `RunSkillScriptToolName` — public tool-name constants for the skill resource/script tools, useful when filtering or referencing those tools by name.
 
 ## Obsolete APIs Added
 
-<!-- TODO: Use MafRunCs0618Hunt against a project pinned to 1.11.1 and document findings -->
+No APIs were marked `[Obsolete]` in 1.11.1 (no CS0618 deprecations). The two breaking items above are hard **removals** (CS0246), tracked in the obsolete-API registry as `MAF111-BUILDER-001` and `MAF111-OPTIONS-001`. Running `MafRunCs0618Hunt` against a project pinned to 1.11.1 should report no CS0618 — but expect CS0246 on any remaining `UseScriptApproval` / `ScriptApproval` references.
 
 ## Known Misalignments
 
-<!-- TODO: Document any discrepancies between official docs and assembly behavior -->
+The `dotnet-inspect` public-surface diff did **not** surface the "approval by default" change (#6729) — it reported only the removed members, because the change is behavioral, not signature-level. The behavioral shift is documented only in the upstream release notes. Lesson: the surface diff alone undercounts breaking changes; cross-check the release notes for behavioral breaks.
 
 <!-- AUTO-GENERATED END -->
 
