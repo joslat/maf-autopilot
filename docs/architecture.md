@@ -113,7 +113,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 **Output:** an xUnit test assembly (not packed; never published).
 **Dependencies:** `ProjectReference` to `maf-autopilot`; `xunit` 2.9.2; `Microsoft.NET.Test.Sdk` 17.12.0; `Microsoft.CodeAnalysis.CSharp` 4.11.0 (for the compile-validation tests). Versions pinned centrally.
 
-**Current size:** 463 tests as of Phase S. Coverage spans every MCP tool (entry + pure-core), every scaffolder template, security regression pins, registry haystack search, and the auto-update additivity guarantees.
+**Current size:** 978 tests. Coverage spans every MCP tool (entry + pure-core), every scaffolder template, security regression pins, registry haystack search, the doc↔code drift guards, and the auto-update additivity guarantees.
 
 ### `maf-autopilot.Analyzers.Tests`
 
@@ -122,7 +122,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 **Output:** an xUnit test assembly.
 **Dependencies:** `ProjectReference` to `maf-autopilot.Analyzers`; `xunit` 2.9.2; `Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit` 1.1.2. Versions pinned centrally.
 
-**Current size:** 11 tests — one happy-path + one negative case per rule, plus rule-metadata validation.
+**Current size:** 15 tests — one happy-path + one negative case per rule, plus rule-metadata validation.
 
 ---
 
