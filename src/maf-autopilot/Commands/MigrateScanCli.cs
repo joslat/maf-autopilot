@@ -33,9 +33,15 @@ internal static class MigrateScanCli
             // the path (`migrate-scan --source sk C:/repo` must keep C:/repo as path).
             // Read then advance `i` as separate statements so the token-consumption is visible
             // (vs. an `args[++i]` that mutates the loop counter from inside the subscript).
+            // Only consume the next token when it is a VALUE, not another flag — otherwise
+            // `migrate-scan --source --json` would eat `--json` as the source and never enable it.
             if (a == "--source")
             {
-                if (i + 1 < args.Length) { source = args[i + 1]; i++; }
+                if (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
+                {
+                    source = args[i + 1];
+                    i++;
+                }
                 continue;
             }
             // Equals form: `--source=sk`.
