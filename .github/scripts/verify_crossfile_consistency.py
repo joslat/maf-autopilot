@@ -40,7 +40,6 @@ MAF_VERSION_FILE = ROOT / ".maf-version"
 COMPAT_MATRIX = ROOT / "docs" / "compatibility-matrix.md"
 GUIDES_DIR = ROOT / "guides"
 REGISTRY = ROOT / ".github" / "skills" / "maf-obsolete-api-registry" / "registry.yaml"
-GUIDE_1_3_0 = GUIDES_DIR / "maf-1.3.0-migration-guide.md"
 MAX_LAST_UPDATED_AGE_DAYS = 30
 
 # A "version-stem" row in compat-matrix table starts with: | **X.Y.Z** | ...
@@ -161,14 +160,15 @@ def check_invented_guide_sections(
     except yaml.YAMLError as exc:
         return [f"registry.yaml is not valid YAML: {exc}"]
 
-    current_digits = current_version.replace(".", "")
-    current_id_prefix = f"MAF{current_digits}-"
-
     findings: list[str] = []
     scoped_count = 0
     for entry in data.get("entries", []):
         eid = entry.get("id", "<missing id>")
-        if not eid.startswith(current_id_prefix):
+        # Scope by the version_introduced FIELD, not an id-prefix guess: the
+        # extractor caps the id digit-segment at 3 chars (1.11.1 -> "MAF111-",
+        # NOT "MAF1111-"), so a prefix built from the full dotted version never
+        # matched for 1.10+/1.11+ and this check was silently dead.
+        if str(entry.get("version_introduced", "")).strip() != current_version:
             continue
         scoped_count += 1
         gs = entry.get("guide_section")
@@ -193,8 +193,79 @@ def check_invented_guide_sections(
                 f"NEVER invent section numbers."
             )
     print(
-        f"Validated guide_section on {scoped_count} entries with id prefix "
-        f"{current_id_prefix} (current release cycle scope)."
+        f"Validated guide_section on {scoped_count} entries introduced in "
+        f"{current_version} (current release cycle scope)."
+    )
+    return findings
+
+
+_DRAFT_PLACEHOLDER = re.compile(r'^\s*(TODO|TBD|XXX)\b', re.IGNORECASE)
+_TODO_EXAMPLE_RE = re.compile(r'(?m)^\s*//\s*TODO\b', re.IGNORECASE)
+
+
+def _looks_unfilled(value) -> bool:
+    if value is None:
+        return True
+    s = str(value).strip()
+    return s == "" or bool(_DRAFT_PLACEHOLDER.match(s))
+
+
+def _example_unfilled(value) -> bool:
+    """True if an example_* field is missing, blank, or still the extractor's
+    `// TODO …` stub — any of which leaves a current-release draft incomplete."""
+    if value is None:
+        return True
+    s = str(value).strip()
+    return s == "" or bool(_TODO_EXAMPLE_RE.search(s))
+
+
+def check_unfilled_current_drafts(registry_path: Path, current_version: str) -> list[str]:
+    """The "keep breaking red" gate for the green-on-arrival watcher.
+
+    A release the watcher classifies as ADDITIVE produces no registry entries,
+    so this finds nothing and the scaffold PR is green. A BREAKING release
+    produces draft entries (member removals / signature changes) whose migration
+    text a human must write; until they do, the entry's core fields stay TODO
+    placeholders and this gate fails the PR.
+
+    Scoped to entries whose `version_introduced` equals the current release
+    (`.maf-version`) so the intentional historical TODO drafts from older cycles
+    never block an unrelated PR."""
+    if not registry_path.is_file():
+        return [f"{registry_path} not found."]
+    try:
+        data = yaml.safe_load(registry_path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        return [f"registry.yaml is not valid YAML: {exc}"]
+
+    findings: list[str] = []
+    checked = 0
+    for entry in data.get("entries", []):
+        if str(entry.get("version_introduced", "")).strip() != current_version:
+            continue
+        checked += 1
+        # Fire if ANY core field is still a placeholder. An OR (not the old
+        # all-three-AND, which missed SignatureChanged entries whose signatures
+        # the extractor auto-fills) so a current-release entry can't merge with a
+        # TODO/blank signature, prose, OR example stub.
+        if (
+            _looks_unfilled(entry.get("obsolete_signature"))
+            or _looks_unfilled(entry.get("replacement_signature"))
+            or _looks_unfilled(entry.get("fix_description"))
+            or _example_unfilled(entry.get("example_before"))
+            or _example_unfilled(entry.get("example_after"))
+        ):
+            findings.append(
+                f"{entry.get('id', '<missing id>')}: registry draft for the current "
+                f"release ({current_version}) is unfilled — a breaking release's entries "
+                f"need a human-written migration. Fill obsolete_signature / "
+                f"replacement_signature / fix_description and the before/after examples "
+                f"(or, if this release is genuinely additive, the watcher should not have "
+                f"created the entry)."
+            )
+    print(
+        f"Checked {checked} registry entr(y/ies) introduced in {current_version} "
+        f"for unfilled drafts (keep-breaking-red gate)."
     )
     return findings
 
@@ -305,6 +376,10 @@ def main() -> int:
             REGISTRY, valid_sections, current
         )
         findings.extend(section_findings)
+
+    # Keep-breaking-red gate — unfilled drafts for the CURRENT release fail the
+    # PR (an additive release creates none, so it stays green).
+    findings.extend(check_unfilled_current_drafts(REGISTRY, current))
 
     if findings:
         print("")

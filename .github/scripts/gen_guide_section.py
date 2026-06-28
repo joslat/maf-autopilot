@@ -32,6 +32,7 @@ from pathlib import Path
 # framing so a downstream Coding Agent or human reader cannot be redirected.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from llm_fencing import fence  # noqa: E402
+from release_classification import classify, combined_diff_text, safe_members  # noqa: E402
 
 old = os.environ.get('OLD_VERSION', 'unknown')
 new = os.environ.get('NEW_VERSION', 'unknown')
@@ -114,21 +115,71 @@ def build_chain_banner(old_version: str, new_version: str) -> str:
     )
 
 
-diff_lines = read_file('diff-core.txt', '(diff not available)').splitlines()
-# Trim to a reasonable length — full diffs can be huge.
-raw_diff = '\n'.join(diff_lines[:120])
+# Display BOTH package diffs (core + workflows) — the verdict below is computed
+# from this same combined text, so the reviewer sees the full surface it weighed
+# (a Workflows-package break must not be invisible in the guide).
+raw_diff_all = combined_diff_text()
+diff_lines = (raw_diff_all or '(diff not available)').splitlines()
+# Trim to a reasonable length — full diffs can be huge. One constant drives both
+# the slice and the heading so the displayed count can't drift from reality.
+DIFF_DISPLAY_LINES = 160
+raw_diff = '\n'.join(diff_lines[:DIFF_DISPLAY_LINES])
 # Phase 2.G fixup (Finding 1) — fence the dotnet-inspect diff. The diff is the
 # sibling input to release notes — same TA-1 threat (malicious upstream NuGet
 # author can put HTML-comment-disguised payloads or stray triple-backticks in
 # a public-API XML doc or type name, which dotnet-inspect surfaces verbatim).
 # Without the fence, those flow into the AI-fill issue body alongside the
 # (already-fenced) release notes.
-diff = fence('upstream-maf-diff-core', raw_diff, max_bytes=32 * 1024)
+diff = fence('upstream-maf-diff', raw_diff, max_bytes=32 * 1024)
 raw_notes = read_file('release-notes.txt', '(no release notes available)').strip()
 # Phase 2.2 — fence the release notes. 32 KB cap is generous: release notes
 # typically run a few KB; anything over 32 KB is almost certainly an attempt
 # to flood the guide / downstream AI-fill context.
 notes = fence('upstream-maf-release-notes', raw_notes, max_bytes=32 * 1024)
+
+# Green-on-arrival verdict: an additive release (no `.NET [BREAKING]` note AND no
+# removed members) gets its analysis sections filled deterministically so the
+# scaffold PR comes up green; a breaking release keeps TODO stubs — the human
+# writes the migration, and the registry gate holds the PR red until they do.
+verdict = classify(raw_notes, raw_diff_all)
+
+
+if verdict['additive']:
+    safe_added, dropped = safe_members(verdict['added'])
+    if safe_added:
+        patterns = '\n'.join(f"- `{m}`" for m in safe_added)
+        if dropped:
+            patterns += (f"\n- _({dropped} further added member(s) omitted — names failed the "
+                         f"identifier safety check; see the fenced diff above.)_")
+    elif dropped:
+        patterns = (f"_({dropped} added member(s) detected but omitted — names failed the "
+                    f"identifier safety check; see the fenced diff above.)_")
+    else:
+        patterns = "_No new public members surfaced in the diff._"
+    sections = (
+        f"## Breaking Changes (requires human verification)\n\n"
+        f"None — this is an **additive** release: no `.NET … [BREAKING]` entry in the release "
+        f"notes and no removed members in the diff. All public-surface changes are additions "
+        f"(see New Patterns).\n\n"
+        f"## New Patterns\n\n"
+        f"Additive members new in {new} (source-compatible — no action required to upgrade):\n\n"
+        f"{patterns}\n\n"
+        f"## Obsolete APIs Added\n\n"
+        f"None — no `[Obsolete]` deprecations or removed members detected in the diff for {new}.\n\n"
+        f"## Known Misalignments\n\n"
+        f"None known for {new}.\n\n"
+    )
+else:
+    sections = (
+        f"## Breaking Changes (requires human verification)\n\n"
+        f"<!-- TODO: Review the diff above and list breaking changes here -->\n\n"
+        f"## New Patterns\n\n"
+        f"<!-- TODO: Document any new recommended patterns from release notes -->\n\n"
+        f"## Obsolete APIs Added\n\n"
+        f"<!-- TODO: Use MafRunCs0618Hunt against a project pinned to {new} and document findings -->\n\n"
+        f"## Known Misalignments\n\n"
+        f"<!-- TODO: Document any discrepancies between official docs and assembly behavior -->\n\n"
+    )
 
 AUTO_START = '<!-- AUTO-GENERATED START — anything between AUTO-GENERATED START and AUTO-GENERATED END is overwritten on re-run -->'
 AUTO_END = '<!-- AUTO-GENERATED END -->'
@@ -145,18 +196,11 @@ auto_body = (
     f"## Versions\n\n"
     f"- Migrating from: `{old}`\n"
     f"- Migrating to: `{new}`\n\n"
-    f"## Diff Summary (first 120 lines of `dotnet-inspect` output)\n\n"
+    f"## Diff Summary (first {DIFF_DISPLAY_LINES} lines of `dotnet-inspect` output)\n\n"
     f"{diff}\n\n"
     f"## Release Notes Extract\n\n"
     f"{notes}\n\n"
-    f"## Breaking Changes (requires human verification)\n\n"
-    f"<!-- TODO: Review the diff above and list breaking changes here -->\n\n"
-    f"## New Patterns\n\n"
-    f"<!-- TODO: Document any new recommended patterns from release notes -->\n\n"
-    f"## Obsolete APIs Added\n\n"
-    f"<!-- TODO: Use MafRunCs0618Hunt against a project pinned to {new} and document findings -->\n\n"
-    f"## Known Misalignments\n\n"
-    f"<!-- TODO: Document any discrepancies between official docs and assembly behavior -->\n\n"
+    f"{sections}"
     f"{AUTO_END}\n\n"
     f"{HUMAN_HEADING}\n\n"
     f"<!-- Add notes, corrections, and refinements below this heading.\n"
