@@ -166,19 +166,35 @@ This list of changes was [auto generated](https://msdata.visualstudio.com/Vienna
 
 ## Breaking Changes (requires human verification)
 
-<!-- TODO: Review the diff above and list breaking changes here -->
+- `AgentFileStore.SearchFilesAsync`, `FileSystemAgentFileStore.SearchFilesAsync`, and `InMemoryAgentFileStore.SearchFilesAsync` now include a new optional `bool recursive = false` parameter inserted before the existing `CancellationToken` parameter.
+- `AgentInlineSkill` constructor overloads now include a new trailing optional `argumentMarshaler` delegate parameter.
+- `TodoProvider.GetAllTodosAsync` now includes a trailing optional `CancellationToken`.
+- `TodoProvider.GetRemainingTodosAsync` now includes a trailing optional `CancellationToken`.
+- Only the `SearchFilesAsync` change is **breaking**: the inserted `recursive` parameter shifts a positional `cancellationToken` onto it, so positional call sites must be updated (pass `recursive: false` to preserve the prior non-recursive behaviour, and name `cancellationToken:`). The `AgentInlineSkill` and `TodoProvider` changes add **trailing optional** parameters and are **source-compatible** — existing call sites keep compiling unchanged.
 
 ## New Patterns
 
-<!-- TODO: Document any new recommended patterns from release notes -->
+- Prefer explicit opt-in recursion for file search call sites by passing `recursive: true` only when recursive traversal is required.
+- For custom `AgentInlineSkill` argument handling, use the new `argumentMarshaler` parameter when JSON argument projection must be customized.
+- Thread cancellation through todo provider calls (`GetAllTodosAsync`, `GetRemainingTodosAsync`) so loops and evaluators can be cancelled cleanly.
+- New loop/evaluation surfaces were added (`LoopAgent`, `LoopEvaluator`, `TodoCompletionLoopEvaluator`, `AIJudgeLoopEvaluator`) for iterative agent flows with explicit completion checks.
 
 ## Obsolete APIs Added
 
-<!-- TODO: Use MafRunCs0618Hunt against a project pinned to 1.11.0 and document findings -->
+- Registry candidates identified for 1.11.0 signature migration checks:
+  - `AgentFileStore.SearchFilesAsync(...)` (`recursive` parameter added)
+  - `FileSystemAgentFileStore.SearchFilesAsync(...)` (`recursive` parameter added)
+  - `InMemoryAgentFileStore.SearchFilesAsync(...)` (`recursive` parameter added)
+  - `AgentInlineSkill..ctor(...)` overloads (`argumentMarshaler` parameter added)
+  - `TodoProvider.GetAllTodosAsync(...)` (`CancellationToken` parameter added)
+  - `TodoProvider.GetRemainingTodosAsync(...)` (`CancellationToken` parameter added)
+- Expected migration action: update call sites to the new signatures and pass explicit named arguments where needed to avoid accidental argument shifting.
 
 ## Known Misalignments
 
-<!-- TODO: Document any discrepancies between official docs and assembly behavior -->
+- `dotnet-inspect diff` reports signature changes for the members above; confirm compiler diagnostics in your solution (`CS0618`, `CS1503`, or overload ambiguity) because diagnostic shape depends on local call-site binding.
+- `Azure.AI.OpenAI` remains a consumer-selected dependency through `IChatClient`; do not treat it as an MAF-pinned package constraint for 1.11.0 migrations.
+- If no section-numbered migration parallel exists for a registry entry, use `guide_section: "N/A"` to satisfy cross-file registry validation.
 
 <!-- AUTO-GENERATED END -->
 

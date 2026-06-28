@@ -63,6 +63,20 @@ public sealed class CompatibilityTool
     internal static readonly IReadOnlyDictionary<string, string> Matrix =
         new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
+            ["1.11.0"] = """
+                ## MAF 1.11.0 Compatibility
+
+                | Dependency                                | Version          | Notes |
+                |-------------------------------------------|------------------|-------|
+                | .NET runtime                              | `>= 8.0`         | net8.0, net9.0, net10.0 TFMs all supported |
+                | Microsoft.Extensions.AI                   | `>= 10.6.0`      | |
+                | Azure.AI.OpenAI                           | _not pinned by MAF_ | BYO via `IChatClient` — consumer chooses the backing implementation |
+                | Microsoft.Agents.AI.Workflows.Generators  | `1.11.0`         | Source-gen package |
+                | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
+
+                Breaking (positional call sites only): `SearchFilesAsync` inserts a `recursive` parameter before `cancellationToken` on `AgentFileStore` / `FileSystemAgentFileStore` / `InMemoryAgentFileStore`. Additive (trailing optional params, source-compatible): `AgentInlineSkill` constructors add `argumentMarshaler`; `TodoProvider` `GetAllTodosAsync` / `GetRemainingTodosAsync` add a trailing `CancellationToken`.
+                """,
+
             ["1.10.0"] = """
                 ## MAF 1.10.0 Compatibility
 
