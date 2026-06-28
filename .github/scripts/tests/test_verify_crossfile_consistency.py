@@ -85,8 +85,25 @@ entries:
     obsolete_signature: Foo.OldMethod()
     replacement_signature: Foo.NewMethod()
     fix_description: Rename OldMethod to NewMethod; the signature is unchanged.
+    example_before: |
+      foo.OldMethod();
+    example_after: |
+      foo.NewMethod();
 """)
     assert v.check_unfilled_current_drafts(reg, "1.12.0") == []
+
+
+def test_missing_examples_is_flagged(tmp_path):
+    # fix_description filled, but no example_before/after at all -> incomplete.
+    reg = _write_registry(tmp_path, """
+entries:
+  - id: MAF120-FOO-001
+    version_introduced: "1.12.0"
+    obsolete_signature: Foo.Bar()
+    replacement_signature: Foo.Baz()
+    fix_description: Rename Bar to Baz everywhere; same semantics.
+""")
+    assert len(v.check_unfilled_current_drafts(reg, "1.12.0")) == 1
 
 
 def test_signature_change_draft_with_filled_sigs_is_flagged(tmp_path):

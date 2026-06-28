@@ -210,9 +210,13 @@ def _looks_unfilled(value) -> bool:
     return s == "" or bool(_DRAFT_PLACEHOLDER.match(s))
 
 
-def _is_todo_example(value) -> bool:
-    """True if an example_* field is still the extractor's `// TODO …` stub."""
-    return value is not None and bool(_TODO_EXAMPLE_RE.search(str(value)))
+def _example_unfilled(value) -> bool:
+    """True if an example_* field is missing, blank, or still the extractor's
+    `// TODO …` stub — any of which leaves a current-release draft incomplete."""
+    if value is None:
+        return True
+    s = str(value).strip()
+    return s == "" or bool(_TODO_EXAMPLE_RE.search(s))
 
 
 def check_unfilled_current_drafts(registry_path: Path, current_version: str) -> list[str]:
@@ -246,8 +250,8 @@ def check_unfilled_current_drafts(registry_path: Path, current_version: str) -> 
         # are still the extractor's TODO placeholders.
         if (
             _looks_unfilled(entry.get("fix_description"))
-            or _is_todo_example(entry.get("example_before"))
-            or _is_todo_example(entry.get("example_after"))
+            or _example_unfilled(entry.get("example_before"))
+            or _example_unfilled(entry.get("example_after"))
         ):
             findings.append(
                 f"{entry.get('id', '<missing id>')}: registry draft for the current "

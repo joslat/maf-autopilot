@@ -89,13 +89,17 @@ def build_notes(verdict: dict) -> str:
 
 verdict = classify(read_sibling('release-notes.txt'), combined_diff_text())
 
-# Carry the transitive pins forward from the current top row; fall back to
-# conservative defaults if the table can't be parsed.
+# Carry the transitive pins forward from the current top row. Fail-closed: if the
+# table format changed and we can't parse it, refuse to GUESS pins — publishing a
+# wrong dependency floor (and syncing it into CompatibilityTool.cs) is worse than
+# failing the watcher run loudly.
 cells = top_row_cells(content)
-if cells:
-    meai, dotnet, azure = cells[1], cells[2], cells[3]
-else:
-    meai, dotnet, azure = '`≥ 8.0`', '`≥ 8.0`', '_(not pinned by MAF — BYO via IChatClient)_'
+if not cells:
+    print("::error::update_compat_matrix.py could not parse the top matrix row to carry "
+          "pins forward — the table format may have changed. Refusing to guess pins; "
+          "fix the doc/parser and re-run.")
+    sys.exit(1)
+meai, dotnet, azure = cells[1], cells[2], cells[3]
 
 new_row = (
     f"| **{new}** | {meai} | {dotnet} | {azure} | `{new}` | {build_notes(verdict)} |"
