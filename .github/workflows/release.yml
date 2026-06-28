@@ -154,7 +154,7 @@ jobs:
         # SHA-pinned to softprops/action-gh-release v3.0.0 per supply-chain hardening:
         # a major-tag pin would let an upstream maintainer's compromised account push
         # arbitrary code into our release workflow with NUGET_API_KEY in scope.
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b  # v3.0.1
         with:
           files: src/dist/*.nupkg
           generate_release_notes: true
