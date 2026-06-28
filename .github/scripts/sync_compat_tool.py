@@ -25,6 +25,16 @@ TOOL = Path('src/maf-autopilot/Tools/CompatibilityTool.cs')
 MATRIX = Path('docs/compatibility-matrix.md')
 
 
+def _neutralize(cell: str) -> str:
+    """A cell must never break out of the C# raw-string literal it's written
+    into. Insert a zero-width space inside any triple-quote run (mirrors
+    RegistryService.NeutralizeFences) and drop CR/LF so a cell stays one line.
+    Defense-in-depth: build_notes already restricts embedded upstream content to
+    identifier-allowlisted member names, but the matrix file could also be
+    hand-edited, so we never trust the cell verbatim."""
+    return (cell or '').replace('"""', '"​"​"').replace('\r', ' ').replace('\n', ' ')
+
+
 def matrix_row_cells(version: str):
     """Parse the `| **version** | … |` row from the matrix doc into cells."""
     text = MATRIX.read_text(encoding='utf-8')
@@ -50,7 +60,7 @@ def main() -> int:
     if not cells:
         print(f"No matrix row found for {new}; cannot sync code matrix.", file=sys.stderr)
         return 1
-    _version, meai, dotnet, azure, generators, notes = cells[:6]
+    _version, meai, dotnet, azure, generators, notes = (_neutralize(c) for c in cells[:6])
 
     # 16-space indentation matches the existing entries; the closing `"""` sits
     # at the same indent so the C# raw-string literal strips it uniformly.

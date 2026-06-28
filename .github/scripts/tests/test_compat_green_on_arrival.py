@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 SCRIPTS = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SCRIPTS))
 
 MATRIX_SEED = """# MAF Compatibility Matrix
 
@@ -141,3 +142,24 @@ def test_pipeline_is_idempotent(ws):
     assert (ws / "docs" / "compatibility-matrix.md").read_text(encoding="utf-8") == first_matrix
     assert (ws / "src" / "maf-autopilot" / "Tools" / "CompatibilityTool.cs").read_text(encoding="utf-8") == first_tool
     assert first_matrix.count("| **1.12.0** |") == 1
+
+
+def test_untrusted_member_name_with_quotes_is_dropped(ws):
+    # A crafted "member name" carrying a C# raw-string breakout must never reach
+    # the matrix note OR the generated CompatibilityTool.cs source.
+    notes = "## Changes:\n* x .NET: additive only\n"
+    diff = "- Member 'GoodName' was added\n- Member 'Evil\"\"\"; class Pwn {}' was added\n"
+    _seed_inputs(ws, notes, diff)
+    _run("update_compat_matrix.py", ws, "1.11.0", "1.12.0")
+    _run("sync_compat_tool.py", ws, "1.11.0", "1.12.0")
+    matrix = (ws / "docs" / "compatibility-matrix.md").read_text(encoding="utf-8")
+    tool = (ws / "src" / "maf-autopilot" / "Tools" / "CompatibilityTool.cs").read_text(encoding="utf-8")
+    assert "GoodName" in matrix                       # the safe member survives
+    assert "Pwn" not in matrix and "Pwn" not in tool  # the payload is dropped
+
+
+def test_neutralize_defangs_triple_quote_and_newlines():
+    import sync_compat_tool as s  # safe: main() is __main__-guarded
+    out = s._neutralize('before """ after')
+    assert '"""' not in out
+    assert s._neutralize('x\r\ny') == 'x  y'

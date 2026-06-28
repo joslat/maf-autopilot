@@ -53,3 +53,62 @@ def test_top_row_line_returns_first_version_row():
 def test_top_row_line_none_when_no_rows():
     assert v.top_row_line("no version rows here") is None
     assert v.unreplaced_placeholders(None) == []
+
+
+# --- keep-breaking-red gate: unfilled drafts for the current release ---------
+
+def _write_registry(tmp_path, body: str) -> Path:
+    reg = tmp_path / "registry.yaml"
+    reg.write_text(body, encoding="utf-8")
+    return reg
+
+
+def test_unfilled_current_draft_is_flagged(tmp_path):
+    reg = _write_registry(tmp_path, """
+entries:
+  - id: MAF120-FOO-001
+    version_introduced: "1.12.0"
+    obsolete_signature: TODO
+    replacement_signature: TODO
+    fix_description: TODO — review the diff entry below
+""")
+    findings = v.check_unfilled_current_drafts(reg, "1.12.0")
+    assert len(findings) == 1
+    assert "MAF120-FOO-001" in findings[0]
+
+
+def test_filled_current_entry_passes(tmp_path):
+    reg = _write_registry(tmp_path, """
+entries:
+  - id: MAF120-FOO-001
+    version_introduced: "1.12.0"
+    obsolete_signature: Foo.OldMethod()
+    replacement_signature: Foo.NewMethod()
+    fix_description: Rename OldMethod to NewMethod; the signature is unchanged.
+""")
+    assert v.check_unfilled_current_drafts(reg, "1.12.0") == []
+
+
+def test_old_cycle_unfilled_draft_is_ignored(tmp_path):
+    # An unfilled draft from an OLDER release must not block a newer PR.
+    reg = _write_registry(tmp_path, """
+entries:
+  - id: MAF150-BAR-001
+    version_introduced: "1.5.0"
+    obsolete_signature: TODO
+    replacement_signature: TODO
+    fix_description: TODO
+""")
+    assert v.check_unfilled_current_drafts(reg, "1.12.0") == []
+
+
+def test_additive_release_no_entries_passes(tmp_path):
+    assert v.check_unfilled_current_drafts(_write_registry(tmp_path, "entries: []\n"), "1.12.0") == []
+
+
+def test_looks_unfilled_classifier():
+    assert v._looks_unfilled(None)
+    assert v._looks_unfilled("")
+    assert v._looks_unfilled("TODO")
+    assert v._looks_unfilled("TODO — fill me")
+    assert not v._looks_unfilled("Foo.Bar()")

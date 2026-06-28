@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from release_classification import classify  # noqa: E402
+from release_classification import classify, safe_members  # noqa: E402
 
 old = os.environ.get('OLD_VERSION', 'unknown')
 new = os.environ.get('NEW_VERSION', 'unknown')
@@ -64,30 +64,26 @@ def top_row_cells(text: str):
 
 
 def build_notes(verdict: dict) -> str:
+    # Only identifier-allowlisted member names are embedded — NO freeform upstream
+    # text (release-note lines), because this cell flows into CompatibilityTool.cs
+    # source via sync_compat_tool.py and must not carry an injection payload.
     if verdict['additive']:
-        added = verdict['added']
+        added, _ = safe_members(verdict['added'])
         if added:
             shown = ', '.join(f'`{m}`' for m in added[:8])
             more = '' if len(added) <= 8 else f' (+{len(added) - 8} more)'
-            return (
-                f"Additive release — no `.NET … [BREAKING]` changes and no removed "
-                f"members. New members: {shown}{more} (source-compatible). "
-                f"Transitive pins carried from {old}."
-            )
+            tail = f" New members: {shown}{more}."
+        else:
+            tail = ''
         return (
-            f"Additive release — no `.NET … [BREAKING]` changes and no removed "
-            f"members (source-compatible). Transitive pins carried from {old}."
+            f"Additive release — no `.NET … [BREAKING]` changes and no removed members "
+            f"(source-compatible).{tail} Transitive pins carried from {old}."
         )
-    # Breaking — human review required. Surface the .NET breaking note(s) + removals.
-    bits = []
-    if verdict['breaking_notes']:
-        bits.append('; '.join(n.lstrip('* ').strip() for n in verdict['breaking_notes'][:3]))
-    if verdict['removed']:
-        bits.append('removed: ' + ', '.join(f'`{m}`' for m in verdict['removed'][:8]))
-    summary = ' — '.join(bits) if bits else 'see release notes'
+    removed, _ = safe_members(verdict['removed'])
+    rem = (' Removed: ' + ', '.join(f'`{m}`' for m in removed[:8]) + '.') if removed else ''
     return (
-        f"**Breaking** — review required: {summary}. "
-        f"See `guides/maf-{new}-migration-guide.md`. Transitive pins carried from {old} (verify)."
+        f"**Breaking** — review required.{rem} See `guides/maf-{new}-migration-guide.md` "
+        f"and the registry entries. Transitive pins carried from {old} (verify)."
     )
 
 

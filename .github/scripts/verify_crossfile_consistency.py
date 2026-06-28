@@ -199,6 +199,60 @@ def check_invented_guide_sections(
     return findings
 
 
+_DRAFT_PLACEHOLDER = re.compile(r'^\s*(TODO|TBD|XXX)\b', re.IGNORECASE)
+
+
+def _looks_unfilled(value) -> bool:
+    if value is None:
+        return True
+    s = str(value).strip()
+    return s == "" or bool(_DRAFT_PLACEHOLDER.match(s))
+
+
+def check_unfilled_current_drafts(registry_path: Path, current_version: str) -> list[str]:
+    """The "keep breaking red" gate for the green-on-arrival watcher.
+
+    A release the watcher classifies as ADDITIVE produces no registry entries,
+    so this finds nothing and the scaffold PR is green. A BREAKING release
+    produces draft entries (member removals / signature changes) whose migration
+    text a human must write; until they do, the entry's core fields stay TODO
+    placeholders and this gate fails the PR.
+
+    Scoped to entries whose `version_introduced` equals the current release
+    (`.maf-version`) so the intentional historical TODO drafts from older cycles
+    never block an unrelated PR."""
+    if not registry_path.is_file():
+        return [f"{registry_path} not found."]
+    try:
+        data = yaml.safe_load(registry_path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        return [f"registry.yaml is not valid YAML: {exc}"]
+
+    findings: list[str] = []
+    checked = 0
+    for entry in data.get("entries", []):
+        if str(entry.get("version_introduced", "")).strip() != current_version:
+            continue
+        checked += 1
+        if (
+            _looks_unfilled(entry.get("obsolete_signature"))
+            and _looks_unfilled(entry.get("replacement_signature"))
+            and _looks_unfilled(entry.get("fix_description"))
+        ):
+            findings.append(
+                f"{entry.get('id', '<missing id>')}: registry draft for the current "
+                f"release ({current_version}) is unfilled — a breaking release's entries "
+                f"need a human-written migration. Fill obsolete_signature / "
+                f"replacement_signature / fix_description / examples (or, if this release "
+                f"is genuinely additive, the watcher should not have created the entry)."
+            )
+    print(
+        f"Checked {checked} registry entr(y/ies) introduced in {current_version} "
+        f"for unfilled drafts (keep-breaking-red gate)."
+    )
+    return findings
+
+
 def main() -> int:
     findings: list[str] = []
 
@@ -305,6 +359,10 @@ def main() -> int:
             REGISTRY, valid_sections, current
         )
         findings.extend(section_findings)
+
+    # Keep-breaking-red gate — unfilled drafts for the CURRENT release fail the
+    # PR (an additive release creates none, so it stays green).
+    findings.extend(check_unfilled_current_drafts(REGISTRY, current))
 
     if findings:
         print("")

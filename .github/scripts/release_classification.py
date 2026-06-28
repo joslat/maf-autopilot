@@ -36,6 +36,21 @@ _ADDED_MEMBER_RE = re.compile(r"(?:Member|Type)\s+'([^']+)'\s+was added")
 _REMOVED_MEMBER_RE = re.compile(r"(?:Member|Type)\s+'([^']+)'\s+was removed")
 
 
+# A member/type name is only safe to echo into generated SOURCE or docs if it is
+# a plain C# identifier. Names come from untrusted upstream (TA-1: a malicious
+# NuGet author can craft a "member name" carrying markdown / HTML comments / a
+# `\"\"\"` that breaks out of a C# raw-string literal). Anything that isn't a bare
+# identifier is dropped, never spliced into output.
+_SAFE_MEMBER_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+
+def safe_members(names) -> tuple[list[str], int]:
+    """Filter member names to plain C# identifiers. Returns (safe, dropped_count)."""
+    names = list(names)
+    safe = [n for n in names if n and _SAFE_MEMBER_RE.match(n)]
+    return safe, len(names) - len(safe)
+
+
 def dotnet_breaking_lines(release_notes: str) -> list[str]:
     """Return the trimmed `.NET … [BREAKING]` lines from the release notes."""
     if not release_notes:
