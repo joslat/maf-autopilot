@@ -1,6 +1,6 @@
 # MAF Compatibility Matrix
 
-<!-- auto-updated-by: maf-release-watcher | last-updated: 2026-06-28 -->
+<!-- auto-updated-by: maf-release-watcher | last-updated: 2026-06-25 -->
 
 <!--
   Note on the Azure.AI.OpenAI column: MAF doesn't pin Azure.AI.OpenAI directly.
@@ -21,7 +21,7 @@
 
 | MAF Version | Microsoft.Extensions.AI | .NET | Azure.AI.OpenAI | Generators Package | Notes |
 |-------------|------------------------|------|-----------------|--------------------|-------|
-| **1.11.0** | `≥ 10.6.0` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.11.0` | Breaking: `SearchFilesAsync` adds `recursive` parameter on `AgentFileStore` / `FileSystemAgentFileStore` / `InMemoryAgentFileStore`; `AgentInlineSkill` constructors add `argumentMarshaler`; `TodoProvider` `GetAllTodosAsync` / `GetRemainingTodosAsync` add `CancellationToken`. **1.11.1** is a patch over 1.11.0 — identical dependency compatibility and API surface, no separate row (it is the latest tracked version, see `.maf-version`). |
+| **1.11.0** | `≥ 10.6.0` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.11.0` | Breaking: `SearchFilesAsync` adds `recursive` parameter on `AgentFileStore` / `FileSystemAgentFileStore` / `InMemoryAgentFileStore`; `AgentInlineSkill` constructors add `argumentMarshaler`; `TodoProvider` `GetAllTodosAsync` / `GetRemainingTodosAsync` add `CancellationToken`. |
 | **1.10.0** | `≥ 10.6.0` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.10.0` | Breaking: skill `Content`/`Resources`/`Scripts` properties removed; `ToolApprovalAgent` constructor takes `ToolApprovalAgentOptions?` instead of `JsonSerializerOptions?`; `SubAgentsProvider` / `SubTaskInfo` / `SubTaskStatus` removed; `GroupChatWorkflowBuilder`/`MagenticWorkflowBuilder` `.WithName`/`.WithDescription` removed. |
 | **1.6.1** | `≥ 10.5.1` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.6.1` | Additive release; adds `expectedOutput` parameter to `WorkflowEvaluationExtensions.EvaluateAsync` for ground-truth evaluation. |
 | **1.5.0** | `≥ 10.5.1` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.5.0` | Additive release; new `ToolApprovalAgent`. |
@@ -66,7 +66,7 @@
 
 The `.maf-version` file at the repository root records the latest MAF version this toolkit's data covers. The `maf-release-watcher` GitHub Actions workflow compares this against the NuGet feed to detect new releases.
 
-Current tracked version: **`1.11.1`** (see `.maf-version`) — a patch over 1.11.0 with no API-surface change.
+Current tracked version: **`1.11.0`** (see `.maf-version`)
 
 ---
 
