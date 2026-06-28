@@ -18,6 +18,10 @@ import re
 import sys
 from pathlib import Path
 
+# Zero-width space, written as an explicit escape (not an invisible literal) so
+# the defanging intent is reviewable and can't be silently altered by an editor.
+_ZWS = '\u200b'
+
 # Any run of 2+ double-quotes is defanged (a single str.replace('"""', …) leaves
 # a surviving `"""` for runs of 5/8/11/…). Insert a zero-width space after every
 # quote in a run so no `"""` can survive into the C# raw-string literal.
@@ -32,12 +36,12 @@ MATRIX = Path('docs/compatibility-matrix.md')
 
 def _neutralize(cell: str) -> str:
     """A cell must never break out of the C# raw-string literal it's written
-    into. Insert a zero-width space inside any triple-quote run (mirrors
+    into. Insert a zero-width space after each quote in any run (mirrors
     RegistryService.NeutralizeFences) and drop CR/LF so a cell stays one line.
     Defense-in-depth: build_notes already restricts embedded upstream content to
     identifier-allowlisted member names, but the matrix file could also be
     hand-edited, so we never trust the cell verbatim."""
-    defanged = _QUOTE_RUN_RE.sub(lambda m: '"​' * len(m.group()), cell or '')
+    defanged = _QUOTE_RUN_RE.sub(lambda m: ('"' + _ZWS) * len(m.group()), cell or '')
     return defanged.replace('\r', ' ').replace('\n', ' ')
 
 
