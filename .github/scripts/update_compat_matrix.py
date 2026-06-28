@@ -12,7 +12,8 @@ the cross-file gate rejects, this script now fills the row DETERMINISTICALLY:
     floor; a breaking release is reviewed by a human anyway.
   * The Generators-package column is the new version.
   * The Notes cell states the additive-vs-breaking verdict from
-    release_classification (see release-notes.txt + diff-core.txt).
+    release_classification, computed from release-notes.txt + the combined
+    package diffs (diff-core.txt AND diff-workflows.txt via combined_diff_text()).
   * The "Current tracked version" line and the `last-updated:` header date are
     advanced to the new version / today, which the cross-file consistency gate
     also requires.

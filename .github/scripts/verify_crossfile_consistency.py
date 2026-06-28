@@ -244,21 +244,24 @@ def check_unfilled_current_drafts(registry_path: Path, current_version: str) -> 
         if str(entry.get("version_introduced", "")).strip() != current_version:
             continue
         checked += 1
-        # fix_description is the field a human MUST write (the extractor can
-        # auto-fill the signatures of a SignatureChanged entry, so an all-three
-        # AND would miss it). Fire if the migration prose OR the example stubs
-        # are still the extractor's TODO placeholders.
+        # Fire if ANY core field is still a placeholder. An OR (not the old
+        # all-three-AND, which missed SignatureChanged entries whose signatures
+        # the extractor auto-fills) so a current-release entry can't merge with a
+        # TODO/blank signature, prose, OR example stub.
         if (
-            _looks_unfilled(entry.get("fix_description"))
+            _looks_unfilled(entry.get("obsolete_signature"))
+            or _looks_unfilled(entry.get("replacement_signature"))
+            or _looks_unfilled(entry.get("fix_description"))
             or _example_unfilled(entry.get("example_before"))
             or _example_unfilled(entry.get("example_after"))
         ):
             findings.append(
                 f"{entry.get('id', '<missing id>')}: registry draft for the current "
                 f"release ({current_version}) is unfilled — a breaking release's entries "
-                f"need a human-written migration. Fill fix_description and the before/after "
-                f"examples (or, if this release is genuinely additive, the watcher should "
-                f"not have created the entry)."
+                f"need a human-written migration. Fill obsolete_signature / "
+                f"replacement_signature / fix_description and the before/after examples "
+                f"(or, if this release is genuinely additive, the watcher should not have "
+                f"created the entry)."
             )
     print(
         f"Checked {checked} registry entr(y/ies) introduced in {current_version} "

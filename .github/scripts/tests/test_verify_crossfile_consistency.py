@@ -106,6 +106,23 @@ entries:
     assert len(v.check_unfilled_current_drafts(reg, "1.12.0")) == 1
 
 
+def test_unfilled_signature_is_flagged(tmp_path):
+    # Prose + examples filled, but a signature is still TODO -> incomplete draft.
+    reg = _write_registry(tmp_path, """
+entries:
+  - id: MAF120-FOO-001
+    version_introduced: "1.12.0"
+    obsolete_signature: TODO
+    replacement_signature: Foo.Baz()
+    fix_description: Rename Bar to Baz everywhere; same semantics.
+    example_before: |
+      foo.Bar();
+    example_after: |
+      foo.Baz();
+""")
+    assert len(v.check_unfilled_current_drafts(reg, "1.12.0")) == 1
+
+
 def test_signature_change_draft_with_filled_sigs_is_flagged(tmp_path):
     # The extractor auto-fills BOTH signatures for a SignatureChanged entry, so an
     # all-three-AND gate would miss it. The strengthened gate fires on the still-
