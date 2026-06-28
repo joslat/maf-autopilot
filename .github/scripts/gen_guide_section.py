@@ -120,8 +120,10 @@ def build_chain_banner(old_version: str, new_version: str) -> str:
 # (a Workflows-package break must not be invisible in the guide).
 raw_diff_all = combined_diff_text()
 diff_lines = (raw_diff_all or '(diff not available)').splitlines()
-# Trim to a reasonable length — full diffs can be huge.
-raw_diff = '\n'.join(diff_lines[:160])
+# Trim to a reasonable length — full diffs can be huge. One constant drives both
+# the slice and the heading so the displayed count can't drift from reality.
+DIFF_DISPLAY_LINES = 160
+raw_diff = '\n'.join(diff_lines[:DIFF_DISPLAY_LINES])
 # Phase 2.G fixup (Finding 1) — fence the dotnet-inspect diff. The diff is the
 # sibling input to release notes — same TA-1 threat (malicious upstream NuGet
 # author can put HTML-comment-disguised payloads or stray triple-backticks in
@@ -194,7 +196,7 @@ auto_body = (
     f"## Versions\n\n"
     f"- Migrating from: `{old}`\n"
     f"- Migrating to: `{new}`\n\n"
-    f"## Diff Summary (first 120 lines of `dotnet-inspect` output)\n\n"
+    f"## Diff Summary (first {DIFF_DISPLAY_LINES} lines of `dotnet-inspect` output)\n\n"
     f"{diff}\n\n"
     f"## Release Notes Extract\n\n"
     f"{notes}\n\n"
