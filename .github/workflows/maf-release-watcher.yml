@@ -65,7 +65,7 @@ jobs:
       has_update: ${{ steps.version-check.outputs.has_update }}
       is_major: ${{ steps.version-check.outputs.is_major }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: Check NuGet for new MAF version
         id: version-check
@@ -146,7 +146,7 @@ jobs:
                                 # HTTP 403 "Resource not accessible by integration".
                                 # Discovered 2026-05-17 during live-fire test of MAF 1.6.1.
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           # Use the maintainer's PAT (admin), not the workflow's GITHUB_TOKEN,
           # so the final `git push origin HEAD:main` can bypass branch
