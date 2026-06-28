@@ -324,6 +324,16 @@ public sealed class SemanticKernelDetectorTool
             }
         }
 
+        // Routes a type-position name to its construct. ORDER IS LOAD-BEARING — do not
+        // reorder the four checks below:
+        //   1. exact filter interfaces (before the suffix checks, which they'd never match anyway)
+        //   2. `*PromptExecutionSettings` suffix  — MUST run before the KnownTypes lookup
+        //      (no PES type is in KnownTypes, but keep the suffix family together up front)
+        //   3. `KnownTypes` exact-name lookup     — the tailored `*AgentThread` entries
+        //      (AgentThread / OpenAIAssistantAgentThread / …) live here and MUST win over
+        //   4. the `*AgentThread` suffix fallback  — generic catch for the rest
+        //      (e.g. ChatHistoryAgentThread). If this ran before step 3, the tailored
+        //      thread entries would be shadowed by the generic note.
         void Classify(string typeName, int line)
         {
             // Function-invocation filters → MAF agent middleware. A clean port (defined

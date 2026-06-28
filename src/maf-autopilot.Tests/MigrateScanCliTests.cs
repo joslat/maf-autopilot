@@ -47,6 +47,17 @@ public class MigrateScanCliTests
     }
 
     [Fact]
+    public void Parse_SourceFollowedByFlag_DoesNotConsumeTheFlag()
+    {
+        // Regression: `--source` immediately followed by another flag must not eat the flag
+        // as the value (`--source --json` would otherwise set source="--json" and drop --json).
+        var (path, source, json) = MigrateScanCli.Parse(new[] { "migrate-scan", "--source", "--json", "C:/repo" });
+        Assert.Equal("C:/repo", path);
+        Assert.Equal("semantic-kernel", source); // default kept, not "--json"
+        Assert.True(json);                        // --json still enabled
+    }
+
+    [Fact]
     public void Parse_JsonBeforePath_StillReadsPath()
     {
         var (path, _, json) = MigrateScanCli.Parse(new[] { "migrate-scan", "--json", "C:/repo" });

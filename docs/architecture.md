@@ -1,6 +1,6 @@
 # Architecture
 
-> **Last updated:** 2026-05-13 — Phase S landed: multi-target nupkg + central package management.
+> **Last updated:** 2026-06-27 — v1.5.0: Semantic Kernel → MAF cross-framework migration.
 
 This document explains what each piece of `maf-doctor` is, how the pieces fit together, and where the structural choices were deliberate (vs. accidental).
 
@@ -12,10 +12,10 @@ A toolkit that turns **GitHub Copilot Chat into a Microsoft Agent Framework (MAF
 
 It ships through **four channels**:
 
-1. **MCP server (NuGet tool)** — the main product. 25 [Model Context Protocol](https://modelcontextprotocol.io/) tools that Copilot can invoke during chats: anti-pattern scanner, fan-out validator, workflow simulator, scaffolders, PR auditor, etc.
+1. **MCP server (NuGet tool)** — the main product. 27 [Model Context Protocol](https://modelcontextprotocol.io/) tools that Copilot can invoke during chats: anti-pattern scanner, fan-out validator, workflow simulator, scaffolders, PR auditor, cross-framework (Semantic Kernel → MAF) migration scanner, etc.
 2. **MCP server (Docker)** — same product, containerised on GHCR (multi-arch amd64+arm64), for users without a .NET SDK on the host.
 3. **Roslyn analyzer (separate NuGet)** — `maf-doctor.Analyzers`. Ships 3 write-time rules (MAF001–003) into any consumer project's compiler. Independent of the MCP server.
-4. **Skills + agents (GitHub-native)** — 12 SKILL.md files + 6 agent personas + 3 always-loaded instruction files. Loaded by GitHub Copilot Chat directly from `.github/`.
+4. **Skills + agents (GitHub-native)** — 14 SKILL.md files + 8 agent personas + 3 always-loaded instruction files. Loaded by GitHub Copilot Chat directly from `.github/`.
 
 The MCP server, the analyzer NuGet, and the skill bundle are independently shippable. A user can adopt any one, two, or all three.
 
@@ -46,16 +46,16 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 │           │                                                              │
 │  ┌────────▼────────────────┐   ┌────────▼──────────────────────────┐   │
 │  │  /src/maf-autopilot.Tests│  │ /src/maf-autopilot.Analyzers.Tests│   │
-│  │  ── 463 xUnit tests       │  │ ── 11 xUnit tests                │   │
+│  │  ── 978 xUnit tests       │  │ ── 15 xUnit tests                │   │
 │  │  ── net8/9/10 (x3 runs)  │  │ ── net8/9/10 (x3 runs)            │   │
 │  │  ── ProjectReference     │  │ ── ProjectReference               │   │
 │  │     maf-autopilot.csproj │  │    maf-autopilot.Analyzers.csproj │   │
 │  └─────────────────────────┘   └────────────────────────────────────┘   │
 │                                                                          │
 │  /.github/                                                               │
-│  ├── agents/        7 agent personas (Copilot Chat loads via @-mention) │
+│  ├── agents/        8 agent personas (Copilot Chat loads via @-mention) │
 │  ├── instructions/  3 auto-loaded instruction files (applyTo: globs)    │
-│  ├── skills/        13 skill docs (SKILL.md per dir)                    │
+│  ├── skills/        14 skill docs (SKILL.md per dir)                    │
 │  ├── scripts/       2 Python CI helpers (called by workflows)           │
 │  ├── workflows/     6 GitHub Actions                                    │
 │  └── dependabot.yml security: pin SHAs, update weekly                   │
@@ -113,7 +113,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 **Output:** an xUnit test assembly (not packed; never published).
 **Dependencies:** `ProjectReference` to `maf-autopilot`; `xunit` 2.9.2; `Microsoft.NET.Test.Sdk` 17.12.0; `Microsoft.CodeAnalysis.CSharp` 4.11.0 (for the compile-validation tests). Versions pinned centrally.
 
-**Current size:** 463 tests as of Phase S. Coverage spans every MCP tool (entry + pure-core), every scaffolder template, security regression pins, registry haystack search, and the auto-update additivity guarantees.
+**Current size:** 978 tests. Coverage spans every MCP tool (entry + pure-core), every scaffolder template, security regression pins, registry haystack search, the doc↔code drift guards, and the auto-update additivity guarantees.
 
 ### `maf-autopilot.Analyzers.Tests`
 
@@ -122,7 +122,7 @@ The MCP server, the analyzer NuGet, and the skill bundle are independently shipp
 **Output:** an xUnit test assembly.
 **Dependencies:** `ProjectReference` to `maf-autopilot.Analyzers`; `xunit` 2.9.2; `Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit` 1.1.2. Versions pinned centrally.
 
-**Current size:** 11 tests — one happy-path + one negative case per rule, plus rule-metadata validation.
+**Current size:** 15 tests — one happy-path + one negative case per rule, plus rule-metadata validation.
 
 ---
 
@@ -165,7 +165,7 @@ maf-autopilot.sln
             └── ProjectReference: maf-autopilot.Analyzers
 ```
 
-`dotnet build maf-autopilot.sln` builds all four across all 3 TFMs (the analyzer stays netstandard2.0). `dotnet test maf-autopilot.sln` runs **474 unique tests × 3 TFMs = 1422 test executions** in both test projects. `release.yml` packs `maf-autopilot` and `maf-autopilot.Analyzers` separately; `docker-publish.yml` packages only the MCP server.
+`dotnet build maf-autopilot.sln` builds all four across all 3 TFMs (the analyzer stays netstandard2.0). `dotnet test maf-autopilot.sln` runs **993 unique tests × 3 TFMs = 2979 test executions** in both test projects. `release.yml` packs `maf-autopilot` and `maf-autopilot.Analyzers` separately; `docker-publish.yml` packages only the MCP server.
 
 ---
 
@@ -230,7 +230,7 @@ The `maf-release-watcher` workflow runs weekly + on-demand, detecting new MAF re
 
 ### When MAF X.Y ships — the actual flow
 
-1. **Watcher fires** (daily cron OR manual `gh workflow run maf-release-watcher.yml`; a manual run can set `maf_version` for a specific version and `push_target` for a safe dry-run against a throwaway branch).
+1. **Watcher fires** (weekly Thursday 06:00 UTC cron OR manual `gh workflow run maf-release-watcher.yml`; a manual run can set `maf_version` for a specific version and `push_target` for a safe dry-run against a throwaway branch).
 2. **Detection step** compares NuGet's latest stable against `.maf-version`. If different, proceeds.
 3. **Major-version check** sets `is_major=true` for X.0 bumps. **Majors are NOT auto-committed** — they escalate to a `maf-release,needs-review` tracking issue (with the breaking-API diffs attached as run artifacts) for human-driven migration. Minor/patch bumps continue automatically.
 4. **dotnet-inspect diff** runs for each MAF NuGet package; output captured (and uploaded as run artifacts for reviewer access).

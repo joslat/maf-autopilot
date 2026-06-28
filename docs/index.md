@@ -2,7 +2,7 @@
 
 > **Audience:** new contributors orienting on the project, returning maintainers checking "where did we put X?".
 >
-> **Last refreshed:** 2026-05-13 — Phase S landed: nupkg now multi-targets `net8.0;net9.0;net10.0`; central package management via `Directory.Packages.props` + `Directory.Build.props` + `global.json`. See [`architecture.md` → Multi-targeting](./architecture.md#multi-targeting).
+> **Last refreshed:** 2026-06-27 — v1.5.0: Semantic Kernel → MAF cross-framework migration (detector + `migrate-scan` CLI + `maf-migrate-from` prompt/agent/skill). See [`architecture.md`](./architecture.md).
 
 Every document below is canonical for one slice of the project. **One concept, one home.** If you find yourself writing the same explanation in two docs, fix it by linking instead of duplicating.
 
