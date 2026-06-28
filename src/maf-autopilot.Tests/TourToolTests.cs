@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.RegularExpressions;
 using MafDoctor.Tools;
 using ModelContextProtocol.Server;
 using Xunit;
@@ -180,6 +181,51 @@ public sealed class TourToolTests
             "Add each one to TourTool.PromptCatalogue.");
         Assert.True(extra.Count == 0,
             $"MafTour catalogue lists prompts that don't exist as [McpServerPrompt] methods: {string.Join(", ", extra)}.");
+    }
+
+    [Fact]
+    public void Catalogue_ListsEveryMcpServerResource_NoDrift()
+    {
+        // PRAG-001 guard: resources were the only catalogue without a drift test — and the one
+        // this feature changed (added maf://migrate-from). Every [McpServerResource] must appear
+        // in ResourceCatalogue and vice-versa. Compare on the scheme+path PREFIX (strip from the
+        // first '{' or '?') because the catalogue intentionally renders the human-readable example
+        // form (maf://skills?name=<X>) while the UriTemplate is the RFC-6570 form (maf://skills{?name}).
+        var assembly = typeof(TourTool).Assembly;
+        var templates = assembly.GetTypes()
+            .Where(t => t.GetCustomAttribute<McpServerResourceTypeAttribute>() is not null)
+            .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
+            .Select(m => m.GetCustomAttribute<McpServerResourceAttribute>())
+            .Where(a => a?.UriTemplate is not null)
+            .Select(a => UriPrefix(a!.UriTemplate!))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var catalogued = TourTool.ResourceCatalogue.Select(r => UriPrefix(r.Uri)).ToHashSet(StringComparer.Ordinal);
+
+        var missing = templates.Except(catalogued).OrderBy(s => s).ToList();
+        var extra = catalogued.Except(templates).OrderBy(s => s).ToList();
+
+        Assert.True(missing.Count == 0,
+            $"ResourceCatalogue is missing entries for live [McpServerResource]s: {string.Join(", ", missing)}. " +
+            "Add each one to TourTool.ResourceCatalogue.");
+        Assert.True(extra.Count == 0,
+            $"ResourceCatalogue lists resources with no matching [McpServerResource]: {string.Join(", ", extra)}.");
+
+        static string UriPrefix(string uri)
+        {
+            var cut = uri.IndexOfAny(['{', '?']);
+            return cut >= 0 ? uri[..cut] : uri;
+        }
+    }
+
+    [Fact]
+    public void ResourceCatalogue_SkillsCount_MatchesAllowlist()
+    {
+        // Pin the free-floating "N skills available" literal so it can't drift from the allowlist.
+        var skillsRow = TourTool.ResourceCatalogue.Single(r => r.Uri.StartsWith("maf://skills", System.StringComparison.Ordinal));
+        var n = Regex.Match(skillsRow.Description, @"(\d+)\s+skills").Groups[1].Value;
+        Assert.False(string.IsNullOrEmpty(n), $"no skill count found in ResourceCatalogue skills description: '{skillsRow.Description}'");
+        Assert.Equal(MafDoctor.Resources.MafResources.AllowedSkillNames.Count, int.Parse(n));
     }
 
     [Fact]

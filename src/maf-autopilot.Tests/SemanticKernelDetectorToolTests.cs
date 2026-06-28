@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using MafDoctor.Tools;
 using Xunit;
 
@@ -722,6 +723,87 @@ public sealed class SemanticKernelDetectorToolTests
         using var doc = JsonDocument.Parse(new SemanticKernelDetectorTool().MafDetectSourceFramework(bad, "json"));
         Assert.True(doc.RootElement.TryGetProperty("error", out var err));
         Assert.False(string.IsNullOrWhiteSpace(err.GetString()));
+    }
+
+    // -------------------------------------------------------------------------
+    // Doc ↔ code drift: the construct-mapping strategy tags (DRY-001)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void SkillConstructTable_StrategyTags_MatchDetector_NoDrift()
+    {
+        // DRY-001 guard. The SK→MAF construct mapping is hand-authored in BOTH KnownTypes/Classify
+        // (code) AND the navigator skill's "Construct → MAF target → strategy" table (doc). This
+        // pins the doc's 🌉/🔁/🏗 tag to the detector for every SK *type* the table names that the
+        // detector actually classifies — so a strategy that flips in one place but not the other
+        // fails CI. (The migration guide is a third copy of the same knowledge; coupling it the
+        // same way is a reasonable follow-up — see docs/reviews/sk-migration-remediation-plan.md.)
+        var skill = ResolveRepoFile(System.IO.Path.Combine(".github", "skills", "maf-from-semantic-kernel", "SKILL.md"));
+        var lines = System.IO.File.ReadAllLines(skill);
+
+        var emojiToStrategy = new Dictionary<string, MigrationStrategy>
+        {
+            ["🌉"] = MigrationStrategy.Bridgeable,
+            ["🔁"] = MigrationStrategy.Rewrite,
+            ["🏗"] = MigrationStrategy.Rearchitect,
+        };
+        // A clean C# type name (optionally an interface): excludes attributes (`[KernelFunction]`),
+        // method/property tokens, wildcards (`*AgentThread`), and dotted/parenthesised forms.
+        var typeName = new Regex("^I?[A-Z][A-Za-z0-9]+$");
+
+        var coupled = 0;
+        var inTable = false;
+        foreach (var line in lines)
+        {
+            if (line.StartsWith("| SK construct ", System.StringComparison.Ordinal)) { inTable = true; continue; }
+            if (inTable && !line.StartsWith("|", System.StringComparison.Ordinal)) { inTable = false; continue; }
+            if (!inTable || line.StartsWith("|---", System.StringComparison.Ordinal) || line.StartsWith("| ---", System.StringComparison.Ordinal))
+                continue;
+
+            var cells = line.Split('|');
+            if (cells.Length < 4) continue;
+            var constructCell = cells[1];
+            var strategyCell = cells[3];
+
+            var rowStrategies = emojiToStrategy
+                .Where(kv => strategyCell.Contains(kv.Key, System.StringComparison.Ordinal))
+                .Select(kv => kv.Value).ToHashSet();
+            if (rowStrategies.Count == 0) continue; // not a strategy-bearing construct row
+
+            foreach (Match m in typeNameMatches(constructCell))
+            {
+                var token = m.Groups[1].Value;
+                if (!typeName.IsMatch(token)) continue;
+
+                var constructs = SemanticKernelDetectorTool.AnalyzeSource(
+                    "using Microsoft.SemanticKernel;\npublic class T { void M(" + token + " x) { } }", "T.cs");
+                if (constructs.Count == 0) continue; // type the detector doesn't classify in type position — out of scope
+
+                coupled++;
+                Assert.True(
+                    constructs.Any(c => rowStrategies.Contains(c.Strategy)),
+                    $"SKILL.md tags `{token}` as [{string.Join("/", rowStrategies)}] but the detector classifies it as " +
+                    $"[{string.Join(", ", constructs.Select(c => c.Strategy))}] — KnownTypes/Classify and the skill table have drifted.");
+            }
+        }
+
+        // Floor: the table couples a substantial set of types, so a parser regression that silently
+        // matches nothing can't pass.
+        Assert.True(coupled >= 12, $"expected to couple ≥12 SK types to the skill table; coupled {coupled}");
+
+        static MatchCollection typeNameMatches(string cell) => Regex.Matches(cell, "`([^`]+)`");
+    }
+
+    /// <summary>Walks up from the test bin dir to the repo root (marker: <c>.github</c>), then to a relative file.</summary>
+    private static string ResolveRepoFile(string relative)
+    {
+        var dir = new System.IO.DirectoryInfo(System.AppContext.BaseDirectory);
+        while (dir is not null && !System.IO.Directory.Exists(System.IO.Path.Combine(dir.FullName, ".github")))
+            dir = dir.Parent;
+        Assert.NotNull(dir);
+        var path = System.IO.Path.Combine(dir!.FullName, relative);
+        Assert.True(System.IO.File.Exists(path), $"file not found: {path}");
+        return path;
     }
 
     private sealed class TempDir : System.IDisposable

@@ -11,7 +11,7 @@ You should see an inventory tagged by migration strategy plus a complexity verdi
 
 - **🌉 bridgeable** — `WeatherTools.cs` (`[KernelFunction]` plugin).
 - **🔁 rewrite** — `ClaimAgent.cs` (`Kernel`, `ChatCompletionAgent`, `AgentThread`,
-  `InvokeAsync`, `OpenAIPromptExecutionSettings`, `AgentInvokeOptions`, `KernelArguments`).
+  `ChatHistoryAgentThread`, `InvokeAsync`, `OpenAIPromptExecutionSettings`, `AgentInvokeOptions`).
 - **🏗 re-architect** — `Triage.cs` (`AgentGroupChat`, `FunctionCallingStepwisePlanner`).
 
 Two distinct re-architecture kinds (group chat + planner) → the verdict is **HARD**.
