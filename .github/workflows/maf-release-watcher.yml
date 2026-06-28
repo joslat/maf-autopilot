@@ -363,9 +363,17 @@ jobs:
           # Push to a per-version branch (NOT main) so an unfilled scaffold can never red
           # main. A manual dispatch may override the branch via push_target (dry-run).
           BRANCH="${PUSH_TARGET:-release-watcher/maf-${NEW_VERSION}}"
+          # Hard guard: never operate on the default/protected branch. The whole point of C
+          # is that the scaffold goes through a PR — a stray push_target=main must NOT push.
+          if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then
+            echo "::error::push_target must not be a protected branch (got '$BRANCH'). The watcher opens a PR; it never pushes the scaffold to main."
+            exit 1
+          fi
           git checkout -b "$BRANCH"
           git commit -F "$RUNNER_TEMP/commit-msg.txt"
-          git push -f origin "HEAD:${BRANCH}"
+          # --force-with-lease (not -f): a rerun updates its own branch idempotently without
+          # blindly clobbering remote updates pushed in between.
+          git push --force-with-lease origin "HEAD:${BRANCH}"
           echo "branch=$BRANCH" >> $GITHUB_OUTPUT
           echo "committed=true" >> $GITHUB_OUTPUT
 
