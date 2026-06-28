@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-06-29
+
+**MAF 1.11.0 + 1.11.1 compatibility coverage** + a **green-on-arrival release-watcher** that auto-fills additive MAF releases (and holds breaking ones red for review), on the latest **ModelContextProtocol 1.4.0** runtime. The compatibility matrix, obsolete-API registry, and migration guides now span MAF up through 1.11.1. **994 .NET tests (979 + 15 analyzer) green across net8/9/10, + 87 release-automation tests.**
+
+### Added
+- **MAF 1.11.0 + 1.11.1 coverage** across every compatibility surface the tool serves: new `docs/compatibility-matrix.md` rows + `CompatibilityTool.Matrix` entries (`MafCompatibility`), obsolete-API registry entries for the 1.11.1 removals — `AgentSkillsProviderBuilder.UseScriptApproval()` and `AgentSkillsProviderOptions.ScriptApproval`, removed when AgentSkillsProvider tools became approval-by-default (MAF #6729) — plus the 1.11.0 `SearchFilesAsync` `recursive`-parameter break, and per-version migration guides (`guides/maf-1.11.0-…` / `maf-1.11.1-…`).
+- **Release-watcher "green-on-arrival"** (repo automation). A fail-closed additive-vs-breaking classifier: an **additive** MAF release now produces a fully auto-filled, GREEN scaffold PR (compatibility-matrix doc + `CompatibilityTool.cs` code matrix + migration guide), while a **breaking** release keeps draft registry TODOs that a keep-breaking-red gate (+ a sentinel guard coupling the verdict to the gate) hold RED until a human writes the migration. Hardened across four adversarial-review passes (21 → 3 → 4 → 1 verified findings) + GitHub Copilot review; merge stays human-gated.
+
+### Changed
+- **ModelContextProtocol 1.3.0 → 1.4.0** and **Microsoft.Extensions.Hosting 10.0.8 → 10.0.9** — the shipped tool runs on the newer MCP runtime. CI dependency bumps: `actions/checkout` 6→7, `actions/setup-dotnet` 5.2→5.3, `softprops/action-gh-release` 3.0.0→3.0.1, `docker/metadata-action` + `docker/setup-buildx-action` minors.
+
+### Fixed
+- **SK→MAF migration review (Tier 1):** doc-accuracy pass + new drift tests coupling the SKILL strategy-tag table to the detector and the TourTool resource catalogue to every `[McpServerResource]` + the skills allowlist; and `migrate-scan --source` no longer consumes a following `--flag` as its value (+regression test).
+- **Release-watcher reliability:** unblocked `main` after the MAF 1.11.0 auto-update pushed an unfilled scaffold straight to `main`; the watcher now opens a per-version PR and never pushes a scaffold to a protected branch.
+
+### Acknowledgments
+- The **Semantic Kernel → MAF migration** assistant (shipped in 1.5.0) was **suggested by Shawn Henry** — Principal Group Product Manager for Microsoft Agent Framework & Microsoft Foundry at Microsoft.
+
 ## [1.5.0] - 2026-06-25
 
 **Migrate FROM Semantic Kernel TO MAF** — a cross-framework migration assistant (distinct from the existing MAF *version* upgrade path): a Roslyn detector (`migrate-scan` CLI + `MafDetectSourceFramework` MCP tool) that inventories SK usage and tags every construct 🌉 bridge / 🔁 rewrite / 🏗 re-architect with an EASY/MEDIUM/HARD verdict, an orchestration prompt (`maf-migrate-from`) + specialist agent (`@maf-cross-migration`) that scaffold a new MAF project beside the original and port it construct-by-construct, the mapping guide resource + `maf-from-semantic-kernel` skill, and a `samples/sk-sample/` fixture. Hardened by a 24-issue multi-agent review, a 7-principle architecture/quality assessment, and an independent adversarial verification pass — every fix verified, no regressions. **967 tests green across net8/9/10.**
