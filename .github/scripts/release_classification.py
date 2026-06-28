@@ -3,63 +3,73 @@
 
 Shared by the release-watcher scripts (`update_compat_matrix.py`,
 `gen_guide_section.py`) and the workflow so the "green-on-arrival" decision is
-made in ONE place:
+made in ONE place.
 
-  * A release is **additive** when its release notes carry no `.NET … [BREAKING]`
-    entry AND its `dotnet-inspect` diff removed no members. Additive releases can
-    be filled deterministically, so the watcher PR comes up green.
-  * A release is **breaking** otherwise. Those need human-written migration
-    guidance, so the watcher leaves a red scaffold for review.
+A release is **additive** only when ALL of these hold:
+  * the diff is TRUSTWORTHY — it shows recognizable dotnet-inspect output (change
+    markers or the explicit "No API changes detected" banner), NOT an error dump
+    or empty text;
+  * the release notes carry no `.NET … [BREAKING]` entry;
+  * the diff removed no members;
+  * the diff changed no member SIGNATURES.
+Anything else is **breaking** (or unverifiable → treated as breaking). A false
+"additive" is the dangerous direction — it would let an unreviewed breaking
+release go green — so the verdict is FAIL-CLOSED: missing/garbled evidence never
+yields additive.
 
-Two design choices that keep this SAFE (a false "additive" is the dangerous
-direction — it would let an unreviewed breaking release go green):
-
-  1. `.NET`-scoped notes match. The upstream notes interleave Python and .NET
-     changes; a `Python: [BREAKING]` line does not affect the .NET package this
-     toolkit tracks and must NOT flip the verdict. We match only lines that
-     mention `.NET` AND `[BREAKING]`.
-  2. Removals always count as breaking. A member removal is a CS0246 break even
-     if the notes never tagged it `[BREAKING]`, so ANY removed member in the
-     diff forces a breaking verdict regardless of the notes.
+Design choices that keep this safe:
+  1. `.NET`-scoped, order-independent notes match. Python-only `[BREAKING]` lines
+     don't affect the .NET package this toolkit tracks. We match a line that
+     mentions BOTH `.NET` and `[BREAKING]` in either order.
+  2. Removals AND signature changes both count as breaking, even with no
+     `[BREAKING]` note — they are CS0246 / source-incompatible breaks. This
+     mirrors DiffPackageTool.ClassifyKind / RegistryExtractCommand in the C#
+     code so the Python classifier and the extractor agree on "breaking".
+  3. Both package diffs (Microsoft.Agents.AI AND .Workflows) are considered;
+     a removal in either is breaking.
 """
 from __future__ import annotations
 
+import pathlib
 import re
 
-# A ".NET … [BREAKING]" marker anywhere on a release-notes line. Matches
-# ".NET: [BREAKING] …" and ".NET/Python: [BREAKING] …", but NOT
-# "Python: [BREAKING] …" (no ".NET" token on the line before the marker).
-_NET_BREAKING_RE = re.compile(r'\.NET[^\n]*\[BREAKING\]', re.IGNORECASE)
+# A ".NET … [BREAKING]" marker on a line, in EITHER order (`.NET: [BREAKING] …`
+# or `… [BREAKING] … .NET`). Excludes `Python: [BREAKING] …` (no `.NET` token).
+_NET_BREAKING_RE = re.compile(
+    r'(?:\.NET[^\n]*\[BREAKING\]|\[BREAKING\][^\n]*\.NET)', re.IGNORECASE)
 
-# "Member 'Foo' was added" / "Type 'Bar' was added" from a dotnet-inspect diff.
-_ADDED_MEMBER_RE = re.compile(r"(?:Member|Type)\s+'([^']+)'\s+was added")
-_REMOVED_MEMBER_RE = re.compile(r"(?:Member|Type)\s+'([^']+)'\s+was removed")
-
+# dotnet-inspect diff verbs. `[^'\n]` (NOT `[^']`) so a crafted name carrying a
+# newline cannot span lines and smuggle structure into a captured member name.
+_ADDED_MEMBER_RE = re.compile(r"(?:Member|Type)\s+'([^'\n]+)'\s+was added")
+_REMOVED_MEMBER_RE = re.compile(r"(?:Member|Type)\s+'([^'\n]+)'\s+was removed")
+_SIGNATURE_CHANGED_RE = re.compile(r"(?:Member|Type)\s+'([^'\n]+)'\s+signature changed")
 
 # A member/type name is only safe to echo into generated SOURCE or docs if it is
-# a plain C# identifier. Names come from untrusted upstream (TA-1: a malicious
-# NuGet author can craft a "member name" carrying markdown / HTML comments / a
-# `\"\"\"` that breaks out of a C# raw-string literal). Anything that isn't a bare
-# identifier is dropped, never spliced into output.
-_SAFE_MEMBER_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+# a plain C# identifier. Names come from untrusted upstream (TA-1). `\A…\Z` (not
+# `^…$`) so a trailing newline cannot slip through ($ matches before a final \n).
+_SAFE_MEMBER_RE = re.compile(r'\A[A-Za-z_][A-Za-z0-9_]*\Z')
+
+# Markers whose presence proves the diff actually PARSED (vs. an error dump).
+_DIFF_PARSED_MARKERS = (
+    'was added', 'was removed', 'signature changed',
+    'No API changes detected', 'diff --package',
+)
 
 
-def safe_members(names) -> tuple[list[str], int]:
-    """Filter member names to plain C# identifiers. Returns (safe, dropped_count)."""
-    names = list(names)
-    safe = [n for n in names if n and _SAFE_MEMBER_RE.match(n)]
-    return safe, len(names) - len(safe)
+def diff_is_trustworthy(diff_text: str) -> bool:
+    """An ADDITIVE verdict may only rest on a diff we can read. Empty text, a
+    NuGet error, or a stack trace shows none of the dotnet-inspect markers and is
+    NOT trustworthy → the caller must treat the release as breaking/unverifiable."""
+    if not diff_text or not diff_text.strip():
+        return False
+    return any(m in diff_text for m in _DIFF_PARSED_MARKERS)
 
 
 def dotnet_breaking_lines(release_notes: str) -> list[str]:
     """Return the trimmed `.NET … [BREAKING]` lines from the release notes."""
     if not release_notes:
         return []
-    return [
-        line.strip()
-        for line in release_notes.splitlines()
-        if _NET_BREAKING_RE.search(line)
-    ]
+    return [line.strip() for line in release_notes.splitlines() if _NET_BREAKING_RE.search(line)]
 
 
 def _distinct_in_order(names) -> list[str]:
@@ -70,45 +80,69 @@ def _distinct_in_order(names) -> list[str]:
 
 
 def added_members(diff_text: str) -> list[str]:
-    """Distinct member/type names reported as added in a diff, first-seen order."""
     return _distinct_in_order(_ADDED_MEMBER_RE.findall(diff_text or ""))
 
 
 def removed_members(diff_text: str) -> list[str]:
-    """Distinct member/type names reported as removed in a diff, first-seen order."""
     return _distinct_in_order(_REMOVED_MEMBER_RE.findall(diff_text or ""))
 
 
+def signature_changed_members(diff_text: str) -> list[str]:
+    return _distinct_in_order(_SIGNATURE_CHANGED_RE.findall(diff_text or ""))
+
+
+def safe_members(names) -> tuple[list[str], int]:
+    """Filter member names to plain C# identifiers (no newlines). Returns
+    (safe, dropped_count)."""
+    names = list(names)
+    safe = [n for n in names if n and '\n' not in n and '\r' not in n and _SAFE_MEMBER_RE.match(n)]
+    return safe, len(names) - len(safe)
+
+
 def is_additive(release_notes: str, diff_text: str = "") -> bool:
-    """True only when the notes carry no .NET breaking marker AND the diff
-    removed no members. Conservative by design: ANY breaking signal ⇒ False."""
-    return not dotnet_breaking_lines(release_notes) and not removed_members(diff_text)
+    """Fail-closed: additive only with a trustworthy diff that shows no removals,
+    no signature changes, and no `.NET [BREAKING]` note."""
+    return (
+        diff_is_trustworthy(diff_text)
+        and not dotnet_breaking_lines(release_notes)
+        and not removed_members(diff_text)
+        and not signature_changed_members(diff_text)
+    )
 
 
 def classify(release_notes: str, diff_text: str = "") -> dict:
-    """Full verdict, handy for the workflow / labeling.
-
-    Returns a dict with: `additive` (bool), `breaking_notes` (list[str]),
-    `removed` (list[str]), `added` (list[str])."""
+    """Full verdict for the workflow / scripts."""
     breaking_notes = dotnet_breaking_lines(release_notes)
     removed = removed_members(diff_text)
+    sig_changed = signature_changed_members(diff_text)
+    trustworthy = diff_is_trustworthy(diff_text)
     return {
-        "additive": not breaking_notes and not removed,
+        "additive": trustworthy and not breaking_notes and not removed and not sig_changed,
+        "diff_trustworthy": trustworthy,
         "breaking_notes": breaking_notes,
         "removed": removed,
+        "signature_changed": sig_changed,
         "added": added_members(diff_text),
     }
 
 
-if __name__ == "__main__":
-    # CLI: prints "additive" or "breaking" for the workflow to capture.
-    # Reads release-notes.txt + diff-core.txt from CWD (the same artifacts the
-    # sibling watcher scripts read).
-    import pathlib
-
-    def _read(name: str) -> str:
+def combined_diff_text() -> str:
+    """Concatenate BOTH diff files the watcher produces (core + workflows), so a
+    removal/signature-change in either package counts toward the verdict."""
+    parts = []
+    for name in ('diff-core.txt', 'diff-workflows.txt'):
         p = pathlib.Path(name)
-        return p.read_text(encoding="utf-8") if p.is_file() else ""
+        if p.is_file():
+            parts.append(p.read_text(encoding='utf-8'))
+    return '\n'.join(parts)
 
-    verdict = classify(_read("release-notes.txt"), _read("diff-core.txt"))
+
+if __name__ == "__main__":
+    # CLI: prints "additive" or "breaking" for the workflow to capture. Reads
+    # release-notes.txt + BOTH diff files from CWD (the watcher's artifacts).
+    notes = pathlib.Path("release-notes.txt")
+    verdict = classify(
+        notes.read_text(encoding="utf-8") if notes.is_file() else "",
+        combined_diff_text(),
+    )
     print("additive" if verdict["additive"] else "breaking")

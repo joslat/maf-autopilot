@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from release_classification import classify, safe_members  # noqa: E402
+from release_classification import classify, combined_diff_text, safe_members  # noqa: E402
 
 old = os.environ.get('OLD_VERSION', 'unknown')
 new = os.environ.get('NEW_VERSION', 'unknown')
@@ -87,7 +87,7 @@ def build_notes(verdict: dict) -> str:
     )
 
 
-verdict = classify(read_sibling('release-notes.txt'), read_sibling('diff-core.txt'))
+verdict = classify(read_sibling('release-notes.txt'), combined_diff_text())
 
 # Carry the transitive pins forward from the current top row; fall back to
 # conservative defaults if the table can't be parsed.
@@ -127,6 +127,14 @@ content, n_date = re.subn(
 
 with open(matrix_path, 'w', encoding='utf-8') as f:
     f.write(content)
+
+# The tracking line / date regexes match the live doc today; warn loudly if a
+# future doc-format change makes them miss (the cross-file gate blocks on a stale
+# tracking line, but the date is only a warning there, so surface it here too).
+if n_tracked == 0:
+    print("::warning::update_compat_matrix.py did not find a 'Current tracked version' line to bump — check the doc format.")
+if n_date == 0:
+    print("::warning::update_compat_matrix.py did not find a 'last-updated:' header to advance — check the doc format.")
 
 print(
     f"Updated {matrix_path}: added {'additive' if verdict['additive'] else 'breaking'} "

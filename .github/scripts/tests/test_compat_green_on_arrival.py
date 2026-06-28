@@ -128,6 +128,9 @@ def test_sync_adds_code_matrix_entry(ws):
     assert "## MAF 1.12.0 Compatibility" in tool
     # New entry inserted ABOVE the prior one (newest-first).
     assert tool.index('["1.12.0"]') < tool.index('["1.11.0"]')
+    # Generators cell must not be double-backticked (the parsed cell already
+    # carries its backticks).
+    assert "``" not in tool
 
 
 def test_pipeline_is_idempotent(ws):
@@ -142,6 +145,35 @@ def test_pipeline_is_idempotent(ws):
     assert (ws / "docs" / "compatibility-matrix.md").read_text(encoding="utf-8") == first_matrix
     assert (ws / "src" / "maf-autopilot" / "Tools" / "CompatibilityTool.cs").read_text(encoding="utf-8") == first_tool
     assert first_matrix.count("| **1.12.0** |") == 1
+
+
+def test_end_to_end_additive_pipeline_is_green(tmp_path):
+    # The actual green-on-arrival promise: run the full additive chain
+    # (matrix -> code sync -> guide), set .maf-version, then assert
+    # verify_crossfile_consistency.py exits 0.
+    w = tmp_path
+    (w / "docs").mkdir()
+    (w / "docs" / "compatibility-matrix.md").write_text(MATRIX_SEED, encoding="utf-8")
+    (w / "src" / "maf-autopilot" / "Tools").mkdir(parents=True)
+    (w / "src" / "maf-autopilot" / "Tools" / "CompatibilityTool.cs").write_text(TOOL_SEED, encoding="utf-8")
+    (w / "guides").mkdir()
+    (w / "guides" / "maf-1.3.0-migration-guide.md").write_text("## 1. Intro\n", encoding="utf-8")
+    skills = w / ".github" / "skills" / "maf-obsolete-api-registry"
+    skills.mkdir(parents=True)
+    (skills / "registry.yaml").write_text("entries: []\n", encoding="utf-8")
+    (w / "release-notes.txt").write_text("## Changes:\n* .NET: Add CreateMcpTool overload\n", encoding="utf-8")
+    (w / "diff-core.txt").write_text("- Member 'NewThing' was added\n", encoding="utf-8")
+
+    _run("update_compat_matrix.py", w, "1.11.0", "1.12.0")
+    _run("sync_compat_tool.py", w, "1.11.0", "1.12.0")
+    _run("gen_guide_section.py", w, "1.11.0", "1.12.0")
+    (w / ".maf-version").write_text("1.12.0\n", encoding="utf-8")
+
+    r = subprocess.run(
+        [sys.executable, str(SCRIPTS / "verify_crossfile_consistency.py")],
+        cwd=str(w), capture_output=True, text=True,
+    )
+    assert r.returncode == 0, f"cross-file gate not green:\n{r.stdout}\n{r.stderr}"
 
 
 def test_untrusted_member_name_with_quotes_is_dropped(ws):
@@ -160,6 +192,8 @@ def test_untrusted_member_name_with_quotes_is_dropped(ws):
 
 def test_neutralize_defangs_triple_quote_and_newlines():
     import sync_compat_tool as s  # safe: main() is __main__-guarded
-    out = s._neutralize('before """ after')
-    assert '"""' not in out
+    # A single replace('"""', ...) leaves a surviving `"""` for runs of 5/8/11;
+    # the regex form must defang EVERY run length.
+    for n in range(2, 9):
+        assert '"""' not in s._neutralize('a' + ('"' * n) + 'b'), f"run of {n} survived"
     assert s._neutralize('x\r\ny') == 'x  y'

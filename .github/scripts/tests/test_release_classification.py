@@ -15,9 +15,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from release_classification import (  # noqa: E402
     added_members,
     classify,
+    diff_is_trustworthy,
     dotnet_breaking_lines,
     is_additive,
     removed_members,
+    safe_members,
+    signature_changed_members,
 )
 
 # Trimmed from the real MAF 1.11.1 release notes.
@@ -74,9 +77,43 @@ def test_removal_forces_breaking_even_with_clean_notes():
     assert is_additive(NOTES_ADDITIVE, DIFF_WITH_REMOVAL) is False
 
 
-def test_empty_inputs_are_additive():
-    assert is_additive("", "") is True
-    assert classify("", "")["additive"] is True
+def test_empty_inputs_are_breaking_fail_closed():
+    # No diff = no positive evidence of additivity => NOT additive (fail-closed).
+    assert is_additive("", "") is False
+    assert classify("", "")["additive"] is False
+    assert diff_is_trustworthy("") is False
+
+
+def test_failed_diff_is_breaking_even_with_clean_notes():
+    # An error dump (no dotnet-inspect markers) is not trustworthy => breaking.
+    err = "error NU1101: Unable to find package Microsoft.Agents.AI 1.9.9.\nStack trace ..."
+    assert diff_is_trustworthy(err) is False
+    assert is_additive("## Changes:\n* .NET: tidy internals\n", err) is False
+
+
+def test_no_api_changes_banner_is_trustworthy_additive():
+    assert diff_is_trustworthy("> [!NOTE]\n> No API changes detected.\n") is True
+    assert is_additive("## Changes:\n* .NET: docs only\n", "No API changes detected.") is True
+
+
+def test_signature_change_is_breaking():
+    diff = "- Member 'SearchFilesAsync' signature changed: `old` -> `new`\n"
+    assert signature_changed_members(diff) == ["SearchFilesAsync"]
+    assert is_additive("## Changes:\n* .NET: adjust SearchFilesAsync\n", diff) is False
+    assert classify("", diff)["additive"] is False
+
+
+def test_safe_members_drops_trailing_newline_name():
+    # The bug the review caught: `$` matched before a trailing \n; \A..\Z must not.
+    safe, dropped = safe_members(["GoodName", "Evil\n", "Bad\rName", "Has Space"])
+    assert safe == ["GoodName"]
+    assert dropped == 3
+
+
+def test_breaking_marker_is_order_independent():
+    assert dotnet_breaking_lines("* x [BREAKING] .NET: removed Foo")  # [BREAKING] before .NET
+    assert dotnet_breaking_lines("* x .NET: [BREAKING] removed Foo")  # .NET before [BREAKING]
+    assert not dotnet_breaking_lines("* x Python: [BREAKING] py-only")
 
 
 def test_added_and_removed_member_extraction():

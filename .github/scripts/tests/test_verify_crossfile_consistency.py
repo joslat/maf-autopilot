@@ -89,6 +89,38 @@ entries:
     assert v.check_unfilled_current_drafts(reg, "1.12.0") == []
 
 
+def test_signature_change_draft_with_filled_sigs_is_flagged(tmp_path):
+    # The extractor auto-fills BOTH signatures for a SignatureChanged entry, so an
+    # all-three-AND gate would miss it. The strengthened gate fires on the still-
+    # TODO fix_description.
+    reg = _write_registry(tmp_path, """
+entries:
+  - id: MAF120-FOO-001
+    version_introduced: "1.12.0"
+    obsolete_signature: Foo.Bar(int)
+    replacement_signature: Foo.Bar(int, bool)
+    fix_description: TODO — review the diff entry below and document the canonical fix
+""")
+    assert len(v.check_unfilled_current_drafts(reg, "1.12.0")) == 1
+
+
+def test_todo_example_stub_is_flagged(tmp_path):
+    # fix_description filled, but the example is still the `// TODO` stub.
+    reg = _write_registry(tmp_path, """
+entries:
+  - id: MAF120-FOO-001
+    version_introduced: "1.12.0"
+    obsolete_signature: Foo.Bar()
+    replacement_signature: Foo.Baz()
+    fix_description: Rename Bar to Baz; same semantics, just a new name everywhere.
+    example_before: |
+      // TODO — show a real call site that breaks
+    example_after: |
+      var x = foo.Baz();
+""")
+    assert len(v.check_unfilled_current_drafts(reg, "1.12.0")) == 1
+
+
 def test_old_cycle_unfilled_draft_is_ignored(tmp_path):
     # An unfilled draft from an OLDER release must not block a newer PR.
     reg = _write_registry(tmp_path, """

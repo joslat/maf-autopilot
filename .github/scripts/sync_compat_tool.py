@@ -18,6 +18,11 @@ import re
 import sys
 from pathlib import Path
 
+# Any run of 2+ double-quotes is defanged (a single str.replace('"""', …) leaves
+# a surviving `"""` for runs of 5/8/11/…). Insert a zero-width space after every
+# quote in a run so no `"""` can survive into the C# raw-string literal.
+_QUOTE_RUN_RE = re.compile(r'"{2,}')
+
 new = os.environ.get('NEW_VERSION', 'unknown')
 old = os.environ.get('OLD_VERSION', 'unknown')
 
@@ -32,7 +37,8 @@ def _neutralize(cell: str) -> str:
     Defense-in-depth: build_notes already restricts embedded upstream content to
     identifier-allowlisted member names, but the matrix file could also be
     hand-edited, so we never trust the cell verbatim."""
-    return (cell or '').replace('"""', '"​"​"').replace('\r', ' ').replace('\n', ' ')
+    defanged = _QUOTE_RUN_RE.sub(lambda m: '"​' * len(m.group()), cell or '')
+    return defanged.replace('\r', ' ').replace('\n', ' ')
 
 
 def matrix_row_cells(version: str):
@@ -74,7 +80,7 @@ def main() -> int:
         f'{i}| .NET runtime                              | {dotnet} | net8.0, net9.0, net10.0 TFMs all supported |\n'
         f'{i}| Microsoft.Extensions.AI                   | {meai} | Carried from {old} |\n'
         f'{i}| Azure.AI.OpenAI                           | {azure} | |\n'
-        f'{i}| Microsoft.Agents.AI.Workflows.Generators  | `{generators}` | Source-gen package |\n'
+        f'{i}| Microsoft.Agents.AI.Workflows.Generators  | {generators} | Source-gen package |\n'
         f'{i}| Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |\n'
         f'{i}\n'
         f'{i}{notes}\n'

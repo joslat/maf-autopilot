@@ -32,7 +32,7 @@ from pathlib import Path
 # framing so a downstream Coding Agent or human reader cannot be redirected.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from llm_fencing import fence  # noqa: E402
-from release_classification import classify, safe_members  # noqa: E402
+from release_classification import classify, combined_diff_text, safe_members  # noqa: E402
 
 old = os.environ.get('OLD_VERSION', 'unknown')
 new = os.environ.get('NEW_VERSION', 'unknown')
@@ -135,7 +135,7 @@ notes = fence('upstream-maf-release-notes', raw_notes, max_bytes=32 * 1024)
 # removed members) gets its analysis sections filled deterministically so the
 # scaffold PR comes up green; a breaking release keeps TODO stubs — the human
 # writes the migration, and the registry gate holds the PR red until they do.
-verdict = classify(raw_notes, '\n'.join(diff_lines))
+verdict = classify(raw_notes, combined_diff_text())
 
 
 if verdict['additive']:
