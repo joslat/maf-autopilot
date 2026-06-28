@@ -170,7 +170,7 @@ This list of changes was [auto generated](https://msdata.visualstudio.com/Vienna
 - `AgentInlineSkill` constructor overloads now include a new trailing optional `argumentMarshaler` delegate parameter.
 - `TodoProvider.GetAllTodosAsync` now includes a trailing optional `CancellationToken`.
 - `TodoProvider.GetRemainingTodosAsync` now includes a trailing optional `CancellationToken`.
-- These are signature changes that require updating call sites when compiling against strict overload bindings and should be treated as migration touchpoints.
+- Only the `SearchFilesAsync` change is **breaking**: the inserted `recursive` parameter shifts a positional `cancellationToken` onto it, so positional call sites must be updated (pass `recursive: false` to preserve the prior non-recursive behaviour, and name `cancellationToken:`). The `AgentInlineSkill` and `TodoProvider` changes add **trailing optional** parameters and are **source-compatible** — existing call sites keep compiling unchanged.
 
 ## New Patterns
 

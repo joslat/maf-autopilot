@@ -74,7 +74,7 @@ public sealed class CompatibilityTool
                 | Microsoft.Agents.AI.Workflows.Generators  | `1.11.0`         | Source-gen package |
                 | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
 
-                Breaking: `SearchFilesAsync` adds `recursive` parameter on `AgentFileStore` / `FileSystemAgentFileStore` / `InMemoryAgentFileStore`; `AgentInlineSkill` constructors add `argumentMarshaler`; `TodoProvider` `GetAllTodosAsync` / `GetRemainingTodosAsync` add `CancellationToken`.
+                Breaking (positional call sites only): `SearchFilesAsync` inserts a `recursive` parameter before `cancellationToken` on `AgentFileStore` / `FileSystemAgentFileStore` / `InMemoryAgentFileStore`. Additive (trailing optional params, source-compatible): `AgentInlineSkill` constructors add `argumentMarshaler`; `TodoProvider` `GetAllTodosAsync` / `GetRemainingTodosAsync` add a trailing `CancellationToken`.
                 """,
 
             ["1.10.0"] = """
