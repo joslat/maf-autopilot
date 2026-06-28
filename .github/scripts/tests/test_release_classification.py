@@ -110,6 +110,24 @@ def test_safe_members_drops_trailing_newline_name():
     assert dropped == 3
 
 
+def test_diff_package_usage_token_is_not_trustworthy():
+    # 'diff --package' is invocation/usage syntax, not proof a diff parsed.
+    usage = "Usage: dotnet-inspect diff --package <id>\nerror: missing required argument"
+    assert diff_is_trustworthy(usage) is False
+    assert is_additive("## Changes:\n* .NET: x\n", usage) is False
+    # The real dotnet-inspect report header IS trustworthy.
+    assert diff_is_trustworthy("# API Diff: Microsoft.Agents.AI\n") is True
+
+
+def test_new_obsolete_member_is_not_additive():
+    # A newly-added [Obsolete] member is a deprecation: source-compatible but
+    # needs review + a registry entry, so it must NOT classify additive (else the
+    # PR is labeled additive-green while the keep-breaking-red gate holds it red).
+    diff = "- Member 'OldWay' was added [Obsolete]\n"
+    assert is_additive("## Changes:\n* .NET: deprecate OldWay\n", diff) is False
+    assert classify("", diff)["obsolete"] is True
+
+
 def test_breaking_marker_is_order_independent():
     assert dotnet_breaking_lines("* x [BREAKING] .NET: removed Foo")  # [BREAKING] before .NET
     assert dotnet_breaking_lines("* x .NET: [BREAKING] removed Foo")  # .NET before [BREAKING]

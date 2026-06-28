@@ -316,6 +316,19 @@ jobs:
           echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
           echo "::notice::MAF release classified as: $VERDICT"
 
+      - name: Guard — a breaking release must leave a red gate
+        # The 'breaking' verdict carries no gating force on its own; the PR only
+        # goes red if registry-extract produced unfilled drafts. Those come from a
+        # SEPARATE continue-on-error dotnet-inspect run, so a correlated diff
+        # failure could leave a breaking release with zero entries → green. This
+        # appends a sentinel draft when verdict==breaking but no current-version
+        # entry exists, so the keep-breaking-red gate always fires.
+        if: steps.classify.outputs.verdict == 'breaking'
+        env:
+          NEW_VERSION: ${{ needs.check-for-new-maf-release.outputs.new_version }}
+          VERDICT: ${{ steps.classify.outputs.verdict }}
+        run: python3 .github/scripts/ensure_breaking_gated.py
+
       - name: Upload diff artifacts for reviewer
         # Make the raw diffs downloadable on the workflow run page so the human
         # reviewer can audit the breaking-change surface without re-running

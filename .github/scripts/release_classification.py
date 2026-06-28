@@ -44,15 +44,26 @@ _ADDED_MEMBER_RE = re.compile(r"(?:Member|Type)\s+'([^'\n]+)'\s+was added")
 _REMOVED_MEMBER_RE = re.compile(r"(?:Member|Type)\s+'([^'\n]+)'\s+was removed")
 _SIGNATURE_CHANGED_RE = re.compile(r"(?:Member|Type)\s+'([^'\n]+)'\s+signature changed")
 
+# A newly-added member carrying `[Obsolete]` is a deprecation: source-compatible
+# (CS0618 warning) but a heads-up consumers must be told about, and the C#
+# registry-extract DOES emit a draft for it. So it is NOT "purely additive" — we
+# route it to the breaking/needs-review path so the verdict and the extractor
+# agree (otherwise the PR is labeled additive-green while the gate holds it red).
+_OBSOLETE_RE = re.compile(r'\[Obsolete\]', re.IGNORECASE)
+
 # A member/type name is only safe to echo into generated SOURCE or docs if it is
 # a plain C# identifier. Names come from untrusted upstream (TA-1). `\A…\Z` (not
 # `^…$`) so a trailing newline cannot slip through ($ matches before a final \n).
 _SAFE_MEMBER_RE = re.compile(r'\A[A-Za-z_][A-Za-z0-9_]*\Z')
 
 # Markers whose presence proves the diff actually PARSED (vs. an error dump).
+# `API Diff:` is dotnet-inspect's real report header (`# API Diff: <package>`);
+# we do NOT trust `diff --package` (that's invocation/usage syntax echoed by
+# help/error text, never emitted by a successful diff — admitting it would let
+# an error dump masquerade as a parsed diff and re-open the fail-open hole).
 _DIFF_PARSED_MARKERS = (
     'was added', 'was removed', 'signature changed',
-    'No API changes detected', 'diff --package',
+    'No API changes detected', 'API Diff:',
 )
 
 
@@ -91,6 +102,12 @@ def signature_changed_members(diff_text: str) -> list[str]:
     return _distinct_in_order(_SIGNATURE_CHANGED_RE.findall(diff_text or ""))
 
 
+def has_obsolete_annotation(diff_text: str) -> bool:
+    """True if the diff mentions `[Obsolete]` (a deprecation added/changed). Such
+    a release is not purely additive — it needs review + a registry entry."""
+    return bool(_OBSOLETE_RE.search(diff_text or ""))
+
+
 def safe_members(names) -> tuple[list[str], int]:
     """Filter member names to plain C# identifiers (no newlines). Returns
     (safe, dropped_count)."""
@@ -107,6 +124,7 @@ def is_additive(release_notes: str, diff_text: str = "") -> bool:
         and not dotnet_breaking_lines(release_notes)
         and not removed_members(diff_text)
         and not signature_changed_members(diff_text)
+        and not has_obsolete_annotation(diff_text)
     )
 
 
@@ -115,13 +133,15 @@ def classify(release_notes: str, diff_text: str = "") -> dict:
     breaking_notes = dotnet_breaking_lines(release_notes)
     removed = removed_members(diff_text)
     sig_changed = signature_changed_members(diff_text)
+    obsolete = has_obsolete_annotation(diff_text)
     trustworthy = diff_is_trustworthy(diff_text)
     return {
-        "additive": trustworthy and not breaking_notes and not removed and not sig_changed,
+        "additive": trustworthy and not breaking_notes and not removed and not sig_changed and not obsolete,
         "diff_trustworthy": trustworthy,
         "breaking_notes": breaking_notes,
         "removed": removed,
         "signature_changed": sig_changed,
+        "obsolete": obsolete,
         "added": added_members(diff_text),
     }
 
