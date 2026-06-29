@@ -24,7 +24,7 @@
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
 
     <!-- YAML parsing — used for registry.yaml and similar. -->
-    <PackageVersion Include="YamlDotNet" Version="18.0.0" />
+    <PackageVersion Include="YamlDotNet" Version="18.1.0" />
 
     <!-- Roslyn syntax-tree only (no Workspaces). Used by anti-pattern scanners,
          scaffolders, and the FanOutValidator tool. -->
