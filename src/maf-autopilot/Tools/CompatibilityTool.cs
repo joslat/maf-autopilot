@@ -74,7 +74,7 @@ public sealed class CompatibilityTool
                 | Microsoft.Agents.AI.Workflows.Generators  | `1.12.0` | Source-gen package |
                 | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
                 
-                Breaking (.NET): the skills-source API gained a required `AgentSkillsSourceContext` — `GetSkillsAsync` (on `AgentSkillsSource` / `AgentFileSkillsSource`) and `AgentSkillsProviderBuilder.UseFilter`'s predicate now take it (positional call sites / overrides break); `AgentSkillsProviderOptions.DisableCaching` was removed (caching moved to the new `CachingAgentSkillsSourceOptions`). Additive: `AgentSkillsSourceContext` / `CachingAgentSkillsSourceOptions` types. Transitive pins carried from 1.11.1.
+                Breaking (.NET): the skills-source API gained a required `AgentSkillsSourceContext` — `GetSkillsAsync` (on `AgentSkillsSource` / `AgentFileSkillsSource`) and `AgentSkillsProviderBuilder.UseFilter`'s predicate now receive it (positional call sites / overrides break); `AgentSkillsProviderOptions.DisableCaching` was removed (caching moved to the new `CachingAgentSkillsSourceOptions`). Additive: `AgentSkillsSourceContext` / `CachingAgentSkillsSourceOptions` types. Transitive pins carried from 1.11.1.
                 """,
 
             ["1.11.1"] = """

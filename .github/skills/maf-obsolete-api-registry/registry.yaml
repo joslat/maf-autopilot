@@ -1467,7 +1467,7 @@ entries:
       <<<END_USER_DATA_7280597d02234d639e0d8b4f21d5a7f7_DOTNET-INSPECT-DIFF>>>
 
       Verdict: Signature changed — call sites may fail to compile or bind to a different overload. Requires human review before merging.
-    applies_to_codebases: 
+    applies_to_codebases: "pre-1.12.0"
   - id: MAF112-BUILDER-001
     package: Microsoft.Agents.AI
     version_introduced: "1.12.0"
@@ -1504,7 +1504,7 @@ entries:
       <<<END_USER_DATA_22e003f6d4c04210be8e902d22ec21ee_DOTNET-INSPECT-DIFF>>>
 
       Verdict: Signature changed — call sites may fail to compile or bind to a different overload. Requires human review before merging.
-    applies_to_codebases: 
+    applies_to_codebases: "pre-1.12.0"
   - id: MAF112-OPTIONS-001
     package: Microsoft.Agents.AI
     version_introduced: "1.12.0"
@@ -1541,7 +1541,7 @@ entries:
       <<<END_USER_DATA_ab09b15d69f74a6798a82a000b3abe98_DOTNET-INSPECT-DIFF>>>
 
       Verdict: Type or member REMOVED in new version — references will fail to compile (CS0246). Requires human review before merging.
-    applies_to_codebases: 
+    applies_to_codebases: "pre-1.12.0"
   - id: MAF112-AGENT-002
     package: Microsoft.Agents.AI
     version_introduced: "1.12.0"
