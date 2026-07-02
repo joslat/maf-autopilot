@@ -16,6 +16,10 @@
     { "value": "Rename Foo to Bar; the signature is unchanged.", "placeholder": false },
     { "value": "AgentSkillsProviderOptions.DisableCaching", "placeholder": false },
     { "value": "TODOList is a real type name", "placeholder": false },
+    { "value": "TODÒ fill the real migration", "placeholder": true },
+    { "value": "TODO² note", "placeholder": true },
+    { "value": "TODO_x", "placeholder": false },
+    { "value": "TODO123", "placeholder": false },
     { "value": "", "placeholder": false }
   ]
 }

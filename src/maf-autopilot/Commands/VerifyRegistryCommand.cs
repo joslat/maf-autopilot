@@ -75,7 +75,7 @@ public static class VerifyRegistryCommand
 
         if (issues.Count > 0)
         {
-            Console.Error.WriteLine($"❌ Registry verification FAILED: {issues.Count} issue(s) across {registry.AllEntries.Count - skippedHistorical - skippedIncompleteDrafts} active entries ({skippedHistorical} pre-1.0.0 + {skippedIncompleteDrafts} incomplete-draft entries skipped).");
+            Console.Error.WriteLine($"❌ Registry verification FAILED: {issues.Count} issue(s) across {registry.AllEntries.Count - skippedHistorical - skippedIncompleteDrafts} active entries ({skippedHistorical} historical (pre-*) + {skippedIncompleteDrafts} incomplete-draft entries skipped).");
             Console.Error.WriteLine();
             foreach (var issue in issues)
                 Console.Error.WriteLine($"  • {issue}");
@@ -84,7 +84,7 @@ public static class VerifyRegistryCommand
             return 1;
         }
 
-        Console.WriteLine($"✓ Registry verification PASSED: {registry.AllEntries.Count - skippedHistorical - skippedIncompleteDrafts} active entries clean ({skippedHistorical} pre-1.0.0 + {skippedIncompleteDrafts} incomplete-draft entries skipped).");
+        Console.WriteLine($"✓ Registry verification PASSED: {registry.AllEntries.Count - skippedHistorical - skippedIncompleteDrafts} active entries clean ({skippedHistorical} historical (pre-*) + {skippedIncompleteDrafts} incomplete-draft entries skipped).");
         return 0;
     }
 
@@ -102,7 +102,9 @@ public static class VerifyRegistryCommand
     /// and bypass the substantive checks entirely.
     /// </summary>
     private static readonly Regex TodoAtLineStart = new(
-        @"(?m)^\s*//\s*TODO\b",
+        // Explicit ASCII boundary (not \b) — same cross-engine rationale as
+        // PlaceholderTokenRegex; kept identical to Python _TODO_EXAMPLE_RE.
+        @"(?m)^\s*//\s*TODO(?:[^A-Za-z0-9_]|$)",
         RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase,
         TimeSpan.FromSeconds(2));
 
@@ -307,7 +309,13 @@ public static class VerifyRegistryCommand
     /// per field).
     /// </summary>
     private static readonly Regex PlaceholderTokenRegex = new(
-        @"^\s*(TODO|TBD|XXX)\b",
+        // Explicit ASCII boundary — NOT \b. .NET and Python disagree on \b's
+        // Unicode word-class (Mn/No/Nl/Pc categories flip the verdict for ~1400
+        // code points, e.g. "TODO²"), which would re-open the same-string-opposite-
+        // verdict bug. An ASCII char-class boundary is identical on both engines
+        // AND NonBacktracking-safe (no lookaround). Kept in lockstep with the
+        // Python _DRAFT_PLACEHOLDER + placeholder-fixtures.json.
+        @"^\s*(?:TODO|TBD|XXX)(?:[^A-Za-z0-9_]|$)",
         RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase,
         TimeSpan.FromSeconds(2));
 

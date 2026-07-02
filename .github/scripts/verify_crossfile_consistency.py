@@ -199,8 +199,12 @@ def check_invented_guide_sections(
     return findings
 
 
-_DRAFT_PLACEHOLDER = re.compile(r'^\s*(TODO|TBD|XXX)\b', re.IGNORECASE)
-_TODO_EXAMPLE_RE = re.compile(r'(?m)^\s*//\s*TODO\b', re.IGNORECASE)
+# Explicit ASCII boundary (not \b) — .NET and Python disagree on \b's Unicode
+# word-class (~1400 code points flip), so both gates use an ASCII char-class
+# boundary instead, kept byte-identical to the C# PlaceholderTokenRegex /
+# TodoAtLineStart and locked by placeholder-fixtures.json.
+_DRAFT_PLACEHOLDER = re.compile(r'^\s*(?:TODO|TBD|XXX)(?:[^A-Za-z0-9_]|$)', re.IGNORECASE)
+_TODO_EXAMPLE_RE = re.compile(r'(?m)^\s*//\s*TODO(?:[^A-Za-z0-9_]|$)', re.IGNORECASE)
 
 
 def is_placeholder_token(value) -> bool:

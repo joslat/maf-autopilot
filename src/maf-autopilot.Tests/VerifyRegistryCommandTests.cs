@@ -223,16 +223,17 @@ public class VerifyRegistryCommandTests
     {
         // This is the canary test for #5 polish — any change that breaks
         // the existing registry causes this test to fail in CI BEFORE the
-        // PR merges. Mirrors the same skip logic as VerifyRegistryCommand.Run():
-        //   - pre-1.0.0 historical entries
-        //   - raw drafts (all-TODO entries waiting for AI-fill)
+        // PR merges. Mirrors the same skip logic + order as
+        // VerifyRegistryCommand.Run():
+        //   - historical (pre-*) entries
+        //   - incomplete drafts (ANY core field still a placeholder — monotonic)
         var registry = new RegistryService();
         var issues = new List<string>();
         foreach (var entry in registry.AllEntries)
         {
             var marker = entry.AppliesToCodebases?.Trim();
             if (marker?.StartsWith("pre-", StringComparison.OrdinalIgnoreCase) == true) continue;
-            if (VerifyRegistryCommand.IsRawDraft(entry)) continue;
+            if (VerifyRegistryCommand.IsIncompleteDraft(entry)) continue;
             VerifyRegistryCommand.CheckEntry(entry, issues);
         }
 
