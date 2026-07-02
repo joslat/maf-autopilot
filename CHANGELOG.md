@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-02
+
+**MAF 1.12.0 coverage** — a breaking skills-source refactor — and the first real-world exercise of the green-on-arrival watcher (its classifier was fooled by a truncated diff, but the keep-breaking-red gate + independent `registry-extract` correctly held the release red for review). **994 .NET tests (979 + 15 analyzer) green across net8/9/10, + 87 release-automation tests.**
+
+### Added
+- **MAF 1.12.0 compatibility coverage** across the matrix, code matrix (`CompatibilityTool`), obsolete-API registry, and migration guides. 1.12.0 is a **.NET breaking** release — a skills-source API refactor around a new `AgentSkillsSourceContext`:
+  - `AgentSkillsSource` / `AgentFileSkillsSource` `GetSkillsAsync` gained a required `AgentSkillsSourceContext` first parameter (`MAF112-AGENT-001` / `MAF112-AGENT-002`);
+  - `AgentSkillsProviderBuilder.UseFilter`'s predicate changed to `Func<AgentSkill, AgentSkillsSourceContext, bool>` (`MAF112-BUILDER-001`);
+  - `AgentSkillsProviderOptions.DisableCaching` was **removed** — caching moved to the new `CachingAgentSkillsSourceOptions` type (`MAF112-OPTIONS-001`).
+
+### Notes
+- **Green-on-arrival, real-world validation.** The watcher's classifier mislabeled 1.12.0 as "additive" (its `dotnet-inspect` diff capture was truncated and the upstream release notes weren't published yet), but the independent `registry-extract` + the keep-breaking-red gate caught the true breaking set and held the scaffold PR **red** — the safety net worked as designed. The scaffold was filled by hand as a breaking release. The root-cause diff-capture truncation is tracked as a separate follow-up.
+
 ## [1.6.0] - 2026-06-29
 
 **MAF 1.11.0 + 1.11.1 compatibility coverage** + a **green-on-arrival release-watcher** that auto-fills additive MAF releases (and holds breaking ones red for review), on the latest **ModelContextProtocol 1.4.0** runtime. The compatibility matrix, obsolete-API registry, and migration guides now span MAF up through 1.11.1. **994 .NET tests (979 + 15 analyzer) green across net8/9/10, + 87 release-automation tests.**
