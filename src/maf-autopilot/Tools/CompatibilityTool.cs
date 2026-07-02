@@ -68,10 +68,10 @@ public sealed class CompatibilityTool
                 
                 | Dependency                                | Version          | Notes |
                 |-------------------------------------------|------------------|-------|
-                | .NET runtime                              | `≥ 8.0` | net8.0, net9.0, net10.0 TFMs all supported |
-                | Microsoft.Extensions.AI                   | `≥ 10.6.0` | Carried from 1.11.1 |
-                | Azure.AI.OpenAI                           | _(not pinned by MAF — BYO via IChatClient)_ | |
-                | Microsoft.Agents.AI.Workflows.Generators  | `1.12.0` | Source-gen package |
+                | .NET runtime                              | `>= 8.0`         | net8.0, net9.0, net10.0 TFMs all supported |
+                | Microsoft.Extensions.AI                   | `>= 10.6.0`      | Same transitive pin as 1.11.1 |
+                | Azure.AI.OpenAI                           | _not pinned by MAF_ | BYO via `IChatClient` — consumer chooses the backing implementation |
+                | Microsoft.Agents.AI.Workflows.Generators  | `1.12.0`         | Source-gen package |
                 | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
                 
                 Breaking (.NET): the skills-source API gained a required `AgentSkillsSourceContext` — `GetSkillsAsync` (on `AgentSkillsSource` / `AgentFileSkillsSource`) and `AgentSkillsProviderBuilder.UseFilter`'s predicate now receive it (positional call sites / overrides break); `AgentSkillsProviderOptions.DisableCaching` was removed (caching moved to the new `CachingAgentSkillsSourceOptions`). Additive: `AgentSkillsSourceContext` / `CachingAgentSkillsSourceOptions` types. Transitive pins carried from 1.11.1.
