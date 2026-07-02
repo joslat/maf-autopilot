@@ -1514,15 +1514,18 @@ entries:
     replacement_signature: "(removed — configure skills-source caching via the new CachingAgentSkillsSourceOptions type)"
     argument_order_change: false
     fix_description: >-
-      AgentSkillsProviderOptions.DisableCaching was removed in 1.12.0 (references fail to
-      compile). Skills-source caching moved to the dedicated CachingAgentSkillsSourceOptions
-      type introduced in 1.12.0 — drop the DisableCaching usage and configure caching through
-      the new options type; confirm the exact property surface against the 1.12.0 API.
+      The DisableCaching MEMBER was removed from AgentSkillsProviderOptions in 1.12.0 — the
+      type itself remains, only that member is gone, so references to it fail to compile.
+      Skills-source caching is now configured through the new CachingAgentSkillsSourceOptions
+      type introduced in 1.12.0: remove the DisableCaching usage and set caching on the new
+      options type instead. Confirm its exact property surface against the 1.12.0 API.
     example_before: |
       var options = new AgentSkillsProviderOptions { DisableCaching = true };
     example_after: |
-      // 1.12.0: DisableCaching removed; caching is configured via CachingAgentSkillsSourceOptions.
+      // 1.12.0: the DisableCaching member was removed from AgentSkillsProviderOptions.
+      // Configure skills-source caching via the new CachingAgentSkillsSourceOptions instead.
       var options = new AgentSkillsProviderOptions();
+      var caching = new CachingAgentSkillsSourceOptions { /* set caching options here — see the 1.12.0 API */ };
     cs_warning: CS0246
     guide_section: "N/A"
     dotnet_inspect_detectable: true
