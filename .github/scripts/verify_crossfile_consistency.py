@@ -203,11 +203,20 @@ _DRAFT_PLACEHOLDER = re.compile(r'^\s*(TODO|TBD|XXX)\b', re.IGNORECASE)
 _TODO_EXAMPLE_RE = re.compile(r'(?m)^\s*//\s*TODO\b', re.IGNORECASE)
 
 
+def is_placeholder_token(value) -> bool:
+    """A leading TODO/TBD/XXX word-token — the SHARED placeholder grammar. Kept
+    identical to C# VerifyRegistryCommand.LooksLikePlaceholder and locked to
+    placeholder-fixtures.json by a cross-language test so the two gates never
+    drift (the historical bug: the extractor's 'TODO — …' em-dash passed C# but
+    failed here). Empty is NOT a token — callers treat empty separately."""
+    return bool(_DRAFT_PLACEHOLDER.match(str(value) if value is not None else ""))
+
+
 def _looks_unfilled(value) -> bool:
     if value is None:
         return True
     s = str(value).strip()
-    return s == "" or bool(_DRAFT_PLACEHOLDER.match(s))
+    return s == "" or is_placeholder_token(s)
 
 
 def _example_unfilled(value) -> bool:

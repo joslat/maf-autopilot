@@ -1,3 +1,6 @@
+using System;
+using System.IO;
+using System.Text.Json;
 using MafDoctor.Commands;
 using MafDoctor.Data;
 using Xunit;
@@ -14,6 +17,39 @@ namespace MafDoctor.Tests;
 /// </summary>
 public class VerifyRegistryCommandTests
 {
+    // -------------------------------------------------------------------------
+    // Cross-language placeholder-grammar lock (single source of truth)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void LooksLikePlaceholder_MatchesSharedFixture()
+    {
+        // placeholder-fixtures.json is asserted by BOTH this test and the Python
+        // test (test_placeholder_fixtures.py) so the two gates can never drift.
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        string Rel() => Path.Combine(".github", "skills", "maf-obsolete-api-registry", "placeholder-fixtures.json");
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, Rel())))
+            dir = dir.Parent;
+        Assert.NotNull(dir);
+        using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir!.FullName, Rel())));
+        var cases = doc.RootElement.GetProperty("cases");
+        Assert.True(cases.GetArrayLength() > 0);
+        foreach (var c in cases.EnumerateArray())
+        {
+            var value = c.GetProperty("value").GetString();
+            var expected = c.GetProperty("placeholder").GetBoolean();
+            Assert.True(VerifyRegistryCommand.LooksLikePlaceholder(value) == expected,
+                $"LooksLikePlaceholder(\"{value}\") == {!expected}, expected {expected} (placeholder-fixtures.json)");
+        }
+    }
+
+    [Fact]
+    public void LooksLikePlaceholder_EmDashTodo_IsPlaceholder()
+    {
+        // The historical divergence: this used to pass C# but fail Python.
+        Assert.True(VerifyRegistryCommand.LooksLikePlaceholder("TODO — review the diff entry below"));
+    }
+
     // -------------------------------------------------------------------------
     // BraceImbalance
     // -------------------------------------------------------------------------

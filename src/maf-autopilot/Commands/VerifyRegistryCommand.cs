@@ -260,16 +260,25 @@ public static class VerifyRegistryCommand
     }
 
     /// <summary>
-    /// True if a string looks like an un-filled placeholder.
+    /// A leading TODO/TBD/XXX word-token — the SHARED "placeholder" grammar.
+    /// Kept byte-identical to the Python gate's <c>_DRAFT_PLACEHOLDER</c>
+    /// (verify_crossfile_consistency.py) so the two gates can never disagree,
+    /// and locked to <c>placeholder-fixtures.json</c> by cross-language tests
+    /// (a C# test and a Python test assert the same table). The word boundary
+    /// means the extractor's default <c>"TODO — …"</c> (em-dash) is caught here
+    /// too — the historical divergence — while a real identifier like
+    /// <c>"TODOList"</c> is not. Empty is NOT a token (callers handle empty
+    /// per field).
     /// </summary>
+    private static readonly Regex PlaceholderTokenRegex = new(
+        @"^\s*(TODO|TBD|XXX)\b",
+        RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase,
+        TimeSpan.FromSeconds(2));
+
+    /// <summary>True if a string begins with a TODO/TBD/XXX placeholder token.</summary>
     internal static bool LooksLikePlaceholder(string? s)
     {
         if (string.IsNullOrWhiteSpace(s)) return false;
-        var trimmed = s.Trim();
-        return trimmed.Equals("TODO", StringComparison.OrdinalIgnoreCase)
-            || trimmed.Equals("TBD", StringComparison.OrdinalIgnoreCase)
-            || trimmed.Equals("XXX", StringComparison.OrdinalIgnoreCase)
-            || trimmed.StartsWith("TODO:", StringComparison.OrdinalIgnoreCase)
-            || trimmed.StartsWith("TBD:", StringComparison.OrdinalIgnoreCase);
+        return PlaceholderTokenRegex.IsMatch(s);
     }
 }
