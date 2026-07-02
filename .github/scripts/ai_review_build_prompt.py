@@ -50,14 +50,19 @@ C1. example_before authenticity: does it actually use the obsolete API mentioned
     in obsolete_signature / notes? If it uses a type the diff says is NEW
     (replacement-side), it's wrong.
 C2. example_after authenticity: does it use the replacement API? It must NOT
-    reference any identifier the diff says was removed.
+    reference the SPECIFIC member/type the diff says was removed. IMPORTANT:
+    "Member 'X' was removed" removes only member X — the CONTAINING type is NOT
+    removed, so example_after may legitimately still construct/use that type.
 C3. non-noop: example_before must materially differ from example_after.
 C4. fix_description matches the actual change: prose can't contradict notes
     (e.g. claims rename when notes show signature change).
 C5. category is correct: TYPE-REMOVED / METHOD-RENAMED / SIGNATURE-CHANGED /
     BEHAVIOR-CHANGED / ATTRIBUTE-REMOVED inferred from cs_warning + diff.
-C6. guide_section: must be a real section ID or "N/A" (not "TBD" / "TODO" /
-    invented).
+C6. guide_section: "N/A" is a FULLY VALID value (the standard "no parallel
+    section" marker) — do NOT flag it or suggest changing it. Flag guide_section
+    ONLY if it is a placeholder token (TODO/TBD/XXX) or an invented number.
+    NEVER suggest "TBD" — every deterministic gate rejects it; the only accepted
+    non-section value is "N/A".
 C7. code parses: balanced {}, (), valid statement terminators.
 
 Verdict per entry:

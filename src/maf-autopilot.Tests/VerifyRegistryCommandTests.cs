@@ -322,6 +322,60 @@ public class VerifyRegistryCommandTests
     }
 
     // -------------------------------------------------------------------------
+    // IsIncompleteDraft — the monotonic-fill gate used by Run() (any core field
+    // still a placeholder/empty => skip structural checks, no partial-fill trap).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void IsIncompleteDraft_AllPlaceholder_IsIncomplete()
+    {
+        var entry = new RegistryEntry
+        {
+            Id = "MAFINC-001",
+            ObsoleteSignature = "TODO",
+            ReplacementSignature = "TODO",
+            FixDescription = "TODO — review the diff entry below",
+            ExampleBefore = "// TODO — a call site that breaks\n",
+            ExampleAfter = "// TODO — the replacement\n",
+        };
+        Assert.True(VerifyRegistryCommand.IsIncompleteDraft(entry));
+    }
+
+    [Fact]
+    public void IsIncompleteDraft_PartiallyFilled_IsStillIncomplete()
+    {
+        // The monotonic fix: unlike IsRawDraft (all-fields AND), a partially
+        // filled entry is STILL incomplete, so it stays skipped rather than
+        // flipping into a pile of CheckEntry failures (the old partial-fill trap).
+        var entry = new RegistryEntry
+        {
+            Id = "MAFINC-002",
+            ObsoleteSignature = "Foo.Bar(int)",              // filled
+            ReplacementSignature = "Foo.Bar(int, bool)",     // filled
+            FixDescription = "TODO — review the diff entry below", // still a placeholder
+            ExampleBefore = "foo.Bar(1);",
+            ExampleAfter = "foo.Bar(1, true);",
+        };
+        Assert.True(VerifyRegistryCommand.IsIncompleteDraft(entry));
+        Assert.False(VerifyRegistryCommand.IsRawDraft(entry)); // NOT all-placeholder
+    }
+
+    [Fact]
+    public void IsIncompleteDraft_FullyFilled_IsComplete()
+    {
+        var entry = new RegistryEntry
+        {
+            Id = "MAFINC-003",
+            ObsoleteSignature = "Foo.Old()",
+            ReplacementSignature = "Foo.New()",
+            FixDescription = "Rename Old to New; the signature is unchanged.",
+            ExampleBefore = "foo.Old();",
+            ExampleAfter = "foo.New();",
+        };
+        Assert.False(VerifyRegistryCommand.IsIncompleteDraft(entry));
+    }
+
+    // -------------------------------------------------------------------------
     // Phase 2.8 — CheckContentSafety: minimal sweep applies even when an
     // entry would otherwise be skipped (pre-1.0.0 or raw draft).
     // -------------------------------------------------------------------------
