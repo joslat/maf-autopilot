@@ -47,6 +47,10 @@ COPY src/maf-autopilot/ src/maf-autopilot/
 COPY .github/ .github/
 COPY guides/ guides/
 COPY docs/steering/ docs/steering/
+# docs/migration/ holds the SK→MAF migration guide embedded as a resource in the
+# csproj (LogicalName migrate-from/semantic-kernel.md, added in 1.5.0). Without
+# this the in-Docker `dotnet publish` fails with CS1566 (missing resource file).
+COPY docs/migration/ docs/migration/
 COPY README.md ./
 
 # Publish a single TFM (net10.0 — matches the runtime image below). Required
