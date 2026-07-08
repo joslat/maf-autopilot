@@ -1698,6 +1698,33 @@ entries:
       for the overall rename pattern.
     applies_to_codebases: "pre-1.13.0"
 
+  - id: MAF1130-FILESTORE-004B
+    package: Microsoft.Agents.AI
+    version_introduced: "1.13.0"
+    type: AgentFileStore
+    method: ListDirectoriesAsync
+    obsolete_signature: "System.Threading.Tasks.Task<System.Collections.Generic.IList<Microsoft.Agents.AI.FileListEntry>> ListDirectoriesAsync(string directory, System.Threading.CancellationToken cancellationToken = null)"
+    replacement_signature: "System.Threading.Tasks.Task<System.Collections.Generic.IList<Microsoft.Agents.AI.FileListEntry>> ListChildrenAsync(string directory, System.Threading.CancellationToken cancellationToken = null)"
+    argument_order_change: false
+    fix_description: >-
+      Replace ListDirectoriesAsync with ListChildrenAsync on AgentFileStore,
+      FileSystemAgentFileStore, and InMemoryAgentFileStore. See MAF1130-FILESTORE-004 for the
+      full fix pattern — both ListFilesAsync and ListDirectoriesAsync were merged into
+      ListChildrenAsync; use FileListEntry.Type to distinguish files from directories.
+    example_before: |
+      var dirs = await agentFileStore.ListDirectoriesAsync("/data", cancellationToken);
+    example_after: |
+      // 1.13.0: ListDirectoriesAsync was merged into ListChildrenAsync.
+      var children = await agentFileStore.ListChildrenAsync("/data", cancellationToken);
+      var dirs = children.Where(e => e.Type == FileStoreEntryType.Directory).ToList();
+    cs_warning: CS0246
+    guide_section: "N/A"
+    dotnet_inspect_detectable: true
+    notes: >-
+      Companion entry to MAF1130-FILESTORE-004 (ListFilesAsync) — both methods were merged
+      into ListChildrenAsync. Separate entry so tooling querying by method name surfaces both.
+    applies_to_codebases: "pre-1.13.0"
+
   - id: MAF1130-FILESTORE-005
     package: Microsoft.Agents.AI
     version_introduced: "1.13.0"
@@ -1746,8 +1773,9 @@ entries:
     guide_section: "N/A"
     dotnet_inspect_detectable: true
     notes: >-
-      FileListEntry also gained a new Type property in 1.13.0 to distinguish files from
-      directories (relevant when using ListChildrenAsync — see MAF1130-FILESTORE-004).
+      Note: `FileName` is a property, not a method — the `method` field is used for all members
+      (methods and properties) in this registry schema. FileListEntry also gained a new `Type`
+      property in 1.13.0 to distinguish files from directories (see MAF1130-FILESTORE-004).
     applies_to_codebases: "pre-1.13.0"
 
   - id: MAF1130-FILEACCESS-001

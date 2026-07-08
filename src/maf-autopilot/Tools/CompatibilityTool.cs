@@ -74,7 +74,7 @@ public sealed class CompatibilityTool
                 | Microsoft.Agents.AI.Workflows.Generators  | `1.13.0`         | Source-gen package |
                 | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
                 
-                Breaking (.NET): file-store API renamed across AgentFileStore/FileSystemAgentFileStore/InMemoryAgentFileStore — WriteFileAsync→WriteAsync, ReadFileAsync→ReadAsync, DeleteFileAsync→DeleteAsync, ListFilesAsync/ListDirectoriesAsync→ListChildrenAsync, SearchFilesAsync→SearchAsync; FileListEntry.FileName→Name; FileAccessProvider file-tool-name constants replaced (SaveFileToolName→WriteToolName, ListFilesToolName/ListSubdirectoriesToolName→LsToolName, SearchFilesToolName→GrepToolName). Additive: new composable skills-source types (CachingAgentSkillsSource, AggregatingAgentSkillsSource, DeduplicatingAgentSkillsSource, DelegatingAgentSkillsSource, FilteringAgentSkillsSource, AgentInMemorySkillsSource); IDisposable on AgentSkillsProvider/AgentSkillsSource/FileAccessProvider. Transitive pins carried from 1.12.0.
+                Breaking (.NET): file-store API renamed — *FileAsync methods removed from AgentFileStore/FileSystemAgentFileStore/InMemoryAgentFileStore; use WriteAsync/ReadAsync/DeleteAsync/ListChildrenAsync/SearchAsync. FileListEntry.FileName→Name. FileAccessProvider tool-name constants renamed. Additive: composable skills-source types; IDisposable on AgentSkillsProvider/AgentSkillsSource/FileAccessProvider. Transitive pins carried from 1.12.0.
                 """,
 
             ["1.12.0"] = """

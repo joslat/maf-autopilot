@@ -3503,7 +3503,7 @@ No `[Obsolete]` deprecations in 1.13.0. All breaking changes are **hard removals
 
 ## Known Misalignments
 
-No known misalignments at generation time. The `dotnet-inspect diff Microsoft.Agents.AI@1.12.0..1.13.0` output was clean (24 breaking / 50 additive across 19 types). Add notes under `## Human additions` if you find discrepancies.
+No known misalignments at generation time. The `dotnet-inspect diff Microsoft.Agents.AI@1.12.0..1.13.0` output reports 24 breaking members across 19 types, but these resolve to 8 unique patterns: the same 6 `*FileAsync`→`*Async` method renames appear on each of 3 types (AgentFileStore, FileSystemAgentFileStore, InMemoryAgentFileStore) plus `FileListEntry.FileName` and the 4 `FileAccessProvider` constants. The 8 registry entries (`MAF1130-FILESTORE-001` through `MAF1130-FILEACCESS-001`) cover all unique patterns. Add notes under `## Human additions` if you find discrepancies.
 
 > ⚠️ Auto-generated stub. Review before relying on it for migrations.
 
