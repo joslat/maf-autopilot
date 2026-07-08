@@ -63,6 +63,20 @@ public sealed class CompatibilityTool
     internal static readonly IReadOnlyDictionary<string, string> Matrix =
         new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
+            ["1.13.0"] = """
+                ## MAF 1.13.0 Compatibility
+                
+                | Dependency                                | Version          | Notes |
+                |-------------------------------------------|------------------|-------|
+                | .NET runtime                              | `>= 8.0`         | net8.0, net9.0, net10.0 TFMs all supported |
+                | Microsoft.Extensions.AI                   | `>= 10.6.0`      | Same transitive pin as 1.12.0 |
+                | Azure.AI.OpenAI                           | _not pinned by MAF_ | BYO via `IChatClient` — consumer chooses the backing implementation |
+                | Microsoft.Agents.AI.Workflows.Generators  | `1.13.0`         | Source-gen package |
+                | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
+                
+                Breaking (.NET): file-store API renamed — *FileAsync methods removed from AgentFileStore/FileSystemAgentFileStore/InMemoryAgentFileStore; use WriteAsync/ReadAsync/DeleteAsync/ListChildrenAsync/SearchAsync. FileListEntry.FileName→Name. FileAccessProvider tool-name constants renamed. Additive: composable skills-source types; IDisposable on AgentSkillsProvider/AgentSkillsSource/FileAccessProvider. Transitive pins carried from 1.12.0.
+                """,
+
             ["1.12.0"] = """
                 ## MAF 1.12.0 Compatibility
                 

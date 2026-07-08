@@ -1,6 +1,6 @@
 # MAF Compatibility Matrix
 
-<!-- auto-updated-by: maf-release-watcher | last-updated: 2026-07-02 -->
+<!-- auto-updated-by: maf-release-watcher | last-updated: 2026-07-08 -->
 
 <!--
   Note on the Azure.AI.OpenAI column: MAF doesn't pin Azure.AI.OpenAI directly.
@@ -21,6 +21,7 @@
 
 | MAF Version | Microsoft.Extensions.AI | .NET | Azure.AI.OpenAI | Generators Package | Notes |
 |-------------|------------------------|------|-----------------|--------------------|-------|
+| **1.13.0** | `≥ 10.6.0` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.13.0` | **Breaking** (.NET): file-store API renamed across `AgentFileStore`/`FileSystemAgentFileStore`/`InMemoryAgentFileStore` — `WriteFileAsync`→`WriteAsync`, `ReadFileAsync`→`ReadAsync`, `DeleteFileAsync`→`DeleteAsync`, `ListFilesAsync`/`ListDirectoriesAsync`→`ListChildrenAsync`, `SearchFilesAsync`→`SearchAsync`; `FileListEntry.FileName`→`Name`; `FileAccessProvider` file-tool-name constants replaced (`SaveFileToolName`→`WriteToolName`, `ListFilesToolName`/`ListSubdirectoriesToolName`→`LsToolName`, `SearchFilesToolName`→`GrepToolName`). **Additive**: new composable skills-source types (`CachingAgentSkillsSource`, `AggregatingAgentSkillsSource`, `DeduplicatingAgentSkillsSource`, `DelegatingAgentSkillsSource`, `FilteringAgentSkillsSource`, `AgentInMemorySkillsSource`); `IDisposable` on `AgentSkillsProvider`/`AgentSkillsSource`/`FileAccessProvider`. Transitive pins carried from 1.12.0. |
 | **1.12.0** | `≥ 10.6.0` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.12.0` | **Breaking** (.NET): the skills-source API gained a required `AgentSkillsSourceContext` — `GetSkillsAsync` (on `AgentSkillsSource` / `AgentFileSkillsSource`) and `AgentSkillsProviderBuilder.UseFilter`'s predicate now receive it (positional call sites / overrides break); `AgentSkillsProviderOptions.DisableCaching` was **removed** (caching moved to the new `CachingAgentSkillsSourceOptions`). **Additive**: `AgentSkillsSourceContext` / `CachingAgentSkillsSourceOptions` types. Transitive pins carried from 1.11.1. |
 | **1.11.1** | `≥ 10.6.0` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.11.1` | **Breaking** (.NET): `AgentSkillsProvider` tools now require approval by default (#6729) — the opt-in `AgentSkillsProviderBuilder.UseScriptApproval()` method and `AgentSkillsProviderOptions.ScriptApproval` property were **removed** (CS0246 for old call sites); `AgentMcpSkillsSource` updated to support archive-type skills (#6631). **Additive**: `AgentSkillsProviderBuilder.UseSource`; new `ReadSkillResourceToolName` / `RunSkillScriptToolName` tool-name constants. Transitive pins unchanged from 1.11.0. |
 | **1.11.0** | `≥ 10.6.0` | `≥ 8.0` | _(not pinned by MAF — BYO via IChatClient)_ | `1.11.0` | **Breaking** (positional call sites only): `SearchFilesAsync` inserts a `recursive` parameter before `cancellationToken` on `AgentFileStore` / `FileSystemAgentFileStore` / `InMemoryAgentFileStore`. **Additive** (trailing optional params — source-compatible): `AgentInlineSkill` constructors add `argumentMarshaler`; `TodoProvider` `GetAllTodosAsync` / `GetRemainingTodosAsync` add a trailing `CancellationToken`. |
@@ -68,7 +69,7 @@
 
 The `.maf-version` file at the repository root records the latest MAF version this toolkit's data covers. The `maf-release-watcher` GitHub Actions workflow compares this against the NuGet feed to detect new releases.
 
-Current tracked version: **`1.12.0`** (see `.maf-version`)
+Current tracked version: **`1.13.0`** (see `.maf-version`)
 
 ---
 
