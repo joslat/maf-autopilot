@@ -63,6 +63,20 @@ public sealed class CompatibilityTool
     internal static readonly IReadOnlyDictionary<string, string> Matrix =
         new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
+            ["1.13.0"] = """
+                ## MAF 1.13.0 Compatibility
+                
+                | Dependency                                | Version          | Notes |
+                |-------------------------------------------|------------------|-------|
+                | .NET runtime                              | `>= 8.0`         | net8.0, net9.0, net10.0 TFMs all supported |
+                | Microsoft.Extensions.AI                   | `>= 10.6.0`      | Same transitive pin as 1.12.0 |
+                | Azure.AI.OpenAI                           | _not pinned by MAF_ | BYO via `IChatClient` — consumer chooses the backing implementation |
+                | Microsoft.Agents.AI.Workflows.Generators  | `1.13.0`         | Source-gen package |
+                | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
+                
+                Breaking (.NET): file-store API renamed across AgentFileStore/FileSystemAgentFileStore/InMemoryAgentFileStore — WriteFileAsync→WriteAsync, ReadFileAsync→ReadAsync, DeleteFileAsync→DeleteAsync, ListFilesAsync/ListDirectoriesAsync→ListChildrenAsync, SearchFilesAsync→SearchAsync; FileListEntry.FileName→Name; FileAccessProvider file-tool-name constants replaced (SaveFileToolName→WriteToolName, ListFilesToolName/ListSubdirectoriesToolName→LsToolName, SearchFilesToolName→GrepToolName). Additive: new composable skills-source types (CachingAgentSkillsSource, AggregatingAgentSkillsSource, DeduplicatingAgentSkillsSource, DelegatingAgentSkillsSource, FilteringAgentSkillsSource, AgentInMemorySkillsSource); IDisposable on AgentSkillsProvider/AgentSkillsSource/FileAccessProvider. Transitive pins carried from 1.12.0.
+                """,
+
             ["1.12.0"] = """
                 ## MAF 1.12.0 Compatibility
                 

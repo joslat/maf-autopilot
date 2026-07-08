@@ -1586,3 +1586,199 @@ entries:
 
 
 # End of 1.12.0 auto-appended drafts. (Microsoft.Agents.AI.Workflows 1.11.1 → 1.12.0 diff: no breaking-change candidates.)
+
+
+# === Draft entries auto-appended by release-watcher on 2026-07-08. Review before merging. ===
+# Draft registry entries — auto-generated 2026-07-08 from Microsoft.Agents.AI 1.12.0 → 1.13.0
+# 7 candidate(s). Review each before merging — filled by Copilot Coding Agent.
+
+  - id: MAF1130-FILESTORE-001
+    package: Microsoft.Agents.AI
+    version_introduced: "1.13.0"
+    type: AgentFileStore
+    method: WriteFileAsync
+    obsolete_signature: "System.Threading.Tasks.Task WriteFileAsync(string path, System.IO.Stream content, System.Threading.CancellationToken cancellationToken = null)"
+    replacement_signature: "System.Threading.Tasks.Task WriteAsync(string path, System.IO.Stream content, System.Threading.CancellationToken cancellationToken = null)"
+    argument_order_change: false
+    fix_description: >-
+      Rename WriteFileAsync to WriteAsync on AgentFileStore, FileSystemAgentFileStore, and
+      InMemoryAgentFileStore. The method was removed and replaced with a shorter name; the
+      signature and semantics are otherwise unchanged.
+    example_before: |
+      await agentFileStore.WriteFileAsync("/data/output.txt", contentStream, cancellationToken);
+    example_after: |
+      // 1.13.0: WriteFileAsync was renamed to WriteAsync.
+      await agentFileStore.WriteAsync("/data/output.txt", contentStream, cancellationToken);
+    cs_warning: CS0246
+    guide_section: "N/A"
+    dotnet_inspect_detectable: true
+    notes: >-
+      Part of the 1.13.0 file-store API rename. All *FileAsync methods on AgentFileStore /
+      FileSystemAgentFileStore / InMemoryAgentFileStore were removed and replaced with shorter
+      *Async equivalents. See also MAF1130-FILESTORE-002 through MAF1130-FILESTORE-005.
+    applies_to_codebases: "pre-1.13.0"
+
+  - id: MAF1130-FILESTORE-002
+    package: Microsoft.Agents.AI
+    version_introduced: "1.13.0"
+    type: AgentFileStore
+    method: ReadFileAsync
+    obsolete_signature: "System.Threading.Tasks.Task<System.IO.Stream> ReadFileAsync(string path, System.Threading.CancellationToken cancellationToken = null)"
+    replacement_signature: "System.Threading.Tasks.Task<System.IO.Stream> ReadAsync(string path, System.Threading.CancellationToken cancellationToken = null)"
+    argument_order_change: false
+    fix_description: >-
+      Rename ReadFileAsync to ReadAsync on AgentFileStore, FileSystemAgentFileStore, and
+      InMemoryAgentFileStore. The method was removed and replaced with a shorter name; the
+      signature and semantics are otherwise unchanged.
+    example_before: |
+      using var stream = await agentFileStore.ReadFileAsync("/data/input.txt", cancellationToken);
+    example_after: |
+      // 1.13.0: ReadFileAsync was renamed to ReadAsync.
+      using var stream = await agentFileStore.ReadAsync("/data/input.txt", cancellationToken);
+    cs_warning: CS0246
+    guide_section: "N/A"
+    dotnet_inspect_detectable: true
+    notes: >-
+      Part of the 1.13.0 file-store API rename. See MAF1130-FILESTORE-001 for the pattern.
+    applies_to_codebases: "pre-1.13.0"
+
+  - id: MAF1130-FILESTORE-003
+    package: Microsoft.Agents.AI
+    version_introduced: "1.13.0"
+    type: AgentFileStore
+    method: DeleteFileAsync
+    obsolete_signature: "System.Threading.Tasks.Task DeleteFileAsync(string path, System.Threading.CancellationToken cancellationToken = null)"
+    replacement_signature: "System.Threading.Tasks.Task DeleteAsync(string path, System.Threading.CancellationToken cancellationToken = null)"
+    argument_order_change: false
+    fix_description: >-
+      Rename DeleteFileAsync to DeleteAsync on AgentFileStore, FileSystemAgentFileStore, and
+      InMemoryAgentFileStore. The method was removed and replaced with a shorter name; the
+      signature and semantics are otherwise unchanged.
+    example_before: |
+      await agentFileStore.DeleteFileAsync("/data/old.txt", cancellationToken);
+    example_after: |
+      // 1.13.0: DeleteFileAsync was renamed to DeleteAsync.
+      await agentFileStore.DeleteAsync("/data/old.txt", cancellationToken);
+    cs_warning: CS0246
+    guide_section: "N/A"
+    dotnet_inspect_detectable: true
+    notes: >-
+      Part of the 1.13.0 file-store API rename. See MAF1130-FILESTORE-001 for the pattern.
+    applies_to_codebases: "pre-1.13.0"
+
+  - id: MAF1130-FILESTORE-004
+    package: Microsoft.Agents.AI
+    version_introduced: "1.13.0"
+    type: AgentFileStore
+    method: ListFilesAsync
+    obsolete_signature: "System.Threading.Tasks.Task<System.Collections.Generic.IList<Microsoft.Agents.AI.FileListEntry>> ListFilesAsync(string directory, System.Threading.CancellationToken cancellationToken = null)"
+    replacement_signature: "System.Threading.Tasks.Task<System.Collections.Generic.IList<Microsoft.Agents.AI.FileListEntry>> ListChildrenAsync(string directory, System.Threading.CancellationToken cancellationToken = null)"
+    argument_order_change: false
+    fix_description: >-
+      Replace ListFilesAsync and ListDirectoriesAsync with ListChildrenAsync on AgentFileStore,
+      FileSystemAgentFileStore, and InMemoryAgentFileStore. Both old list methods were merged
+      into a single ListChildrenAsync that returns all entries (files and directories) as
+      FileListEntry items whose new Type property distinguishes them.
+    example_before: |
+      var files = await agentFileStore.ListFilesAsync("/data", cancellationToken);
+      var dirs  = await agentFileStore.ListDirectoriesAsync("/data", cancellationToken);
+    example_after: |
+      // 1.13.0: ListFilesAsync + ListDirectoriesAsync merged into ListChildrenAsync.
+      // Use the FileListEntry.Type property to distinguish files from directories.
+      var children = await agentFileStore.ListChildrenAsync("/data", cancellationToken);
+      var files = children.Where(e => e.Type == FileStoreEntryType.File).ToList();
+      var dirs  = children.Where(e => e.Type == FileStoreEntryType.Directory).ToList();
+    cs_warning: CS0246
+    guide_section: "N/A"
+    dotnet_inspect_detectable: true
+    notes: >-
+      Both ListFilesAsync and ListDirectoriesAsync were removed and replaced by the unified
+      ListChildrenAsync. FileListEntry gained a new Name property (use instead of the removed
+      FileName — see MAF1130-FILELIST-001) and a new Type property. See MAF1130-FILESTORE-001
+      for the overall rename pattern.
+    applies_to_codebases: "pre-1.13.0"
+
+  - id: MAF1130-FILESTORE-005
+    package: Microsoft.Agents.AI
+    version_introduced: "1.13.0"
+    type: AgentFileStore
+    method: SearchFilesAsync
+    obsolete_signature: "System.Threading.Tasks.Task<System.Collections.Generic.IList<Microsoft.Agents.AI.FileListEntry>> SearchFilesAsync(string rootDir, string searchQuery, string filePattern, bool recursive = true, System.Threading.CancellationToken cancellationToken = null)"
+    replacement_signature: "System.Threading.Tasks.Task<System.Collections.Generic.IList<Microsoft.Agents.AI.FileListEntry>> SearchAsync(string rootDir, string searchQuery, string filePattern, bool recursive = true, System.Threading.CancellationToken cancellationToken = null)"
+    argument_order_change: false
+    fix_description: >-
+      Rename SearchFilesAsync to SearchAsync on AgentFileStore, FileSystemAgentFileStore, and
+      InMemoryAgentFileStore. The method was removed and replaced with a shorter name; the
+      signature and semantics are otherwise unchanged.
+    example_before: |
+      var matches = await agentFileStore.SearchFilesAsync(rootDir, "query", "*.md", cancellationToken: cancellationToken);
+    example_after: |
+      // 1.13.0: SearchFilesAsync was renamed to SearchAsync.
+      var matches = await agentFileStore.SearchAsync(rootDir, "query", "*.md", cancellationToken: cancellationToken);
+    cs_warning: CS0246
+    guide_section: "N/A"
+    dotnet_inspect_detectable: true
+    notes: >-
+      Part of the 1.13.0 file-store API rename. See MAF1130-FILESTORE-001 for the overall
+      pattern. The 1.11.0 SearchFilesAsync signature change (inserting the `recursive`
+      parameter) still applies — the rename entry here targets the 1.13.0 rename only.
+    applies_to_codebases: "pre-1.13.0"
+
+  - id: MAF1130-FILELIST-001
+    package: Microsoft.Agents.AI
+    version_introduced: "1.13.0"
+    type: FileListEntry
+    method: FileName
+    obsolete_signature: "string FileListEntry.FileName { get; }"
+    replacement_signature: "string FileListEntry.Name { get; }"
+    argument_order_change: false
+    fix_description: >-
+      Replace FileListEntry.FileName with FileListEntry.Name. The FileName property was removed
+      in 1.13.0 and replaced by the shorter Name property with the same semantics.
+    example_before: |
+      foreach (var entry in entries)
+          Console.WriteLine(entry.FileName);
+    example_after: |
+      // 1.13.0: FileListEntry.FileName was renamed to Name.
+      foreach (var entry in entries)
+          Console.WriteLine(entry.Name);
+    cs_warning: CS0246
+    guide_section: "N/A"
+    dotnet_inspect_detectable: true
+    notes: >-
+      FileListEntry also gained a new Type property in 1.13.0 to distinguish files from
+      directories (relevant when using ListChildrenAsync — see MAF1130-FILESTORE-004).
+    applies_to_codebases: "pre-1.13.0"
+
+  - id: MAF1130-FILEACCESS-001
+    package: Microsoft.Agents.AI
+    version_introduced: "1.13.0"
+    type: FileAccessProvider
+    method: SaveFileToolName
+    obsolete_signature: "string FileAccessProvider.SaveFileToolName"
+    replacement_signature: "string FileAccessProvider.WriteToolName"
+    argument_order_change: false
+    fix_description: >-
+      Replace the removed FileAccessProvider tool-name constants with their 1.13.0 equivalents:
+      SaveFileToolName→WriteToolName, ListFilesToolName→LsToolName,
+      ListSubdirectoriesToolName→LsToolName, SearchFilesToolName→GrepToolName.
+      Additional new tool-name constants were added: ReplaceToolName, ReplaceLinesToolName.
+    example_before: |
+      // Referencing the old FileAccessProvider tool-name constants:
+      Console.WriteLine(FileAccessProvider.SaveFileToolName);
+      Console.WriteLine(FileAccessProvider.ListFilesToolName);
+      Console.WriteLine(FileAccessProvider.SearchFilesToolName);
+    example_after: |
+      // 1.13.0: tool-name constants were renamed to match the new file-store API.
+      Console.WriteLine(FileAccessProvider.WriteToolName);
+      Console.WriteLine(FileAccessProvider.LsToolName);
+      Console.WriteLine(FileAccessProvider.GrepToolName);
+    cs_warning: CS0246
+    guide_section: "N/A"
+    dotnet_inspect_detectable: true
+    notes: >-
+      The FileAccessProvider tool-name constants were renamed to align with the 1.13.0
+      file-store API rename (see MAF1130-FILESTORE-001 through MAF1130-FILESTORE-005).
+      FileAccessProvider also now implements IDisposable in 1.13.0 — callers that create
+      instances should wrap them in a using statement.
+    applies_to_codebases: "pre-1.13.0"
