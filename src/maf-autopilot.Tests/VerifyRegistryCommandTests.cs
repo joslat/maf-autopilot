@@ -1,3 +1,6 @@
+using System;
+using System.IO;
+using System.Text.Json;
 using MafDoctor.Commands;
 using MafDoctor.Data;
 using Xunit;
@@ -14,6 +17,39 @@ namespace MafDoctor.Tests;
 /// </summary>
 public class VerifyRegistryCommandTests
 {
+    // -------------------------------------------------------------------------
+    // Cross-language placeholder-grammar lock (single source of truth)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void LooksLikePlaceholder_MatchesSharedFixture()
+    {
+        // placeholder-fixtures.json is asserted by BOTH this test and the Python
+        // test (test_placeholder_fixtures.py) so the two gates can never drift.
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        string Rel() => Path.Combine(".github", "skills", "maf-obsolete-api-registry", "placeholder-fixtures.json");
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, Rel())))
+            dir = dir.Parent;
+        Assert.NotNull(dir);
+        using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir!.FullName, Rel())));
+        var cases = doc.RootElement.GetProperty("cases");
+        Assert.True(cases.GetArrayLength() > 0);
+        foreach (var c in cases.EnumerateArray())
+        {
+            var value = c.GetProperty("value").GetString();
+            var expected = c.GetProperty("placeholder").GetBoolean();
+            Assert.True(VerifyRegistryCommand.LooksLikePlaceholder(value) == expected,
+                $"LooksLikePlaceholder(\"{value}\") == {!expected}, expected {expected} (placeholder-fixtures.json)");
+        }
+    }
+
+    [Fact]
+    public void LooksLikePlaceholder_EmDashTodo_IsPlaceholder()
+    {
+        // The historical divergence: this used to pass C# but fail Python.
+        Assert.True(VerifyRegistryCommand.LooksLikePlaceholder("TODO — review the diff entry below"));
+    }
+
     // -------------------------------------------------------------------------
     // BraceImbalance
     // -------------------------------------------------------------------------
@@ -187,16 +223,17 @@ public class VerifyRegistryCommandTests
     {
         // This is the canary test for #5 polish — any change that breaks
         // the existing registry causes this test to fail in CI BEFORE the
-        // PR merges. Mirrors the same skip logic as VerifyRegistryCommand.Run():
-        //   - pre-1.0.0 historical entries
-        //   - raw drafts (all-TODO entries waiting for AI-fill)
+        // PR merges. Mirrors the same skip logic + order as
+        // VerifyRegistryCommand.Run():
+        //   - historical (pre-*) entries
+        //   - incomplete drafts (ANY core field still a placeholder — monotonic)
         var registry = new RegistryService();
         var issues = new List<string>();
         foreach (var entry in registry.AllEntries)
         {
             var marker = entry.AppliesToCodebases?.Trim();
             if (marker?.StartsWith("pre-", StringComparison.OrdinalIgnoreCase) == true) continue;
-            if (VerifyRegistryCommand.IsRawDraft(entry)) continue;
+            if (VerifyRegistryCommand.IsIncompleteDraft(entry)) continue;
             VerifyRegistryCommand.CheckEntry(entry, issues);
         }
 
@@ -283,6 +320,60 @@ public class VerifyRegistryCommandTests
             ExampleAfter = "// TODO — show the canonical 1.x replacement\n",
         };
         Assert.True(VerifyRegistryCommand.IsRawDraft(entry));
+    }
+
+    // -------------------------------------------------------------------------
+    // IsIncompleteDraft — the monotonic-fill gate used by Run() (any core field
+    // still a placeholder/empty => skip structural checks, no partial-fill trap).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void IsIncompleteDraft_AllPlaceholder_IsIncomplete()
+    {
+        var entry = new RegistryEntry
+        {
+            Id = "MAFINC-001",
+            ObsoleteSignature = "TODO",
+            ReplacementSignature = "TODO",
+            FixDescription = "TODO — review the diff entry below",
+            ExampleBefore = "// TODO — a call site that breaks\n",
+            ExampleAfter = "// TODO — the replacement\n",
+        };
+        Assert.True(VerifyRegistryCommand.IsIncompleteDraft(entry));
+    }
+
+    [Fact]
+    public void IsIncompleteDraft_PartiallyFilled_IsStillIncomplete()
+    {
+        // The monotonic fix: unlike IsRawDraft (all-fields AND), a partially
+        // filled entry is STILL incomplete, so it stays skipped rather than
+        // flipping into a pile of CheckEntry failures (the old partial-fill trap).
+        var entry = new RegistryEntry
+        {
+            Id = "MAFINC-002",
+            ObsoleteSignature = "Foo.Bar(int)",              // filled
+            ReplacementSignature = "Foo.Bar(int, bool)",     // filled
+            FixDescription = "TODO — review the diff entry below", // still a placeholder
+            ExampleBefore = "foo.Bar(1);",
+            ExampleAfter = "foo.Bar(1, true);",
+        };
+        Assert.True(VerifyRegistryCommand.IsIncompleteDraft(entry));
+        Assert.False(VerifyRegistryCommand.IsRawDraft(entry)); // NOT all-placeholder
+    }
+
+    [Fact]
+    public void IsIncompleteDraft_FullyFilled_IsComplete()
+    {
+        var entry = new RegistryEntry
+        {
+            Id = "MAFINC-003",
+            ObsoleteSignature = "Foo.Old()",
+            ReplacementSignature = "Foo.New()",
+            FixDescription = "Rename Old to New; the signature is unchanged.",
+            ExampleBefore = "foo.Old();",
+            ExampleAfter = "foo.New();",
+        };
+        Assert.False(VerifyRegistryCommand.IsIncompleteDraft(entry));
     }
 
     // -------------------------------------------------------------------------

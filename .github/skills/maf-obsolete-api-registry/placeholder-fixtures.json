@@ -1,0 +1,25 @@
+{
+  "_comment": "SINGLE SOURCE OF TRUTH for the registry 'placeholder token' grammar. A value is a placeholder token iff it begins (after optional leading whitespace) with a TODO / TBD / XXX word-token, regardless of the punctuation that follows. This table is asserted by BOTH the C# gate (VerifyRegistryCommand.LooksLikePlaceholder) and the Python gate (verify_crossfile_consistency.is_placeholder_token) via cross-language tests, so the two implementations can never silently drift again. The historical bug this guards: the extractor's default 'TODO — ...' (em-dash) passed C# but failed Python. NOTE: empty string is NOT a token here (placeholder=false) — callers treat empty separately per field.",
+  "cases": [
+    { "value": "TODO", "placeholder": true },
+    { "value": "TODO:", "placeholder": true },
+    { "value": "TODO — review the diff entry below and document the canonical fix", "placeholder": true },
+    { "value": "TODO - dash", "placeholder": true },
+    { "value": "   TODO   ", "placeholder": true },
+    { "value": "TBD", "placeholder": true },
+    { "value": "TBD - will fill later", "placeholder": true },
+    { "value": "tbd", "placeholder": true },
+    { "value": "XXX", "placeholder": true },
+    { "value": "todo lowercase note", "placeholder": true },
+    { "value": "N/A", "placeholder": false },
+    { "value": "UNKNOWN", "placeholder": false },
+    { "value": "Rename Foo to Bar; the signature is unchanged.", "placeholder": false },
+    { "value": "AgentSkillsProviderOptions.DisableCaching", "placeholder": false },
+    { "value": "TODOList is a real type name", "placeholder": false },
+    { "value": "TODÒ fill the real migration", "placeholder": true },
+    { "value": "TODO² note", "placeholder": true },
+    { "value": "TODO_x", "placeholder": false },
+    { "value": "TODO123", "placeholder": false },
+    { "value": "", "placeholder": false }
+  ]
+}

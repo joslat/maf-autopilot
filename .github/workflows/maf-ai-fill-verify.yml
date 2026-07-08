@@ -94,6 +94,14 @@ jobs:
         id: verify
         if: steps.scope.outputs.in_scope == 'true'
         continue-on-error: true
+        env:
+          # Validate the PR's LIVE registry, not the embedded (last-published)
+          # copy baked into the installed tool — so this C# gate and the Python
+          # cross-file gate below inspect the SAME document. Safe now that
+          # IsIncompleteDraft skips (never fails) any not-yet-complete entry, so a
+          # partially-filled OLD draft can't red an unrelated PR; keep-breaking-red
+          # for CURRENT-cycle drafts stays with the Python gate (version-scoped).
+          MAF_REGISTRY_PATH: ${{ github.workspace }}/.github/skills/maf-obsolete-api-registry/registry.yaml
         run: |
           set +e
           OUTPUT=$(maf-doctor verify-registry 2>&1)
