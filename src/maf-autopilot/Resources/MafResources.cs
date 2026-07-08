@@ -137,6 +137,7 @@ public static class MafResources
         "maf-fan-out-validator, maf-from-semantic-kernel, maf-issue-reporter, " +
         "maf-migration-guide, maf-migration-plan-creator, maf-migration-retrospective, " +
         "maf-obsolete-api-registry, maf-release-watcher, " +
+        "maf-doctor-self-evolution, " +
         "maf-remediation-playbook, maf-workflow-smoke-tester, nuget-diff-analyzer")]
     public static string GetSkill(string name)
     {
@@ -173,6 +174,7 @@ public static class MafResources
             "maf-migration-retrospective",
             "maf-obsolete-api-registry",
             "maf-release-watcher",
+            "maf-doctor-self-evolution",
             "maf-remediation-playbook",
             "maf-workflow-smoke-tester",
             "nuget-diff-analyzer",

@@ -114,6 +114,8 @@
                       LogicalName="skills/maf-workflow-smoke-tester.md" />
     <EmbeddedResource Include="..\..\.github\skills\maf-issue-reporter\SKILL.md"
                       LogicalName="skills/maf-issue-reporter.md" />
+    <EmbeddedResource Include="..\..\.github\skills\maf-doctor-self-evolution\SKILL.md"
+                      LogicalName="skills/maf-doctor-self-evolution.md" />
     <EmbeddedResource Include="..\..\.github\skills\maf-remediation-playbook\SKILL.md"
                       LogicalName="skills/maf-remediation-playbook.md" />
   </ItemGroup>

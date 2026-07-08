@@ -149,7 +149,7 @@ public sealed class TourTool
         ("maf://rules", "Live rule catalogue — anti-pattern + prompt-lint + analyzer + cross-references. Auto-generated from runtime data."),
         ("maf://help", "Same content as `MafTour()` but as a resource — useful for static discovery without a tool call."),
         ("maf://migrate-from?source=semantic-kernel", "Semantic Kernel → MAF construct mapping + interop bridges. The work-list for `MafDetectSourceFramework` / the `maf-migrate-from` flow."),
-        ("maf://skills?name=<X>", "Individual skill SKILL.md by name. 14 skills available."),
+        ("maf://skills?name=<X>", "Individual skill SKILL.md by name. 15 skills available."),
     };
 
     internal static readonly IReadOnlyList<(string Name, string Description)> PromptCatalogue = new[]
