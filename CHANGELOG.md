@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-07-09
+
+**MCP update/init freshness** — the MCP server now gives users a non-blocking startup advisory when a newer `maf-doctor` package is available, and separately detects when the installed tool is current but a workspace only needs `maf-doctor init` refreshed. Adds the **`MafDoctorStatus`** MCP tool for on-demand status, keeps init repair idempotent, and documents the exact update flow. **28 tools. CI green across net8/9/10.**
+
+### Added
+- **Startup update advisory.** On MCP startup, `maf-doctor` performs a short, cached NuGet check and logs the exact commands when action is needed:
+  - `dotnet tool update --global maf-doctor`
+  - `maf-doctor init`
+- **Workspace init freshness detection.** `maf-doctor init` now stamps managed MCP entries with `MAF_DOCTOR_INIT_VERSION`, allowing the MCP startup/status check to distinguish "package update needed" from "package is current, but this repo needs init refreshed." Startup and status checks walk upward to the initialized workspace root so nested-directory launches report the right repo state.
+- **`MafDoctorStatus` MCP tool.** Users can ask for the same package/init freshness report on demand from an MCP client, including whether to update the global tool, re-run init, or do nothing.
+
+### Changed
+- **Managed MCP entry repair.** Re-running `maf-doctor init` repairs stale managed entries, migrates legacy `maf-autopilot` entries to `maf-doctor`, preserves unrelated MCP servers, and refreshes the steering sidecars without touching hand-authored content.
+- **Docs updated for the new behavior.** README, quickstart, usage, and init reference now highlight the startup advisory, `MafDoctorStatus`, and the safe re-run flow after updating.
+
+### Fixed
+- **Startup/read hardening.** Advisory and init-status reads are bounded and failure-tolerant: marker files are capped, update-cache reads reject oversized files, duplicate `User-Agent` headers are avoided, and prerelease/stable version comparisons no longer suppress valid update notices.
+
 ## [1.8.0] - 2026-07-09
 
 **MAF 1.13.0 coverage** — a FileStore API rename across `AgentFileStore` / `FileSystemAgentFileStore` / `InMemoryAgentFileStore` — plus a new **`maf-doctor-self-evolution` maintainer runbook** skill and a verification-logic fix that prevents partially-filled scaffold entries from blocking the build. **15 skills. All tests green across net8/9/10.**
@@ -635,7 +653,10 @@ Internal alpha; superseded by `1.3.0-alpha-3`. Not announced.
 
 Initial MCP server prototype. Three tools (`MafApiSafety`, `MafRegistryLookup`, `MafRegistryList`), 11 skills, 2 agents, 10 registry entries. Validated against one real migration (`maf-claims-fraud-guardian` 1.2.0 → 1.3.0). Internal alpha; not announced.
 
-[Unreleased]: https://github.com/joslat/maf-doctor/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/joslat/maf-doctor/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.9.0
+[1.8.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.8.0
+[1.7.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.7.0
 [1.4.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.4.0
 [1.3.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.3.0
 [1.0.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.0.0
