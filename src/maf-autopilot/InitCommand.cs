@@ -330,6 +330,23 @@ internal static class InitCommand
         return new InitStatus(findings.Count == 0, findings);
     }
 
+    internal static string FindInitializedWorkspaceRoot(string startDir)
+    {
+        var current = new DirectoryInfo(Path.GetFullPath(startDir));
+        while (current is not null)
+        {
+            if (File.Exists(Path.Combine(current.FullName, ".mcp.json")) ||
+                File.Exists(Path.Combine(current.FullName, ".vscode", "mcp.json")))
+            {
+                return current.FullName;
+            }
+
+            current = current.Parent;
+        }
+
+        return Path.GetFullPath(startDir);
+    }
+
     private static void InspectMcpConfig(
         string path,
         string serversKey,

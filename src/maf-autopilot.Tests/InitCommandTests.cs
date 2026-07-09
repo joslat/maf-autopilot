@@ -396,4 +396,16 @@ public sealed class InitCommandTests : IDisposable
         Assert.Contains(status.Findings,
             finding => finding.Contains("CLAUDE.md exceeds the 1 MB marker-scan safety cap", StringComparison.Ordinal));
     }
+
+      [Fact]
+      public async Task FindInitializedWorkspaceRoot_WalksUpFromSubdirectory()
+      {
+        await InitCommand.WriteMcpJsonAsync(_tempDir);
+        var nested = Path.Combine(_tempDir, "src", "app");
+        Directory.CreateDirectory(nested);
+
+        var root = InitCommand.FindInitializedWorkspaceRoot(nested);
+
+        Assert.Equal(Path.GetFullPath(_tempDir), root);
+      }
 }

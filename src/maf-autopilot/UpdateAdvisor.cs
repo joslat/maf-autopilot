@@ -21,7 +21,8 @@ internal sealed class UpdateNoticeHostedService(ILogger<UpdateNoticeHostedServic
                 timeout: TimeSpan.FromSeconds(3),
                 ignoreCache: false,
                 cancellationToken: cancellationToken);
-            var init = InitCommand.GetWorkspaceInitStatus(Directory.GetCurrentDirectory());
+            var workspaceRoot = InitCommand.FindInitializedWorkspaceRoot(Directory.GetCurrentDirectory());
+            var init = InitCommand.GetWorkspaceInitStatus(workspaceRoot);
             var notice = UpdateAdvisor.BuildStartupNotice(update, init);
             if (!string.IsNullOrWhiteSpace(notice))
                 logger.LogWarning("{Notice}", notice);
