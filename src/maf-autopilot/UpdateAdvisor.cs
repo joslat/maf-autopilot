@@ -39,6 +39,7 @@ internal static class UpdateAdvisor
 {
     private const string PackageId = "maf-doctor";
     private const string NuGetIndexUrl = "https://api.nuget.org/v3-flatcontainer/maf-doctor/index.json";
+    private const long CacheMaxBytes = 64 * 1024;
     private static readonly TimeSpan CacheTtl = TimeSpan.FromHours(24);
     private static readonly JsonSerializerOptions CacheJsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
@@ -252,6 +253,8 @@ internal static class UpdateAdvisor
         checkedAtUtc = default;
         var path = CachePath;
         if (!File.Exists(path))
+            return false;
+        if (new FileInfo(path).Length > CacheMaxBytes)
             return false;
 
         try
