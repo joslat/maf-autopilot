@@ -46,6 +46,8 @@ public sealed class InitCommandTests : IDisposable
         Assert.Equal("stdio", servers["maf-doctor"]!["type"]!.GetValue<string>());
         // Brand key is maf-doctor; the command stays the frozen binary maf-doctor.
         Assert.Equal("maf-doctor", servers["maf-doctor"]!["command"]!.GetValue<string>());
+        Assert.Equal(InitCommand.CurrentVersion,
+          servers["maf-doctor"]!["env"]![InitCommand.InitVersionEnvName]!.GetValue<string>());
     }
 
     [Fact]
@@ -251,9 +253,45 @@ public sealed class InitCommandTests : IDisposable
 
         var root = JsonNode.Parse(await File.ReadAllTextAsync(path))!.AsObject();
         var servers = root["mcpServers"]!.AsObject();
-        Assert.True(servers.ContainsKey("maf-autopilot"));
-        Assert.False(servers.ContainsKey("maf-doctor"),
-            "Legacy maf-autopilot key must be recognized so no duplicate maf-doctor entry is added.");
+        Assert.False(servers.ContainsKey("maf-autopilot"));
+        Assert.True(servers.ContainsKey("maf-doctor"));
+        Assert.Equal("maf-doctor", servers["maf-doctor"]!["command"]!.GetValue<string>());
+        Assert.False(servers["maf-doctor"]!.AsObject().ContainsKey("type"));
+        Assert.Equal(InitCommand.CurrentVersion,
+            servers["maf-doctor"]!["env"]![InitCommand.InitVersionEnvName]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task WriteMcpJsonAsync_StaleManagedEntry_IsRepaired()
+    {
+        var vscodeDir = Path.Combine(_tempDir, ".vscode");
+        Directory.CreateDirectory(vscodeDir);
+        var mcpJsonPath = Path.Combine(vscodeDir, "mcp.json");
+        await File.WriteAllTextAsync(mcpJsonPath, """
+            {
+              "servers": {
+                "maf-doctor": {
+                  "type": "stdio",
+                  "command": "maf-autopilot",
+                  "args": ["--old"],
+                  "env": { "KEEP_ME": "yes" }
+                },
+                "other": { "type": "stdio", "command": "node" }
+              }
+            }
+            """);
+
+        await InitCommand.WriteMcpJsonAsync(_tempDir);
+
+        var root = JsonNode.Parse(await File.ReadAllTextAsync(mcpJsonPath))!.AsObject();
+        var servers = root["servers"]!.AsObject();
+        Assert.True(servers.ContainsKey("other"));
+        var entry = servers["maf-doctor"]!.AsObject();
+        Assert.Equal("maf-doctor", entry["command"]!.GetValue<string>());
+        Assert.Empty(entry["args"]!.AsArray());
+        Assert.Equal("yes", entry["env"]!["KEEP_ME"]!.GetValue<string>());
+        Assert.Equal(InitCommand.CurrentVersion,
+            entry["env"]![InitCommand.InitVersionEnvName]!.GetValue<string>());
     }
 
     // -------------------------------------------------------------------------

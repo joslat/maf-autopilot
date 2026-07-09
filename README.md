@@ -69,7 +69,7 @@ The practical upshot: you don't pin to a MAF version in these docs, and you don'
 
 MAF Doctor is a **[Model Context Protocol (MCP)](https://modelcontextprotocol.io) server** packaged as a .NET global tool. With no subcommand it runs in MCP mode and exposes:
 
-- **27 executable tools**, each annotated with MCP behavior hints (read-only / destructive / idempotent / open-world) so clients can auto-classify them — registry lookup, code scanning, build-verified CS0618 hunts, NuGet diffing, workflow simulation, scaffolding, cross-framework (Semantic Kernel → MAF) migration scanning, PR-scoped audits, version planning, and a single-command health letter. The anti-pattern and fan-out scanners emit SARIF for GitHub Advanced Security; the two destructive tools (auto-fix and auto-fix-all) support a dry-run.
+- **28 executable tools**, each annotated with MCP behavior hints (read-only / destructive / idempotent / open-world) so clients can auto-classify them — registry lookup, code scanning, build-verified CS0618 hunts, NuGet diffing, workflow simulation, scaffolding, cross-framework (Semantic Kernel → MAF) migration scanning, PR-scoped audits, version planning, MCP/update status, and a single-command health letter. The anti-pattern and fan-out scanners emit SARIF for GitHub Advanced Security; the two destructive tools (auto-fix and auto-fix-all) support a dry-run.
 - **7 resources** — the migration guide, constraints, registry, rules, help, the Semantic Kernel → MAF mapping, and per-name skills — readable on demand.
 - **10 prompts** — audit, migrate, remediate, migrate-from, cs0618-hunt, review, debug, explain-finding, scaffold, and help.
 - **3 Roslyn analyzers** (in the separate maf-doctor.Analyzers package) — MAF001 (fan-out), MAF002 (DefaultAzureCredential), MAF003 (EnableSensitiveData). Write-time enforcement.
@@ -94,6 +94,8 @@ maf-doctor init
 `init` is **non-destructive — it attaches and updates only, never overwriting your files.** It adds its own MCP server entry to both **VS Code** (.vscode/mcp.json) and **Claude Code** (.mcp.json), and drops auto-loaded steering as self-contained sidecars in each tool's convention dir — .github/instructions/ for Copilot, .claude/ plus a one-line CLAUDE.md import for Claude Code, and an AGENTS.md managed block. These sidecars are refreshed on every re-run and never merged into your hand-authored files, so re-running `init` after an upgrade is always safe. Your assistant picks the server up automatically and gains live tool calls, resource reads, and structured prompts.
 
 #### Keeping it up to date
+
+When the MCP server starts, it checks NuGet for a newer `maf-doctor` package using a short, cached, non-blocking advisory check. It also detects the separate case where the installed tool is current but this workspace's MCP config or steering sidecars were initialized by an older `maf-doctor`. You can ask for the same report any time with the `MafDoctorStatus` MCP tool.
 
 ```powershell
 dotnet tool update --global maf-doctor   # upgrade to the latest release

@@ -117,6 +117,7 @@ public sealed class TourTool
 
         // — Health —
         new("MafDoctor", "Health", "Single-command A/B/C/F grade. Aggregates 4 scanners + reports the top 3 fixes (or every finding with `full: true`). Best triage signal in the toolkit."),
+        new("MafDoctorStatus", "Health", "Check whether the installed maf-doctor package is current and whether this workspace needs only a fresh `maf-doctor init`. Returns exact commands when action is needed."),
         new("MafExplainFinding", "Health", "Deep-dive ONE doctor finding (file + line): the offending code in context plus the rule's why / fix / auto-fixability. Grounded substrate for explaining or fixing it — pair with the `maf-explain-finding` prompt."),
 
         // — Discovery (this very tool) —

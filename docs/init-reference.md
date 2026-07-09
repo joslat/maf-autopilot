@@ -35,8 +35,20 @@ maf-doctor init --with-cursor   # also the Cursor rule
 ## Safety / idempotency
 
 - **MCP config is merge-not-overwrite:** init parses your existing `mcp.json` / `.mcp.json` (JSONC-tolerant — `//` comments + trailing commas allowed), adds only the `maf-doctor` entry, and preserves every other server and top-level key. It also recognizes a legacy `maf-autopilot` server key so a repo configured by a pre-rename build isn't double-entered.
+- **Managed entry is repaired:** if the `maf-doctor` entry already exists but points at an old command, has stale args, or was written by an older `maf-doctor`, init rewrites only that managed entry and preserves unrelated servers. The entry carries `MAF_DOCTOR_INIT_VERSION` so the MCP startup/status check can distinguish "tool package is current" from "this workspace only needs init refreshed."
 - **Corruption-safe:** if an existing config can't be parsed, init backs it up to `*.bak.<timestamp>` before writing (and caps the read at 1 MB so a malformed file can't OOM the host).
 - **Re-runnable:** run `init` again any time to refresh the steering to the installed version — sidecars are rewritten, the `CLAUDE.md` import and `AGENTS.md` block are upserted, never duplicated.
+
+## Update / init freshness checks
+
+On MCP startup, `maf-doctor` performs a short advisory check against NuGet. If a newer global tool package exists, the MCP server logs the exact update flow:
+
+```bash
+dotnet tool update --global maf-doctor
+maf-doctor init
+```
+
+If the package is already current but this workspace was initialized by an older tool, the notice only asks you to run `maf-doctor init`. The same information is available on demand through the `MafDoctorStatus` MCP tool.
 
 ## After `init`
 
