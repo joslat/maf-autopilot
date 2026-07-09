@@ -177,6 +177,7 @@ builder.Logging.AddConsole(options =>
 // Load the registry once at startup and register as a singleton shared by all tools.
 builder.Services
     .AddSingleton<RegistryService>()
+    .AddHostedService<UpdateNoticeHostedService>()
     .AddMcpServer(options =>
     {
         // Advertise the server's identity + icon (MCP 2025-11 `icons` on the

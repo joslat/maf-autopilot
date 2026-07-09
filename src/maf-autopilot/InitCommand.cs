@@ -24,6 +24,8 @@ namespace MafDoctor;
 /// </summary>
 internal static class InitCommand
 {
+    internal const string InitVersionEnvName = "MAF_DOCTOR_INIT_VERSION";
+
     /// <summary>
     /// VS Code's mcp.json is JSONC — supports // line comments, /* block */ comments,
     /// and trailing commas. Use these options instead of strict JSON parsing.
@@ -33,6 +35,9 @@ internal static class InitCommand
         CommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true,
     };
+
+    private const long McpJsonMaxBytes = 1 * 1024 * 1024;
+    private const long MarkerFileMaxBytes = 1 * 1024 * 1024;
 
     /// <summary>
     /// Copies the file to a backup path with a unique suffix, retrying on collision.
@@ -56,6 +61,19 @@ internal static class InitCommand
         throw new IOException(
             $"Could not create a unique backup for '{originalPath}' after 5 attempts. " +
             $"Check that the directory is writable.");
+    }
+
+    internal static string CurrentVersion
+    {
+        get
+        {
+            var raw = Assembly.GetExecutingAssembly()
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+                ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+                ?? "unknown";
+            var plus = raw.IndexOf('+');
+            return plus >= 0 ? raw[..plus] : raw;
+        }
     }
 
     public static async Task<int> RunAsync(string[]? args = null)
@@ -148,7 +166,6 @@ internal static class InitCommand
         // Security: cap the JSON read at 1 MB. A malicious or corrupt config (from a
         // template repo, a stale upstream, or a paste accident) could otherwise OOM the
         // host on the very first `maf-doctor init`. Real config files are kilobytes at most.
-        const long McpJsonMaxBytes = 1 * 1024 * 1024;
         JsonObject root;
         if (File.Exists(mcpJsonPath))
         {
@@ -188,27 +205,241 @@ internal static class InitCommand
 
         var servers = root[serversKey]!.AsObject();
 
-        // Server key + command are both "maf-doctor" (full rename). Recognize the
-        // LEGACY "maf-autopilot" server key too, so re-running init on a repo
-        // configured by a pre-rename build doesn't add a duplicate entry.
-        if (servers.ContainsKey("maf-doctor") || servers.ContainsKey("maf-autopilot"))
+        var changed = UpsertCanonicalMcpEntry(servers, includeType, out var action);
+        if (!changed)
         {
-            Console.WriteLine($"  ✓ {label} — MAF Doctor server entry already present, no change");
+            Console.WriteLine($"  ✓ {label} — MAF Doctor server entry already current");
             return;
         }
 
-        // Add the global-tool entry (assumes `dotnet tool install -g maf-doctor`).
-        // VS Code wants an explicit "type": "stdio"; Claude Code's .mcp.json omits it.
-        var entry = new JsonObject();
-        if (includeType) entry["type"] = "stdio";
-        entry["command"] = "maf-doctor";
-        entry["args"] = new JsonArray();
-        entry["env"] = new JsonObject();
-        servers["maf-doctor"] = entry;
-
         var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(mcpJsonPath, json + Environment.NewLine);
-        Console.WriteLine($"  ✓ {label} — added MAF Doctor (maf-doctor) global-tool server entry");
+        Console.WriteLine($"  ✓ {label} — {action}");
+    }
+
+    internal static bool UpsertCanonicalMcpEntry(JsonObject servers, bool includeType, out string action)
+    {
+        var changed = false;
+        action = "updated MAF Doctor (maf-doctor) global-tool server entry";
+
+        JsonObject entry;
+        if (servers.TryGetPropertyValue("maf-doctor", out var existing) && existing is JsonObject existingObject)
+        {
+            entry = existingObject;
+        }
+        else if (servers.TryGetPropertyValue("maf-autopilot", out var legacy) && legacy is JsonObject legacyObject)
+        {
+            servers.Remove("maf-autopilot");
+            entry = legacyObject;
+            servers["maf-doctor"] = entry;
+            changed = true;
+            action = "migrated legacy maf-autopilot entry to maf-doctor and refreshed it";
+        }
+        else
+        {
+            entry = new JsonObject();
+            servers["maf-doctor"] = entry;
+            changed = true;
+            action = "added MAF Doctor (maf-doctor) global-tool server entry";
+        }
+
+        if (includeType)
+        {
+            changed |= SetString(entry, "type", "stdio");
+        }
+        else if (entry.Remove("type"))
+        {
+            changed = true;
+        }
+
+        changed |= SetString(entry, "command", "maf-doctor");
+        changed |= SetEmptyArray(entry, "args");
+        changed |= SetInitEnv(entry);
+
+        return changed;
+    }
+
+    private static bool SetString(JsonObject obj, string propertyName, string value)
+    {
+        if (obj.TryGetPropertyValue(propertyName, out var existing) &&
+            existing is JsonValue existingValue &&
+            existingValue.TryGetValue<string>(out var existingString) &&
+            string.Equals(existingString, value, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        obj[propertyName] = value;
+        return true;
+    }
+
+    private static bool SetEmptyArray(JsonObject obj, string propertyName)
+    {
+        if (obj.TryGetPropertyValue(propertyName, out var existing) &&
+            existing is JsonArray existingArray &&
+            existingArray.Count == 0)
+        {
+            return false;
+        }
+
+        obj[propertyName] = new JsonArray();
+        return true;
+    }
+
+    private static bool SetInitEnv(JsonObject entry)
+    {
+        var changed = false;
+        JsonObject env;
+        if (entry.TryGetPropertyValue("env", out var existing) && existing is JsonObject existingEnv)
+        {
+            env = existingEnv;
+        }
+        else
+        {
+            env = new JsonObject();
+            entry["env"] = env;
+            changed = true;
+        }
+
+        changed |= SetString(env, InitVersionEnvName, CurrentVersion);
+        return changed;
+    }
+
+    internal static InitStatus GetWorkspaceInitStatus(string targetDir)
+    {
+        var findings = new List<string>();
+
+        InspectMcpConfig(
+            Path.Combine(targetDir, ".vscode", "mcp.json"),
+            serversKey: "servers",
+            includeType: true,
+            label: ".vscode/mcp.json",
+            findings);
+        InspectMcpConfig(
+            Path.Combine(targetDir, ".mcp.json"),
+            serversKey: "mcpServers",
+            includeType: false,
+            label: ".mcp.json",
+            findings);
+
+        RequireFile(targetDir, ".github/instructions/maf-doctor.instructions.md", findings);
+        RequireFile(targetDir, ".claude/maf-doctor.md", findings);
+        RequireText(targetDir, "CLAUDE.md", "@.claude/maf-doctor.md", findings);
+        RequireText(targetDir, "AGENTS.md", "<!-- BEGIN maf-doctor", findings);
+
+        return new InitStatus(findings.Count == 0, findings);
+    }
+
+    internal static string FindInitializedWorkspaceRoot(string startDir)
+    {
+        var current = new DirectoryInfo(Path.GetFullPath(startDir));
+        while (current is not null)
+        {
+            if (File.Exists(Path.Combine(current.FullName, ".mcp.json")) ||
+                File.Exists(Path.Combine(current.FullName, ".vscode", "mcp.json")))
+            {
+                return current.FullName;
+            }
+
+            current = current.Parent;
+        }
+
+        return Path.GetFullPath(startDir);
+    }
+
+    private static void InspectMcpConfig(
+        string path,
+        string serversKey,
+        bool includeType,
+        string label,
+        List<string> findings)
+    {
+        if (!File.Exists(path))
+        {
+            findings.Add($"{label} is missing");
+            return;
+        }
+
+        var info = new FileInfo(path);
+        if (info.Length > McpJsonMaxBytes)
+        {
+            findings.Add($"{label} exceeds the 1 MB safety cap and should be repaired by init");
+            return;
+        }
+
+        JsonObject root;
+        try
+        {
+            root = JsonNode.Parse(File.ReadAllText(path), nodeOptions: null, documentOptions: JsoncOptions)!.AsObject();
+        }
+        catch
+        {
+            findings.Add($"{label} cannot be parsed and should be repaired by init");
+            return;
+        }
+
+        if (root[serversKey] is not JsonObject servers)
+        {
+            findings.Add($"{label} has no {serversKey} object");
+            return;
+        }
+
+        if (servers.ContainsKey("maf-autopilot"))
+            findings.Add($"{label} still uses the legacy maf-autopilot server key");
+
+        if (servers["maf-doctor"] is not JsonObject entry)
+        {
+            findings.Add($"{label} has no maf-doctor server entry");
+            return;
+        }
+
+        if (includeType && !StringPropertyEquals(entry, "type", "stdio"))
+            findings.Add($"{label} maf-doctor entry should declare type=stdio");
+        if (!includeType && entry.ContainsKey("type"))
+            findings.Add($"{label} maf-doctor entry should omit type for Claude Code");
+        if (!StringPropertyEquals(entry, "command", "maf-doctor"))
+            findings.Add($"{label} maf-doctor entry should run command=maf-doctor");
+        if (entry["args"] is not JsonArray args || args.Count != 0)
+            findings.Add($"{label} maf-doctor entry should use an empty args array");
+        if (entry["env"] is not JsonObject env || !StringPropertyEquals(env, InitVersionEnvName, CurrentVersion))
+            findings.Add($"{label} was initialized by an older maf-doctor; run init to refresh it");
+    }
+
+    private static bool StringPropertyEquals(JsonObject obj, string propertyName, string expected)
+        => obj[propertyName] is JsonValue value &&
+           value.TryGetValue<string>(out var actual) &&
+           string.Equals(actual, expected, StringComparison.Ordinal);
+
+    private static void RequireFile(string targetDir, string relativePath, List<string> findings)
+    {
+        if (!File.Exists(Path.Combine(targetDir, relativePath)))
+            findings.Add($"{relativePath} is missing");
+    }
+
+    private static void RequireText(string targetDir, string relativePath, string expectedText, List<string> findings)
+    {
+        var path = Path.Combine(targetDir, relativePath);
+        if (!File.Exists(path))
+        {
+            findings.Add($"{relativePath} is missing");
+            return;
+        }
+
+        var info = new FileInfo(path);
+        if (info.Length > MarkerFileMaxBytes)
+        {
+            findings.Add($"{relativePath} exceeds the 1 MB marker-scan safety cap; run init to refresh the managed marker manually");
+            return;
+        }
+
+        var content = File.ReadAllText(path);
+        if (!content.Contains(expectedText, StringComparison.Ordinal))
+            findings.Add($"{relativePath} does not contain the maf-doctor managed marker");
+    }
+
+    internal sealed record InitStatus(bool IsCurrent, IReadOnlyList<string> Findings)
+    {
+        public bool NeedsRefresh => !IsCurrent;
     }
 
     // ------------------------------------------------------------------ //
