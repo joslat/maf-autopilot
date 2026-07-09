@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-07-09
+
+**MAF 1.13.0 coverage** — a FileStore API rename across `AgentFileStore` / `FileSystemAgentFileStore` / `InMemoryAgentFileStore` — plus a new **`maf-doctor-self-evolution` maintainer runbook** skill and a verification-logic fix that prevents partially-filled scaffold entries from blocking the build. **15 skills. All tests green across net8/9/10.**
+
+### Added
+- **MAF 1.13.0 compatibility coverage** across the matrix, code matrix (`CompatibilityTool`), obsolete-API registry, and migration guides. 1.13.0 is a **.NET breaking** release — a FileStore API rename:
+  - `AgentFileStore` / `FileSystemAgentFileStore` / `InMemoryAgentFileStore`: `WriteFileAsync` → `WriteAsync`, `ReadFileAsync` → `ReadAsync`, `DeleteFileAsync` → `DeleteAsync`, `ListFilesAsync` + `ListDirectoriesAsync` → `ListChildrenAsync` (members collapsed; use `FileListEntry.Type` to distinguish), `SearchFilesAsync` → `SearchAsync` (`MAF1130-FILESTORE-001` through `005`).
+  - `FileListEntry.FileName` → `FileListEntry.Name` (`MAF1130-FILELIST-001`).
+  - `FileAccessProvider` tool-name constants renamed: `SaveFileToolName` → `WriteToolName`, `ListFilesToolName` / `ListSubdirectoriesToolName` → `LsToolName`, `SearchFilesToolName` → `GrepToolName` (`MAF1130-FILEACCESS-001`).
+  - 8 consolidated registry entries (the 24-member diff reduces to 8 patterns across 3 concrete types).
+- **`maf-doctor-self-evolution` skill** (15th skill, served at `maf://skills?name=maf-doctor-self-evolution`). A maintainer action runbook: pre-flight checks, exact `gh workflow run` trigger command, PR review checklist, merge steps, post-merge housekeeping, and a troubleshooting table of known failure modes. Distinct from `maf-release-watcher` (which documents the pipeline internals); this skill is the human-facing "what do I do right now" guide.
+
+### Fixed
+- **`IsIncompleteDraft` verification gate** (`VerifyRegistryCommand`). The previous `IsRawDraft` logic only skipped entries where *all* fields were `TODO`. A partially-filled scaffold entry (non-`TODO` `obsolete_signature` + `replacement_signature` but `guide_section: TODO`) was no longer considered a raw draft, causing `LiveRegistry_PassesVerification` to fail on every breaking scaffold PR. The new `IsIncompleteDraft` skips any entry where *any* core field is still a placeholder — the monotonic fill model: checks only activate once every required field is filled.
+- **Placeholder grammar single source of truth.** `placeholder-fixtures.json` is now the authoritative fixture consumed by both the C# `LooksLikePlaceholder` test and the Python `test_placeholder_fixtures.py` CI check, eliminating the historical divergence where em-dash TODO variants passed C# but failed Python.
+- **Release-watcher scaffold now opens a PR (never pushes to main).** Following the MAF 1.11.0 incident (unfilled scaffold pushed to main turned main red and blocked all PRs), the watcher now pushes to a per-version branch (`release-watcher/maf-X.Y.Z`) and opens a PR. Main only receives the filled, build-green result on merge.
+
 ## [1.7.0] - 2026-07-02
 
 **MAF 1.12.0 coverage** — a breaking skills-source refactor — and the first real-world exercise of the green-on-arrival watcher (its classifier was fooled by a truncated diff, but the keep-breaking-red gate + independent `registry-extract` correctly held the release red for review). **994 .NET tests (979 + 15 analyzer) green across net8/9/10, + 87 release-automation tests.**
