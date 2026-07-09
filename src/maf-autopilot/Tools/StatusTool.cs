@@ -35,7 +35,7 @@ public sealed class StatusTool
         if (PathGuard.ValidateRepoPath(rawPath) is { } error)
             return error;
 
-        var targetDir = Path.GetFullPath(rawPath);
+        var targetDir = InitCommand.FindInitializedWorkspaceRoot(rawPath);
 
         var update = await UpdateAdvisor.CheckForUpdateAsync(timeout: TimeSpan.FromSeconds(3));
         var init = InitCommand.GetWorkspaceInitStatus(targetDir);
