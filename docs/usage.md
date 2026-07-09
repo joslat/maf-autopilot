@@ -49,7 +49,7 @@ The server exposes a couple dozen executable tools, each annotated read-only / d
 - **Workflow topology** — `MafSimulateWorkflow` (+ Mermaid)
 - **Scaffold** — `MafNewAgent`, `MafNewExecutor`
 - **Fix** — `MafAutoFix`, `MafAutoFixAll` (both support `dryRun`)
-- **Report** — `MafDoctor` (A/B/C/F health letter), `MafExplainFinding` (deep-dive one finding), `MafAuditPullRequest`, `MafExplain`, `MafBeforeAfter`, `MafCompatibility`, `MafDraftIssue`
+- **Report** — `MafDoctor` (A/B/C/F health letter), `MafDoctorStatus` (installed package + workspace init freshness), `MafExplainFinding` (deep-dive one finding), `MafAuditPullRequest`, `MafExplain`, `MafBeforeAfter`, `MafCompatibility`, `MafDraftIssue`
 
 > **Live catalogue:** ask the assistant to run **`MafTour`**, or read the **`maf://rules`** resource — both are generated from the actual code, so they never drift.
 

@@ -23,6 +23,8 @@ dotnet tool update --global maf-doctor
 
 > 🎙️ *"One global tool. It's an MCP server for Copilot/Claude/Cursor **and** a standalone CLI — we'll use the CLI."*
 >
+> When the MCP server starts, it now performs a short cached advisory check. If a newer `maf-doctor` package exists, it tells you to run `dotnet tool update --global maf-doctor` and then `maf-doctor init`; if only this repo's generated MCP/steering files are stale, it asks only for `maf-doctor init`. You can ask for the same report from chat with `MafDoctorStatus`.
+>
 > ⚠️ **Upgrade says "file is locked by another process"?** Your editor keeps the MCP server (`maf-doctor`) running, which locks the binary. Kill **every** instance first (both VS Code and Claude Code if open) — `Get-Process maf-doctor | Stop-Process -Force` (Windows) / `pkill -f maf-doctor` (macOS/Linux) — then update. **After upgrading**, re-run `maf-doctor init` and **reload the editor** (VS Code: `Developer: Reload Window`) so it loads the new binary; a bare restart keeps the cached old descriptors. (Full guide: [TROUBLESHOOTING.md](../TROUBLESHOOTING.md).)
 
 ## Beat 2 — Drop it into a repo (20s)
