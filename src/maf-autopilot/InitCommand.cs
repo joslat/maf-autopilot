@@ -37,6 +37,7 @@ internal static class InitCommand
     };
 
     private const long McpJsonMaxBytes = 1 * 1024 * 1024;
+    private const long MarkerFileMaxBytes = 1 * 1024 * 1024;
 
     /// <summary>
     /// Copies the file to a backup path with a unique suffix, retrying on collision.
@@ -404,6 +405,13 @@ internal static class InitCommand
         if (!File.Exists(path))
         {
             findings.Add($"{relativePath} is missing");
+            return;
+        }
+
+        var info = new FileInfo(path);
+        if (info.Length > MarkerFileMaxBytes)
+        {
+            findings.Add($"{relativePath} exceeds the 1 MB marker-scan safety cap; run init to refresh the managed marker manually");
             return;
         }
 

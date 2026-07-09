@@ -60,7 +60,8 @@ internal static class UpdateAdvisor
         var ownsClient = httpClient is null;
         using var client = ownsClient ? new HttpClient() : null;
         var effectiveClient = httpClient ?? client!;
-        effectiveClient.DefaultRequestHeaders.UserAgent.ParseAdd("maf-doctor-update-check/1.0");
+        if (!effectiveClient.DefaultRequestHeaders.UserAgent.Any(v => v.Product?.Name == "maf-doctor-update-check"))
+            effectiveClient.DefaultRequestHeaders.UserAgent.ParseAdd("maf-doctor-update-check/1.0");
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(timeout ?? TimeSpan.FromSeconds(3));
@@ -190,32 +191,39 @@ internal static class UpdateAdvisor
 
     internal static int CompareSemanticVersions(string left, string right)
     {
-        var leftParts = ParseVersionParts(left);
-        var rightParts = ParseVersionParts(right);
-        for (var i = 0; i < Math.Max(leftParts.Length, rightParts.Length); i++)
+        var leftVersion = ParseVersion(left);
+        var rightVersion = ParseVersion(right);
+        for (var i = 0; i < Math.Max(leftVersion.Parts.Length, rightVersion.Parts.Length); i++)
         {
-            var leftPart = i < leftParts.Length ? leftParts[i] : 0;
-            var rightPart = i < rightParts.Length ? rightParts[i] : 0;
+            var leftPart = i < leftVersion.Parts.Length ? leftVersion.Parts[i] : 0;
+            var rightPart = i < rightVersion.Parts.Length ? rightVersion.Parts[i] : 0;
             var comparison = leftPart.CompareTo(rightPart);
             if (comparison != 0)
                 return comparison;
         }
 
+        if (leftVersion.IsPrerelease != rightVersion.IsPrerelease)
+            return leftVersion.IsPrerelease ? -1 : 1;
+
         return 0;
     }
 
-    private static int[] ParseVersionParts(string version)
+    private static ParsedVersion ParseVersion(string version)
     {
         var normalized = version.Trim();
         if (normalized.StartsWith('v')) normalized = normalized[1..];
         var plus = normalized.IndexOf('+');
         if (plus >= 0) normalized = normalized[..plus];
         var dash = normalized.IndexOf('-');
-        if (dash >= 0) normalized = normalized[..dash];
-        return normalized.Split('.', StringSplitOptions.RemoveEmptyEntries)
+        var isPrerelease = dash >= 0;
+        if (isPrerelease) normalized = normalized[..dash];
+        var parts = normalized.Split('.', StringSplitOptions.RemoveEmptyEntries)
             .Select(part => int.TryParse(part, out var value) ? value : 0)
             .ToArray();
+        return new ParsedVersion(parts, isPrerelease);
     }
+
+    private sealed record ParsedVersion(int[] Parts, bool IsPrerelease);
 
     private static UpdateStatus BuildStatus(string currentVersion, string latestVersion, bool fromCache, DateTimeOffset checkedAtUtc)
         => new(

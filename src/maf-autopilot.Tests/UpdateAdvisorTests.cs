@@ -24,6 +24,8 @@ public sealed class UpdateAdvisorTests
     [InlineData("v1.8.0+abc123", "1.8.0", 0)]
     [InlineData("1.8", "1.8.0", 0)]
     [InlineData("1.7.9", "1.8.0", -1)]
+    [InlineData("1.8.0-beta.1", "1.8.0", -1)]
+    [InlineData("1.8.0", "1.8.0-beta.1", 1)]
     public void CompareSemanticVersions_HandlesCommonNuGetShapes(string left, string right, int expectedSign)
     {
         var comparison = UpdateAdvisor.CompareSemanticVersions(left, right);

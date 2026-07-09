@@ -384,4 +384,16 @@ public sealed class InitCommandTests : IDisposable
         Assert.Contains("Project-specific notes.", content);
         Assert.Contains("<!-- BEGIN maf-doctor", content);
     }
+
+      [Fact]
+      public void GetWorkspaceInitStatus_LargeMarkerFile_DoesNotReadWholeFile()
+      {
+        var claudeMd = Path.Combine(_tempDir, "CLAUDE.md");
+        File.WriteAllText(claudeMd, new string('x', 1024 * 1024 + 1));
+
+        var status = InitCommand.GetWorkspaceInitStatus(_tempDir);
+
+        Assert.Contains(status.Findings,
+          finding => finding.Contains("CLAUDE.md exceeds the 1 MB marker-scan safety cap", StringComparison.Ordinal));
+      }
 }
