@@ -56,6 +56,50 @@ internal static class SourceFileWalker
     };
 
     /// <summary>
+    /// Hard ceiling on how many files a single repo walk yields. #148 finding 2 —
+    /// none of the scanning tools capped scan size, so an accidentally-huge
+    /// target (a big monorepo, a mounted drive, or a misresolved cwd) turned one
+    /// call into an unbounded-time, unbounded-memory walk. Iterator methods
+    /// can't use <c>out</c> parameters, so truncation is surfaced by mutating
+    /// this shared, caller-owned counter as <see cref="EnumerateCsFiles(string, IReadOnlyList{string}?, ScanBudget)"/>
+    /// yields — inspect <see cref="Truncated"/> after enumerating.
+    ///
+    /// The default (50,000 files) is deliberately generous: this repo alone has
+    /// ~155 <c>.cs</c> files, and even a very large real-world C# codebase rarely
+    /// exceeds a few tens of thousands — the cap exists to bound pathological
+    /// targets, not to constrain normal repos.
+    /// </summary>
+    internal sealed class ScanBudget
+    {
+        public int MaxFiles { get; init; } = 50_000;
+
+        // A single pathologically large file (deeply-nested generics, a giant
+        // generated source file) fully materialized via File.ReadAllText can
+        // dominate memory just like an unbounded file COUNT can dominate time.
+        // Lives here (not per-tool) so every caller of EnumerateCsFiles gets the
+        // same protection — matches the order of magnitude of the CI
+        // "compiler-bomb cap" (maf-pr-audit.yml).
+        public long MaxFileBytes { get; init; } = 10 * 1024 * 1024; // 10 MB
+
+        public int FilesSeen { get; private set; }
+        public int FilesSkippedOversized { get; private set; }
+        public bool Truncated { get; private set; }
+
+        public bool TryAccept()
+        {
+            if (FilesSeen >= MaxFiles)
+            {
+                Truncated = true;
+                return false;
+            }
+            FilesSeen++;
+            return true;
+        }
+
+        internal void RecordOversizedSkip() => FilesSkippedOversized++;
+    }
+
+    /// <summary>
     /// Enumerates every <c>*.cs</c> file under <paramref name="repoRoot"/>,
     /// excluding common build artefact paths (<c>/bin/</c>, <c>/obj/</c>).
     /// Unreadable subdirectories are silently skipped (see
@@ -75,8 +119,20 @@ internal static class SourceFileWalker
     /// (not glob) by design: simple, no edge cases, and the <em>relative</em>
     /// path is tested (not the absolute one) so the repo's on-disk location
     /// can't accidentally match an exclude token.
+    ///
+    /// Bounded by a default <see cref="ScanBudget"/> — see the 3-argument
+    /// overload if the caller wants to know whether the walk was truncated.
     /// </summary>
     public static IEnumerable<string> EnumerateCsFiles(string repoRoot, IReadOnlyList<string>? excludes)
+        => EnumerateCsFiles(repoRoot, excludes, new ScanBudget());
+
+    /// <summary>
+    /// Same as the two-argument overload, but stops once <paramref name="budget"/>'s
+    /// file-count ceiling is reached. Callers that want to surface a "scan
+    /// truncated" note (e.g. <c>DoctorTool</c>) should pass their own
+    /// <see cref="ScanBudget"/> and inspect it after enumerating.
+    /// </summary>
+    public static IEnumerable<string> EnumerateCsFiles(string repoRoot, IReadOnlyList<string>? excludes, ScanBudget budget)
     {
         var skip = (excludes ?? [])
             .Where(e => !string.IsNullOrWhiteSpace(e))
@@ -93,6 +149,21 @@ internal static class SourceFileWalker
                 var rel = MakeRelative(repoRoot, path);
                 if (skip.Any(s => rel.Contains(s, PathComparison))) continue;
             }
+
+            long length;
+            try { length = new FileInfo(path).Length; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                continue; // raced/unreadable between enumeration and stat — same skip as IgnoreInaccessible
+            }
+            if (length > budget.MaxFileBytes)
+            {
+                budget.RecordOversizedSkip();
+                continue; // skip just this one file — the walk keeps going
+            }
+
+            if (!budget.TryAccept())
+                yield break; // file-count cap — stop the walk entirely
             yield return path;
         }
     }

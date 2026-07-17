@@ -1,0 +1,64 @@
+name: MAF PR Audit Comment
+
+# Companion to maf-pr-audit.yml (#148 finding 3). GitHub force-downgrades
+# GITHUB_TOKEN to read-only for `pull_request`-triggered runs when the PR is
+# from a fork, regardless of any `permissions:` the workflow declares — so
+# maf-pr-audit.yml, which runs Roslyn analysis over the PR's own (possibly
+# fork-supplied, untrusted) source, can never safely hold write access to post
+# a PR comment itself. This workflow runs on `workflow_run` instead: it
+# executes in the base repo's context (a normal write-scoped token even when
+# the underlying PR is a fork) and only ever touches the plain markdown
+# artifact the already-completed, permission-restricted job produced above —
+# it never checks out or executes fork-supplied code. This is GitHub's
+# documented safe pattern for commenting on fork PRs; `pull_request_target`
+# was deliberately avoided since that would hand write-scoped secrets to a job
+# that still has to process fork-supplied content.
+
+on:
+  workflow_run:
+    workflows: ["MAF PR Audit"]
+    types: [completed]
+
+# `actions: read` is required for actions/download-artifact to fetch an
+# artifact from a DIFFERENT run via `run-id` (a cross-run download calls the
+# Actions API, unlike the same-run case which upload/download-artifact handle
+# via the internal runtime token regardless of permissions). Declaring a
+# `permissions:` block sets every unlisted scope to `none` — omitting this
+# would make the download step fail on every single run.
+permissions:
+  pull-requests: write
+  actions: read
+
+jobs:
+  comment:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      # maf-pr-audit.yml now ALWAYS uploads this artifact on a successful run
+      # (a placeholder message when the audit was intentionally skipped, the
+      # real report otherwise) — so reaching this step with the artifact
+      # missing is a genuine problem, not an expected case to swallow. No
+      # continue-on-error: a failure here should be visible.
+      - name: Download audit result
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
+        with:
+          name: pr-audit-result
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # workflow_run's `pull_requests` context is empty for fork PRs (a known
+      # GitHub Actions limitation) — the PR number travels in the artifact
+      # itself (written by maf-pr-audit.yml) instead of being read from the event.
+      - name: Read PR number
+        id: pr
+        run: echo "number=$(cat pr-number.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on PR
+        # SHA-pinned per supply-chain hardening. Verify against tag with:
+        #   gh api repos/marocchino/sticky-pull-request-comment/git/refs/tags/v2.9.2 --jq .object.sha
+        # Update via Dependabot (.github/dependabot.yml).
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0  # v2.9.2
+        with:
+          header: maf-autopilot-audit
+          path: pr-audit-full.md
+          number: ${{ steps.pr.outputs.number }}

@@ -44,7 +44,13 @@ public class PathGuardTests
     [Fact]
     public void NonexistentDirectory_Rejected()
     {
-        var err = PathGuard.ValidateRepoPath("/definitely/does/not/exist/anywhere");
+        // Built from Path.GetTempPath() rather than a hardcoded "/..." literal so
+        // it's genuinely fully-qualified on whichever OS the test runs on — a
+        // bare "/foo/bar" is rooted-to-current-drive but NOT fully qualified on
+        // Windows, which would now (correctly) fail this as "not absolute"
+        // instead of exercising the "does not exist" branch this test targets.
+        var path = Path.Combine(Path.GetTempPath(), "maf-doctor-definitely-does-not-exist-" + Guid.NewGuid().ToString("N"));
+        var err = PathGuard.ValidateRepoPath(path);
         Assert.NotNull(err);
         Assert.Contains("does not exist", err, StringComparison.OrdinalIgnoreCase);
     }
@@ -54,6 +60,53 @@ public class PathGuardTests
     {
         var err = PathGuard.ValidateRepoPath(Path.GetTempPath());
         Assert.Null(err);
+    }
+
+    // -------------------------------------------------------------------------
+    // Relative-path rejection — #148 finding 1.
+    //
+    // An MCP-spawned server's cwd is typically the user's home directory, not
+    // the repo the LLM caller meant. A relative repoPath must be rejected
+    // rather than silently resolved against Environment.CurrentDirectory.
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(".")]
+    [InlineData("src")]
+    [InlineData("./src/Tools")]
+    public void RelativePath_Rejected(string path)
+    {
+        var err = PathGuard.ValidateRepoPath(path);
+        Assert.NotNull(err);
+        Assert.Contains("absolute path", err, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RelativePath_TakesPrecedenceOverNonexistence()
+    {
+        // A relative path that also doesn't exist must still be flagged as
+        // "not absolute" (the caller's real mistake), not "does not exist"
+        // (which would encourage retrying with a resolved-but-still-relative path).
+        var err = PathGuard.ValidateRepoPath("relative/does/not/exist");
+        Assert.NotNull(err);
+        Assert.Contains("absolute path", err, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("C:tmp")]      // drive-relative — resolves against the current directory ON that drive
+    [InlineData(@"\tmp")]      // rooted to the current drive, no drive letter
+    public void WindowsDriveRelativePath_Rejected(string path)
+    {
+        // Path.IsPathRooted returns true for both of these on Windows even
+        // though neither is actually unambiguous — IsPathFullyQualified must
+        // be what PathGuard uses, or this regression silently reopens #148
+        // finding 1 for exactly the inputs it was written to close.
+        if (!OperatingSystem.IsWindows())
+            return; // these strings aren't meaningfully "drive-relative" on POSIX
+
+        var err = PathGuard.ValidateRepoPath(path);
+        Assert.NotNull(err);
+        Assert.Contains("absolute path", err, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

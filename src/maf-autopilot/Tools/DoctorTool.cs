@@ -315,7 +315,9 @@ public sealed class DoctorTool
             SilentStarvationRisks: s.SilentStarvationRisks,
             UnboundedCostSites: s.UnboundedCostSites,
             TopFixes: findings,
-            SummaryMd: markdownSummary);
+            SummaryMd: markdownSummary,
+            ScanTruncated: s.ScanIncomplete,
+            FilesScanned: s.FilesScanned);
     }
 
     /// <summary>
@@ -426,14 +428,27 @@ public sealed class DoctorTool
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static DoctorSummary AnalyzeRepo(string repoPath, IReadOnlyList<string>? excludes)
+    /// <summary>
+    /// Internal (not private) + the budget parameter is test-only: production
+    /// code always calls this with <paramref name="budget"/> null (a fresh,
+    /// default-capped <see cref="SourceFileWalker.ScanBudget"/>). Tests inject a
+    /// tiny cap to exercise the truncation path without creating 50,000 files.
+    ///
+    /// Does NOT itself validate <paramref name="repoPath"/> — every caller
+    /// (today, only <c>RunCore</c>) MUST run it through
+    /// <see cref="PathGuard.ValidateRepoPath"/> first. A future caller that
+    /// invokes this directly "for convenience" would skip that check entirely.
+    /// </summary>
+    internal static DoctorSummary AnalyzeRepo(
+        string repoPath, IReadOnlyList<string>? excludes, SourceFileWalker.ScanBudget? budget = null)
     {
         var antiPatterns = new List<AntiPatternFinding>();
         var handlers = new List<MessageHandlerFinding>();
         var promptFindings = new List<PromptFinding>();
         var costFindings = new List<CostFinding>();
 
-        foreach (var path in EnumerateScannableFiles(repoPath, excludes))
+        budget ??= new SourceFileWalker.ScanBudget();
+        foreach (var path in EnumerateScannableFiles(repoPath, excludes, budget))
         {
             string source, rel;
             try
@@ -441,7 +456,9 @@ public sealed class DoctorTool
                 // Guard ONLY the read + relative-path resolve: a file can be
                 // deleted/locked/raced between enumeration and read. Narrow catch
                 // so analyzer/parse bugs still propagate (the grade must never be
-                // silently degraded by swallowing a logic error).
+                // silently degraded by swallowing a logic error). The oversized-file
+                // skip itself now lives in SourceFileWalker.ScanBudget, shared by
+                // every caller of EnumerateCsFiles, not just this one.
                 source = File.ReadAllText(path);
                 rel = MakeRelative(repoPath, path);
             }
@@ -458,16 +475,42 @@ public sealed class DoctorTool
             costFindings.AddRange(EstimateCostTool.AnalyzeSource(source, rel));
         }
 
-        return Grade(antiPatterns, handlers, promptFindings, costFindings);
+        var summary = Grade(antiPatterns, handlers, promptFindings, costFindings);
+        return summary with
+        {
+            FilesScanned = budget.FilesSeen,
+            FilesSkippedOversized = budget.FilesSkippedOversized,
+            ScanTruncated = budget.Truncated,
+        };
     }
 
-    private static IEnumerable<string> EnumerateScannableFiles(string repoRoot, IReadOnlyList<string>? excludes)
-        => SourceFileWalker.EnumerateCsFiles(repoRoot, excludes);
+    private static IEnumerable<string> EnumerateScannableFiles(
+        string repoRoot, IReadOnlyList<string>? excludes, SourceFileWalker.ScanBudget budget)
+        => SourceFileWalker.EnumerateCsFiles(repoRoot, excludes, budget);
 
     private static string MakeRelative(string root, string file)
         => SourceFileWalker.MakeRelative(root, file);
 
-    private static string FormatReport(string repoPath, DoctorSummary s, bool full = false)
+    /// <summary>
+    /// Shared by <see cref="FormatReport"/> and <see cref="FormatPlan"/> — #148
+    /// finding 2. No-op when the scan was complete. <paramref name="tail"/> is
+    /// the caller-specific closing sentence (report vs. plan read differently).
+    /// </summary>
+    private static void AppendScanIncompleteNote(StringBuilder sb, DoctorSummary s, string tail)
+    {
+        if (!s.ScanIncomplete) return;
+
+        var clauses = new List<string>();
+        if (s.ScanTruncated)
+            clauses.Add($"stopped after {s.FilesScanned:N0} files (repo-size cap reached)");
+        if (s.FilesSkippedOversized > 0)
+            clauses.Add($"skipped {s.FilesSkippedOversized:N0} oversized file(s) (over the per-file size cap)");
+
+        sb.AppendLine($"> ⚠️ **Scan incomplete** — {string.Join("; ", clauses)}. {tail}");
+        sb.AppendLine();
+    }
+
+    internal static string FormatReport(string repoPath, DoctorSummary s, bool full = false)
     {
         var sb = new StringBuilder();
         var emoji = GradeEmoji(s.Grade);
@@ -478,6 +521,7 @@ public sealed class DoctorTool
         sb.AppendLine();
         sb.AppendLine($"**Repo:** `{repoPath.Replace('`', '\'')}`");
         sb.AppendLine();
+        AppendScanIncompleteNote(sb, s, "The grade and findings below reflect a partial scan, not the whole repo.");
         // `doctor` is read-only by design — it diagnoses and grades but never
         // edits files. Spelled out here because "doctor didn't fix anything" is
         // a common first-run misread; the fix path is autofix-all + the agent.
@@ -688,7 +732,7 @@ public sealed class DoctorTool
     /// covers every finding (a partial plan would be misleading). No source
     /// snippets — file:line + why + fix only — so it never echoes a secret.
     /// </summary>
-    private static string FormatPlan(string repoPath, DoctorSummary s)
+    internal static string FormatPlan(string repoPath, DoctorSummary s)
     {
         var sb = new StringBuilder();
         var emoji = GradeEmoji(s.Grade);
@@ -698,6 +742,7 @@ public sealed class DoctorTool
         sb.AppendLine();
         sb.AppendLine($"**Repo:** `{repoPath.Replace('`', '\'')}`");
         sb.AppendLine();
+        AppendScanIncompleteNote(sb, s, "This plan does NOT cover the whole repo.");
 
         var all = s.AllFixes;
         if (all.Count == 0)
@@ -790,7 +835,9 @@ public sealed class DoctorTool
             Repo: repoPath,
             Counts: new PlanCounts(all.Count, auto.Count, manual.Count, heuristicCount),
             Phase1Autofix: phase1,
-            Phase2Semantic: phase2);
+            Phase2Semantic: phase2,
+            ScanTruncated: s.ScanIncomplete,
+            FilesScanned: s.FilesScanned);
     }
 
     /// <summary>
@@ -859,7 +906,21 @@ public sealed record DoctorSummary(
     int UnboundedCostSites,
     int AgentCallSitesChecked,
     IReadOnlyList<DoctorRecommendation> TopFixes,
-    IReadOnlyList<DoctorRecommendation> AllFixes);
+    IReadOnlyList<DoctorRecommendation> AllFixes,
+    // #148 finding 2 — set by AnalyzeRepo from the ScanBudget it walked with.
+    // Trailing + defaulted so every existing Grade(...) call site (production
+    // and tests) keeps compiling unchanged; AnalyzeRepo stamps the real values
+    // via `with` after grading. ScanTruncated means the file-COUNT cap was hit
+    // (the walk stopped early — there ARE unscanned files); FilesSkippedOversized
+    // is a separate, additive signal (individual files skipped for exceeding the
+    // per-file size cap — the walk still covered every other file).
+    int FilesScanned = 0,
+    bool ScanTruncated = false,
+    int FilesSkippedOversized = 0)
+{
+    /// <summary>True if the scan did NOT cover every file in the repo, for any reason.</summary>
+    public bool ScanIncomplete => ScanTruncated || FilesSkippedOversized > 0;
+}
 
 public sealed record DoctorRecommendation(
     int Priority,
@@ -890,7 +951,13 @@ public sealed record DoctorJsonResult(
     [property: JsonPropertyName("silent_starvation_risks")] int SilentStarvationRisks,
     [property: JsonPropertyName("unbounded_cost_sites")] int UnboundedCostSites,
     [property: JsonPropertyName("top_fixes")] IReadOnlyList<DoctorJsonFinding> TopFixes,
-    [property: JsonPropertyName("summary_md")] string SummaryMd);
+    [property: JsonPropertyName("summary_md")] string SummaryMd,
+    // #148 finding 2 — additive within schema_version "1" (consumers ignore
+    // unknown fields, same convention as DoctorJsonFinding.Confidence). A
+    // machine consumer that only reads typed fields (not summary_md) still
+    // needs a structured way to know the scan didn't cover the whole repo.
+    [property: JsonPropertyName("scan_truncated")] bool ScanTruncated = false,
+    [property: JsonPropertyName("files_scanned")] int FilesScanned = 0);
 
 /// <summary>Error shape for format:"json" when the request fails validation (e.g. bad path).</summary>
 public sealed record DoctorJsonError(
@@ -921,7 +988,15 @@ public sealed record DoctorPlanJson(
     [property: JsonPropertyName("repo")] string Repo,
     [property: JsonPropertyName("counts")] PlanCounts Counts,
     [property: JsonPropertyName("phase1_autofix")] PlanPhase1? Phase1Autofix,
-    [property: JsonPropertyName("phase2_semantic")] IReadOnlyList<PlanFinding> Phase2Semantic);
+    [property: JsonPropertyName("phase2_semantic")] IReadOnlyList<PlanFinding> Phase2Semantic,
+    // #148 finding 2 — additive within schema_version "1". This manifest is
+    // built specifically for automated consumption (the maf-remediate loop);
+    // an automated consumer that only reads structured fields (not markdown)
+    // must be able to tell a partial-repo plan apart from a complete one —
+    // silently treating a truncated scan as "fully remediated" is worse for a
+    // machine consumer than for a human reading the markdown --plan banner.
+    [property: JsonPropertyName("scan_truncated")] bool ScanTruncated = false,
+    [property: JsonPropertyName("files_scanned")] int FilesScanned = 0);
 
 public sealed record PlanCounts(
     [property: JsonPropertyName("total")] int Total,

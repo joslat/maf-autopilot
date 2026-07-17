@@ -27,7 +27,9 @@ Pass `format: "json"` to get machine-readable output.
       "confidence": "high"
     }
   ],
-  "summary_md": "...the full markdown report that format:markdown would emit..."
+  "summary_md": "...the full markdown report that format:markdown would emit...",
+  "scan_truncated": false,
+  "files_scanned": 155
 }
 ```
 
@@ -51,6 +53,8 @@ Pass `format: "json"` to get machine-readable output.
   - `why`: one-line consequence / rationale for the finding. **Always present**; the empty string `""` when no rationale is defined for the rule.
   - `confidence`: detector trust level for **false-positive triage** — `"certain"` (compiler ground-truth) | `"high"` (structural AST, low FP) | `"heuristic"` (name-only / text / scope-limited — **verify before fixing**). Additive within schema v1; consumers that don't recognize it can ignore it. The `maf-remediate` prompt reads this to decide which findings to confirm before changing code.
 - `summary_md`: the same markdown that `format: "markdown"` would emit (for hybrid consumers). It includes the offending source line per finding, so it inherits the markdown report's **best-effort, content-aware secret redaction** — the structured `top_fixes` array carries no source text and is the safer channel for machine consumers.
+- `scan_truncated`: `true` if the repo-size cap (file count or per-file size) meant the scan did NOT cover every file — the verdict/findings above reflect a partial repo, not the whole one. Additive within schema v1; consumers that don't recognize it can ignore it, but a CI gate reading only the typed fields (not `summary_md`) should check it before trusting a clean verdict.
+- `files_scanned`: how many files were actually included in the scan (integer).
 
 ### Usage in CI
 
@@ -120,7 +124,9 @@ false positives without parsing prose. Schema version `"1"`.
       "fix": "Set MaxOutputTokens on the nearest ChatOptions to cap the per-call cost.",
       "occurrences": [ { "file": "AGUIClient/Program.cs", "line": 90 } ]
     }
-  ]
+  ],
+  "scan_truncated": false,
+  "files_scanned": 155
 }
 ```
 
@@ -128,6 +134,8 @@ false positives without parsing prose. Schema version `"1"`.
 - `phase1_autofix` — `null` if there are no auto-fixable findings; otherwise the single command + the rules it clears.
 - `phase2_semantic[].verify_first` — `true` for `heuristic` findings: confirm the finding is real (e.g. via `MafExplainFinding`) **before** editing.
 - `phase2_semantic[].occurrences` — every `file`/`line` for that rule (a group of N hits is one entry with N occurrences).
+- `scan_truncated` — `true` if the repo-size cap meant this plan does NOT cover the whole repo. An automated consumer (the `maf-remediate` loop) MUST check this before treating the plan as complete — clearing every listed finding would otherwise look like "fully remediated" when it isn't. Additive within schema v1.
+- `files_scanned` — how many files were actually included in the scan (integer).
 - Invalid path / scan failure returns the same `{ "schema_version": "1", "error": "…" }` shape as `--json`.
 
 ---
