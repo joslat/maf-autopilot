@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-07-17
+
+**MCP server memory leak fixed, repo-scan hardening, and our first outside contribution.** The MCP server no longer leaks memory while idle — a stray config-reload file watcher was recursively monitoring the MCP host's entire working directory, typically the user's home folder. Also closes a related class of bugs found while reviewing that fix: `repoPath` must now be a genuinely absolute path, every repo scan is bounded, and the `MAF PR Audit` CI check no longer fails on outside contributions. **CI green across net8/9/10.**
+
+### Fixed
+- **MCP server memory leak while idle.** `Host.CreateApplicationBuilder(args)` registers a config-reload file watcher on the process's content root by default; since MCP hosts (Claude Code, VS Code, Cursor) spawn `maf-doctor` with `cwd` set to the user's **home directory**, that watcher ended up recursively monitoring the entire home directory tree via FSEvents (macOS) — every filesystem event anywhere under `~` triggered stat/allocate work, growing to multiple GB within minutes under normal machine activity, multiplied per concurrent MCP session. `maf-doctor` reads no host/appsettings configuration, so it now uses `Host.CreateEmptyApplicationBuilder(...)`, which never creates the watcher at all — a fix that also heads off the Linux inotify-watch-limit and Windows `FileSystemWatcher` buffer-overflow variants of the same underlying issue.
+- **`repoPath` now requires a genuinely absolute path.** Every tool description says "absolute path," but nothing enforced it — a relative value from an MCP caller resolved against the wrong working directory (the bug above, in a different guise), and `MafAutoFix` / `MafAutoFixAll` write by default. `PathGuard.ValidateRepoPath` now rejects anything that isn't `Path.IsPathFullyQualified` (not just `IsPathRooted`, which wrongly accepts Windows drive-relative paths like `C:tmp`). CLI usage (`maf-doctor doctor .`, etc.) is unaffected.
+- **Repo scans are now bounded.** `SourceFileWalker` (shared by every scanning tool) caps both the number of files walked (50,000) and the size of any single file read (10 MB), so an accidentally-huge scan target can no longer turn one call into an unbounded-time, unbounded-memory operation. `doctor` surfaces a "Scan incomplete" note (markdown / plan) and additive `scan_truncated` / `files_scanned` fields (`--json` / `--plan --json`; schema stays v1 — see `docs/output-schemas.md`) whenever a scan is capped.
+- **`MAF PR Audit` CI check no longer fails on outside contributions.** GitHub force-downgrades `GITHUB_TOKEN` to read-only for `pull_request` runs from a forked repository, regardless of declared workflow permissions — which is exactly what was failing this check on every external PR. The audit workflow no longer tries to post its own comment; a new companion workflow (triggered by `workflow_run`, running with a normal write-scoped token that never touches fork-supplied code) posts it instead.
+
+### Acknowledgments
+- **Alexander Nachtmann ([@ANcpLua](https://github.com/ANcpLua))** — maf-doctor's first outside contributor. Diagnosed the MCP server memory leak with a precise root-cause writeup (down to the exact `sample` stack trace) and shipped a minimal, well-verified fix. Software engineering student at FH Technikum Wien — thank you for the sharp catch!
+
 ## [1.9.0] - 2026-07-09
 
 **MCP update/init freshness** — the MCP server now gives users a non-blocking startup advisory when a newer `maf-doctor` package is available, and separately detects when the installed tool is current but a workspace only needs `maf-doctor init` refreshed. Adds the **`MafDoctorStatus`** MCP tool for on-demand status, keeps init repair idempotent, and documents the exact update flow. **28 tools. CI green across net8/9/10.**
@@ -653,7 +666,8 @@ Internal alpha; superseded by `1.3.0-alpha-3`. Not announced.
 
 Initial MCP server prototype. Three tools (`MafApiSafety`, `MafRegistryLookup`, `MafRegistryList`), 11 skills, 2 agents, 10 registry entries. Validated against one real migration (`maf-claims-fraud-guardian` 1.2.0 → 1.3.0). Internal alpha; not announced.
 
-[Unreleased]: https://github.com/joslat/maf-doctor/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/joslat/maf-doctor/compare/v1.10.0...HEAD
+[1.10.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.10.0
 [1.9.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.9.0
 [1.8.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.8.0
 [1.7.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.7.0
