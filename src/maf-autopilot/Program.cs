@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-// CLI mode: short-circuit before Host.CreateApplicationBuilder so stdin/stdout remain clean.
+// CLI mode: short-circuit before the host builder so stdin/stdout remain clean.
 // Supported subcommands:
 //   maf-doctor init                       — scaffold .vscode/mcp.json + copilot-instructions
 //   maf-doctor new agent <Name>           — generate a MAF agent + smoke test
@@ -168,7 +168,12 @@ if (args.Length >= 1 && args[0] == "registry-extract")
 }
 
 // All logs must go to stderr — stdout is reserved for the MCP JSON-RPC protocol.
-var builder = Host.CreateApplicationBuilder(args);
+// CreateEmptyApplicationBuilder, not CreateApplicationBuilder: the server reads no
+// appsettings/host config, and the defaults register a reloadOnChange file watcher
+// on the content root (= cwd). MCP hosts spawn stdio servers with cwd = the user's
+// home directory, where that watcher (recursive FSEvents on macOS) allocates
+// unboundedly under normal filesystem activity — GBs while idle (#146).
+var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings { Args = args });
 builder.Logging.AddConsole(options =>
 {
     options.LogToStandardErrorThreshold = LogLevel.Trace;
