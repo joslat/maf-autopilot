@@ -79,6 +79,15 @@ if (args.Length >= 2 && args[0] == "new")
     Environment.Exit(exitCode);
     return;
 }
+
+// #148: PathGuard now requires repoPath to be absolute (an MCP caller's
+// relative path resolves against the wrong cwd). A human typing a relative
+// path at their own shell is fine and expected — resolve it here so CLI
+// usage like `maf-doctor doctor .` keeps working against every command below
+// that ultimately hits PathGuard (doctor, badge, autofix-all, migrate-scan).
+static string ResolveCliPath(string? parsedPath)
+    => Path.GetFullPath(parsedPath ?? Directory.GetCurrentDirectory());
+
 if (args.Length >= 1 && args[0] == "doctor")
 {
     // Usage: maf-doctor doctor [path] [--exclude <substr>]... [--all|--full] [--json]
@@ -87,7 +96,7 @@ if (args.Length >= 1 && args[0] == "doctor")
     // detector scopes to product code); `--all`/`--full` lists every finding
     // (grouped); `--json` emits machine-readable output.
     var (parsedPath, format, excludes, full) = MafDoctor.Commands.DoctorCli.Parse(args);
-    var path = parsedPath ?? Directory.GetCurrentDirectory();
+    var path = ResolveCliPath(parsedPath);
     var report = new MafDoctor.Tools.DoctorTool().Run(path, format, excludes, full);
     Console.WriteLine(report);
     Environment.Exit(0);
@@ -98,7 +107,10 @@ if (args.Length >= 1 && args[0] == "badge")
     // Phase W.13 — emit a shields.io endpoint-badge JSON payload. Consumers
     // host the JSON output (X.4) and reference it from shields.io URLs like
     // https://img.shields.io/endpoint?url=<your-hosted-json>.
-    var path = args.Length >= 2 ? args[1] : Directory.GetCurrentDirectory();
+    // Resolved via ResolveCliPath too: BadgeCommand.Build runs through
+    // DoctorTool.MafDoctor, which hits the same PathGuard absolute-path
+    // requirement as every other repoPath-taking tool (#148 finding 1).
+    var path = ResolveCliPath(args.Length >= 2 ? args[1] : null);
     var badge = MafDoctor.Commands.BadgeCommand.Build(path);
     Console.WriteLine(badge);
     Environment.Exit(0);
@@ -112,7 +124,7 @@ if (args.Length >= 1 && args[0] == "autofix-all")
     // Default output is human-readable; `--json` emits the machine-readable
     // (MCP-tool) shape. Parsing lives in AutoFixCli so it's unit-testable.
     var (parsedPath, json, dryRun) = MafDoctor.Commands.AutoFixCli.Parse(args);
-    var path = parsedPath ?? Directory.GetCurrentDirectory();
+    var path = ResolveCliPath(parsedPath);
     var tool = new MafDoctor.Tools.AutoFixTool();
     if (json)
     {
@@ -137,7 +149,7 @@ if (args.Length >= 1 && args[0] == "migrate-scan")
     // Parsing lives in MigrateScanCli so the flag handling is unit-testable and so the
     // `--source` value is never mistaken for the path (in either `--source v` form).
     var (parsedPath, source, json) = MafDoctor.Commands.MigrateScanCli.Parse(args);
-    var path = parsedPath ?? Directory.GetCurrentDirectory();
+    var path = ResolveCliPath(parsedPath);
     // --source is currently always semantic-kernel (AutoGen is a later phase); validate
     // the flag so the surface is forward-compatible and an unknown source fails loudly.
     if (!MafDoctor.Commands.MigrateScanCli.IsSupportedSource(source))

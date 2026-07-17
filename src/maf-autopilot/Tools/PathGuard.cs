@@ -47,6 +47,23 @@ internal static class PathGuard
             if (segment == "..")
                 return $"Error: {parameterName} must not contain '..' segments (path traversal).";
 
+        // #148 finding 1 — every tool description tells the LLM caller to pass an
+        // absolute path, but nothing enforced it. A relative value (e.g. ".")
+        // resolves against Environment.CurrentDirectory, which for an MCP-spawned
+        // process is the host's cwd — typically the user's home directory, NOT
+        // the repo the caller meant. Reject here rather than silently resolving
+        // against the wrong root (autofix tools write by default).
+        //
+        // IsPathFullyQualified, not IsPathRooted: on Windows, IsPathRooted
+        // returns true for drive-relative paths like "C:tmp" (no separator
+        // after the colon) and rooted-to-current-drive paths like "\tmp" —
+        // both still resolve against the process's current directory (on that
+        // drive, or on the current drive respectively), reproducing exactly
+        // the "wrong root" bug this check exists to close. IsPathFullyQualified
+        // rejects both and only accepts genuinely unambiguous paths.
+        if (!Path.IsPathFullyQualified(path))
+            return $"Error: {parameterName} must be an absolute path (got a relative path).";
+
         if (!Directory.Exists(path))
             return $"Error: directory does not exist: '{path}'.";
 

@@ -1473,4 +1473,111 @@ public class DoctorToolTests
             Directory.Delete(root, recursive: true);
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Scan truncation — #148 finding 2. AnalyzeRepo takes an optional
+    // ScanBudget (test-only param; production always passes null → a fresh,
+    // default-capped budget) so the truncation path is exercisable without
+    // creating tens of thousands of files.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void AnalyzeRepo_UnderCap_NotTruncated()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "maf-doctor-scancap-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "Clean.cs"), "public class Clean { }");
+
+            var summary = DoctorTool.AnalyzeRepo(root, excludes: null);
+
+            Assert.False(summary.ScanTruncated);
+            Assert.False(summary.ScanIncomplete);
+            Assert.Equal(0, summary.FilesSkippedOversized);
+            Assert.Equal(1, summary.FilesScanned);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void AnalyzeRepo_OverCap_ReportsTruncatedAndFilesScanned()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "maf-doctor-scancap-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            for (var i = 0; i < 5; i++)
+                File.WriteAllText(Path.Combine(root, $"File{i}.cs"), "public class C { }");
+
+            var summary = DoctorTool.AnalyzeRepo(root, excludes: null, new SourceFileWalker.ScanBudget { MaxFiles = 2 });
+
+            Assert.True(summary.ScanTruncated);
+            Assert.True(summary.ScanIncomplete);
+            Assert.Equal(2, summary.FilesScanned);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void AnalyzeRepo_OversizedFile_SkippedAndReportedWithoutTruncatingTheRest()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "maf-doctor-scancap-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "Normal.cs"), "public class Normal { }");
+            File.WriteAllText(Path.Combine(root, "Huge.cs"), "public class Huge { }");
+
+            var budget = new SourceFileWalker.ScanBudget { MaxFileBytes = 5 }; // "public class Huge { }" > 5 bytes
+            var summary = DoctorTool.AnalyzeRepo(root, excludes: null, budget);
+
+            // The oversized file is skipped, but the walk still covers Normal.cs —
+            // ScanTruncated (the file-COUNT cap) stays false; only the oversized
+            // signal fires, and ScanIncomplete reflects it either way.
+            Assert.False(summary.ScanTruncated);
+            Assert.True(summary.FilesSkippedOversized >= 1);
+            Assert.True(summary.ScanIncomplete);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void FormatReport_Truncated_IncludesWarningNote()
+    {
+        var summary = DoctorTool.Grade([], []) with { ScanTruncated = true, FilesScanned = 42 };
+        var report = DoctorTool.FormatReport("/some/repo", summary);
+
+        Assert.Contains("Scan incomplete", report, StringComparison.Ordinal);
+        Assert.Contains("42", report, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FormatReport_OversizedSkipOnly_IncludesWarningNote()
+    {
+        var summary = DoctorTool.Grade([], []) with { FilesSkippedOversized = 3 };
+        var report = DoctorTool.FormatReport("/some/repo", summary);
+
+        Assert.Contains("Scan incomplete", report, StringComparison.Ordinal);
+        Assert.Contains("3", report, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FormatReport_NotTruncated_OmitsWarningNote()
+    {
+        var summary = DoctorTool.Grade([], []);
+        var report = DoctorTool.FormatReport("/some/repo", summary);
+
+        Assert.DoesNotContain("Scan incomplete", report, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FormatPlan_Truncated_IncludesWarningNote()
+    {
+        var finding = new AntiPatternFinding("MAF-AP-SEC-001", "name", AntiPatternSeverity.Error, "f", 1, "m");
+        var summary = DoctorTool.Grade([finding], []) with { ScanTruncated = true, FilesScanned = 7 };
+        var plan = DoctorTool.FormatPlan("/some/repo", summary);
+
+        Assert.Contains("Scan incomplete", plan, StringComparison.Ordinal);
+    }
 }

@@ -12,9 +12,18 @@ on:
       - '**.cs'
       - '**.csproj'
 
+# #148 finding 3 — this job runs Roslyn analysis over the PR's own (possibly
+# untrusted, fork-supplied) source, so it must never hold write-scoped
+# permissions. GitHub already enforces that for `pull_request` runs from a
+# fork (GITHUB_TOKEN is force-downgraded to read-only regardless of what's
+# declared here) — declaring only `contents: read` makes the same constraint
+# explicit for same-repo PRs too. Posting the actual PR comment is handled by
+# the companion workflow maf-pr-audit-comment.yml (triggered by workflow_run),
+# which runs in the base repo's context with a normal write-scoped token and
+# never touches fork-supplied code — only the plain markdown artifact this
+# job produces below.
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   audit:
@@ -140,12 +149,38 @@ jobs:
           echo "Full doctor report:"
           cat pr-audit-full.md
 
-      - name: Comment on PR
-        if: steps.scope.outputs.skip != 'true'
-        # SHA-pinned per supply-chain hardening. Verify against tag with:
-        #   gh api repos/marocchino/sticky-pull-request-comment/git/refs/tags/v2.9.2 --jq .object.sha
-        # Update via Dependabot (.github/dependabot.yml).
-        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0  # v2.9.2
+      - name: Write skip placeholder (when the audit was intentionally skipped)
+        if: steps.scope.outputs.skip == 'true'
+        # The "Run MCP server..." step above never runs in this branch, so
+        # pr-audit-full.md wouldn't otherwise exist — an artifact must still be
+        # produced so the companion workflow can tell "intentionally skipped"
+        # apart from "something actually went wrong" (#148 finding 3 review).
+        run: |
+          echo "ℹ️ **MAF audit skipped for this PR.** See this workflow run's annotations for why (only samples/ changed, or the diff exceeded the compiler-bomb cap — CI-side scanners still ran)." > pr-audit-full.md
+
+      - name: Record PR number for the comment workflow
+        # No `if:` guard — runs whenever the job reaches this point without an
+        # earlier step failing (the implicit default), covering BOTH the
+        # skip=true and skip=false success paths so an artifact is always
+        # produced for a successful run. workflow_run's `pull_requests` context
+        # is empty for fork PRs (a known GitHub Actions limitation) — hand the
+        # PR number to the companion workflow explicitly via the artifact
+        # instead of relying on it.
+        run: echo "${{ github.event.pull_request.number }}" > pr-number.txt
+
+      - name: Upload audit result
+        # #148 finding 3 — this job's GITHUB_TOKEN is read-only (enforced by
+        # GitHub for fork PRs regardless of the `permissions:` above), so it
+        # cannot post the sticky comment itself. maf-pr-audit-comment.yml
+        # (workflow_run) downloads this artifact and posts it instead. Always
+        # uploading (skip or not) means a successful run of THIS workflow
+        # guarantees the artifact exists — the companion workflow can then
+        # treat a download failure as a genuine problem instead of having to
+        # guess whether it's the expected "audit was skipped" case.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          header: maf-autopilot-audit
-          path: pr-audit-full.md
+          name: pr-audit-result
+          path: |
+            pr-audit-full.md
+            pr-number.txt
+          retention-days: 1
