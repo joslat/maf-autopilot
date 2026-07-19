@@ -11,12 +11,20 @@ namespace MafDoctor.Prompts;
 
 /// <summary>
 /// MCP Prompts — pre-built starting prompts for common MAF migration workflows.
+/// Each is wired up automatically by `maf-doctor init` (no `.github/agents/`
+/// copy-in needed) and drift-tested against <see cref="MafDoctor.Tools.TourTool.PromptCatalogue"/>.
 ///
-///   /maf-audit       — audit a codebase and generate a migration plan
-///   /maf-migrate     — execute specific migration tasks from a plan
-///   /maf-remediate   — fix-it-all conductor: triage (by confidence) → autofix → verify → re-grade
-///   /maf-migrate-from— migrate a Semantic Kernel codebase to MAF, side-by-side
-///   /maf-cs0618-hunt — find and fix all CS0618 obsolete API warnings
+///   /maf-audit          — audit a codebase and generate a migration plan
+///   /maf-migrate        — execute specific migration tasks from a plan
+///   /maf-remediate      — fix-it-all conductor: triage (by confidence) → autofix → verify → re-grade
+///   /maf-migrate-from   — migrate a Semantic Kernel codebase to MAF, side-by-side
+///   /maf-cs0618-hunt    — find and fix all CS0618 obsolete API warnings
+///   /maf-review         — best-practice review of already-migrated code
+///   /maf-debug          — reactive debugging: symptom → root cause → fix
+///   /maf-explain-finding— deep-dive + fix ONE doctor finding (file + line)
+///   /maf-scaffold       — generate agent / executor boilerplate
+///   /maf-onboarding     — guided first-day tour of a MAF codebase
+///   /maf-help           — 3-question triage, routes to the right prompt/tool
 /// </summary>
 [McpServerPromptType]
 public static class MafPrompts
@@ -396,7 +404,7 @@ public static class MafPrompts
         sb.AppendLine("- `MafDoctor(repoPath)` — aggregate A/B/C/F grade — quick triage.");
         sb.AppendLine();
         sb.AppendLine("**Production failure / exception in deployed code:**");
-        sb.AppendLine("- Hand off to `@maf-incident-responder` — that agent's whole job is mapping prod symptoms to MAF patterns + the deterministic fix.");
+        sb.AppendLine("- Work the playbook above: `MafValidateFanOut` / `MafSimulateWorkflow` for a silent stop, `MafRunCs0618Hunt` for a compiler/build symptom, `MafDoctor(repoPath)` for a broader triage pass. If `.github/agents/` was copied in from the maf-doctor source repo (GitHub Copilot only), `@maf-incident-responder` is a dedicated persona for exactly this — its whole job is mapping prod symptoms to MAF patterns + the deterministic fix.");
         sb.AppendLine();
         sb.AppendLine("**Known silent-failure patterns:**");
         sb.AppendLine("- Fan-out handler returns `void` / non-generic Task → fan-in starves.");
@@ -520,6 +528,40 @@ public static class MafPrompts
         return [new PromptMessage { Role = Role.User, Content = new TextContentBlock { Text = sb.ToString() } }];
     }
 
+    [McpServerPrompt(Name = "maf-onboarding",
+        Title = "MAF Onboarding: Guided First-Day Tour")]
+    [Description(
+        "Starter prompt for a developer joining a MAF codebase for the first time. " +
+        "Produces a PERSONALISED onboarding brief — not a generic README rehash: what the " +
+        "system does, the agent topology (Mermaid), the hot-path files, this codebase's MAF " +
+        "dialect (current grade + top fixes), and three concrete first-day actions.")]
+    public static IList<PromptMessage> Onboarding(
+        [Description("Path to the repository root. Leave empty to let the assistant infer it.")] string? repoPath = null)
+    {
+        try { BoundedInput.Validate(repoPath, BoundedInput.PathBytes, nameof(repoPath)); }
+        catch (ArgumentException) { repoPath = null; }
+
+        var safeRepoPath = LlmFencing.StripHtmlComments(repoPath);
+        var repoArg = string.IsNullOrEmpty(safeRepoPath) ? "<repo>" : safeRepoPath;
+
+        var sb = new StringBuilder();
+        sb.AppendLine("You are guiding a developer who just joined this MAF codebase. Produce a PERSONALISED onboarding brief — not a generic README rehash. Answer the four questions below in order, then give three first-day actions.");
+        sb.AppendLine();
+        if (!string.IsNullOrEmpty(safeRepoPath))
+            sb.AppendLine($"Repository: {safeRepoPath}");
+        sb.AppendLine();
+        sb.AppendLine("1. **What does this codebase do?** Read the top-level README (and copilot-instructions.md / CLAUDE.md, if present); synthesize one paragraph. If the README is thin, say so as a gap rather than inventing detail.");
+        sb.AppendLine($"2. **Agent topology.** Call `MafSimulateWorkflow(repoPath: \"{repoArg}\")` for a Mermaid topology graph + per-edge completion forecast; embed it. List each agent with a one-line role pulled from its `Instructions`; use `MafExplain` on any agent prompt whose intent isn't obvious from reading it.");
+        sb.AppendLine("3. **Where you'll spend your time.** Surface the 20 most-touched `.cs` files in the last 90 days (`git log --pretty=format: --name-only --since=90.days.ago | sort | uniq -c | sort -rg | head -20`) and give a one-line role for each — this is the hot path of contributions.");
+        sb.AppendLine($"4. **This codebase's MAF dialect.** Call `MafDoctor(repoPath: \"{repoArg}\")` for the current grade and top 3 fixes — these are the patterns this team already cares about and what you'll see in code review.");
+        sb.AppendLine();
+        sb.AppendLine("**First-day actions** — end with three concrete ones: which files to read first (from step 3, plus the DI/composition root and the most-touched executor), a command that shows the system running, and which checks (`MafDoctor` / `MafAuditPullRequest` / analyzers / CI workflows) gate a first PR.");
+        sb.AppendLine();
+        sb.AppendLine("Emit the brief directly in chat by default; only write it to a file if the developer asks.");
+
+        return [new PromptMessage { Role = Role.User, Content = new TextContentBlock { Text = sb.ToString() } }];
+    }
+
     [McpServerPrompt(Name = "maf-help",
         Title = "MAF Help: Guided 3-question onboarding")]
     [Description(
@@ -546,19 +588,19 @@ public static class MafPrompts
         sb.AppendLine();
         sb.AppendLine("**Q3.** Anything time-sensitive? (production incident / approaching release / blocking PR)");
         sb.AppendLine();
-        sb.AppendLine("Once the user answers, route as follows:");
+        sb.AppendLine("Once the user answers, route as follows. The prompt column is ALWAYS available (wired up by `init`); the agent column only works if `.github/agents/` was also copied in from the maf-doctor source repo (GitHub Copilot only) — prefer the prompt unless you know that's been done.");
         sb.AppendLine();
-        sb.AppendLine("| Q1 + Q2 combo | Route |");
-        sb.AppendLine("|---|---|");
-        sb.AppendLine("| (a)+(a) | `@maf-best-practice-reviewer` |");
-        sb.AppendLine("| (b)+(a) or (b)+(b) | `@maf-auditor` → `@maf-migration` |");
-        sb.AppendLine("| any+(c) | `@maf-incident-responder` |");
-        sb.AppendLine("| (c)+(d) | Call `MafNewAgent` / `MafNewExecutor` directly |");
-        sb.AppendLine("| any+(e) | `@maf-onboarding` |");
-        sb.AppendLine("| any+(f) | Call `MafDraftIssue` directly |");
-        sb.AppendLine("| (d) for Q1 | Call `MafDoctor(repoPath)` first to determine state, then re-route. |");
+        sb.AppendLine("| Q1 + Q2 combo | Route (MCP prompt) | ≈ agent (Mode 2 only) |");
+        sb.AppendLine("|---|---|---|");
+        sb.AppendLine("| (a)+(a) | `maf-review` | `@maf-best-practice-reviewer` |");
+        sb.AppendLine("| (b)+(a) or (b)+(b) | `maf-audit` → `maf-migrate` | `@maf-auditor` → `@maf-migration` |");
+        sb.AppendLine("| any+(c) | `maf-debug` | `@maf-incident-responder` |");
+        sb.AppendLine("| (c)+(d) | Call `MafNewAgent` / `MafNewExecutor` directly | — |");
+        sb.AppendLine("| any+(e) | `maf-onboarding` | `@maf-onboarding` |");
+        sb.AppendLine("| any+(f) | Call `MafDraftIssue` directly | — |");
+        sb.AppendLine("| (d) for Q1 | Call `MafDoctor(repoPath)` first to determine state, then re-route. | — |");
         sb.AppendLine();
-        sb.AppendLine("**Always cite the route**: \"Based on your answers, I'm pointing you at `<X>` because <reason>.\" Never auto-handoff — the user @-mentions the specialist themselves.");
+        sb.AppendLine("**Always cite the route**: \"Based on your answers, I'm pointing you at `<X>` because <reason>.\" Never auto-handoff — the user invokes the prompt (or @-mentions the specialist, if installed) themselves.");
         sb.AppendLine();
         sb.AppendLine("If Q3 indicates time-sensitivity, prefix the route with a one-line `MafDoctor` call to surface the most-impactful fix first.");
 

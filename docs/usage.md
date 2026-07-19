@@ -36,7 +36,8 @@ Prompts are pre-built workflows the server exposes; your client surfaces them as
 | `maf-debug` | Diagnose a MAF failure → root cause + fix | `@maf-incident-responder` |
 | `maf-explain-finding` | Deep-dive + fix ONE doctor finding (file + line) | — |
 | `maf-scaffold` | Generate clean agent/executor boilerplate | — |
-| `maf-help` | Triage: where are you, what do you need? | `@maf-onboarding` |
+| `maf-onboarding` | Guided first-day tour: what the codebase does, agent topology, hot-path files, its MAF dialect | `@maf-onboarding` |
+| `maf-help` | Triage: where are you, what do you need? | — |
 
 ## 3. MCP tools — called for you
 
@@ -65,7 +66,7 @@ Readable on demand; the assistant pulls them when relevant:
 | `maf://rules` | Live catalogue of every scanner + analyzer rule |
 | `maf://help` | How to use the toolkit |
 | `maf://migrate-from?source=semantic-kernel` | Semantic Kernel → MAF construct mapping + interop bridges |
-| `maf://skills?name=<name>` | Any of the 14 bundled skills |
+| `maf://skills?name=<name>` | Any of the 15 bundled skills |
 
 ## 5. Specialist agents (`@…`)
 

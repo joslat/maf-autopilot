@@ -92,8 +92,8 @@ maf-doctor init
 
 `maf-doctor init` will:
 - Wire the MCP server for **VS Code** (`.vscode/mcp.json`) and **Claude Code** (`.mcp.json`) — idempotent, safe to re-run
-- Write overwrite-on-reinit steering **sidecars** (never merged into your own instruction files): `.github/instructions/maf-doctor.instructions.md` (Copilot), `.claude/maf-doctor.md` + a one-line `@import` in `CLAUDE.md` and an `AGENTS.md` managed block (Claude Code / AGENTS-aware tools)
-- With `--with-cursor`: also write `.cursor/rules/maf-doctor.mdc`
+- Write overwrite-on-reinit steering **sidecars** (never merged into your own instruction files): `.github/instructions/maf-doctor.instructions.md` (Copilot), `.claude/maf-doctor.md` + a one-line `@import` in `CLAUDE.md` (Claude Code), and an `AGENTS.md` managed block — read natively by GitHub Copilot's coding agent and by Cursor, so those two already get baseline steering from this file alone
+- With `--with-cursor`: also write `.cursor/rules/maf-doctor.mdc`, a dedicated Cursor rule reinforcing the `AGENTS.md` block (not the only path to Cursor steering)
 
 See [init-reference.md](./init-reference.md) for exactly what's written and why.
 

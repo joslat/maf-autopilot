@@ -83,7 +83,7 @@ internal static class InitCommand
 
         Console.WriteLine("maf-doctor init");
         Console.WriteLine($"  Configuring: {targetDir}");
-        if (withCursor) Console.WriteLine("  --with-cursor: .cursorrules will also be dropped");
+        if (withCursor) Console.WriteLine("  --with-cursor: .cursor/rules/maf-doctor.mdc will also be dropped");
         Console.WriteLine();
 
         await WriteMcpJsonAsync(targetDir);
@@ -93,13 +93,15 @@ internal static class InitCommand
         // convention dir. We never merge into the user's own copilot-instructions.md
         // / CLAUDE.md, and re-running init refreshes the guidance (no duplicates).
         await WriteSidecarAsync(targetDir, "steering/copilot-instructions.md",
-            ".github/instructions/maf-doctor.instructions.md", "---\napplyTo: '**'\n---\n\n");
+            ".github/instructions/maf-doctor.instructions.md",
+            "---\napplyTo: '**'\n---\n\n" + ManagedSidecarNote(".github/copilot-instructions.md"));
         await WriteClaudeSteeringAsync(targetDir);
         await UpsertManagedBlockAsync(targetDir, "steering/agents.md", "AGENTS.md");
         if (withCursor)
             await WriteSidecarAsync(targetDir, "steering/cursor-rules.md",
                 ".cursor/rules/maf-doctor.mdc",
-                "---\ndescription: MAF Doctor — use the MCP tools for Microsoft Agent Framework code\nalwaysApply: true\n---\n\n");
+                "---\ndescription: MAF Doctor — use the MCP tools for Microsoft Agent Framework code\nalwaysApply: true\n---\n\n"
+                    + ManagedSidecarNote("a separate .cursor/rules/*.mdc file"));
 
         Console.WriteLine();
         Console.WriteLine("Done. ⚡ Try these three commands first:");
@@ -452,6 +454,18 @@ internal static class InitCommand
     //  installed maf-doctor version and can never stack duplicate sections.
 
     /// <summary>
+    /// A short HTML-comment note warning that a sidecar is fully overwritten on every
+    /// re-`init`, with a pointer to where to put durable hand-authored guidance instead.
+    /// The embedded steering body has its own leading comment stripped before delivery
+    /// (see <see cref="StripLeadingHtmlComment"/>), so without this the shipped file
+    /// carries no warning at all — a hand-edit here is silently wiped on the next `init`.
+    /// </summary>
+    private static string ManagedSidecarNote(string durableAlternative) =>
+        $"<!-- Managed by `maf-doctor init` — this file is fully overwritten on every " +
+        $"re-run. For durable, hand-authored guidance, use {durableAlternative} instead " +
+        $"(init never touches it). -->\n\n";
+
+    /// <summary>
     /// Writes a steering sidecar from an embedded snippet, OVERWRITING any prior copy
     /// (re-running init refreshes the guidance). The snippet's leading HTML-comment
     /// header is stripped; optional convention-specific frontmatter is prepended.
@@ -493,7 +507,8 @@ internal static class InitCommand
         // Sidecar — overwrite-always.
         var sidecarPath = Path.Combine(targetDir, ".claude", "maf-doctor.md");
         Directory.CreateDirectory(Path.GetDirectoryName(sidecarPath)!);
-        await File.WriteAllTextAsync(sidecarPath, body.EndsWith("\n", StringComparison.Ordinal) ? body : body + "\n");
+        var sidecarContent = ManagedSidecarNote("your own CLAUDE.md body") + body;
+        await File.WriteAllTextAsync(sidecarPath, sidecarContent.EndsWith("\n", StringComparison.Ordinal) ? sidecarContent : sidecarContent + "\n");
         Console.WriteLine("  ✓ .claude/maf-doctor.md — written (refreshed on each init)");
 
         // Ensure CLAUDE.md imports it (one stable line; add only if absent).

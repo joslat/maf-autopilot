@@ -408,4 +408,35 @@ public sealed class InitCommandTests : IDisposable
 
         Assert.Equal(Path.GetFullPath(_tempDir), root);
     }
+
+    // -------------------------------------------------------------------------
+    // Drift guard — copilot-instructions.md / claude-instructions.md / agents.md
+    // intentionally use different H2 titles and opening framing per tool, but the
+    // numbered guidance (item 1 onward) is meant to be identical prose duplicated
+    // across three files with no shared source. Nothing else catches drift if one
+    // is edited and the others aren't — pin the shared tail here.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void SteeringBodies_CopilotClaudeAgents_ShareIdenticalActionableGuidance()
+    {
+        var copilot = ReadEmbeddedSteeringSnippet("steering/copilot-instructions.md");
+        var claude = ReadEmbeddedSteeringSnippet("steering/claude-instructions.md");
+        var agents = ReadEmbeddedSteeringSnippet("steering/agents.md");
+
+        const string anchor = "1. **Always call `MafDoctor` first**";
+        var copilotTail = copilot[copilot.IndexOf(anchor, StringComparison.Ordinal)..];
+        var claudeTail = claude[claude.IndexOf(anchor, StringComparison.Ordinal)..];
+        var agentsTail = agents[agents.IndexOf(anchor, StringComparison.Ordinal)..];
+
+        Assert.Equal(copilotTail, claudeTail);
+        Assert.Equal(copilotTail, agentsTail);
+    }
+
+    private static string ReadEmbeddedSteeringSnippet(string logicalName)
+    {
+        using var stream = typeof(InitCommand).Assembly.GetManifestResourceStream(logicalName)!;
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
 }

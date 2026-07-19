@@ -172,4 +172,22 @@ public sealed class MafPromptsTests
             name: "ChatBot<!--SMUGGLED_NAME-->"));
         Assert.DoesNotContain("SMUGGLED_NAME", text);
     }
+
+    [Fact]
+    public void Onboarding_HtmlCommentInRepoPath_Stripped()
+    {
+        var text = PromptText(MafPrompts.Onboarding(
+            repoPath: "/repo<!--SMUGGLED_ONBOARDING_PATH-->"));
+        Assert.DoesNotContain("SMUGGLED_ONBOARDING_PATH", text);
+        Assert.DoesNotContain("<!--", text);
+    }
+
+    [Fact]
+    public void Onboarding_NoRepoPath_OmitsRepositoryLineButStillRendersLoop()
+    {
+        var text = PromptText(MafPrompts.Onboarding(repoPath: null));
+        Assert.DoesNotContain("Repository:", text);
+        Assert.Contains("MafSimulateWorkflow", text);
+        Assert.Contains("MafDoctor", text);
+    }
 }

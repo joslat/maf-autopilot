@@ -62,7 +62,7 @@ public sealed class TourTool
 
         sb.AppendLine();
         sb.AppendLine("---");
-        sb.AppendLine("**Next:** invoke the `maf-help` prompt for a 3-question interactive flow, or @-mention a specialist directly (`@maf-migration`, `@maf-auditor`, etc.).");
+        sb.AppendLine("**Next:** invoke the `maf-help` prompt for a 3-question interactive flow, or run a prompt directly (`maf-migrate`, `maf-audit`, etc.) — no install needed. The `@`-mention specialists (`@maf-migration`, `@maf-auditor`, etc.) work the same way if `.github/agents/` was also copied in from the source repo (GitHub Copilot only).");
 
         return sb.ToString();
     }
@@ -164,7 +164,8 @@ public sealed class TourTool
         ("maf-debug", "Reactive-debugging starter — paste an error or symptom, the prompt routes to the right diagnostic tool by symptom class."),
         ("maf-explain-finding", "Deep-dive + fix ONE doctor finding (file + line). Calls MafExplainFinding for grounded context, then explains + proposes the fix using maf://constraints + maf://guide."),
         ("maf-scaffold", "Boilerplate generation starter — routes to MafNewAgent or MafNewExecutor depending on what you want to build."),
-        ("maf-help", "3-question interactive flow for new users. Routes to the right tool / agent based on intent."),
+        ("maf-onboarding", "Guided first-day tour for a developer new to this MAF codebase: what it does, agent topology (Mermaid), hot-path files, this codebase's MAF dialect, and first-day actions."),
+        ("maf-help", "3-question interactive flow for new users. Routes to the right prompt / tool based on intent."),
     };
 
     // -------------------------------------------------------------------------

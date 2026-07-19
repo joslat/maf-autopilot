@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-07-19
+
+**Steering-wiring review: dead agent references fixed, a real onboarding-prompt gap closed, and a sweep of stale docs.** A review of how `init` steers GitHub Copilot, Claude Code, and Cursor found that all four shipped steering files (and two of the MCP prompts) told the assistant to hand off to `@maf-*` specialist-agent personas that `init`'s default install path never actually installs — dead references for anyone who just ran `maf-doctor init` rather than manually copying this repo's `.github/`.
+
+### Added
+- **`maf-onboarding` MCP prompt.** The `maf-help` triage prompt routed "I just joined the team" to `@maf-onboarding` — an agent persona with no MCP-prompt equivalent, unlike every other route. Added a real, always-available prompt mirroring the agent's guided first-day tour (codebase summary, agent topology via `MafSimulateWorkflow`, hot-path files, current grade + top fixes via `MafDoctor`). (Prompts 10 → 11.)
+
+### Fixed
+- **Dead `@maf-*` agent references in all four steering files and two MCP prompts.** `init` never copies `.github/agents/*.agent.md` into a consumer repo (only manually copying this repo's whole `.github/` in — "Mode 2" — does, and only for GitHub Copilot); there is no Claude Code subagent or Cursor custom-mode equivalent anywhere. So `.github/instructions/maf-doctor.instructions.md`, `.claude/maf-doctor.md`, the `AGENTS.md` block, `.cursor/rules/maf-doctor.mdc`, and the `maf-debug` / `maf-help` prompts were all routing to personas that don't exist for the common case — while the identical workflows were already sitting there, wired up by every `init` run, as MCP prompts (`maf-review`, `maf-audit`, `maf-migrate`, `maf-debug`, `maf-migrate-from`). Steering now leads with the prompts and mentions the `@`-mention personas only as a Mode-2, Copilot-only enhancement.
+- **Sidecar files carried no "don't hand-edit me" warning.** `.github/instructions/maf-doctor.instructions.md`, `.claude/maf-doctor.md`, and `.cursor/rules/maf-doctor.mdc` are fully overwritten on every re-`init`, but the only comment that said so lived in the *source* snippet's header — which is stripped before the file is written to a consumer's repo. A team that hand-edited one of these lost the edit silently on the next `init`. Each now carries an accurate, undeleted note pointing at where durable customizations actually belong.
+- **Stale header comments in the four `docs/steering/*.md` source snippets** — left over from a prior refactor (see the 1.x "no longer merges into your own files" entry below), they described appending into the user's own `copilot-instructions.md` / `CLAUDE.md` with merge semantics; the shipped design has been overwrite-on-reinit sidecars for a while. Rewritten to match, and to name Copilot's/Cursor's native `AGENTS.md` support.
+- **Stale `docs/steering/README.md`** — said "these three files" (there are four) and claimed `cursor-rules.md` lands at `./.cursorrules`; the real destination is `.cursor/rules/maf-doctor.mdc`. Also now documents that GitHub Copilot's coding agent and Cursor both read `AGENTS.md` natively, so `--with-cursor` is a reinforcing layer, not the only path to Cursor steering.
+- **`--with-cursor`'s console output named the wrong file** (`.cursorrules` instead of the actual `.cursor/rules/maf-doctor.mdc`).
+- **Stale tool / prompt / skill counts drifted independently across docs** — README.md, NUGET_README.md, `docs/architecture.md`, `docs/init-reference.md`, `docs/quickstart.md`, and `docs/usage.md` variously still said 27 tools, 10 prompts, or 14 skills; the live counts (drift-tested in `TourToolTests`) are 28 tools, 11 prompts (with `maf-onboarding` above), 15 skills. Reconciled everywhere.
+- **No drift guard on the three duplicated steering bodies.** `copilot-instructions.md`, `claude-instructions.md`, and `agents.md` intentionally share identical numbered guidance (different H2 titles/framing per tool) with no shared source and, previously, no test — a future edit to one could silently diverge from the other two. Added `SteeringBodies_CopilotClaudeAgents_ShareIdenticalActionableGuidance` to pin it.
+
 ## [1.10.0] - 2026-07-17
 
 **MCP server memory leak fixed, repo-scan hardening, and our first outside contribution.** The MCP server no longer leaks memory while idle — a stray config-reload file watcher was recursively monitoring the MCP host's entire working directory, typically the user's home folder. Also closes a related class of bugs found while reviewing that fix: `repoPath` must now be a genuinely absolute path, every repo scan is bounded, and the `MAF PR Audit` CI check no longer fails on outside contributions. **CI green across net8/9/10.**
@@ -666,7 +682,8 @@ Internal alpha; superseded by `1.3.0-alpha-3`. Not announced.
 
 Initial MCP server prototype. Three tools (`MafApiSafety`, `MafRegistryLookup`, `MafRegistryList`), 11 skills, 2 agents, 10 registry entries. Validated against one real migration (`maf-claims-fraud-guardian` 1.2.0 → 1.3.0). Internal alpha; not announced.
 
-[Unreleased]: https://github.com/joslat/maf-doctor/compare/v1.10.0...HEAD
+[Unreleased]: https://github.com/joslat/maf-doctor/compare/v1.11.0...HEAD
+[1.11.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.11.0
 [1.10.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.10.0
 [1.9.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.9.0
 [1.8.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.8.0
