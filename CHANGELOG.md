@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-07-19
+
+**A second, more thorough steering-completeness pass** (following v1.11.0's dead-reference fix): audited the full live tool/prompt catalogue against what the steering docs actually tell the assistant to do, and closed the real gaps found.
+
+### Added
+- **Self-update awareness in steering.** Nothing in the four steering docs (or the `@maf` agent) ever mentioned `MafDoctorStatus` — the tool that reports whether the installed package or a workspace's `init` is stale. Added: check occasionally, surface the `dotnet tool update -g maf-doctor` + `maf-doctor init` flow when needed, confirming with the user before the global tool update (repo-scoped `init` is always safe to just run).
+- **`maf://constraints` awareness in steering.** Every MCP prompt (`maf-audit`, `maf-migrate`, `maf-remediate`, `maf-migrate-from`, `maf-review`, `maf-debug`) reads `maf://constraints` — the non-negotiable hard rules — as its first step. The baseline steering never told the assistant to do the same for anything answered *outside* a prompt. Added as its own item, early in the list.
+- **"Scan incomplete" awareness.** v1.10.0 added `scan_truncated` / `files_scanned` reporting when a repo scan hits a size cap, but steering never told the assistant to check for or surface it — a capped scan could silently present an incomplete grade as definitive. Added to the `MafDoctor`-first item.
+- **`maf-onboarding` now referenced in steering**, not just in `maf-help`'s routing table — closes the gap where the prompt existed (added earlier in this same review cycle) but nothing in the baseline guidance pointed to it.
+- **`MafAuditPullRequest` now referenced in steering** — the PR-scoped scanner was previously only mentioned inside the `maf-migrate` prompt's own text, not in the baseline guidance, despite being broadly useful for any MAF-touching PR.
+- **Discovery fallback in steering.** Nothing in the four steering docs told the assistant what to do if a request didn't match any of the listed scenarios. Added a closing pointer to `MafTour()` (full capability catalogue) and the `maf-help` prompt (guided triage) — previously only reachable via the `@maf` agent (Mode 2 only), leaving Claude Code / Cursor / plain-`init` Copilot users with no discovery mechanism at all.
+
+### Notes
+- Deliberately NOT added to steering (to avoid turning it into a full tool index — that's what `MafTour` / `maf-help` are for): `MafScanAntiPatterns`, `MafValidateFanOut`, `MafScoreMigrationRisk`, `MafGenerateRegressionPlan`, `MafExplain`, and similar — already reachable via `maf-review` / `maf-debug` / the `@maf` agent's own decision tree, without duplicating that routing at the steering-baseline level.
+
 ## [1.11.0] - 2026-07-19
 
 **Steering-wiring review: dead agent references fixed, a real onboarding-prompt gap closed, and a sweep of stale docs.** A review of how `init` steers GitHub Copilot, Claude Code, and Cursor found that all four shipped steering files (and two of the MCP prompts) told the assistant to hand off to `@maf-*` specialist-agent personas that `init`'s default install path never actually installs — dead references for anyone who just ran `maf-doctor init` rather than manually copying this repo's `.github/`.
@@ -682,7 +697,8 @@ Internal alpha; superseded by `1.3.0-alpha-3`. Not announced.
 
 Initial MCP server prototype. Three tools (`MafApiSafety`, `MafRegistryLookup`, `MafRegistryList`), 11 skills, 2 agents, 10 registry entries. Validated against one real migration (`maf-claims-fraud-guardian` 1.2.0 → 1.3.0). Internal alpha; not announced.
 
-[Unreleased]: https://github.com/joslat/maf-doctor/compare/v1.11.0...HEAD
+[Unreleased]: https://github.com/joslat/maf-doctor/compare/v1.12.0...HEAD
+[1.12.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.12.0
 [1.11.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.11.0
 [1.10.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.10.0
 [1.9.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.9.0

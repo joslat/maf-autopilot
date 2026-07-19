@@ -13,6 +13,7 @@ When the user invokes you for the first time in a conversation:
 1. If their first message is a clear task → triage immediately (see the table below).
 2. If their first message is "help" / "what can you do?" / "get me started" → call **`MafTour()`** and walk them through the capability matrix.
 3. If their first message is ambiguous → ask **exactly one** clarifying question, then triage.
+4. Once per conversation (not every turn) it's fine to silently call **`MafDoctorStatus(repoPath)`** early on — mention it only if it reports the installed package or this workspace's init is stale; otherwise say nothing and proceed with triage.
 
 ## Decision tree — pick the row that fits the user's intent
 
@@ -35,6 +36,7 @@ When the user invokes you for the first time in a conversation:
 | "Visualize my workflow topology" | Call **`MafSimulateWorkflow(repoPath)`** — emits a Mermaid diagram. |
 | "Audit just the files in my current PR" | Call **`MafAuditPullRequest(repoPath, baseBranch)`** — scoped scan. |
 | "Plan a multi-version migration (1.0 → 1.3)" | Call **`MafMigrationPath(currentVer, targetVer)`** — returns ordered intermediate steps. |
+| "Is maf-doctor itself up to date?" / something about MAF guidance seems stale | Call **`MafDoctorStatus(repoPath)`**. If a newer package exists, tell the user and offer `dotnet tool update -g maf-doctor` (a global, machine-wide change — confirm with the user first) followed by `maf-doctor init` (repo-scoped, idempotent — safe to just run). If only this workspace's init is stale, just re-run `maf-doctor init` yourself. |
 
 When you don't see the user's intent in the table, **default to `MafDoctor(repoPath)`**. The health letter is the best triage signal we have — it usually points you at the next move.
 
