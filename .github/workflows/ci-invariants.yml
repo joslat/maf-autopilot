@@ -61,13 +61,22 @@ jobs:
           # Match real call-site syntax: identifier `Process.Start(` not preceded
           # by `//` on the same line. The `^[^/]*` prefix excludes single-line
           # comment lines (a `//` followed by anything cannot be a real call).
+          #
+          # F-09 (2026-07-19 security assessment) — PullRequestAuditTool.cs's
+          # own git invocation (previously the "slated for ProcessRunner
+          # refactor" allowlist entry below referred to) is now routed through
+          # ProcessRunner.RunGit, closing both a pipe-deadlock shape and a
+          # bounded-output gap that its standalone Process.Start bypassed.
+          # There is now exactly one real Process.Start call site in the
+          # codebase (inside ProcessRunner.Run) — narrowed the allowlist to
+          # match, so any future direct spawn outside ProcessRunner fails CI
+          # instead of silently reusing a stale exemption.
           SITES=$(grep -rnE '^[^/]*\bProcess\.Start\(' src/ --include='*.cs' \
             | grep -v 'src/maf-autopilot/Tools/ProcessRunner.cs' \
-            | grep -v 'src/maf-autopilot/Tools/PullRequestAuditTool.cs' \
             | grep -v 'src/maf-autopilot.Tests/' || true)
           if [ -n "$SITES" ]; then
             echo "::error::Process.Start found outside the approved allowlist."
-            echo "Allowlist: ProcessRunner.cs, PullRequestAuditTool.cs (slated for ProcessRunner refactor), tests."
+            echo "Allowlist: ProcessRunner.cs (all subprocess spawns funnel through its shared Run helper), tests."
             echo "Sites:"
             echo "$SITES"
             exit 1

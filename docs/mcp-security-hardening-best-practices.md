@@ -329,6 +329,66 @@ This is best-effort — the contract is "secrets-as-env-vars never appear verbat
 
 If you ship a transport adapter for both STDIO and HTTP, document which is recommended and why. Most production deployments are STDIO + local-process trust boundary; HTTP servers add an authn/authz surface most authors underestimate.
 
+### 2.10 Predictable temp-file staging — a distinct lane from path containment
+
+**Threat:** T2 path escape, a variant §2.2's containment check does NOT cover. Containment (§2.2) protects against a write landing *outside* the intended directory. This is a different attack: a write that lands *inside* the validated directory, but at a **predictable staging path** an attacker pre-created as a symlink before the tool ever runs.
+
+**We shipped this bug, then fixed it — worth learning from both halves.** Our auto-fixer, `init`, and every other file-writer originally staged a replacement at `<path>.tmp` (or similar) via `File.WriteAllText`, then `File.Move`d it into place:
+
+```csharp
+// UNSAFE — the staging filename is fully predictable
+var tmp = path + ".autofix.tmp";
+File.WriteAllText(tmp, contents);   // follows an existing symlink at `tmp`
+File.Move(tmp, path, overwrite: true);
+```
+
+A malicious repository — or another local actor — can commit or pre-create `<path>.autofix.tmp` as a symlink to any file the process user can write. `File.WriteAllText` follows an existing symlink; nothing about "the destination is inside a validated repo root" stops the *staging* path from redirecting the write, because containment validation was checking `path`, not the derived temp filename next to it. This is a real, committable attack, not a theoretical TOCTOU footnote — the filename is deterministic.
+
+**Pattern.** A shared atomic-write primitive that:
+
+1. Validates the FINAL destination with your containment check (§2.2) first.
+2. Stages through an **unpredictable** temp filename inside the already-validated directory (`Path.Combine(dir, $".{Guid.NewGuid():N}.tmp")` — an attacker cannot pre-create a path they can't guess).
+3. Opens the temp file with **`FileMode.CreateNew`**, not `File.WriteAllText`. `CreateNew` refuses to open a pre-existing path — including one raced into place after your validation but before the open — rather than following it.
+4. Revalidates containment immediately before the atomic move/replace, narrowing (not eliminating — see below) the gap between check and use.
+5. Cleans up the temp file in a `finally` block.
+
+```csharp
+var resolved = ValidateContainment(workspaceRoot, destinationPath);
+var dir = Path.GetDirectoryName(resolved)!;
+Directory.CreateDirectory(dir);
+var tmp = Path.Combine(dir, $".{Guid.NewGuid():N}.tmp");
+try
+{
+    using (var fs = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+    using (var writer = new StreamWriter(fs))
+        writer.Write(contents);
+
+    ValidateContainment(workspaceRoot, destinationPath); // revalidate before the swap
+    File.Move(tmp, resolved, overwrite: true);
+}
+finally
+{
+    try { if (File.Exists(tmp)) File.Delete(tmp); } catch { /* best-effort */ }
+}
+```
+
+**Residual gap, accepted, document it rather than pretend it's closed:** step 4's revalidate-then-move is still two syscalls, not one — a local process with write access to the same directory could theoretically race a symlink into place in that narrow window. Closing this fully needs directory-relative/`openat`-style APIs most managed runtimes don't expose cleanly. This requires local write access to the workspace to exploit (the same trust boundary as the user running your tool) — it is not remotely triggerable via tool arguments, and is a meaningfully smaller residual than the original bug.
+
+**Where this bites you if you skip it:** every write site independently reinvents (or forgets) this — we found it in our auto-fixer, our `init` command's config writers, our scaffolders, an env-var-driven config-path reader, and an update-check cache write, all with the same predictable-filename shape, because none of them shared one primitive. Centralize this once; don't let each new write site re-derive it.
+
+### 2.11 An MCP-only workspace allowlist — scope what an agent-driven path argument can even name
+
+**Threat:** T2 path escape at the *argument* level, upstream of containment. §2.2's containment check assumes `repoPath` itself is trustworthy and only defends a *secondary* parameter against escaping it. But nothing stops an MCP client — including one driven by a model that's been prompt-injected via content it already read — from calling your tool with `repoPath` set to an entirely different, unintended directory: the user's home directory, another repository, a mounted drive. A syntactically valid, existing, absolute path passes every check in §2.2 trivially, because §2.2 never asks "should this tool be allowed to touch this directory at all."
+
+**Pattern.** A workspace-root allowlist, enforced **only** in MCP-server mode, never in CLI mode:
+
+- A configurable list of absolute directories (ours: a semicolon-separated `MAF_DOCTOR_WORKSPACE_ROOTS` env var, set in the MCP client's server config) an agent-driven call may target.
+- Deny filesystem roots (`/`, `C:\`) and the user's home directory **unconditionally**, even with no allowlist configured — no legitimate call targets either, so this should never require opt-in.
+- **Gate the check on a mode flag set from exactly one place** — the branch of your entry point that actually starts the MCP server, which every CLI subcommand must return before reaching. A human running your CLI directly *is* the trust boundary; forcing the same restriction on them breaks the tool for its most basic use (`mytool scan ~/some/other/project`) for no security benefit, since they typed that path themselves.
+- Default to unrestricted (beyond the unconditional root/home denial) when unconfigured, so this ships without breaking existing installs — then have your `init`/setup flow write a sensible default allowlist (scoped to the workspace being initialized) into the generated config, so *new* installs get scoped automatically without the user having to discover the env var.
+
+**A subtle bug worth knowing about if you implement the "always deny a bare root" check yourself:** whatever normalization you apply to the candidate path, apply it identically — and in the right order — to the root comparison. We shipped (then caught in review, on the actual target platform, not just by reading the code) a version that trimmed trailing path separators *before* comparing against `Path.GetPathRoot`. Trimming every trailing `/` off the bare POSIX root `/` collapses it to an empty string, and `Path.GetPathRoot("")` returns empty too — so the comparison silently passed for exactly the input it existed to block. The equivalent Windows case (`C:\` trims to `C:`) survived by coincidence, which is exactly why a Windows-only manual test run didn't catch it. **Lesson: test root-of-filesystem edge cases on every platform you claim to defend, not just the one you develop on** — and prefer comparing untrimmed forms (`Path.GetPathRoot(fullPath) == fullPath`) over trim-then-compare, since trimming a bare root is the degenerate case that loses information.
+
 ---
 
 ## §3. Repo-side hardening — GitHub Actions and the supply chain
@@ -556,7 +616,8 @@ permissions:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    continue-on-error: true   # advisory until 5 consecutive clean runs
+    # No job-level continue-on-error — see "Promote from advisory to
+    # hard-fail" below for why this is a dedicated final step instead.
     steps:
       - uses: actions/checkout@<sha>  # SHA-pinned
       - uses: actions/setup-dotnet@<sha>
@@ -567,10 +628,13 @@ jobs:
       - name: Install Cisco mcp-scanner
         run: |
           set -e
-          python -m pip install --user pipx
+          python -m pip install --user pipx==1.16.0
           python -m pipx ensurepath
-          pipx install 'cisco-ai-mcp-scanner>=4,<5' || \
-            pipx upgrade cisco-ai-mcp-scanner
+          # Exact-pinned, not a floating range (`>=4,<5`) — a security
+          # scanner's OWN supply chain is a high-value target, and this job
+          # carries pull-requests: write. Bump deliberately, not automatically.
+          pipx install 'cisco-ai-mcp-scanner==4.6.0' || \
+            pipx install --force 'cisco-ai-mcp-scanner==4.6.0'
 
       - name: Build the server for stdio launch
         run: dotnet build src/<server>/<server>.csproj --framework net10.0 --nologo
@@ -579,6 +643,10 @@ jobs:
 
       - name: Run scanner
         run: |
+          # `|| true` here only guarantees scan-results.txt exists even if the
+          # CLI crashes for an unrelated reason (exit-code semantics for
+          # "found something" vs. "tool error" are undocumented). It is NOT
+          # your pass/fail signal — see the dedicated gate step below.
           mcp-scanner \
             --analyzers yara \
             --format summary \
@@ -591,18 +659,39 @@ jobs:
             > scan-results.txt 2>&1 || true
 
       - name: Post results as PR comment
+        if: github.event_name == 'pull_request' && !cancelled()
         uses: marocchino/sticky-pull-request-comment@<sha>
         with:
           header: mcp-scanner-result
           path: scan-results.txt
+
+      - name: Evaluate scan result (hard-fail gate)
+        # Deliberately its own step, run AFTER the PR comment, so a finding
+        # still gets posted before the job fails. `--hide-safe` means a clean
+        # run's output is exactly two lines: "Total tools scanned: N" then
+        # "No results match the specified filters." Check the file's EXACT
+        # shape, not just `grep -q` for that phrase — see the note below on
+        # why substring matching is the wrong check here.
+        run: |
+          if [ ! -s scan-results.txt ]; then
+            echo "::error::scan-results.txt is empty — scan step likely crashed. Failing closed."
+            exit 1
+          fi
+          NONBLANK=$(grep -c . scan-results.txt || true)
+          if [ "$NONBLANK" -ne 2 ] \
+             || ! sed -n '1p' scan-results.txt | grep -qE '^Total tools scanned: [0-9]+$' \
+             || ! sed -n '2p' scan-results.txt | grep -qF 'No results match the specified filters.'; then
+            echo "::error::mcp-scanner reported findings (or an unexpected output shape) — see the scan step output / PR comment above."
+            exit 1
+          fi
 ```
 
 **Operational notes:**
 - **`mcp-scanner` CLI does not support `--version`.** Use `--help` as a liveness probe if you need one (argparse exits 0 on `--help` under `set -e`).
 - **Binary path varies by runner.** On GitHub Actions Ubuntu, pipx installs to `/opt/pipx_bin/mcp-scanner`. On dev machines, `~/.local/bin/mcp-scanner`. Use bare `mcp-scanner` (PATH-resolved) — don't hardcode either path.
 - **Build/run config must match.** `dotnet run --no-build` defaults to Debug; if your build step used `--configuration Release`, the scanner crashes with "No such file or directory".
-- **Promote from advisory to hard-fail after N consecutive clean runs** (we use 5). Don't tie this to a calendar deadline — PR cadence is unpredictable.
-- **Rollback playbook:** if a false-positive lands post-flip, restore `continue-on-error: true` AS A SHORT-TERM UNBLOCK, open an issue documenting the YARA rule that fired, triage within 1 week (suppress upstream, refactor on our side, or pin scanner version). The triage-not-suppress posture preserves the gate's signal value.
+- **Promote from advisory to hard-fail after N consecutive clean runs** (we use 5) — **but verify the criterion for real, not from job status alone.** We did this for maf-doctor itself (2026-07-20): if your scan step swallows the scanner's own exit code with `|| true` (see why above — its exit-code semantics for "found something" are undocumented, and you don't want a benign CLI hiccup to silently drop your only evidence), then a "green" job history proves nothing about whether the scans were actually clean. Pull the *actual scanner output* for your candidate runs (`gh api repos/{owner}/{repo}/actions/jobs/{id}/logs`, not just `gh run list`) and confirm each one's content, not just its conclusion, before removing `continue-on-error`. Once promoted, put the actual pass/fail decision in a separate final step (as above) that checks the file's exact shape — a `grep -q` for the clean-marker phrase alone would still pass a hypothetical future output that mixes the clean marker with real findings elsewhere in the file, since substring presence doesn't rule out other content.
+- **Rollback playbook:** if a false-positive lands post-flip, restore `continue-on-error: true` on the scan step AS A SHORT-TERM UNBLOCK, open an issue documenting the YARA rule that fired, triage within 1 week (suppress upstream, refactor on our side, or pin scanner version). The triage-not-suppress posture preserves the gate's signal value.
 
 ### 4.2 CI invariants — lock the code-side hardening in five jobs
 
@@ -728,6 +817,9 @@ Copy-paste this into your repo's `SECURITY-CHECKLIST.md` and tick items as they 
 - [ ] Error messages never echo the offending input.
 - [ ] Log redactor wired at the structured-log boundary; `--verbose`-by-default mode does not print request payloads (§2.8).
 - [ ] Subprocess env scrubbed to a minimum set, with documented opt-out for power users (§2.9).
+- [ ] Every write goes through ONE shared atomic-write primitive: unpredictable temp filename + `FileMode.CreateNew` + revalidate-before-replace (§2.10) — don't let each write site reinvent (or forget) this.
+- [ ] MCP-only workspace-root allowlist, gated on a mode flag set from the single code path that starts the MCP server; filesystem-root and home-directory always denied even unconfigured; CLI usage explicitly exempt (§2.11).
+- [ ] Destructive tools default to preview/dry-run; explicit opt-in required to write. Audit every place your OWN docs/prompts suggest invoking the tool — they need the opt-in spelled out too, or following your own instructions silently no-ops.
 
 ### CI
 
@@ -737,7 +829,7 @@ Copy-paste this into your repo's `SECURITY-CHECKLIST.md` and tick items as they 
 - [ ] Every third-party action SHA-pinned with a trailing tag comment.
 - [ ] Every workflow declares an explicit `permissions:` block.
 - [ ] Dependabot configured for your build ecosystem + github-actions + docker (if applicable).
-- [ ] Cisco mcp-scanner workflow on PR + weekly cron (advisory → hard-fail after 5 clean runs).
+- [ ] Cisco mcp-scanner workflow on PR + weekly cron (advisory → hard-fail after 5 clean runs — verified from actual scanner output, not job status alone if your scan step swallows its own exit code; the pass/fail decision lives in its own step checking the output's exact shape, not a `grep -q` substring match — §4.1).
 - [ ] PR-audit (if any) has a compiler-bomb cap using `git diff -z` + `mapfile -d ''` + `stat -c %s --` (NOT `xargs -I {}` — see §4.3 + §7 anti-pattern #4).
 
 ### Repo
