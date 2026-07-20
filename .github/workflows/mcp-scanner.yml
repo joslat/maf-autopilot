@@ -208,48 +208,53 @@ jobs:
         # F-16 — the actual pass/fail decision, deliberately separated from
         # the scan step (which must not fail the job before the PR comment
         # steps above get a chance to run) and from that step's own exit
-        # code (undocumented semantics, per the note above). `--hide-safe`
-        # means a clean run's summary output is exactly two non-blank lines:
-        # "Total tools scanned: N" then "No results match the specified
-        # filters." Anything else means at least one tool was flagged.
+        # code (undocumented semantics, per the note above).
         #
-        # Verified-in-review fixup: an earlier version of this check used
-        # `grep -q` (substring containment) — it would have passed a
-        # hypothetical future output shape where that boilerplate phrase
-        # appears alongside OTHER lines listing real findings, since `grep -q`
-        # only proves the phrase is present *somewhere*, not that it's the
-        # whole (safe) story. Now requires the file to consist of exactly
-        # those two non-blank lines, in that shape — any additional non-blank
-        # line fails closed instead of passing.
+        # Post-merge fixup (first real CI run after merge) — every prior
+        # hardening pass on this gate (see git blame) assumed a clean run's
+        # `--hide-safe` summary was exactly two non-blank lines. That
+        # assumption was verified extensively against SYNTHETIC bash test
+        # fixtures, but never against the REAL scanner's actual output —
+        # and it was wrong. The real cisco-ai-mcp-scanner 4.6.0 output
+        # (captured byte-for-byte from an actual local run against this
+        # server, and matching what broke PR #152's first CI run) is:
         #
-        # Round-2 review fixup: that rewrite anchored to fixed line POSITIONS
-        # (sed -n '1p'/'2p' against the raw file), so a leading or interstitial
-        # blank line — still only 2 non-blank lines total — false-failed a
-        # genuinely clean scan. Strip blank lines first, then check shape
-        # against what remains; the "exactly 2 lines, this exact content, in
-        # order" security property is unchanged, just no longer position-
-        # fragile. Never false-negatives either way (verified: any extra
-        # non-blank line, blank-padded or not, still fails closed).
+        #   === MCP Scanner Results Summary ===
+        #   <blank>
+        #   Scan Target: stdio:dotnet run --project ... --no-build
+        #   Total tools scanned: 28
+        #   No results match the specified filters.
+        #   <blank, trailing>
         #
-        # Round-3 review fixup: line 2's check used `grep -qF` (unanchored
-        # substring match) while line 1's used `grep -qE '^...$'` (fully
-        # anchored) — the exact "substring containment, not exact shape" bug
-        # this whole gate exists to avoid, just on the other line. A dirty
-        # line 2 that merely CONTAINS the safe phrase (e.g. a suppressed-
-        # count suffix, or a warning prefix) previously passed. Verified with
-        # a working repro before this fix, and re-verified against 10
-        # synthetic scenarios after: both lines are now anchored identically.
+        # — 4 non-blank lines, not 2, and CRLF-terminated even though this
+        # step runs on ubuntu-latest. The gate hard-failed on EVERY clean
+        # scan since it was "hardened" to require exactly 2, defeating the
+        # gate's purpose (a security check nobody can ever satisfy isn't
+        # a security check, it's a permanent red X). Rebuilt as an
+        # allowlist: every non-blank line must match one of the four known
+        # boilerplate/result shapes (verbatim header, "Scan Target: "
+        # prefix — its suffix is the workflow's own fixed CLI invocation,
+        # not attacker-influenced — the tool-count line, and the no-results
+        # line), and the two confirmatory lines (tool-count, no-results)
+        # must actually be present. Any OTHER line — a real finding, in
+        # whatever shape that turns out to be — still fails closed, same
+        # as every prior version of this gate. Verified against the real
+        # captured clean output (CRLF and LF-normalized), a clean output
+        # with a finding line appended, mixed clean+dirty with blank
+        # padding, an empty file, a truncated/crashed output, and a
+        # findings-only output with no boilerplate at all — the first two
+        # now correctly pass; every dirty/malformed case still fails.
         run: |
           if [ ! -s scan-results.txt ]; then
             echo "::error::scan-results.txt is empty — the scan step likely crashed before producing output. Treating as a failure (fail closed)."
             exit 1
           fi
 
-          NONBLANK=$(grep -v '^[[:space:]]*$' scan-results.txt || true)
-          NONBLANK_COUNT=$(printf '%s\n' "$NONBLANK" | grep -c . || true)
-          if [ "$NONBLANK_COUNT" -ne 2 ] \
-             || ! printf '%s\n' "$NONBLANK" | sed -n '1p' | grep -qE '^Total tools scanned: [0-9]+$' \
-             || ! printf '%s\n' "$NONBLANK" | sed -n '2p' | grep -qE '^No results match the specified filters\.$'; then
+          NONBLANK=$(tr -d '\r' < scan-results.txt | grep -v '^[[:space:]]*$' || true)
+          BAD_LINE=$(printf '%s\n' "$NONBLANK" | grep -vE '^=== MCP Scanner Results Summary ===$|^Scan Target: |^Total tools scanned: [0-9]+$|^No results match the specified filters\.$' || true)
+          if [ -n "$BAD_LINE" ] \
+             || ! printf '%s\n' "$NONBLANK" | grep -qE '^Total tools scanned: [0-9]+$' \
+             || ! printf '%s\n' "$NONBLANK" | grep -qE '^No results match the specified filters\.$'; then
             echo "::error::mcp-scanner reported findings (or produced an unexpected output shape) — see the 'Run mcp-scanner' step output above (and the PR comment, if this is a pull_request run)."
             exit 1
           fi

@@ -667,20 +667,36 @@ jobs:
 
       - name: Evaluate scan result (hard-fail gate)
         # Deliberately its own step, run AFTER the PR comment, so a finding
-        # still gets posted before the job fails. `--hide-safe` means a clean
-        # run's output is exactly two lines: "Total tools scanned: N" then
-        # "No results match the specified filters." Check the file's EXACT
-        # shape, not just `grep -q` for that phrase — see the note below on
-        # why substring matching is the wrong check here.
+        # still gets posted before the job fails. `--hide-safe` output for a
+        # genuinely clean run is a fixed 4-line boilerplate block (verified
+        # byte-for-byte against a real run of mcp-scanner 4.6.0 — do NOT
+        # assume a shorter shape from reading the CLI's own docs or a
+        # synthetic test fixture; see the operational note below on why):
+        #
+        #   === MCP Scanner Results Summary ===
+        #   <blank>
+        #   Scan Target: stdio:<your exact invocation>
+        #   Total tools scanned: N
+        #   No results match the specified filters.
+        #   <blank, trailing>
+        #
+        # Check by ALLOWLIST, not by exact line count or `grep -q`: every
+        # non-blank line must match one of the four known boilerplate/result
+        # shapes below, and the two confirmatory lines must actually be
+        # present. Any other line — a real finding, in whatever shape that
+        # turns out to be for your scanner version — fails closed. `tr -d
+        # '\r'` first: normalize line endings before matching regardless of
+        # what platform the scanner itself happens to emit them as.
         run: |
           if [ ! -s scan-results.txt ]; then
             echo "::error::scan-results.txt is empty — scan step likely crashed. Failing closed."
             exit 1
           fi
-          NONBLANK=$(grep -c . scan-results.txt || true)
-          if [ "$NONBLANK" -ne 2 ] \
-             || ! sed -n '1p' scan-results.txt | grep -qE '^Total tools scanned: [0-9]+$' \
-             || ! sed -n '2p' scan-results.txt | grep -qF 'No results match the specified filters.'; then
+          NONBLANK=$(tr -d '\r' < scan-results.txt | grep -v '^[[:space:]]*$' || true)
+          BAD_LINE=$(printf '%s\n' "$NONBLANK" | grep -vE '^=== MCP Scanner Results Summary ===$|^Scan Target: |^Total tools scanned: [0-9]+$|^No results match the specified filters\.$' || true)
+          if [ -n "$BAD_LINE" ] \
+             || ! printf '%s\n' "$NONBLANK" | grep -qE '^Total tools scanned: [0-9]+$' \
+             || ! printf '%s\n' "$NONBLANK" | grep -qE '^No results match the specified filters\.$'; then
             echo "::error::mcp-scanner reported findings (or an unexpected output shape) — see the scan step output / PR comment above."
             exit 1
           fi
@@ -690,7 +706,8 @@ jobs:
 - **`mcp-scanner` CLI does not support `--version`.** Use `--help` as a liveness probe if you need one (argparse exits 0 on `--help` under `set -e`).
 - **Binary path varies by runner.** On GitHub Actions Ubuntu, pipx installs to `/opt/pipx_bin/mcp-scanner`. On dev machines, `~/.local/bin/mcp-scanner`. Use bare `mcp-scanner` (PATH-resolved) — don't hardcode either path.
 - **Build/run config must match.** `dotnet run --no-build` defaults to Debug; if your build step used `--configuration Release`, the scanner crashes with "No such file or directory".
-- **Promote from advisory to hard-fail after N consecutive clean runs** (we use 5) — **but verify the criterion for real, not from job status alone.** We did this for maf-doctor itself (2026-07-20): if your scan step swallows the scanner's own exit code with `|| true` (see why above — its exit-code semantics for "found something" are undocumented, and you don't want a benign CLI hiccup to silently drop your only evidence), then a "green" job history proves nothing about whether the scans were actually clean. Pull the *actual scanner output* for your candidate runs (`gh api repos/{owner}/{repo}/actions/jobs/{id}/logs`, not just `gh run list`) and confirm each one's content, not just its conclusion, before removing `continue-on-error`. Once promoted, put the actual pass/fail decision in a separate final step (as above) that checks the file's exact shape — a `grep -q` for the clean-marker phrase alone would still pass a hypothetical future output that mixes the clean marker with real findings elsewhere in the file, since substring presence doesn't rule out other content.
+- **Verify the gate's exact-shape assumption against a REAL run, not just synthetic test fixtures — this bit us for real.** maf-doctor's own gate was hardened across three separate review rounds against hand-written bash test fixtures assuming a clean run's summary was exactly two non-blank lines. Every one of those rounds' synthetic tests passed. The assumption itself was never checked against the actual tool's actual output — and it was wrong (the real shape is the 4-line block above, not 2 lines). The gate then hard-failed on *every* clean scan in real CI, discovered only when it blocked a real merge. A security check nobody can ever satisfy isn't a security check — it's a permanent red X people learn to ignore or bypass. Before trusting a gate like this, run the real scanner against your real server at least once and diff its actual output against what your check assumes, rather than reasoning from the tool's docs or your own test fixtures alone.
+- **Promote from advisory to hard-fail after N consecutive clean runs** (we use 5) — **but verify the criterion for real, not from job status alone.** If your scan step swallows the scanner's own exit code with `|| true` (see why above — its exit-code semantics for "found something" are undocumented, and you don't want a benign CLI hiccup to silently drop your only evidence), then a "green" job history proves nothing about whether the scans were actually clean. Pull the *actual scanner output* for your candidate runs (`gh api repos/{owner}/{repo}/actions/jobs/{id}/logs`, not just `gh run list`) and confirm each one's content, not just its conclusion, before removing `continue-on-error`. Once promoted, put the actual pass/fail decision in a separate final step (as above) that checks the file's exact shape — a `grep -q` for the clean-marker phrase alone would still pass a hypothetical future output that mixes the clean marker with real findings elsewhere in the file, since substring presence doesn't rule out other content.
 - **Rollback playbook:** if a false-positive lands post-flip, restore `continue-on-error: true` on the scan step AS A SHORT-TERM UNBLOCK, open an issue documenting the YARA rule that fired, triage within 1 week (suppress upstream, refactor on our side, or pin scanner version). The triage-not-suppress posture preserves the gate's signal value.
 
 ### 4.2 CI invariants — lock the code-side hardening in six jobs
