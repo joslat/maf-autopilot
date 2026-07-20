@@ -90,10 +90,10 @@ internal static class WorkspacePolicy
     /// </summary>
     internal static string? ValidateCore(string path)
     {
-        string full;
+        string rawFull;
         try
         {
-            full = Normalize(Path.GetFullPath(path));
+            rawFull = Path.GetFullPath(path);
         }
         catch
         {
@@ -104,8 +104,21 @@ internal static class WorkspacePolicy
         // targets an entire filesystem root or the user's home directory, and an
         // operator who never configured MAF_DOCTOR_WORKSPACE_ROOTS should not be
         // silently exposed to either just by not opting in.
-        if (IsFilesystemRoot(full))
+        //
+        // Checked against the RAW (un-normalized) full path, deliberately.
+        // A prior version normalized first — TrimEnd-ing every trailing
+        // separator off a bare POSIX root "/" collapses it to "", and
+        // Path.GetPathRoot("") returns "", silently defeating this exact
+        // check for exactly the input it exists to catch. Windows happened
+        // to survive that bug (TrimEnd("C:\\") leaves "C:", still non-empty
+        // and still equal to Path.GetPathRoot("C:")), which is why it shipped
+        // undetected until verified by actually running on Linux. Comparing
+        // the untrimmed root against the untrimmed full path sidesteps the
+        // collapse entirely on both platforms.
+        if (IsFilesystemRoot(rawFull))
             return "Error: repoPath must not be a filesystem root.";
+
+        var full = Normalize(rawFull);
 
         var home = GetHomeDirectory();
         if (home is not null && full.Equals(home, PathComparison))
@@ -125,10 +138,12 @@ internal static class WorkspacePolicy
                "env config if this is intentional.";
     }
 
-    private static bool IsFilesystemRoot(string full)
+    private static bool IsFilesystemRoot(string rawFull)
     {
-        var pathRoot = Path.GetPathRoot(full);
-        return !string.IsNullOrEmpty(pathRoot) && full.Equals(Normalize(pathRoot), PathComparison);
+        // Compare untrimmed forms — see the call site's comment for why
+        // normalizing before this check is exactly the bug that shipped.
+        var pathRoot = Path.GetPathRoot(rawFull);
+        return !string.IsNullOrEmpty(pathRoot) && rawFull.Equals(pathRoot, PathComparison);
     }
 
     private static string? GetHomeDirectory()

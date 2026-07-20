@@ -270,13 +270,41 @@ public sealed class NewAgentTool
         sb.AppendLine($"## ✨ {title}");
         sb.AppendLine();
 
+        // Pre-flight: validate every target's containment/symlink-safety
+        // BEFORE writing any of them. Verified-in-review fixup: this used to
+        // validate-and-write one file at a time, so a symlinked Agents/ dir
+        // could refuse Agents/Bot.cs while a non-symlinked Tests/ dir still
+        // received Tests/BotTests.cs — no security property was violated
+        // (the attacker-controlled symlink target never received a file),
+        // but a scaffold's files are meant to be used together, and a test
+        // file referencing a class that was never created is a confusing,
+        // half-generated result. Refuse the whole scaffold instead.
+        foreach (var file in files)
+        {
+            var absolute = Path.Combine(projectPath, file.RelativePath);
+            try
+            {
+                PathGuard.ValidateContainment(projectPath, absolute, nameof(file.RelativePath));
+            }
+            catch (ArgumentException ex)
+            {
+                sb.AppendLine($"- ⚠️ `{file.RelativePath}` refused: {ex.Message}");
+                sb.AppendLine();
+                sb.AppendLine("**No files were written** — refusing the whole scaffold rather than leaving a partially-generated result.");
+                return sb.ToString();
+            }
+        }
+
         foreach (var file in files)
         {
             var absolute = Path.Combine(projectPath, file.RelativePath);
 
             // F-03 — reject a symlinked Agents/Workflows/Tests directory or a
             // symlinked target file rather than following it; secure CreateNew
-            // preserves the existing skip-on-exist behavior.
+            // preserves the existing skip-on-exist behavior. The pre-flight
+            // pass above already validated containment for every file, so
+            // this catch only matters for a same-process race between the
+            // two passes — same check, same inputs, handled identically.
             bool created;
             try
             {
