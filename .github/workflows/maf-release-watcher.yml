@@ -276,6 +276,17 @@ jobs:
           NEW_VERSION: ${{ needs.check-for-new-maf-release.outputs.new_version }}
         run: python3 .github/scripts/gen_guide_section.py
 
+      - name: Restore maf-doctor (locked mode)
+        # Round-2 review fixup — docs/security.md and threat-model.md both
+        # claimed "CI restores in --locked-mode" as a blanket statement, but
+        # this job (one of the 4 privileged, write-scoped jobs F-06/F-13
+        # hardened against floating/unreviewed installs) ran a plain
+        # `dotnet build` with an implicit, non-strict restore — a drifted
+        # dependency graph would be silently re-resolved instead of failing
+        # closed. Matches build-test.yml's restore-then-build split.
+        continue-on-error: true   # same fault-tolerance boundary as the build step below
+        run: dotnet restore src/maf-autopilot/maf-autopilot.csproj --locked-mode
+
       - name: Build maf-doctor from this checkout
         # F-06 (2026-07-19 security assessment) — this job has contents:write,
         # pull-requests:write, issues:write, actions:write and a maintainer PAT
@@ -296,7 +307,7 @@ jobs:
         # open — on any transient build/restore hiccup. This restores the
         # original fault-tolerance boundary.
         continue-on-error: true
-        run: dotnet build src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0
+        run: dotnet build src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0 --no-restore
 
       - name: Auto-append draft registry entries
         env:

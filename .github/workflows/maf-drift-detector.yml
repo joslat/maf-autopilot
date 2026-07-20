@@ -31,12 +31,21 @@ jobs:
           # Net8 LTS — install-only; nupkg multi-targets so any flavor works.
           dotnet-version: '8.0.x'
 
+      - name: Restore maf-doctor (locked mode)
+        # Round-2 review fixup — docs claimed "CI restores in --locked-mode"
+        # as a blanket statement, but this job ran a plain `dotnet build`
+        # with an implicit, non-strict restore. Matches build-test.yml's
+        # restore-then-build split. No continue-on-error here, matching the
+        # build step below: this job's intentional fail-loud design (see
+        # notify-on-failure) is unaffected either way.
+        run: dotnet restore src/maf-autopilot/maf-autopilot.csproj --locked-mode
+
       - name: Build maf-doctor from this checkout
         # F-13 (2026-07-19 security assessment) — this job grades THIS repo's
         # own code, so building from the same checkout being graded is
         # strictly more correct than a floating `--prerelease` NuGet install,
         # and this job has `issues: write` in scope.
-        run: dotnet build src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0
+        run: dotnet build src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0 --no-restore
 
       - name: Run MafDoctor against repo
         id: doctor

@@ -93,7 +93,7 @@ new ProcessStartInfo("dotnet") { Arguments = userInput }   // ← UNSAFE
 
 — note the singular `Arguments` *string* property, which Windows re-parses with shell-style splitting. Always use `ArgumentList`. The [`ProcessRunner.cs`](../src/maf-autopilot/Tools/ProcessRunner.cs) summary block documents this as the first item in its hardening checklist.
 
-The invariant is also enforced in CI by [`.github/workflows/ci-invariants.yml`](../.github/workflows/ci-invariants.yml) — Job 1 fails any PR introducing the unsafe `Arguments` *string* property or a new `Process.Start` call site outside the small allowlist (`ProcessRunner.cs`, `PullRequestAuditTool.cs`).
+The invariant is also enforced in CI by [`.github/workflows/ci-invariants.yml`](../.github/workflows/ci-invariants.yml) — Job 1 fails any PR introducing the unsafe `Arguments` *string* property or a new `Process.Start` call site outside the small allowlist, which as of the 2026-07-19 pass (F-09) is just `ProcessRunner.cs` (previously also exempted `PullRequestAuditTool.cs`, before its git call moved into `ProcessRunner`).
 
 ---
 
@@ -118,8 +118,8 @@ The invariant is also enforced in CI by [`.github/workflows/ci-invariants.yml`](
 1. Every `workflow_dispatch` workflow **that accepts inputs** has a `validate-inputs` job that runs FIRST with `permissions: {}` (no scopes). It regex-checks the input shape — semver for version fields, positive-int for `pr_number`, hardcoded enum for `bot` / `model`. Downstream jobs gate via `needs: validate-inputs`. Input-less dispatches (e.g. `maf-drift-detector.yml`) do not need the guard.
 2. Every `run:` block reads inputs via `env:` redirect (`env: { X: ${{ inputs.X }} }` then `$X` in shell). The single `env:` interpolation is YAML-quoted by the runner; downstream `$X` references are shell-variable expansions, not template substitutions.
 3. CI invariant `ci-invariants.yml` Job 4 blocks any future `${{ inputs.* }}` literal inside a `run:` block.
-4. Third-party actions are SHA-pinned (9 distinct actions × 23 call sites). Dependabot keeps them current.
-5. All 9 workflows declare an explicit `permissions:` scope; `validate-inputs` jobs run with no permissions at all.
+4. Third-party actions are SHA-pinned (13 distinct actions × 42 call sites, repo-wide, verified by grep). Dependabot keeps them current.
+5. All 12 workflow files declare an explicit `permissions:` scope (workflow-level or per-job); `validate-inputs` jobs run with no permissions at all.
 
 ### Path-escape via secondary path parameters
 

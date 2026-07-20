@@ -110,6 +110,17 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Restore maf-doctor (locked mode)
+        # Round-2 review fixup — docs claimed "CI restores in --locked-mode"
+        # as a blanket statement, but this job ran a plain `dotnet build`
+        # with an implicit, non-strict restore. Matches build-test.yml's
+        # restore-then-build split. continue-on-error for the same reason as
+        # the build step below: a broken PR can legitimately fail restore
+        # too, and that must not crash the companion comment workflow.
+        continue-on-error: true
+        if: steps.scope.outputs.skip != 'true'
+        run: dotnet restore src/maf-autopilot/maf-autopilot.csproj --locked-mode
+
       - name: Build maf-doctor from this checkout
         # F-13 (2026-07-19 security assessment) — this job audits the PR's own
         # (possibly fork-supplied) source with maf-doctor; building maf-doctor
@@ -129,7 +140,7 @@ jobs:
         # "audit incomplete" message below.
         continue-on-error: true
         if: steps.scope.outputs.skip != 'true'
-        run: dotnet build src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0
+        run: dotnet build src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0 --no-restore
 
       - name: Run MCP server and call MafAuditPullRequest
         if: steps.scope.outputs.skip != 'true'
