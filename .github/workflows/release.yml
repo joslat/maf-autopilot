@@ -140,7 +140,10 @@ jobs:
           done
 
       - name: Restore
-        run: dotnet restore maf-autopilot.sln
+        # F-27 — locked mode; see build-test.yml for the full rationale.
+        # Release builds are exactly where a silently-drifted transitive
+        # dependency graph matters most.
+        run: dotnet restore maf-autopilot.sln --locked-mode
 
       - name: Test (solution-level — gates analyzer + main project)
         run: |

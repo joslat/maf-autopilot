@@ -35,7 +35,12 @@ jobs:
             10.0.x
 
       - name: Restore
-        run: dotnet restore maf-autopilot.sln
+        # F-27 — locked mode fails the restore if a project's
+        # packages.lock.json disagrees with Directory.Packages.props, instead
+        # of quietly resolving to whatever the transitive graph produces that
+        # day. A real dependency bump must update the lock file in the same
+        # commit (`dotnet restore --force-evaluate`) or CI catches the drift.
+        run: dotnet restore maf-autopilot.sln --locked-mode
 
       - name: Build
         run: dotnet build maf-autopilot.sln --configuration Release --no-restore

@@ -55,8 +55,17 @@ appsettings.*.local.json
 logs/
 
 # --- NuGet lock files ---
+# F-27 fixup: git does not treat a trailing `# comment` on the same line as a
+# pattern as a comment — only a line whose FIRST character is `#` is a
+# comment. The previous single-line form (`!packages.lock.json  # explicitly
+# opt-in via csproj`) was parsed as one literal pattern including the comment
+# text, so it never actually matched "packages.lock.json" and this negation
+# silently never took effect — every packages.lock.json in the repo has been
+# gitignored despite this comment's stated intent. Comment now on its own
+# line so the negation is a real, minimal pattern.
+# Explicitly opt in: RestorePackagesWithLockFile is set in Directory.Build.props.
 *.lock.json
-!packages.lock.json          # explicitly opt-in via csproj
+!packages.lock.json
 
 # --- OS noise ---
 .DS_Store
