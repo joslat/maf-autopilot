@@ -72,13 +72,13 @@ public sealed class SafeWorkspaceWriterTests : IDisposable
         File.WriteAllText(outsideTarget, "SECRET");
         var symlinkPath = Path.Combine(_root, "safe.txt");
 
-        try { File.CreateSymbolicLink(symlinkPath, outsideTarget); }
-        catch (UnauthorizedAccessException) { return; }
-        catch (IOException) { return; }
-        catch (PlatformNotSupportedException) { return; }
-
         try
         {
+            try { File.CreateSymbolicLink(symlinkPath, outsideTarget); }
+            catch (UnauthorizedAccessException) { return; }
+            catch (IOException) { return; }
+            catch (PlatformNotSupportedException) { return; }
+
             var ex = Assert.Throws<ArgumentException>(
                 () => SafeWorkspaceWriter.WriteAtomic(_root, symlinkPath, "attacker-controlled"));
             Assert.Contains("symlink", ex.Message, StringComparison.OrdinalIgnoreCase);
@@ -98,13 +98,13 @@ public sealed class SafeWorkspaceWriterTests : IDisposable
         Directory.CreateDirectory(outsideDir);
         var linkedDir = Path.Combine(_root, "linked");
 
-        try { Directory.CreateSymbolicLink(linkedDir, outsideDir); }
-        catch (UnauthorizedAccessException) { return; }
-        catch (IOException) { return; }
-        catch (PlatformNotSupportedException) { return; }
-
         try
         {
+            try { Directory.CreateSymbolicLink(linkedDir, outsideDir); }
+            catch (UnauthorizedAccessException) { return; }
+            catch (IOException) { return; }
+            catch (PlatformNotSupportedException) { return; }
+
             var dest = Path.Combine(linkedDir, "file.txt");
             var ex = Assert.Throws<ArgumentException>(
                 () => SafeWorkspaceWriter.WriteAtomic(_root, dest, "attacker-controlled"));
@@ -148,13 +148,13 @@ public sealed class SafeWorkspaceWriterTests : IDisposable
         File.WriteAllText(outsideTarget, "SECRET");
         var symlinkPath = Path.Combine(_root, "Agent.cs");
 
-        try { File.CreateSymbolicLink(symlinkPath, outsideTarget); }
-        catch (UnauthorizedAccessException) { return; }
-        catch (IOException) { return; }
-        catch (PlatformNotSupportedException) { return; }
-
         try
         {
+            try { File.CreateSymbolicLink(symlinkPath, outsideTarget); }
+            catch (UnauthorizedAccessException) { return; }
+            catch (IOException) { return; }
+            catch (PlatformNotSupportedException) { return; }
+
             var ex = Assert.Throws<ArgumentException>(
                 () => SafeWorkspaceWriter.TryCreateNew(_root, symlinkPath, "attacker-controlled"));
             Assert.Contains("symlink", ex.Message, StringComparison.OrdinalIgnoreCase);
@@ -174,13 +174,13 @@ public sealed class SafeWorkspaceWriterTests : IDisposable
         Directory.CreateDirectory(outsideDir);
         var linkedDir = Path.Combine(_root, "Tests");
 
-        try { Directory.CreateSymbolicLink(linkedDir, outsideDir); }
-        catch (UnauthorizedAccessException) { return; }
-        catch (IOException) { return; }
-        catch (PlatformNotSupportedException) { return; }
-
         try
         {
+            try { Directory.CreateSymbolicLink(linkedDir, outsideDir); }
+            catch (UnauthorizedAccessException) { return; }
+            catch (IOException) { return; }
+            catch (PlatformNotSupportedException) { return; }
+
             var dest = Path.Combine(linkedDir, "AgentTests.cs");
             Assert.Throws<ArgumentException>(
                 () => SafeWorkspaceWriter.TryCreateNew(_root, dest, "attacker-controlled"));

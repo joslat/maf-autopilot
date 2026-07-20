@@ -489,13 +489,13 @@ public sealed class InitCommandTests : IDisposable
         Directory.CreateDirectory(vscodeDir);
         var mcpJsonPath = Path.Combine(vscodeDir, "mcp.json");
 
-        try { File.CreateSymbolicLink(mcpJsonPath, outsideTarget); }
-        catch (UnauthorizedAccessException) { return; }
-        catch (IOException) { return; }
-        catch (PlatformNotSupportedException) { return; }
-
         try
         {
+            try { File.CreateSymbolicLink(mcpJsonPath, outsideTarget); }
+            catch (UnauthorizedAccessException) { return; }
+            catch (IOException) { return; }
+            catch (PlatformNotSupportedException) { return; }
+
             await InitCommand.WriteMcpJsonAsync(_tempDir);
             var outsideContent = await File.ReadAllTextAsync(outsideTarget);
             Assert.Equal("SECRET-OUTSIDE-CONTENT", outsideContent);
@@ -514,13 +514,13 @@ public sealed class InitCommandTests : IDisposable
         await File.WriteAllTextAsync(outsideTarget, "SECRET-OUTSIDE-CONTENT");
         var claudePath = Path.Combine(_tempDir, "CLAUDE.md");
 
-        try { File.CreateSymbolicLink(claudePath, outsideTarget); }
-        catch (UnauthorizedAccessException) { return; }
-        catch (IOException) { return; }
-        catch (PlatformNotSupportedException) { return; }
-
         try
         {
+            try { File.CreateSymbolicLink(claudePath, outsideTarget); }
+            catch (UnauthorizedAccessException) { return; }
+            catch (IOException) { return; }
+            catch (PlatformNotSupportedException) { return; }
+
             await InitCommand.WriteClaudeSteeringAsync(_tempDir);
             var outsideContent = await File.ReadAllTextAsync(outsideTarget);
             Assert.Equal("SECRET-OUTSIDE-CONTENT", outsideContent);
@@ -539,13 +539,13 @@ public sealed class InitCommandTests : IDisposable
         await File.WriteAllTextAsync(outsideTarget, "SECRET-OUTSIDE-CONTENT");
         var agentsPath = Path.Combine(_tempDir, "AGENTS.md");
 
-        try { File.CreateSymbolicLink(agentsPath, outsideTarget); }
-        catch (UnauthorizedAccessException) { return; }
-        catch (IOException) { return; }
-        catch (PlatformNotSupportedException) { return; }
-
         try
         {
+            try { File.CreateSymbolicLink(agentsPath, outsideTarget); }
+            catch (UnauthorizedAccessException) { return; }
+            catch (IOException) { return; }
+            catch (PlatformNotSupportedException) { return; }
+
             await InitCommand.UpsertManagedBlockAsync(_tempDir, "steering/agents.md", "AGENTS.md");
             var outsideContent = await File.ReadAllTextAsync(outsideTarget);
             Assert.Equal("SECRET-OUTSIDE-CONTENT", outsideContent);

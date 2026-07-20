@@ -59,13 +59,13 @@ public sealed class NewCommandTests : IDisposable
         Directory.CreateDirectory(outsideDir);
         var linkedAgentsDir = Path.Combine(_tempDir, "Agents");
 
-        try { Directory.CreateSymbolicLink(linkedAgentsDir, outsideDir); }
-        catch (UnauthorizedAccessException) { return; }
-        catch (IOException) { return; }
-        catch (PlatformNotSupportedException) { return; }
-
         try
         {
+            try { Directory.CreateSymbolicLink(linkedAgentsDir, outsideDir); }
+            catch (UnauthorizedAccessException) { return; }
+            catch (IOException) { return; }
+            catch (PlatformNotSupportedException) { return; }
+
             NewCommand.Run(["new", "agent", "Bot", "--path", _tempDir]);
             Assert.False(File.Exists(Path.Combine(outsideDir, "Bot.cs")));
         }

@@ -130,13 +130,13 @@ public sealed class NewAgentToolMcpTests : IDisposable
         Directory.CreateDirectory(outsideDir);
         var linkedAgentsDir = Path.Combine(_tempDir, "Agents");
 
-        try { Directory.CreateSymbolicLink(linkedAgentsDir, outsideDir); }
-        catch (UnauthorizedAccessException) { return; }
-        catch (IOException) { return; }
-        catch (PlatformNotSupportedException) { return; }
-
         try
         {
+            try { Directory.CreateSymbolicLink(linkedAgentsDir, outsideDir); }
+            catch (UnauthorizedAccessException) { return; }
+            catch (IOException) { return; }
+            catch (PlatformNotSupportedException) { return; }
+
             var result = _tool.MafNewAgent(_tempDir, "Bot");
             Assert.False(File.Exists(Path.Combine(outsideDir, "Bot.cs")));
             Assert.DoesNotContain("✅", result);
@@ -237,13 +237,13 @@ public sealed class NewAgentToolMcpTests : IDisposable
         Directory.CreateDirectory(outsideDir);
         var linkedWorkflowsDir = Path.Combine(_tempDir, "Workflows");
 
-        try { Directory.CreateSymbolicLink(linkedWorkflowsDir, outsideDir); }
-        catch (UnauthorizedAccessException) { return; }
-        catch (IOException) { return; }
-        catch (PlatformNotSupportedException) { return; }
-
         try
         {
+            try { Directory.CreateSymbolicLink(linkedWorkflowsDir, outsideDir); }
+            catch (UnauthorizedAccessException) { return; }
+            catch (IOException) { return; }
+            catch (PlatformNotSupportedException) { return; }
+
             var result = _tool.MafNewExecutor(_tempDir, "Reviewer");
             Assert.False(File.Exists(Path.Combine(outsideDir, "ReviewerExecutor.cs")));
             Assert.DoesNotContain("✅", result);

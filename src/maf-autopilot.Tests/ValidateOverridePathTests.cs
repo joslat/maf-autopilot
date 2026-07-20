@@ -210,16 +210,16 @@ public sealed class ValidateOverridePathTests
         var outsideRegistry = Path.Combine(outsideDir, "registry.yaml");
         File.WriteAllText(outsideRegistry, "schema_version: 1.0\nentries: []\n");
         var linkedDir = Path.Combine(allowedRoot, "link");
-
-        try { Directory.CreateSymbolicLink(linkedDir, outsideDir); }
-        catch (UnauthorizedAccessException) { return; }
-        catch (IOException) { return; }
-        catch (PlatformNotSupportedException) { return; }
-
-        var candidateThroughLink = Path.Combine(linkedDir, "registry.yaml");
         var prior = Environment.GetEnvironmentVariable("MAF_REGISTRY_PATH_ROOTS");
+
         try
         {
+            try { Directory.CreateSymbolicLink(linkedDir, outsideDir); }
+            catch (UnauthorizedAccessException) { return; }
+            catch (IOException) { return; }
+            catch (PlatformNotSupportedException) { return; }
+
+            var candidateThroughLink = Path.Combine(linkedDir, "registry.yaml");
             Environment.SetEnvironmentVariable("MAF_REGISTRY_PATH_ROOTS", allowedRoot);
             var ex = Assert.Throws<InvalidOperationException>(
                 () => RegistryService.ValidateOverridePath(candidateThroughLink));

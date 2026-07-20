@@ -196,13 +196,13 @@ public class PullRequestAuditToolTests
         File.WriteAllText(outsideTarget, "class Secret { object F() => new DefaultAzureCredential(); }");
         var symlinkPath = System.IO.Path.Combine(repo.Path, "Linked.cs");
 
-        try { File.CreateSymbolicLink(symlinkPath, outsideTarget); }
-        catch (UnauthorizedAccessException) { return; }
-        catch (IOException) { return; }
-        catch (PlatformNotSupportedException) { return; }
-
         try
         {
+            try { File.CreateSymbolicLink(symlinkPath, outsideTarget); }
+            catch (UnauthorizedAccessException) { return; }
+            catch (IOException) { return; }
+            catch (PlatformNotSupportedException) { return; }
+
             var report = PullRequestAuditTool.BuildReport(repo.Path, "main", ["Linked.cs"]);
 
             Assert.Contains("Scan incomplete", report, StringComparison.OrdinalIgnoreCase);
