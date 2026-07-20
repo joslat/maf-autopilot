@@ -205,6 +205,24 @@ We're explicit about what we deliberately *don't* depend on, so users know the s
 
 ---
 
+## Outbound network behavior
+
+**MCP server startup makes one outbound call by default** (F-26, 2026-07-19 security assessment): a background, non-blocking check against NuGet for a newer `maf-doctor` release.
+
+| Detail | Value |
+|---|---|
+| Endpoint | `https://api.nuget.org/v3-flatcontainer/maf-doctor/index.json` |
+| When | Once per MCP server process start, on a background task — never blocks tool calls or startup |
+| Timeout | 3 seconds |
+| User agent | `maf-doctor-update-check/1.0` |
+| Cache | `%LOCALAPPDATA%/maf-doctor/update-check.json` (or `$TMPDIR` if unavailable), 24-hour TTL, 64 KB size cap |
+| Failure behavior | Silent — logged at debug level only; never surfaces as an error or affects any tool result |
+| **Disable it** | Set `MAF_DOCTOR_UPDATE_CHECK=0` (also accepts `false` / `off` / `no`) in the MCP server's `env` config. `MafDoctorStatus` reports whether the check is currently disabled. |
+
+This is the only outbound call the MCP server makes on its own initiative — every other network access (`MafDiffPackage`, `MafPreUpgradeDryRun`, `MafRunCs0618Hunt` restoring packages) is a direct consequence of a tool the user or agent explicitly invoked, and is marked `OpenWorld = true` accordingly. If you're running in a locked-down or fully offline environment, set `MAF_DOCTOR_UPDATE_CHECK=0`.
+
+---
+
 ## Container deployment (Docker)
 
 The image runs as a non-root UID regardless of which tools you call — but non-root is a floor, not a substitute for scoping what's mounted. Most MCP tools are read-only; auto-fix, the scaffolders, `init`, and the update-check cache write to whatever's mounted (F-28, July 2026 assessment — an earlier version of this doc and a Dockerfile comment both claimed the server "writes nothing," which was never true for those tools).
