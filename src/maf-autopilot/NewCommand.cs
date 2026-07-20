@@ -112,6 +112,28 @@ internal static class NewCommand
         // symlinked Agents/Workflows/Tests directory or a symlinked target file; it
         // preserves the existing skip-on-exist behavior via a secure CreateNew).
         var root = Path.GetFullPath(baseDir);
+
+        // Round-2 review fixup — mirror NewAgentTool.WriteAndReport's pre-flight:
+        // validate every target's containment/symlink-safety BEFORE writing any
+        // of them, so a symlinked Agents/ dir refuses the WHOLE scaffold instead
+        // of leaving a confusing half-generated result (e.g. Tests/BotTests.cs
+        // referencing a Bot.cs that was never written). This CLI path had the
+        // same one-file-at-a-time gap the MCP path was already fixed for.
+        foreach (var file in files)
+        {
+            var absolute = Path.Combine(root, file.RelativePath);
+            try
+            {
+                PathGuard.ValidateContainment(root, absolute, nameof(file.RelativePath));
+            }
+            catch (ArgumentException ex)
+            {
+                Console.WriteLine($"  ⚠ {file.RelativePath} — refused: {ex.Message}");
+                Console.WriteLine("  No files were written — refusing the whole scaffold rather than leaving a partially-generated result.");
+                return;
+            }
+        }
+
         foreach (var file in files)
         {
             var absolute = Path.Combine(root, file.RelativePath);

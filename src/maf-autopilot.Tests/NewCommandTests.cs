@@ -75,4 +75,40 @@ public sealed class NewCommandTests : IDisposable
             try { Directory.Delete(outsideDir, recursive: true); } catch { /* best effort */ }
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Round-2 review fixup — WriteFiles previously validated and wrote one file
+    // at a time, so a symlinked Workflows/ dir could refuse the executor file
+    // while the non-symlinked Tests/ dir still received the test file: a
+    // confusing half-generated scaffold (a test referencing a class that was
+    // never written). Mirrors NewAgentTool.WriteAndReport's pre-flight fix.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Run_NewExecutor_SymlinkedWorkflowsDirectory_WritesNeitherFile()
+    {
+        var outsideDir = Path.Combine(Path.GetTempPath(), "new-command-outside-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outsideDir);
+        var linkedWorkflowsDir = Path.Combine(_tempDir, "Workflows");
+
+        try
+        {
+            try { Directory.CreateSymbolicLink(linkedWorkflowsDir, outsideDir); }
+            catch (UnauthorizedAccessException) { return; }
+            catch (IOException) { return; }
+            catch (PlatformNotSupportedException) { return; }
+
+            NewCommand.Run(["new", "executor", "Reviewer", "--path", _tempDir]);
+
+            Assert.False(File.Exists(Path.Combine(outsideDir, "ReviewerExecutor.cs")));
+            // The all-or-nothing pre-flight must refuse the WHOLE scaffold, so the
+            // non-symlinked Tests/ directory must not receive the test file either.
+            Assert.False(File.Exists(Path.Combine(_tempDir, "Tests", "ReviewerExecutorTests.cs")));
+        }
+        finally
+        {
+            try { Directory.Delete(linkedWorkflowsDir); } catch { /* best effort */ }
+            try { Directory.Delete(outsideDir, recursive: true); } catch { /* best effort */ }
+        }
+    }
 }
