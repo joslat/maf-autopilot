@@ -112,10 +112,22 @@ jobs:
           OUTPUT=$(dotnet "$MAF_DOCTOR" verify-registry 2>&1)
           EXIT=$?
           echo "$OUTPUT"
+          # F-29 (2026-07-19 security assessment) — OUTPUT can echo content
+          # derived from the PR's own registry.yaml (a fork-supplied, possibly
+          # adversarial file this step validates). A fixed "EOF" delimiter
+          # would let a crafted registry entry containing a standalone "EOF"
+          # line close the heredoc early, letting the remainder of OUTPUT be
+          # parsed as literal `key=value` GITHUB_OUTPUT lines instead of the
+          # `output` value. Generate a random delimiter per run and confirm
+          # it can't collide with OUTPUT's own content before using it.
+          DELIM="EOF_${RANDOM}${RANDOM}${RANDOM}"
+          while grep -qF "$DELIM" <<< "$OUTPUT"; do
+            DELIM="EOF_${RANDOM}${RANDOM}${RANDOM}"
+          done
           {
-            echo "output<<EOF"
+            echo "output<<$DELIM"
             echo "$OUTPUT"
-            echo "EOF"
+            echo "$DELIM"
             echo "exit_code=$EXIT"
           } >> $GITHUB_OUTPUT
           exit $EXIT
@@ -129,10 +141,17 @@ jobs:
           OUTPUT=$(python3 .github/scripts/verify_crossfile_consistency.py 2>&1)
           EXIT=$?
           echo "$OUTPUT"
+          # F-29 — same rationale as the verify-registry step above: this
+          # script also reports on the PR's own registry.yaml content, so use
+          # a random delimiter rather than a fixed "EOF".
+          DELIM="EOF_${RANDOM}${RANDOM}${RANDOM}"
+          while grep -qF "$DELIM" <<< "$OUTPUT"; do
+            DELIM="EOF_${RANDOM}${RANDOM}${RANDOM}"
+          done
           {
-            echo "output<<EOF"
+            echo "output<<$DELIM"
             echo "$OUTPUT"
-            echo "EOF"
+            echo "$DELIM"
             echo "exit_code=$EXIT"
           } >> $GITHUB_OUTPUT
           exit $EXIT
