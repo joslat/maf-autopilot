@@ -153,6 +153,8 @@ python -m pipx ensurepath
 pipx install cisco-ai-mcp-scanner
 ```
 
+(Unpinned here deliberately — if you're verifying our claims yourself, you likely want whatever the scanner currently flags, not our CI's frozen version. CI itself pins to an exact, previously-validated version — see [`mcp-scanner.yml`](../.github/workflows/mcp-scanner.yml) — so a scanner-side regression can't silently change what CI enforces.)
+
 ### How to run against this repo
 
 ```bash

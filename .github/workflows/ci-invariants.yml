@@ -348,7 +348,8 @@ jobs:
 
       - name: Validate every workflow YAML parses (startup_failure guard)
         run: |
-          python3 -m pip install --quiet --disable-pip-version-check pyyaml
+          # F-13 — exact-pinned rather than floating latest.
+          python3 -m pip install --quiet --disable-pip-version-check pyyaml==6.0.1
           python3 - <<'PY'
           import glob, sys, yaml
 
@@ -409,5 +410,6 @@ jobs:
         # fixture for get_latest_stable.py) so the watcher's detection logic and
         # the verify/dedupe/guide helpers can't silently regress.
         run: |
-          python3 -m pip install --quiet --disable-pip-version-check pytest pyyaml
+          # F-13 — exact-pinned rather than floating latest.
+          python3 -m pip install --quiet --disable-pip-version-check pytest==9.0.3 pyyaml==6.0.1
           python3 -m pytest .github/scripts/tests -q

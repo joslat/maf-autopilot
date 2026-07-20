@@ -87,12 +87,16 @@ jobs:
       - name: Install Cisco mcp-scanner via pipx
         run: |
           set -e
-          python -m pip install --user pipx
+          python -m pip install --user pipx==1.16.0
           python -m pipx ensurepath
-          # Idempotent: install or upgrade. Pin major version to v4 to stay
-          # ahead of any v5 breaking changes; allow minor bumps automatically.
-          pipx install 'cisco-ai-mcp-scanner>=4,<5' || \
-            pipx upgrade cisco-ai-mcp-scanner
+          # F-13 (2026-07-19 security assessment) — exact-pinned rather than a
+          # `>=4,<5` floating range: a security scanner's OWN supply chain is a
+          # high-value target, and this workflow's job carries
+          # `pull-requests: write`. Pinned to v4.6.0, the version this repo's
+          # "Latest scan results" in docs/security.md was actually recorded
+          # against — bump both together deliberately, not automatically.
+          pipx install 'cisco-ai-mcp-scanner==4.6.0' || \
+            pipx install --force 'cisco-ai-mcp-scanner==4.6.0'
           # Surface the resolved binary path in the workflow log so future
           # debugging doesn't require log-diving. `command -v` is PATH-aware —
           # handles both `~/.local/bin` (default PIPX_BIN_DIR on dev machines)

@@ -106,9 +106,15 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Install maf-autopilot (prerelease)
+      - name: Build maf-doctor from this checkout
+        # F-13 (2026-07-19 security assessment) — this job audits the PR's own
+        # (possibly fork-supplied) source with maf-doctor; building maf-doctor
+        # itself from the SAME trusted checkout that produced this job's
+        # source tree (not a floating `--prerelease` NuGet install) means the
+        # tool doing the auditing is exactly the reviewed code at this commit,
+        # not whatever happens to be newest on NuGet at run time.
         if: steps.scope.outputs.skip != 'true'
-        run: dotnet tool install --global maf-doctor --prerelease || dotnet tool update --global maf-doctor --prerelease
+        run: dotnet build src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0
 
       - name: Run MCP server and call MafAuditPullRequest
         if: steps.scope.outputs.skip != 'true'
@@ -119,30 +125,23 @@ jobs:
           # The MCP tool needs the base branch fetched locally as a branch ref.
           git fetch origin "$BASE_REF":"refs/heads/$BASE_REF" --depth=50 || true
 
-          # Capture stdout AND stderr — older alpha versions of maf-autopilot may not
-          # have the `doctor` CLI subcommand and fall back to MCP-server mode (which
-          # writes its banner to stderr). `|| true` keeps the job alive on any error
-          # so we still post a sticky comment with diagnostic content.
+          MAF_DOCTOR="src/maf-autopilot/bin/Release/net8.0/maf-doctor.dll"
+
           # Product-scoped (task 4.10 / 3.1): exclude samples/ + test fixtures so
-          # the audit reflects product code, matching the drift detector. Older
-          # published builds ignore the extra --exclude args (forward-compatible).
-          maf-doctor doctor "$GITHUB_WORKSPACE" \
+          # the audit reflects product code, matching the drift detector.
+          # `|| true` keeps the job alive on any error so we still post a sticky
+          # comment with diagnostic content.
+          dotnet "$MAF_DOCTOR" doctor "$GITHUB_WORKSPACE" \
             --exclude samples/ --exclude .Tests/ --exclude find-the-bug/ \
             > pr-audit-full.md 2>&1 || true
 
-          # Defensive fallback: if the doctor invocation produced nothing (empty
-          # file), write an explanatory message. Pre-alpha-4 NuGet builds didn't
-          # have the doctor CLI as a subcommand — `maf-doctor doctor` falls
-          # into MCP-server-startup mode and exits cleanly with no useful output.
-          # The marocchino sticky-comment action errors with "Either message or
-          # path input is required" if the path resolves to an empty file.
+          # Defensive fallback: if the doctor invocation produced nothing
+          # (empty file), write an explanatory message rather than letting the
+          # marocchino sticky-comment action error with "Either message or
+          # path input is required" on an empty file.
           if [ ! -s pr-audit-full.md ]; then
             cat > pr-audit-full.md <<'EOF'
-          ⚠️ **maf-doctor doctor produced no output.**
-
-          Likely cause: the installed `maf-autopilot` NuGet (current latest prerelease) is older than the `doctor` CLI subcommand. Once `1.3.0-alpha-4` or newer ships, this audit will produce a full report.
-
-          Until then, you can run `maf-doctor doctor .` locally after `dotnet tool install -g maf-doctor --prerelease` to see the per-file findings.
+          ⚠️ **maf-doctor doctor produced no output.** See this workflow run's logs for the build/run error.
           EOF
           fi
 
