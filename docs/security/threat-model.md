@@ -98,7 +98,7 @@ A Roslyn rewriter bug could corrupt user `.cs` files. **Mitigations** (strengthe
 
 ### 3.12 Third-party action supply chain (v1.1 closure)
 
-All third-party GitHub Actions are SHA-pinned (9 distinct actions × 23 call sites). A tag-pinned action like `actions/checkout@v6` resolves to whatever HEAD that floating tag points to — a compromised upstream account could push arbitrary code into the action and inherit our runner's tokens (NUGET_API_KEY, packages:write, COPILOT_ASSIGN_PAT). SHA pins eliminate the lane; Dependabot is configured to bump both SHA and tag-comment in lockstep.
+All third-party GitHub Actions are SHA-pinned (13 distinct actions × 42 call sites, repo-wide as of the 2026-07-19 pass, verified by grep — this count has grown from the 9×23 recorded when this section was first written for v1.1; round-3 review fixup, was left stale and contradicting `docs/security.md`'s current count). A tag-pinned action like `actions/checkout@v6` resolves to whatever HEAD that floating tag points to — a compromised upstream account could push arbitrary code into the action and inherit our runner's tokens (NUGET_API_KEY, packages:write, COPILOT_ASSIGN_PAT). SHA pins eliminate the lane; Dependabot is configured to bump both SHA and tag-comment in lockstep.
 
 ### 3.13 Predictable-filename write races (2026-07-19 closure)
 
