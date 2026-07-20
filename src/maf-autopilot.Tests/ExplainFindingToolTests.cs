@@ -88,13 +88,23 @@ public class ExplainFindingToolTests
     {
         // Boundary check: exactly at the cap must still succeed (only
         // strictly-over is rejected).
+        //
+        // Round-3 review fixup — the padding here previously landed 6 bytes
+        // short of the actual 10 MB cap (a hand-computed "- 40" that didn't
+        // account for the prefix/suffix lengths), and the assertion used
+        // `<=` rather than exact equality, so this test never actually
+        // reached the boundary it claims to pin. Compute padding from the
+        // real prefix/suffix lengths and assert the exact byte count.
         var dir = NewTempDir();
         try
         {
+            const string prefix = "public class C { int X() => 1; }";
+            const string suffix = "\n";
+            const int cap = 10 * 1024 * 1024;
             var path = Path.Combine(dir, "AtCap.cs");
-            var content = "public class C { int X() => 1; }" + new string(' ', 10 * 1024 * 1024 - 40) + "\n";
+            var content = prefix + new string(' ', cap - prefix.Length - suffix.Length) + suffix;
             File.WriteAllText(path, content);
-            Assert.True(new FileInfo(path).Length <= 10 * 1024 * 1024);
+            Assert.Equal(cap, new FileInfo(path).Length);
 
             var output = new ExplainFindingTool().MafExplainFinding(dir, "AtCap.cs", 1);
 

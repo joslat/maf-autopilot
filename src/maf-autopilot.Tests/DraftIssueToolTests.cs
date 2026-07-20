@@ -72,6 +72,38 @@ public sealed class DraftIssueToolTests
         }
     }
 
+    // Round-3 review fixup — the over-cap test above only proves the cap
+    // rejects a file ONE byte over; the production check (Length > Cap) also
+    // needs a positive-side pin: a file at EXACTLY the cap must still be
+    // processed, not skipped. An accidental flip to >= would silently ship
+    // without this.
+    [Fact]
+    public void DetectEnvironment_CsprojExactlyAtSizeCap_StillProcessed()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-draft-issue-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var csproj = Path.Combine(tempDir, "AtCap.csproj");
+            const string prefix = "<Project><ItemGroup><PackageReference Include=\"Microsoft.Agents.AI\" Version=\"1.0.0\" /></ItemGroup>";
+            const string suffix = "</Project>";
+            var padding = new string(' ', (int)DraftIssueTool.MaxCsprojBytes - prefix.Length - suffix.Length);
+            var content = prefix + padding + suffix;
+            File.WriteAllText(csproj, content);
+            // File.WriteAllText writes UTF-8 with no BOM; content is pure ASCII,
+            // so char count == byte count — confirm before trusting the assertion below.
+            Assert.Equal(DraftIssueTool.MaxCsprojBytes, new FileInfo(csproj).Length);
+
+            var env = DraftIssueTool.DetectEnvironment(tempDir);
+
+            Assert.Contains(env.MafPackages, p => p.Id == "Microsoft.Agents.AI");
+        }
+        finally
+        {
+            try { Directory.Delete(tempDir, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
     [Fact]
     public void MafDraftIssue_NonexistentPath_ReturnsError()
     {
