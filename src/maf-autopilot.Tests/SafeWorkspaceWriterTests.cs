@@ -5,10 +5,12 @@ namespace MafDoctor.Tests;
 
 /// <summary>
 /// Tests for the shared atomic-write primitive introduced to close F-01/F-02/F-03/
-/// F-22/F-24 (all five findings shared the same root cause: writing through a
-/// predictable temp path or a symlinked destination). Symlink creation on Windows
-/// requires admin or Developer Mode — those cases skip gracefully if neither is
-/// available, matching PathGuardTests' convention.
+/// F-24 (all four findings shared the same root cause: writing through a
+/// predictable temp path or a symlinked destination). F-22 (registry override) is
+/// a related but distinct read-path check with its own independent implementation
+/// — see <c>SafeWorkspaceWriter</c>'s class doc comment. Symlink creation on
+/// Windows requires admin or Developer Mode — those cases skip gracefully if
+/// neither is available, matching PathGuardTests' convention.
 /// </summary>
 public sealed class SafeWorkspaceWriterTests : IDisposable
 {
@@ -185,6 +187,93 @@ public sealed class SafeWorkspaceWriterTests : IDisposable
             Assert.Throws<ArgumentException>(
                 () => SafeWorkspaceWriter.TryCreateNew(_root, dest, "attacker-controlled"));
             Assert.False(File.Exists(Path.Combine(outsideDir, "AgentTests.cs")));
+        }
+        finally
+        {
+            try { Directory.Delete(linkedDir); } catch { /* best effort */ }
+            try { Directory.Delete(outsideDir, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // CopyNew — used by InitCommand.CreateBackupWithRetry (round-2 review
+    // fixup: previously a hand-duplicated ValidateContainment + File.Copy pair
+    // instead of a genuine SafeWorkspaceWriter consumer).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void CopyNew_NewFile_CopiesContent()
+    {
+        var source = Path.Combine(_root, "source.txt");
+        File.WriteAllText(source, "original content");
+        var dest = Path.Combine(_root, "backup", "source.txt.bak");
+
+        SafeWorkspaceWriter.CopyNew(_root, source, dest);
+
+        Assert.Equal("original content", File.ReadAllText(dest));
+    }
+
+    [Fact]
+    public void CopyNew_DestinationAlreadyExists_ThrowsIOException()
+    {
+        var source = Path.Combine(_root, "source.txt");
+        File.WriteAllText(source, "content");
+        var dest = Path.Combine(_root, "existing.txt");
+        File.WriteAllText(dest, "must not be overwritten");
+
+        Assert.Throws<IOException>(() => SafeWorkspaceWriter.CopyNew(_root, source, dest));
+        Assert.Equal("must not be overwritten", File.ReadAllText(dest));
+    }
+
+    [Fact]
+    public void CopyNew_SymlinkedTargetFile_RefusesWithoutFollowing()
+    {
+        var source = Path.Combine(_root, "source.txt");
+        File.WriteAllText(source, "attacker should never see this");
+        var outsideTarget = Path.Combine(Path.GetTempPath(), "safe-writer-copynew-target-" + Guid.NewGuid().ToString("N") + ".txt");
+        File.WriteAllText(outsideTarget, "SECRET");
+        var symlinkPath = Path.Combine(_root, "backup.txt");
+
+        try
+        {
+            try { File.CreateSymbolicLink(symlinkPath, outsideTarget); }
+            catch (UnauthorizedAccessException) { return; }
+            catch (IOException) { return; }
+            catch (PlatformNotSupportedException) { return; }
+
+            var ex = Assert.Throws<ArgumentException>(
+                () => SafeWorkspaceWriter.CopyNew(_root, source, symlinkPath));
+            Assert.Contains("symlink", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("SECRET", File.ReadAllText(outsideTarget));
+        }
+        finally
+        {
+            try { File.Delete(symlinkPath); } catch { /* best effort */ }
+            try { File.Delete(outsideTarget); } catch { /* best effort */ }
+        }
+    }
+
+    [Fact]
+    public void CopyNew_SymlinkedParentDirectory_RefusesWithoutFollowing()
+    {
+        var source = Path.Combine(_root, "source.txt");
+        File.WriteAllText(source, "attacker should never see this");
+        var outsideDir = Path.Combine(Path.GetTempPath(), "safe-writer-copynew-outside-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outsideDir);
+        var linkedDir = Path.Combine(_root, "linked-backup");
+
+        try
+        {
+            try { Directory.CreateSymbolicLink(linkedDir, outsideDir); }
+            catch (UnauthorizedAccessException) { return; }
+            catch (IOException) { return; }
+            catch (PlatformNotSupportedException) { return; }
+
+            var dest = Path.Combine(linkedDir, "source.txt.bak");
+            var ex = Assert.Throws<ArgumentException>(
+                () => SafeWorkspaceWriter.CopyNew(_root, source, dest));
+            Assert.Contains("symlink", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.False(File.Exists(Path.Combine(outsideDir, "source.txt.bak")));
         }
         finally
         {

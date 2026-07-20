@@ -56,8 +56,11 @@ internal static class InitCommand
             var candidate = $"{originalPath}.bak.{DateTime.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid().ToString("N")[..8]}";
             try
             {
-                PathGuard.ValidateContainment(targetDir, candidate, "backup path");
-                File.Copy(originalPath, candidate, overwrite: false);
+                // Round-2 review fixup — routed through SafeWorkspaceWriter.CopyNew
+                // instead of a hand-duplicated ValidateContainment + File.Copy pair,
+                // so this is a genuine SafeWorkspaceWriter consumer like every other
+                // write site, not a parallel implementation of the same guarantee.
+                SafeWorkspaceWriter.CopyNew(targetDir, originalPath, candidate);
                 return candidate;
             }
             catch (IOException) when (attempt < 4)

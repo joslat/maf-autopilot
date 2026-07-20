@@ -22,8 +22,15 @@ namespace MafDoctor.Tools;
 /// </list>
 ///
 /// Anchored to the 2026-07-19 maf-doctor security assessment, findings
-/// F-01 (AutoFixTool), F-02 (InitCommand), F-03 (scaffolders), F-22 (registry
-/// override), and F-24 (update cache) — all five shared this same root cause.
+/// F-01 (AutoFixTool), F-02 (InitCommand), F-03 (scaffolders), and F-24
+/// (update cache) — all four shared this same root cause and are the actual
+/// callers of this primitive. F-22 (registry override, in
+/// <c>RegistryService.ValidateOverridePath</c>) is a related but distinct
+/// READ-path containment check — round-2 review fixup: it validates an
+/// env-supplied path before *loading* the registry, never writes, and does
+/// not call this primitive. It has its own independent parent-chain
+/// reparse-point walker (<c>RegistryService.ParentChainHasReparsePoint</c>),
+/// deliberately not unified with this one.
 /// </summary>
 internal static class SafeWorkspaceWriter
 {
@@ -107,5 +114,38 @@ internal static class SafeWorkspaceWriter
             // not failure.
             return false;
         }
+    }
+
+    /// <summary>
+    /// Copies <paramref name="sourcePath"/> to a brand-new file at
+    /// <paramref name="destinationPath"/> inside <paramref name="workspaceRoot"/>.
+    /// Never overwrites and never follows an existing symlink at the destination —
+    /// throws <see cref="IOException"/> if the destination already exists (the
+    /// caller is expected to retry with a fresh, unpredictable destination name
+    /// on collision, as in <c>InitCommand.CreateBackupWithRetry</c>).
+    ///
+    /// Round-2 review fixup — <c>CreateBackupWithRetry</c> previously called
+    /// <c>PathGuard.ValidateContainment</c> + raw <c>File.Copy(overwrite: false)</c>
+    /// directly instead of going through this class, contradicting docs that
+    /// claimed every write site did. Functionally close to equivalent (an
+    /// unpredictable candidate name plus an OS-level exists-and-fail-atomically
+    /// copy resists the same predictable-path symlink race this class exists to
+    /// close), but a hand-duplicated variant is exactly the drift this
+    /// primitive was extracted to prevent.
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// The destination escapes the workspace root or traverses a symlink.
+    /// </exception>
+    public static void CopyNew(string workspaceRoot, string sourcePath, string destinationPath)
+    {
+        var resolved = PathGuard.ValidateContainment(workspaceRoot, destinationPath, nameof(destinationPath));
+
+        var dir = Path.GetDirectoryName(resolved)
+            ?? throw new ArgumentException("destinationPath has no parent directory.", nameof(destinationPath));
+        Directory.CreateDirectory(dir);
+
+        using var destStream = new FileStream(resolved, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        using var srcStream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        srcStream.CopyTo(destStream);
     }
 }
