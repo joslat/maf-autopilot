@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Text;
 using ModelContextProtocol.Server;
 
@@ -61,34 +60,22 @@ public sealed class PullRequestAuditTool
     /// </summary>
     internal static IReadOnlyList<string>? GetChangedCsFiles(string repoPath, string baseBranch)
     {
+        // F-09 — previously read stdout to completion synchronously before touching
+        // stderr, so a child that fills the stderr pipe while stdout is still being
+        // read could deadlock the parent inside ReadToEnd before the 30s timeout was
+        // ever evaluated. ProcessRunner.RunGit drains both streams concurrently.
+        //
         // `git diff --name-only base...HEAD` lists files changed since the merge-base.
         // The triple-dot form gives the symmetric difference with the merge-base,
         // which is what PR review wants.
-        var psi = new ProcessStartInfo("git")
-        {
-            ArgumentList = { "-C", repoPath, "diff", "--name-only", $"{baseBranch}...HEAD" },
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-
-        string stdout;
         int exitCode;
+        string stdout;
         try
         {
-            using var p = Process.Start(psi);
-            if (p is null) return null;
-            stdout = p.StandardOutput.ReadToEnd();
-            // Drain stderr so the child can't deadlock on a full stderr pipe.
-            _ = p.StandardError.ReadToEnd();
-            if (!p.WaitForExit(30_000))
-            {
-                try { p.Kill(entireProcessTree: true); } catch { /* best effort */ }
-                return null;
-            }
-            exitCode = p.ExitCode;
+            (exitCode, stdout) = ProcessRunner.RunGit(
+                repoPath, TimeSpan.FromSeconds(30), "diff", "--name-only", $"{baseBranch}...HEAD");
         }
-        catch (System.ComponentModel.Win32Exception)
+        catch (Win32Exception)
         {
             // git not on PATH
             return null;
@@ -116,15 +103,67 @@ public sealed class PullRequestAuditTool
     // Report
     // -------------------------------------------------------------------------
 
-    private static string BuildReport(string repoPath, string baseBranch, IReadOnlyList<string> changedFiles)
+    // F-07 — mirrors maf-pr-audit.yml's own compiler-bomb cap (200 changed files /
+    // 5 MB aggregate) so the MCP tool is bounded the same way when a client calls
+    // it directly, not only when the CI wrapper's shell-level pre-check runs first.
+    internal const int MaxChangedFiles = 200;
+    internal const long MaxFileBytes = 10 * 1024 * 1024; // matches SourceFileWalker.ScanBudget's default
+    internal const long MaxAggregateBytes = 5 * 1024 * 1024;
+
+    // internal (not private) so the test assembly can exercise the containment/
+    // size-cap logic directly, without needing a real git subprocess for every case
+    // — same pattern as RegistryService.ValidateOverridePath.
+    internal static string BuildReport(string repoPath, string baseBranch, IReadOnlyList<string> changedFiles)
     {
         var perFileFindings = new List<(string File, List<string> Lines)>();
         var totals = new Totals();
+        var skipped = new List<string>();
+        var scanComplete = true;
 
-        foreach (var relPath in changedFiles)
+        var filesToScan = changedFiles;
+        if (changedFiles.Count > MaxChangedFiles)
         {
-            var absPath = Path.Combine(repoPath, relPath);
+            filesToScan = changedFiles.Take(MaxChangedFiles).ToList();
+            scanComplete = false;
+            skipped.Add($"{changedFiles.Count - MaxChangedFiles} additional changed file(s) beyond the {MaxChangedFiles}-file audit cap were not scanned.");
+        }
+
+        long aggregateBytes = 0;
+        foreach (var relPath in filesToScan)
+        {
+            // F-07 — previously combined repoPath + relPath with plain Path.Combine
+            // and read it with File.ReadAllText: no containment check (a symlinked
+            // changed-file entry could read outside the repo) and no per-file/
+            // aggregate size cap (a large diff'd file could pin Roslyn-host memory).
+            string absPath;
+            try
+            {
+                absPath = PathGuard.ValidateContainment(repoPath, relPath, "changed file");
+            }
+            catch (ArgumentException ex)
+            {
+                scanComplete = false;
+                skipped.Add($"`{relPath}` — refused: {ex.Message}");
+                continue;
+            }
+
             if (!File.Exists(absPath)) continue;     // file deleted in the diff
+
+            var length = new FileInfo(absPath).Length;
+            if (length > MaxFileBytes)
+            {
+                scanComplete = false;
+                skipped.Add($"`{relPath}` — {length / (1024 * 1024)} MB exceeds the {MaxFileBytes / (1024 * 1024)} MB per-file cap, skipped.");
+                continue;
+            }
+            if (aggregateBytes + length > MaxAggregateBytes)
+            {
+                scanComplete = false;
+                skipped.Add($"remaining changed file(s) beyond the {MaxAggregateBytes / (1024 * 1024)} MB aggregate cap were not scanned.");
+                break;
+            }
+            aggregateBytes += length;
+
             var source = File.ReadAllText(absPath);
 
             var anti = AntiPatternScannerTool.ScanFile(source, relPath);
@@ -161,6 +200,12 @@ public sealed class PullRequestAuditTool
         sb.AppendLine($"## 🔍 MAF PR audit — `{baseBranch}` → HEAD");
         sb.AppendLine();
         sb.AppendLine($"**Files scanned:** {changedFiles.Count} changed `.cs` file(s).");
+        if (!scanComplete)
+        {
+            sb.AppendLine();
+            sb.AppendLine("⚠️ **Scan incomplete** — do not treat this report as a clean bill of health:");
+            foreach (var reason in skipped) sb.AppendLine($"- {reason}");
+        }
         sb.AppendLine();
         sb.AppendLine($"| ❌ Errors | ⚠️ Warnings | ℹ️ Info |");
         sb.AppendLine($"|---:|---:|---:|");
@@ -169,7 +214,9 @@ public sealed class PullRequestAuditTool
 
         if (perFileFindings.Count == 0)
         {
-            sb.AppendLine("✅ All changed files are clean against the configured scanner rules. Ship it.");
+            sb.AppendLine(scanComplete
+                ? "✅ All changed files are clean against the configured scanner rules. Ship it."
+                : "⚠️ No findings in the file(s) that were scanned — but the scan above was incomplete. This is NOT a clean bill of health.");
             return sb.ToString();
         }
 

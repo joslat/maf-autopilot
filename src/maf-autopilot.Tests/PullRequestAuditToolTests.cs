@@ -125,4 +125,118 @@ public class PullRequestAuditToolTests
         // Assert
         Assert.Single(result);
     }
+
+    // -------------------------------------------------------------------------
+    // F-07 — BuildReport previously combined repoPath + relPath with plain
+    // Path.Combine and read it with File.ReadAllText: no containment check (a
+    // symlinked changed-file entry could read outside the repo) and no per-file/
+    // aggregate/count cap. BuildReport is internal specifically so these can be
+    // exercised without a real git subprocess for every case.
+    // -------------------------------------------------------------------------
+
+    private sealed class TempRepo : IDisposable
+    {
+        public string Path { get; }
+        public TempRepo()
+        {
+            Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "pr-audit-test-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path);
+        }
+        public void Dispose()
+        {
+            try { Directory.Delete(Path, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
+    [Fact]
+    public void BuildReport_NormalSmallFile_ScansCleanlyAndReportsComplete()
+    {
+        using var repo = new TempRepo();
+        var file = System.IO.Path.Combine(repo.Path, "Clean.cs");
+        File.WriteAllText(file, "class Clean { }");
+
+        var report = PullRequestAuditTool.BuildReport(repo.Path, "main", ["Clean.cs"]);
+
+        Assert.DoesNotContain("Scan incomplete", report, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("clean", report, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildReport_SymlinkedChangedFile_SkipsRefusesAndReportsIncomplete()
+    {
+        using var repo = new TempRepo();
+        var outsideTarget = System.IO.Path.Combine(Path.GetTempPath(), "pr-audit-target-" + Guid.NewGuid().ToString("N") + ".cs");
+        File.WriteAllText(outsideTarget, "class Secret { object F() => new DefaultAzureCredential(); }");
+        var symlinkPath = System.IO.Path.Combine(repo.Path, "Linked.cs");
+
+        try { File.CreateSymbolicLink(symlinkPath, outsideTarget); }
+        catch (UnauthorizedAccessException) { return; }
+        catch (IOException) { return; }
+        catch (PlatformNotSupportedException) { return; }
+
+        try
+        {
+            var report = PullRequestAuditTool.BuildReport(repo.Path, "main", ["Linked.cs"]);
+
+            Assert.Contains("Scan incomplete", report, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("refused", report, StringComparison.OrdinalIgnoreCase);
+            // The symlinked file's content must never have been read into the report.
+            Assert.DoesNotContain("DefaultAzureCredential", report);
+        }
+        finally
+        {
+            try { File.Delete(symlinkPath); } catch { /* best effort */ }
+            try { File.Delete(outsideTarget); } catch { /* best effort */ }
+        }
+    }
+
+    [Fact]
+    public void BuildReport_FileOverPerFileCap_SkippedAndReportsIncomplete()
+    {
+        using var repo = new TempRepo();
+        var file = System.IO.Path.Combine(repo.Path, "Huge.cs");
+        // Exceeds MaxFileBytes (10 MB) without actually allocating 10 MB+ of
+        // content on disk for the test — WriteAllText + a byte count check is
+        // what BuildReport looks at, not the actual scan, so a sparse-ish file
+        // is fine as long as FileInfo.Length reports it correctly.
+        using (var fs = new FileStream(file, FileMode.Create))
+        {
+            fs.SetLength(PullRequestAuditTool.MaxFileBytes + 1);
+        }
+
+        var report = PullRequestAuditTool.BuildReport(repo.Path, "main", ["Huge.cs"]);
+
+        Assert.Contains("Scan incomplete", report, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("per-file cap", report, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildReport_MoreChangedFilesThanCountCap_TruncatesAndReportsIncomplete()
+    {
+        using var repo = new TempRepo();
+        var changed = new List<string>();
+        for (var i = 0; i < PullRequestAuditTool.MaxChangedFiles + 5; i++)
+        {
+            var name = $"File{i}.cs";
+            File.WriteAllText(System.IO.Path.Combine(repo.Path, name), "class C { }");
+            changed.Add(name);
+        }
+
+        var report = PullRequestAuditTool.BuildReport(repo.Path, "main", changed);
+
+        Assert.Contains("Scan incomplete", report, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains($"{PullRequestAuditTool.MaxChangedFiles}-file audit cap", report, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildReport_DeletedFileInDiff_SkippedWithoutError()
+    {
+        using var repo = new TempRepo();
+
+        var report = PullRequestAuditTool.BuildReport(repo.Path, "main", ["Deleted.cs"]);
+
+        // A file listed in the diff but absent on disk (deleted in this branch)
+        // must not be treated as a containment refusal or a scan failure.
+        Assert.DoesNotContain("Scan incomplete", report, StringComparison.OrdinalIgnoreCase);
+    }
 }
