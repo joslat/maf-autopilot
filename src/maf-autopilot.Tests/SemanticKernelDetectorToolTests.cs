@@ -416,6 +416,66 @@ public sealed class SemanticKernelDetectorToolTests
         Assert.DoesNotContain(packages, p => p.Id == "Newtonsoft.Json");
     }
 
+    // Round-2 review fixup (F-10/F-20) — XDocument.Load(csproj) / .props) was
+    // unbounded, the same weakness already fixed for MafExplainFinding's
+    // .cs-file path. A pathologically large .csproj or Directory.Packages.props
+    // must be skipped, not fully materialized (twice over: raw bytes + XML DOM).
+    [Fact]
+    public void DetectPackages_CsprojOverSizeCap_SkippedWithoutCrashing()
+    {
+        using var repo = new TempDir(
+            ("Huge.csproj", """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <ItemGroup>
+                    <PackageReference Include="Microsoft.SemanticKernel" Version="1.45.0" />
+                  </ItemGroup>
+                </Project>
+                """));
+        var hugeCsproj = System.IO.Path.Combine(repo.Path, "Huge.csproj");
+        // Sparse length beyond the cap without allocating real bytes on disk —
+        // DetectPackages only inspects FileInfo.Length before deciding to skip.
+        using (var fs = new FileStream(hugeCsproj, FileMode.Open))
+        {
+            fs.SetLength(SemanticKernelDetectorTool.MaxProjectFileBytes + 1);
+        }
+
+        var packages = SemanticKernelDetectorTool.DetectPackages(repo.Path);
+
+        Assert.Empty(packages);
+    }
+
+    [Fact]
+    public void DetectPackages_CentralPackagePropsOverSizeCap_SkippedWithoutCrashing()
+    {
+        using var repo = new TempDir(
+            ("Directory.Packages.props", """
+                <Project>
+                  <ItemGroup>
+                    <PackageVersion Include="Microsoft.SemanticKernel" Version="1.45.0" />
+                  </ItemGroup>
+                </Project>
+                """),
+            ("App.csproj", """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <ItemGroup>
+                    <PackageReference Include="Microsoft.SemanticKernel" />
+                  </ItemGroup>
+                </Project>
+                """));
+        var propsPath = System.IO.Path.Combine(repo.Path, "Directory.Packages.props");
+        using (var fs = new FileStream(propsPath, FileMode.Open))
+        {
+            fs.SetLength(SemanticKernelDetectorTool.MaxProjectFileBytes + 1);
+        }
+
+        // The CPM pin is unreadable (props file skipped), so the PackageReference
+        // resolves to "(unpinned)" rather than crashing or silently vanishing.
+        var packages = SemanticKernelDetectorTool.DetectPackages(repo.Path);
+
+        var sk = Assert.Single(packages, p => p.Id == "Microsoft.SemanticKernel");
+        Assert.Equal("(unpinned)", sk.Version);
+    }
+
     [Fact]
     public void DetectPackages_ResolvesCentralPackageManagementVersion()
     {

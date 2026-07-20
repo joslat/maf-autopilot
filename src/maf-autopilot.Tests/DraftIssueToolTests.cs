@@ -38,6 +38,40 @@ public sealed class DraftIssueToolTests
         Assert.Contains("Error", result, StringComparison.OrdinalIgnoreCase);
     }
 
+    // -------------------------------------------------------------------------
+    // Round-2 review fixup (F-10/F-20) — ScanCsprojFiles (via DetectEnvironment)
+    // used an unbounded File.ReadAllText, the same weakness already fixed for
+    // MafExplainFinding's .cs-file path. A pathologically large .csproj must be
+    // skipped, not fully materialized in memory.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void DetectEnvironment_CsprojOverSizeCap_SkippedWithoutCrashing()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-draft-issue-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var hugeCsproj = Path.Combine(tempDir, "Huge.csproj");
+            File.WriteAllText(hugeCsproj,
+                "<Project><ItemGroup><PackageReference Include=\"Microsoft.Agents.AI\" Version=\"1.0.0\" /></ItemGroup></Project>");
+            // Sparse length beyond the cap without allocating real bytes on disk —
+            // ScanCsprojFiles only inspects FileInfo.Length before deciding to skip.
+            using (var fs = new FileStream(hugeCsproj, FileMode.Open))
+            {
+                fs.SetLength(DraftIssueTool.MaxCsprojBytes + 1);
+            }
+
+            var env = DraftIssueTool.DetectEnvironment(tempDir);
+
+            Assert.Empty(env.MafPackages);
+        }
+        finally
+        {
+            try { Directory.Delete(tempDir, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
     [Fact]
     public void MafDraftIssue_NonexistentPath_ReturnsError()
     {

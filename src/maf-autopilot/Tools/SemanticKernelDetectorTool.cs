@@ -176,6 +176,13 @@ public sealed class SemanticKernelDetectorTool
     /// Reads every .csproj under the repo and returns the Semantic Kernel package
     /// references it finds (id + version). Pure XML — no build/restore.
     /// </summary>
+    // Round-2 review fixup (F-10/F-20) — matches ExplainFindingTool.MaxFileBytes /
+    // DraftIssueTool.MaxCsprojBytes. XDocument.Load(path) reads AND parses the
+    // whole file with no size limit; a pathologically large .csproj or
+    // Directory.Packages.props would otherwise be fully materialized (twice
+    // over — raw bytes, then the XML DOM) before either read below runs.
+    internal const long MaxProjectFileBytes = 10 * 1024 * 1024; // 10 MB
+
     internal static IReadOnlyList<SkPackage> DetectPackages(string repoPath)
     {
         var packages = new List<SkPackage>();
@@ -190,6 +197,7 @@ public sealed class SemanticKernelDetectorTool
 
         foreach (var csproj in SourceFileWalker.EnumerateCsprojFiles(repoPath))
         {
+            if (new FileInfo(csproj).Length > MaxProjectFileBytes) continue;
             XDocument doc;
             try { doc = XDocument.Load(csproj); }
             catch { continue; } // malformed csproj — skip, don't fail the scan
@@ -262,6 +270,7 @@ public sealed class SemanticKernelDetectorTool
 
         foreach (var props in propsFiles)
         {
+            if (new FileInfo(props).Length > MaxProjectFileBytes) continue;
             XDocument doc;
             try { doc = XDocument.Load(props); }
             catch { continue; }

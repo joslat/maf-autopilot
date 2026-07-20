@@ -262,6 +262,12 @@ public sealed class DraftIssueTool
         RegexOptions.Compiled | RegexOptions.NonBacktracking,
         TimeSpan.FromSeconds(2));
 
+    // Round-2 review fixup (F-10/F-20) — matches ExplainFindingTool.MaxFileBytes.
+    // This read was the same unbounded-File.ReadAllText weakness already fixed
+    // for the .cs-file path; a pathologically large .csproj would otherwise be
+    // fully materialized in memory before the regexes ever ran.
+    internal const long MaxCsprojBytes = 10 * 1024 * 1024; // 10 MB
+
     private static (IReadOnlyList<(string Id, string Version)> MafPkgs, string DotnetTfm) ScanCsprojFiles(string repoPath)
     {
         var mafPkgs = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -273,6 +279,7 @@ public sealed class DraftIssueTool
             // which uses RecursiveCsOptions (AttributesToSkip = ReparsePoint).
             foreach (var csproj in SourceFileWalker.EnumerateCsprojFiles(repoPath))
             {
+                if (new FileInfo(csproj).Length > MaxCsprojBytes) continue;
                 var content = File.ReadAllText(csproj);
                 foreach (Match m in PackageRefRegex.Matches(content))
                 {
