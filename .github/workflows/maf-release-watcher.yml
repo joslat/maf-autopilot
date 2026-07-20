@@ -166,6 +166,14 @@ jobs:
           # fill workflow's assignment breaks. Falls back to GITHUB_TOKEN if unset,
           # which will fail the push (loud, not silent). [task 3.5]
           token: ${{ secrets.COPILOT_ASSIGN_PAT || secrets.GITHUB_TOKEN }}
+          # F-06 (2026-07-19 security assessment) — persist-credentials defaults
+          # to true, which embeds this PAT into .git/config for the ENTIRE job:
+          # every later step (dotnet-inspect diff, python helpers, dotnet build)
+          # could read or reuse it, not just the one step that actually needs to
+          # push. Disable it here and authenticate explicitly, once, immediately
+          # before the single `git push` call in "Commit to a release-watcher
+          # branch and open a PR".
+          persist-credentials: false
 
       - name: Setup .NET
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1  # v5.4.0
@@ -430,6 +438,10 @@ jobs:
           fi
           git checkout -b "$BRANCH"
           git commit -F "$RUNNER_TEMP/commit-msg.txt"
+          # F-06 — persist-credentials: false on checkout means the remote has no
+          # embedded auth; wire it up here, immediately before the one command
+          # that needs it, using the same GH_TOKEN already in this step's env:.
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           # --force-with-lease (not -f): a rerun updates its own branch idempotently without
           # blindly clobbering remote updates pushed in between.
           git push --force-with-lease origin "HEAD:${BRANCH}"
