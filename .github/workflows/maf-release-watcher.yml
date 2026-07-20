@@ -268,15 +268,24 @@ jobs:
           NEW_VERSION: ${{ needs.check-for-new-maf-release.outputs.new_version }}
         run: python3 .github/scripts/gen_guide_section.py
 
+      - name: Build maf-doctor from this checkout
+        # F-06 (2026-07-19 security assessment) — this job has contents:write,
+        # pull-requests:write, issues:write, actions:write and a maintainer PAT
+        # that bypasses branch protection. It previously ran `dotnet tool
+        # install --global maf-doctor --prerelease`, executing whatever the
+        # newest floating prerelease on NuGet happened to be — not the reviewed
+        # code at this commit — inside that privileged context. Building from
+        # the already-checked-out, already-reviewed source removes the floating
+        # dependency entirely: what runs below is exactly this commit.
+        run: dotnet build src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0
+
       - name: Auto-append draft registry entries
         env:
           OLD: ${{ needs.check-for-new-maf-release.outputs.old_version }}
           NEW: ${{ needs.check-for-new-maf-release.outputs.new_version }}
         continue-on-error: true   # never block the PR on registry extraction
         run: |
-          # Install maf-autopilot itself so we can call the registry-extract subcommand.
-          dotnet tool install --global maf-doctor --prerelease \
-            || dotnet tool update --global maf-doctor --prerelease
+          MAF_DOCTOR="src/maf-autopilot/bin/Release/net8.0/maf-doctor.dll"
 
           REGISTRY=".github/skills/maf-obsolete-api-registry/registry.yaml"
           TMP_ENTRIES="/tmp/draft-registry-entries.yaml"
@@ -285,7 +294,7 @@ jobs:
           : > "$TMP_ENTRIES"
           for pkg in Microsoft.Agents.AI Microsoft.Agents.AI.Workflows; do
             echo "=== Extracting draft entries for $pkg ($OLD → $NEW) ==="
-            maf-doctor registry-extract "$pkg" "$OLD" "$NEW" >> "$TMP_ENTRIES" || true
+            dotnet "$MAF_DOCTOR" registry-extract "$pkg" "$OLD" "$NEW" >> "$TMP_ENTRIES" || true
             echo "" >> "$TMP_ENTRIES"
           done
 
