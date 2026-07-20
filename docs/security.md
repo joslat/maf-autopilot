@@ -186,7 +186,7 @@ Analyzer stats: yara_analyzer: 25/25 scanned, 0 findings
 
 ### Scan cadence
 
-- **Every PR against `main`** that touches `src/maf-autopilot/**`: [`.github/workflows/mcp-scanner.yml`](../.github/workflows/mcp-scanner.yml) runs the scanner and posts results as a sticky PR comment (added in v1.1 — G8 closure). Currently advisory (`continue-on-error: true`); flip to hard-fail after 5 consecutive clean runs.
+- **Every PR against `main`** that touches `src/maf-autopilot/**`: [`.github/workflows/mcp-scanner.yml`](../.github/workflows/mcp-scanner.yml) runs the scanner, posts results as a sticky PR comment, and **fails the check on any finding** — promoted from advisory to a hard-fail gate on 2026-07-20 after 5 consecutive clean runs (F-16, 2026-07-19 security assessment). See that workflow's rollback playbook if a future false positive needs triage.
 - **Weekly cron** (Mondays 11:00 UTC): scheduled run as backstop for findings introduced by upstream regex / tooling drift even without code changes on our side.
 - **Every minor release** (1.0 → 1.1 → 1.2): full Cisco mcp-scanner pass; results recorded in [`docs/security/threat-model.md`](security/threat-model.md) §7.
 - **Pre-tag** during release prep: re-run if any tool was added or modified.

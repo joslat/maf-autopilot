@@ -36,15 +36,18 @@ permissions:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    # Informational only during initial rollout. Promote to hard-fail by
-    # removing this line after 5 consecutive clean runs (combining PR + cron
-    # cadence — the weekly cron alone gives only ~2 runs in 14 days, so the
-    # calendar-deadline framing of the initial version was unrealistic).
+    # F-16 (2026-07-19 security assessment) — PROMOTED TO HARD-FAIL on
+    # 2026-07-20, after verifying 5 consecutive clean runs (not just "job
+    # didn't crash" — actual scanner output showing "Total tools scanned: 28
+    # / No results match the specified filters." on every run, since the scan
+    # step's `|| true` meant job-level success didn't by itself prove a clean
+    # scan): runs 29041220523 (2026-07-09), 29248366584 (2026-07-13),
+    # 29561981311, 29566236762, 29567785437 (all 2026-07-17), spanning both
+    # the PR and cron triggers as this comment originally specified.
     #
-    # Rollback playbook (post-flip):
-    #   If a false-positive lands after promoting to hard-fail, do NOT just
-    #   re-enable `continue-on-error: true` — that loses the gate's signal
-    #   value. Instead:
+    # Rollback playbook (if a false-positive lands):
+    #   Do NOT just re-enable `continue-on-error: true` — that loses the
+    #   gate's signal value. Instead:
     #     1. Restore `continue-on-error: true` AS A SHORT-TERM UNBLOCK.
     #     2. Open an issue labeled `cisco-mcp-scanner` documenting the YARA
     #        rule that fired, the triggering tool/code path, and whether the
@@ -55,7 +58,6 @@ jobs:
     #        release.
     #     4. Remove `continue-on-error: true` again once triaged.
     #   The triage-not-suppress posture is the contract.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
@@ -145,6 +147,14 @@ jobs:
           # --no-build so we don't pay restore + build twice. Pipe stderr
           # to a file so the maintainer can see any server-side bootstrap
           # noise alongside the scanner findings.
+          #
+          # F-16 — `|| true` here is intentional and NOT the same thing as
+          # the removed job-level continue-on-error: this only guarantees
+          # scan-results.txt exists even if the CLI itself crashes for an
+          # unrelated reason (its exit-code semantics for "findings vs. no
+          # findings" are undocumented — see the note on the sanity-probe
+          # workaround above). Pass/fail is decided explicitly below by
+          # parsing scan-results.txt, not by trusting this exit code.
           mcp-scanner \
             --analyzers yara \
             --format summary \
@@ -166,7 +176,11 @@ jobs:
           cat /tmp/maf-server.log 2>/dev/null || echo "(empty)"
 
       - name: Build PR comment body
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && !cancelled()
+        # !cancelled() (not always(), not the implicit success()-only default)
+        # — runs whether the scan step above passed or failed the gate below,
+        # so the comment explaining WHY still posts, but not if the job was
+        # cancelled outright.
         run: |
           {
             echo '### 🔍 Cisco mcp-scanner result'
@@ -177,13 +191,33 @@ jobs:
             echo ''
             echo '<sub>Scan covers prompt-injection, tool-poisoning, credential-harvesting,'
             echo 'code-execution, parameter-injection, cross-origin-escalation, and rug-pull'
-            echo 'patterns. See `docs/security.md` for the canonical interpretation. Currently'
-            echo 'advisory; flip to hard-fail after 5 consecutive clean runs.</sub>'
+            echo 'patterns. See `docs/security.md` for the canonical interpretation. This'
+            echo 'check is a required gate — see the "Run mcp-scanner" step above for the'
+            echo 'exact pass/fail evaluation.</sub>'
           } > pr-comment.md
 
       - name: Post scan results as PR comment
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && !cancelled()
         uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0  # v2.9.2
         with:
           header: mcp-scanner-result
           path: pr-comment.md
+
+      - name: Evaluate scan result (hard-fail gate)
+        # F-16 — the actual pass/fail decision, deliberately separated from
+        # the scan step (which must not fail the job before the PR comment
+        # steps above get a chance to run) and from that step's own exit
+        # code (undocumented semantics, per the note above). `--hide-safe`
+        # means a clean run's summary output is exactly "No results match
+        # the specified filters." — anything else in scan-results.txt means
+        # at least one tool was flagged.
+        run: |
+          if [ ! -s scan-results.txt ]; then
+            echo "::error::scan-results.txt is empty — the scan step likely crashed before producing output. Treating as a failure (fail closed)."
+            exit 1
+          fi
+          if ! grep -q "No results match the specified filters\." scan-results.txt; then
+            echo "::error::mcp-scanner reported findings — see the 'Run mcp-scanner' step output above (and the PR comment, if this is a pull_request run)."
+            exit 1
+          fi
+          echo "Clean scan confirmed — no findings."
