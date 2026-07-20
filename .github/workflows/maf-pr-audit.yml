@@ -54,6 +54,7 @@ jobs:
           echo "$CHANGED_CODE" | sed 's/^/  /'
           if [ -z "$NON_SAMPLE" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
+            echo "skip_reason=samples-only" >> $GITHUB_OUTPUT
             echo "::notice title=MAF audit skipped::Only samples/ files changed — they're intentionally buggy demo corpora, not real code to audit."
             exit 0
           fi
@@ -93,6 +94,9 @@ jobs:
             echo "Compiler-bomb cap check: $COUNT .cs files, $TOTAL_BYTES bytes total."
             if [ "$COUNT" -gt 200 ] || [ "$TOTAL_BYTES" -gt 5242880 ]; then
               echo "skip=true" >> $GITHUB_OUTPUT
+              echo "skip_reason=compiler-bomb-cap" >> $GITHUB_OUTPUT
+              echo "changed_file_count=$COUNT" >> $GITHUB_OUTPUT
+              echo "changed_bytes=$TOTAL_BYTES" >> $GITHUB_OUTPUT
               echo "::warning title=MAF audit skipped (compiler-bomb cap)::PR changes $COUNT .cs files / $TOTAL_BYTES bytes. Caps are 200 files / 5 MB. Roslyn-heavy audit skipped to protect the runner; CI-side scanners still run."
               exit 0
             fi
@@ -154,8 +158,21 @@ jobs:
         # pr-audit-full.md wouldn't otherwise exist — an artifact must still be
         # produced so the companion workflow can tell "intentionally skipped"
         # apart from "something actually went wrong" (#148 finding 3 review).
+        env:
+          SKIP_REASON: ${{ steps.scope.outputs.skip_reason }}
+          FILE_COUNT: ${{ steps.scope.outputs.changed_file_count }}
+          BYTES: ${{ steps.scope.outputs.changed_bytes }}
         run: |
-          echo "ℹ️ **MAF audit skipped for this PR.** See this workflow run's annotations for why (only samples/ changed, or the diff exceeded the compiler-bomb cap — CI-side scanners still ran)." > pr-audit-full.md
+          if [ "$SKIP_REASON" = "compiler-bomb-cap" ]; then
+            # F-17 (2026-07-19 security assessment) — exact metrics, and this
+            # phrasing deliberately does NOT say "clean" or imply pass/fail:
+            # the mechanical audit did not run at all for this PR.
+            cat > pr-audit-full.md <<EOF
+          ⚠️ **MAF audit INCOMPLETE for this PR.** The Roslyn-heavy per-file audit was skipped: this PR changes $FILE_COUNT .cs files totaling $BYTES bytes, exceeding the 200-file / 5 MB compiler-bomb cap. CI-side scanners (mcp-scanner, dependency review) still ran. A maintainer should manually review this PR's size and content before merging — the automated mechanical audit has NOT evaluated it.
+          EOF
+          else
+            echo "ℹ️ **MAF audit skipped for this PR.** Only samples/ files changed — they're intentionally buggy demo corpora, not real code to audit." > pr-audit-full.md
+          fi
 
       - name: Record PR number for the comment workflow
         # No `if:` guard — runs whenever the job reaches this point without an
@@ -183,3 +200,18 @@ jobs:
             pr-audit-full.md
             pr-number.txt
           retention-days: 1
+
+      - name: Fail — mechanical audit did not run (compiler-bomb cap)
+        # F-17 (2026-07-19 security assessment) — the samples-only skip is an
+        # intentional, legitimate scope decision and must NOT fail; only the
+        # compiler-bomb-cap skip represents a genuine coverage gap. Previously
+        # BOTH cases exited the job successfully, so a PR could deliberately
+        # exceed the cap to dodge the mechanical audit while every check
+        # stayed green. This step runs LAST, after the artifact is already
+        # uploaded, so maf-pr-audit-comment.yml still posts the explanatory
+        # comment above even though this job's overall conclusion becomes
+        # `failure` (see that workflow's trigger condition).
+        if: steps.scope.outputs.skip_reason == 'compiler-bomb-cap'
+        run: |
+          echo "::error title=MAF audit incomplete::This PR's mechanical audit did not run (compiler-bomb cap exceeded). A maintainer must manually review before merging."
+          exit 1
