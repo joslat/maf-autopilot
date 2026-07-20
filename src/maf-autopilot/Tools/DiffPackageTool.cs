@@ -44,8 +44,11 @@ public sealed class DiffPackageTool
 
         Example: MafDiffPackage("Microsoft.Agents.AI", "1.2.0", "1.3.0")
 
-        Note: requires `dotnet-inspect` (or `dnx dotnet-inspect`) on PATH.
-        Pin to v0.7.8 or later — earlier versions miss [Obsolete] in member listings.
+        Note: requires `dotnet-inspect` on PATH (pin to v0.7.8 or later — earlier
+        versions miss [Obsolete] in member listings). If it's missing, this returns
+        install instructions rather than downloading it automatically — set
+        MAF_DOCTOR_ALLOW_TOOL_DOWNLOAD=1 in the MCP server's env config to allow
+        on-demand fetch via `dnx` instead.
         """)]
     public string MafDiffPackage(
         [Description("NuGet package id, e.g. Microsoft.Agents.AI")] string packageId,

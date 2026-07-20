@@ -16,6 +16,9 @@ name: ci-invariants
 # Job  (4) requires workflow_dispatch inputs to flow via env: redirect, not
 #          ${{ inputs.* }} substitution inside run: blocks.
 # Job  (5) requires every workflow to declare an explicit permissions: scope.
+# Job  (6) (F-13) validates every workflow YAML parses cleanly (no duplicate
+#          mapping keys), runs actionlint, and compiles + tests the repo's
+#          Python helper scripts.
 #
 # Allowlists are explicit and short. To add an entry, justify in the PR.
 
@@ -61,13 +64,22 @@ jobs:
           # Match real call-site syntax: identifier `Process.Start(` not preceded
           # by `//` on the same line. The `^[^/]*` prefix excludes single-line
           # comment lines (a `//` followed by anything cannot be a real call).
+          #
+          # F-09 (2026-07-19 security assessment) — PullRequestAuditTool.cs's
+          # own git invocation (previously the "slated for ProcessRunner
+          # refactor" allowlist entry below referred to) is now routed through
+          # ProcessRunner.RunGit, closing both a pipe-deadlock shape and a
+          # bounded-output gap that its standalone Process.Start bypassed.
+          # There is now exactly one real Process.Start call site in the
+          # codebase (inside ProcessRunner.Run) — narrowed the allowlist to
+          # match, so any future direct spawn outside ProcessRunner fails CI
+          # instead of silently reusing a stale exemption.
           SITES=$(grep -rnE '^[^/]*\bProcess\.Start\(' src/ --include='*.cs' \
             | grep -v 'src/maf-autopilot/Tools/ProcessRunner.cs' \
-            | grep -v 'src/maf-autopilot/Tools/PullRequestAuditTool.cs' \
             | grep -v 'src/maf-autopilot.Tests/' || true)
           if [ -n "$SITES" ]; then
             echo "::error::Process.Start found outside the approved allowlist."
-            echo "Allowlist: ProcessRunner.cs, PullRequestAuditTool.cs (slated for ProcessRunner refactor), tests."
+            echo "Allowlist: ProcessRunner.cs (all subprocess spawns funnel through its shared Run helper), tests."
             echo "Sites:"
             echo "$SITES"
             exit 1
@@ -348,7 +360,8 @@ jobs:
 
       - name: Validate every workflow YAML parses (startup_failure guard)
         run: |
-          python3 -m pip install --quiet --disable-pip-version-check pyyaml
+          # F-13 — exact-pinned rather than floating latest.
+          python3 -m pip install --quiet --disable-pip-version-check pyyaml==6.0.1
           python3 - <<'PY'
           import glob, sys, yaml
 
@@ -409,5 +422,6 @@ jobs:
         # fixture for get_latest_stable.py) so the watcher's detection logic and
         # the verify/dedupe/guide helpers can't silently regress.
         run: |
-          python3 -m pip install --quiet --disable-pip-version-check pytest pyyaml
+          # F-13 — exact-pinned rather than floating latest.
+          python3 -m pip install --quiet --disable-pip-version-check pytest==9.0.3 pyyaml==6.0.1
           python3 -m pytest .github/scripts/tests -q

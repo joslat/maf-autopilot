@@ -12,10 +12,11 @@ name: MCP server security scan (Cisco mcp-scanner)
 #     tools. That's expensive enough (build + restore + dotnet run + scan)
 #     that we don't want it on every push to a feature branch — only on PRs
 #     against main, where the cost is paid once per merge candidate.
-#   - Failure is informational at first (continue-on-error: true) — we want
-#     to surface findings as a PR annotation without blocking merge during
-#     the initial rollout. After 2 weeks of clean runs, the maintainer can
-#     flip this to hard-fail.
+#   - Failure was informational at first (continue-on-error: true), to surface
+#     findings as a PR annotation without blocking merge during the initial
+#     rollout. PROMOTED TO HARD-FAIL on 2026-07-20 after 5 consecutive clean
+#     runs (see the job-level comment below for the exact criterion and the
+#     rollback playbook if a false-positive lands post-promotion).
 
 on:
   pull_request:
@@ -36,15 +37,18 @@ permissions:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    # Informational only during initial rollout. Promote to hard-fail by
-    # removing this line after 5 consecutive clean runs (combining PR + cron
-    # cadence — the weekly cron alone gives only ~2 runs in 14 days, so the
-    # calendar-deadline framing of the initial version was unrealistic).
+    # F-16 (2026-07-19 security assessment) — PROMOTED TO HARD-FAIL on
+    # 2026-07-20, after verifying 5 consecutive clean runs (not just "job
+    # didn't crash" — actual scanner output showing "Total tools scanned: 28
+    # / No results match the specified filters." on every run, since the scan
+    # step's `|| true` meant job-level success didn't by itself prove a clean
+    # scan): runs 29041220523 (2026-07-09), 29248366584 (2026-07-13),
+    # 29561981311, 29566236762, 29567785437 (all 2026-07-17), spanning both
+    # the PR and cron triggers as this comment originally specified.
     #
-    # Rollback playbook (post-flip):
-    #   If a false-positive lands after promoting to hard-fail, do NOT just
-    #   re-enable `continue-on-error: true` — that loses the gate's signal
-    #   value. Instead:
+    # Rollback playbook (if a false-positive lands):
+    #   Do NOT just re-enable `continue-on-error: true` — that loses the
+    #   gate's signal value. Instead:
     #     1. Restore `continue-on-error: true` AS A SHORT-TERM UNBLOCK.
     #     2. Open an issue labeled `cisco-mcp-scanner` documenting the YARA
     #        rule that fired, the triggering tool/code path, and whether the
@@ -55,7 +59,6 @@ jobs:
     #        release.
     #     4. Remove `continue-on-error: true` again once triaged.
     #   The triage-not-suppress posture is the contract.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
@@ -87,12 +90,16 @@ jobs:
       - name: Install Cisco mcp-scanner via pipx
         run: |
           set -e
-          python -m pip install --user pipx
+          python -m pip install --user pipx==1.16.0
           python -m pipx ensurepath
-          # Idempotent: install or upgrade. Pin major version to v4 to stay
-          # ahead of any v5 breaking changes; allow minor bumps automatically.
-          pipx install 'cisco-ai-mcp-scanner>=4,<5' || \
-            pipx upgrade cisco-ai-mcp-scanner
+          # F-13 (2026-07-19 security assessment) — exact-pinned rather than a
+          # `>=4,<5` floating range: a security scanner's OWN supply chain is a
+          # high-value target, and this workflow's job carries
+          # `pull-requests: write`. Pinned to v4.6.0, the version this repo's
+          # "Latest scan results" in docs/security.md was actually recorded
+          # against — bump both together deliberately, not automatically.
+          pipx install 'cisco-ai-mcp-scanner==4.6.0' || \
+            pipx install --force 'cisco-ai-mcp-scanner==4.6.0'
           # Surface the resolved binary path in the workflow log so future
           # debugging doesn't require log-diving. `command -v` is PATH-aware —
           # handles both `~/.local/bin` (default PIPX_BIN_DIR on dev machines)
@@ -141,6 +148,14 @@ jobs:
           # --no-build so we don't pay restore + build twice. Pipe stderr
           # to a file so the maintainer can see any server-side bootstrap
           # noise alongside the scanner findings.
+          #
+          # F-16 — `|| true` here is intentional and NOT the same thing as
+          # the removed job-level continue-on-error: this only guarantees
+          # scan-results.txt exists even if the CLI itself crashes for an
+          # unrelated reason (its exit-code semantics for "findings vs. no
+          # findings" are undocumented — see the note on the sanity-probe
+          # workaround above). Pass/fail is decided explicitly below by
+          # parsing scan-results.txt, not by trusting this exit code.
           mcp-scanner \
             --analyzers yara \
             --format summary \
@@ -162,7 +177,11 @@ jobs:
           cat /tmp/maf-server.log 2>/dev/null || echo "(empty)"
 
       - name: Build PR comment body
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && !cancelled()
+        # !cancelled() (not always(), not the implicit success()-only default)
+        # — runs whether the scan step above passed or failed the gate below,
+        # so the comment explaining WHY still posts, but not if the job was
+        # cancelled outright.
         run: |
           {
             echo '### 🔍 Cisco mcp-scanner result'
@@ -173,13 +192,70 @@ jobs:
             echo ''
             echo '<sub>Scan covers prompt-injection, tool-poisoning, credential-harvesting,'
             echo 'code-execution, parameter-injection, cross-origin-escalation, and rug-pull'
-            echo 'patterns. See `docs/security.md` for the canonical interpretation. Currently'
-            echo 'advisory; flip to hard-fail after 5 consecutive clean runs.</sub>'
+            echo 'patterns. See `docs/security.md` for the canonical interpretation. This'
+            echo 'check is a required gate — see the "Run mcp-scanner" step above for the'
+            echo 'exact pass/fail evaluation.</sub>'
           } > pr-comment.md
 
       - name: Post scan results as PR comment
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && !cancelled()
         uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0  # v2.9.2
         with:
           header: mcp-scanner-result
           path: pr-comment.md
+
+      - name: Evaluate scan result (hard-fail gate)
+        # F-16 — the actual pass/fail decision, deliberately separated from
+        # the scan step (which must not fail the job before the PR comment
+        # steps above get a chance to run) and from that step's own exit
+        # code (undocumented semantics, per the note above).
+        #
+        # Post-merge fixup (first real CI run after merge) — every prior
+        # hardening pass on this gate (see git blame) assumed a clean run's
+        # `--hide-safe` summary was exactly two non-blank lines. That
+        # assumption was verified extensively against SYNTHETIC bash test
+        # fixtures, but never against the REAL scanner's actual output —
+        # and it was wrong. The real cisco-ai-mcp-scanner 4.6.0 output
+        # (captured byte-for-byte from an actual local run against this
+        # server, and matching what broke PR #152's first CI run) is:
+        #
+        #   === MCP Scanner Results Summary ===
+        #   <blank>
+        #   Scan Target: stdio:dotnet run --project ... --no-build
+        #   Total tools scanned: 28
+        #   No results match the specified filters.
+        #   <blank, trailing>
+        #
+        # — 4 non-blank lines, not 2, and CRLF-terminated even though this
+        # step runs on ubuntu-latest. The gate hard-failed on EVERY clean
+        # scan since it was "hardened" to require exactly 2, defeating the
+        # gate's purpose (a security check nobody can ever satisfy isn't
+        # a security check, it's a permanent red X). Rebuilt as an
+        # allowlist: every non-blank line must match one of the four known
+        # boilerplate/result shapes (verbatim header, "Scan Target: "
+        # prefix — its suffix is the workflow's own fixed CLI invocation,
+        # not attacker-influenced — the tool-count line, and the no-results
+        # line), and the two confirmatory lines (tool-count, no-results)
+        # must actually be present. Any OTHER line — a real finding, in
+        # whatever shape that turns out to be — still fails closed, same
+        # as every prior version of this gate. Verified against the real
+        # captured clean output (CRLF and LF-normalized), a clean output
+        # with a finding line appended, mixed clean+dirty with blank
+        # padding, an empty file, a truncated/crashed output, and a
+        # findings-only output with no boilerplate at all — the first two
+        # now correctly pass; every dirty/malformed case still fails.
+        run: |
+          if [ ! -s scan-results.txt ]; then
+            echo "::error::scan-results.txt is empty — the scan step likely crashed before producing output. Treating as a failure (fail closed)."
+            exit 1
+          fi
+
+          NONBLANK=$(tr -d '\r' < scan-results.txt | grep -v '^[[:space:]]*$' || true)
+          BAD_LINE=$(printf '%s\n' "$NONBLANK" | grep -vE '^=== MCP Scanner Results Summary ===$|^Scan Target: |^Total tools scanned: [0-9]+$|^No results match the specified filters\.$' || true)
+          if [ -n "$BAD_LINE" ] \
+             || ! printf '%s\n' "$NONBLANK" | grep -qE '^Total tools scanned: [0-9]+$' \
+             || ! printf '%s\n' "$NONBLANK" | grep -qE '^No results match the specified filters\.$'; then
+            echo "::error::mcp-scanner reported findings (or produced an unexpected output shape) — see the 'Run mcp-scanner' step output above (and the PR comment, if this is a pull_request run)."
+            exit 1
+          fi
+          echo "Clean scan confirmed — no findings."

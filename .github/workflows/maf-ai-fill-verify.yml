@@ -70,25 +70,63 @@ jobs:
           fi
 
       - name: Setup .NET
+        # Round-3 review fixup — continue-on-error so a transient setup-dotnet
+        # failure doesn't skip every downstream step via the implicit
+        # success() gate (same reasoning as the Restore/Build steps below).
+        continue-on-error: true
         if: steps.scope.outputs.in_scope == 'true'
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1  # v5.4.0
         with:
           dotnet-version: '8.0.x'
 
-      - name: Install maf-autopilot (prerelease)
+      - name: Restore maf-doctor (locked mode)
+        # Round-2 review fixup — docs claimed "CI restores in --locked-mode"
+        # as a blanket statement, but this job ran a plain `dotnet build`
+        # with an implicit, non-strict restore. Matches build-test.yml's
+        # restore-then-build split; continue-on-error for the same reason as
+        # the build step below.
+        continue-on-error: true
         if: steps.scope.outputs.in_scope == 'true'
-        run: |
-          dotnet tool install --global maf-doctor --prerelease \
-            || dotnet tool update --global maf-doctor --prerelease
+        run: dotnet restore src/maf-autopilot/maf-autopilot.csproj --locked-mode
 
+      - name: Build maf-doctor from this checkout
+        # F-13 (2026-07-19 security assessment) — this job verifies THIS repo's
+        # own registry.yaml, so building maf-doctor from the same checkout
+        # already being validated is strictly more correct than a floating
+        # `--prerelease` NuGet install (which also has a `pull-requests: write`
+        # token in scope for the sticky-comment step below it).
+        #
+        # continue-on-error: true — round-2 review fixup (same pattern as
+        # maf-release-watcher.yml / maf-pr-audit.yml). Without this, a build
+        # failure here skipped every downstream step (including the sticky
+        # PR comment steps, which all implicitly require success()), so an
+        # in-scope PR got a red required check with no explanation at all.
+        # The "Run verify-registry" step below now detects the missing DLL
+        # and reports a clear message instead.
+        continue-on-error: true
+        if: steps.scope.outputs.in_scope == 'true'
+        run: dotnet build src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0 --no-restore
+
+      # Round-3 review fixup — continue-on-error on both Python-toolchain
+      # steps below, matching the .NET steps above. Without this, a transient
+      # setup-python/pip failure skipped "Run cross-file consistency check"
+      # and every step after it via the implicit success() gate, leaving a
+      # red required check with no PR comment. "Run cross-file consistency
+      # check" already has its own continue-on-error + exit-code capture, so
+      # it still runs, fails informatively (python3/pyyaml missing surfaces
+      # in its captured output), and the existing failure-comment steps fire
+      # instead of being skipped.
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        continue-on-error: true
         if: steps.scope.outputs.in_scope == 'true'
         with:
           python-version: '3.12'
 
       - name: Install Python deps for cross-file check
+        continue-on-error: true
         if: steps.scope.outputs.in_scope == 'true'
-        run: pip install pyyaml
+        # F-13 — exact-pinned rather than floating latest.
+        run: pip install pyyaml==6.0.1
 
       - name: Run verify-registry (rung-1 mechanical)
         id: verify
@@ -104,13 +142,37 @@ jobs:
           MAF_REGISTRY_PATH: ${{ github.workspace }}/.github/skills/maf-obsolete-api-registry/registry.yaml
         run: |
           set +e
-          OUTPUT=$(maf-doctor verify-registry 2>&1)
-          EXIT=$?
+          MAF_DOCTOR="src/maf-autopilot/bin/Release/net8.0/maf-doctor.dll"
+          if [ ! -f "$MAF_DOCTOR" ]; then
+            OUTPUT="maf-doctor failed to build from this checkout (see the 'Build maf-doctor from this checkout' step above) — verification could not run. This is usually caused by a compile error in the PR."
+            EXIT=1
+          else
+            OUTPUT=$(dotnet "$MAF_DOCTOR" verify-registry 2>&1)
+            EXIT=$?
+          fi
           echo "$OUTPUT"
+          # F-29 (2026-07-19 security assessment) — OUTPUT can echo content
+          # derived from the PR's own registry.yaml (a fork-supplied, possibly
+          # adversarial file this step validates). A fixed "EOF" delimiter
+          # would let a crafted registry entry containing a standalone "EOF"
+          # line close the heredoc early, letting the remainder of OUTPUT be
+          # parsed as literal `key=value` GITHUB_OUTPUT lines instead of the
+          # `output` value. Generate a random delimiter per run and confirm
+          # it can't collide with OUTPUT's own content before using it.
+          DELIM="EOF_${RANDOM}${RANDOM}${RANDOM}"
+          ATTEMPT=0
+          while grep -qF "$DELIM" <<< "$OUTPUT"; do
+            ATTEMPT=$((ATTEMPT + 1))
+            if [ "$ATTEMPT" -ge 20 ]; then
+              echo "::error::Could not find a GITHUB_OUTPUT delimiter that doesn't collide with the tool's own output after 20 attempts — refusing to proceed rather than risk a corrupted GITHUB_OUTPUT file."
+              exit 1
+            fi
+            DELIM="EOF_${RANDOM}${RANDOM}${RANDOM}"
+          done
           {
-            echo "output<<EOF"
+            echo "output<<$DELIM"
             echo "$OUTPUT"
-            echo "EOF"
+            echo "$DELIM"
             echo "exit_code=$EXIT"
           } >> $GITHUB_OUTPUT
           exit $EXIT
@@ -124,10 +186,23 @@ jobs:
           OUTPUT=$(python3 .github/scripts/verify_crossfile_consistency.py 2>&1)
           EXIT=$?
           echo "$OUTPUT"
+          # F-29 — same rationale as the verify-registry step above: this
+          # script also reports on the PR's own registry.yaml content, so use
+          # a random delimiter rather than a fixed "EOF".
+          DELIM="EOF_${RANDOM}${RANDOM}${RANDOM}"
+          ATTEMPT=0
+          while grep -qF "$DELIM" <<< "$OUTPUT"; do
+            ATTEMPT=$((ATTEMPT + 1))
+            if [ "$ATTEMPT" -ge 20 ]; then
+              echo "::error::Could not find a GITHUB_OUTPUT delimiter that doesn't collide with the tool's own output after 20 attempts — refusing to proceed rather than risk a corrupted GITHUB_OUTPUT file."
+              exit 1
+            fi
+            DELIM="EOF_${RANDOM}${RANDOM}${RANDOM}"
+          done
           {
-            echo "output<<EOF"
+            echo "output<<$DELIM"
             echo "$OUTPUT"
-            echo "EOF"
+            echo "$DELIM"
             echo "exit_code=$EXIT"
           } >> $GITHUB_OUTPUT
           exit $EXIT

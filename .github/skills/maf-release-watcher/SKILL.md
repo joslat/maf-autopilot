@@ -1,6 +1,6 @@
 ---
 name: maf-release-watcher
-description: "Detects new MAF releases, extracts breaking changes, and keeps the toolkit's registry/matrix/guide current. Three-stage pipeline: (1) deterministic data extraction via GitHub Actions + Python helpers + dotnet-inspect, commits raw data with TODOs directly to main, (2) dispatches a sibling workflow that opens a GitHub issue for GitHub Copilot Coding Agent to fill the TODOs, (3) Copilot opens a PR with the fills. This skill documents the whole loop end-to-end."
+description: "Detects new MAF releases, extracts breaking changes, and keeps the toolkit's registry/matrix/guide current. Pipeline: (1) deterministic data extraction via GitHub Actions + Python helpers + dotnet-inspect, opens a PR with raw data and TODOs on a per-version branch (never commits direct to main), (2) optionally, a maintainer manually runs a sibling workflow that opens a GitHub issue for GitHub Copilot Coding Agent to fill the TODOs, (3) Copilot opens a PR with the fills. This skill documents the whole loop end-to-end."
 ---
 
 # maf-release-watcher
@@ -56,17 +56,23 @@ TRIGGER (cron or gh workflow run)
 │  1.7  Update .maf-version                                          │
 │  1.8  Upload diff-core.txt / diff-workflows.txt / release-notes.txt│
 │          as workflow artefacts for reviewer audit                  │
-│  1.9  git commit + git push origin main                            │
-│          (direct-to-main; PR-based gate was removed 2026-05-12     │
-│           per maintainer preference for solo workflow)             │
-│  1.10 gh workflow run maf-ai-fill-todos.yml -f target_version=X.Y.Z│
-│          → dispatches Stage 2, decoupled / async                   │
+│  1.9  git checkout -b release-watcher/maf-X.Y.Z                    │
+│       git commit + git push (per-version branch, NOT main)         │
+│  1.10 gh pr create --base main --head release-watcher/maf-X.Y.Z    │
+│          (2026-06-28 "C" refactor — an unfilled scaffold turned    │
+│           main RED and blocked every downstream PR; Stage 1 now    │
+│           always opens a PR instead of committing direct-to-main.  │
+│           No longer auto-dispatches Stage 2 below — that's now a   │
+│           maintainer's manual, optional next step, targeting the   │
+│           branch this PR is on.)                                   │
 │                                                                    │
 └────────────────────────────────────────────────────────────────────┘
-                                  │ async dispatch
+                                  │ manual, optional
                                   ▼
 ┌────────────────────────────────────────────────────────────────────┐
-│  STAGE 2 — AI-fill dispatch                                        │
+│  STAGE 2 — AI-fill dispatch (manual, optional)                     │
+│  Maintainer runs: gh workflow run maf-ai-fill-todos.yml            │
+│                      -f target_version=X.Y.Z                       │
 │  .github/workflows/maf-ai-fill-todos.yml                           │
 │  Runs on ANOTHER fresh Ubuntu VM                                   │
 │  Still no LLM — just creates an issue + assigns Copilot            │

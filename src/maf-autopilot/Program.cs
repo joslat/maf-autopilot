@@ -47,9 +47,9 @@ if (args.Length > 0 && (args[0] is "--help" or "-h" or "help"))
                                             not just the top 3; --json = machine-readable findings;
                                             --plan = ordered, checkboxed remediation plan;
                                             --plan --json = structured remediation manifest (for an automated fix loop).
-          autofix-all [path] [--dry-run] [--json]
-                                            Apply deterministic Roslyn fixes. Human-readable summary
-                                            by default; --dry-run = preview only (no writes);
+          autofix-all [path] [--apply] [--json]
+                                            Deterministic Roslyn fixes. Preview only by default
+                                            (no writes); --apply = actually write the changes;
                                             --json = machine-readable output.
           new agent <Name>                  Scaffold a MAF agent + smoke test.
           new executor <Name> [In] [Out]    Scaffold a workflow executor + smoke test.
@@ -73,8 +73,13 @@ if (args.Length > 0 && args[0] == "init")
     Environment.Exit(exitCode);
     return; // unreachable; satisfies compiler
 }
-if (args.Length >= 2 && args[0] == "new")
+if (args.Length >= 1 && args[0] == "new")
 {
+    // Round-4 review fixup — this used to require `args.Length >= 2`, so a
+    // bare `maf-doctor new` (no kind) fell through every check below and
+    // reached MCP-server startup instead of NewCommand's own usage message.
+    // NewCommand.Run already handles `args.Length < 3` (covers both "new"
+    // alone and "new agent" with no name) by printing usage and returning 1.
     var exitCode = NewCommand.Run(args);
     Environment.Exit(exitCode);
     return;
@@ -99,7 +104,13 @@ if (args.Length >= 1 && args[0] == "doctor")
     var path = ResolveCliPath(parsedPath);
     var report = new MafDoctor.Tools.DoctorTool().Run(path, format, excludes, full);
     Console.WriteLine(report);
-    Environment.Exit(0);
+    // Round-4 review fixup — confirmed via real execution: this unconditionally
+    // exited 0 even when `report` was DoctorTool's own "Error: ..." text (e.g.
+    // a nonexistent path), so a CI/script exit-code check couldn't tell success
+    // from failure. DoctorTool.Run's sole failure source is PathGuard.ValidateRepoPath
+    // (checked internally); re-checking it here doesn't change what's printed,
+    // only which exit code is chosen.
+    Environment.Exit(PathGuard.ValidateRepoPath(path) is null ? 0 : 1);
     return;
 }
 if (args.Length >= 1 && args[0] == "badge")
@@ -113,23 +124,36 @@ if (args.Length >= 1 && args[0] == "badge")
     var path = ResolveCliPath(args.Length >= 2 ? args[1] : null);
     var badge = MafDoctor.Commands.BadgeCommand.Build(path);
     Console.WriteLine(badge);
-    Environment.Exit(0);
+    // Round-4 review fixup — same exit-code gap as `doctor` above. BadgeCommand.Build
+    // runs through DoctorTool.MafDoctor, whose sole failure source is the same
+    // PathGuard check, so an invalid path previously still exited 0 with a "?"-grade
+    // badge instead of signaling failure.
+    Environment.Exit(PathGuard.ValidateRepoPath(path) is null ? 0 : 1);
     return;
 }
 if (args.Length >= 1 && args[0] == "autofix-all")
 {
     // Phase W bonus + #8 enabler — surface MafAutoFixAll on the CLI so the
     // migration-cast.tape can drive the auto-fix flow without going through
-    // Copilot Chat. Usage: `maf-doctor autofix-all [path] [--dry-run] [--json]`.
-    // Default output is human-readable; `--json` emits the machine-readable
-    // (MCP-tool) shape. Parsing lives in AutoFixCli so it's unit-testable.
+    // Copilot Chat. Usage: `maf-doctor autofix-all [path] [--apply] [--json]`.
+    // F-11 — preview-only unless --apply is given (--dry-run remains a no-op
+    // alias for the default). Default output is human-readable; `--json`
+    // emits the machine-readable (MCP-tool) shape. Parsing lives in
+    // AutoFixCli so it's unit-testable.
     var (parsedPath, json, dryRun) = MafDoctor.Commands.AutoFixCli.Parse(args);
     var path = ResolveCliPath(parsedPath);
     var tool = new MafDoctor.Tools.AutoFixTool();
+    // Round-4 review fixup — this unconditionally exited 0 below, even on the
+    // `error is not null` branch that already prints "❌ {error}" — the exit
+    // code contradicted the tool's own visible error indicator.
+    var succeeded = true;
     if (json)
     {
         // Machine-readable: identical to the MafAutoFixAll MCP tool output.
+        // MafAutoFixAll's sole failure source is the same PathGuard check
+        // Run/RunAll use internally.
         Console.WriteLine(tool.MafAutoFixAll(path, dryRun: dryRun));
+        succeeded = PathGuard.ValidateRepoPath(path) is null;
     }
     else
     {
@@ -137,8 +161,9 @@ if (args.Length >= 1 && args[0] == "autofix-all")
         Console.WriteLine(error is not null
             ? $"❌ {error}"
             : MafDoctor.Commands.AutoFixCli.Format(report!));
+        succeeded = error is null;
     }
-    Environment.Exit(0);
+    Environment.Exit(succeeded ? 0 : 1);
     return;
 }
 if (args.Length >= 1 && args[0] == "migrate-scan")
@@ -160,7 +185,9 @@ if (args.Length >= 1 && args[0] == "migrate-scan")
     }
     var fmt = json ? "json" : "markdown";
     Console.WriteLine(new MafDoctor.Tools.SemanticKernelDetectorTool().MafDetectSourceFramework(path, fmt));
-    Environment.Exit(0);
+    // Round-4 review fixup — same exit-code gap as `doctor`/`badge` above.
+    // MafDetectSourceFramework's sole failure source is the same PathGuard check.
+    Environment.Exit(PathGuard.ValidateRepoPath(path) is null ? 0 : 1);
     return;
 }
 if (args.Length >= 1 && args[0] == "verify-registry")
@@ -178,6 +205,28 @@ if (args.Length >= 1 && args[0] == "registry-extract")
     Environment.Exit(exitCode);
     return;
 }
+
+// Round-4 review fixup — confirmed via real execution: a non-empty but
+// unrecognized args[0] (a typo, e.g. `doctro`) previously fell through every
+// check above all the way to MCP-server startup below. With stdin left open
+// (any normal interactive terminal), the process just sits there — no
+// stdout, no error, indistinguishable from a hang. The doc comment at the
+// top of this file documents "no command = MCP server" as the ONLY
+// intentional fall-through case; args.Length == 0 is the only one that
+// should reach WorkspacePolicy.EnableMcpMode() below.
+if (args.Length > 0)
+{
+    Console.Error.WriteLine($"Unknown command: '{args[0]}'.");
+    Console.Error.WriteLine("Run 'maf-doctor --help' for usage.");
+    Environment.Exit(1);
+    return;
+}
+
+// F-04 — every branch above this point is a CLI subcommand and returns before
+// reaching here. Only the MCP-server path below falls through, so this is the
+// one and only place WorkspacePolicy's containment check turns on; CLI usage
+// (a human directly invoking `maf-doctor doctor <any path>`) is unaffected.
+WorkspacePolicy.EnableMcpMode();
 
 // All logs must go to stderr — stdout is reserved for the MCP JSON-RPC protocol.
 // CreateEmptyApplicationBuilder, not CreateApplicationBuilder: the server reads no

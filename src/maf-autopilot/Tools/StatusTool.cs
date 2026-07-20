@@ -39,6 +39,29 @@ public sealed class StatusTool
 
         var update = await UpdateAdvisor.CheckForUpdateAsync(timeout: TimeSpan.FromSeconds(3));
         var init = InitCommand.GetWorkspaceInitStatus(targetDir);
-        return UpdateAdvisor.BuildMarkdown(update, init, targetDir);
+        var markdown = UpdateAdvisor.BuildMarkdown(update, init, targetDir);
+        return markdown + "\n\n" + BuildWorkspacePolicySection();
+    }
+
+    /// <summary>
+    /// Surfaces the current F-04 workspace policy so a user can see (without
+    /// reading env vars themselves) whether MAF Doctor is currently unrestricted
+    /// or scoped to specific roots. Reports the operator's own configured value —
+    /// not anything derived from a tool call — so this is not a disclosure risk.
+    /// </summary>
+    internal static string BuildWorkspacePolicySection()
+    {
+        var roots = WorkspacePolicy.ConfiguredRoots;
+        if (roots.Count == 0)
+        {
+            return "### Workspace policy\n\n"
+                + $"No `{WorkspacePolicy.WorkspaceRootsEnvName}` configured — repository-path tools accept "
+                + "any absolute path the MCP client requests (filesystem roots and your home directory are "
+                + $"always rejected). Set `{WorkspacePolicy.WorkspaceRootsEnvName}` in the MCP server's "
+                + "`env` config to scope MAF Doctor to specific repositories.";
+        }
+
+        return "### Workspace policy\n\n"
+            + $"Restricted to: {string.Join(", ", roots.Select(r => $"`{r}`"))}";
     }
 }

@@ -525,7 +525,7 @@ public sealed class DoctorTool
         // `doctor` is read-only by design — it diagnoses and grades but never
         // edits files. Spelled out here because "doctor didn't fix anything" is
         // a common first-run misread; the fix path is autofix-all + the agent.
-        sb.AppendLine("> 🩺 This is a **read-only diagnosis** — `doctor` never edits your files. To fix: run `maf-doctor autofix-all .` for the mechanical issues, then hand the rest to the `@maf-migration` agent.");
+        sb.AppendLine("> 🩺 This is a **read-only diagnosis** — `doctor` never edits your files. To fix: run `maf-doctor autofix-all . --apply` for the mechanical issues, then hand the rest to the `@maf-migration` agent.");
         sb.AppendLine();
         sb.AppendLine("| Metric | Count |");
         sb.AppendLine("|---|---:|");
@@ -556,7 +556,7 @@ public sealed class DoctorTool
             var autoCount = s.AllFixes.Count(f => f.AutoFixable);
             if (autoCount > 0)
             {
-                sb.AppendLine($"💡 **{autoCount} of {s.AllFixes.Count} finding(s) are auto-fixable** — apply the deterministic Roslyn rewriters with `maf-doctor autofix-all .` (CLI) or `MafAutoFixAll(repoPath)` (MCP). The rest need your judgment (or hand them to the `@maf-migration` agent).");
+                sb.AppendLine($"💡 **{autoCount} of {s.AllFixes.Count} finding(s) are auto-fixable** — apply the deterministic Roslyn rewriters with `maf-doctor autofix-all . --apply` (CLI) or `MafAutoFixAll(repoPath, dryRun: false)` (MCP). The rest need your judgment (or hand them to the `@maf-migration` agent).");
                 sb.AppendLine();
             }
 
@@ -566,7 +566,7 @@ public sealed class DoctorTool
             var manualCount = s.AllFixes.Count(f => !f.AutoFixable);
             sb.AppendLine("**What the tags mean**");
             sb.AppendLine();
-            sb.AppendLine("- _auto-fixable_ — a deterministic **Roslyn rewriter** exists. Run `maf-doctor autofix-all .` — no LLM involved. That is the **only** class of fix `autofix-all` can apply; it is purely mechanical/syntactic.");
+            sb.AppendLine("- _auto-fixable_ — a deterministic **Roslyn rewriter** exists. Run `maf-doctor autofix-all . --apply` — no LLM involved. That is the **only** class of fix `autofix-all` can apply; it is purely mechanical/syntactic.");
             sb.AppendLine("- _needs your judgment_ — there is **no mechanical fix**: the right change depends on what your code is meant to do (e.g. which token cap, what message type, whether a `#if` guard belongs there). The ones tagged **⚠ heuristic** are name/text-based and may be **false positives** in your codebase — confirm each is real before changing it; the rest are high-confidence structural findings.");
             sb.AppendLine();
             if (manualCount > 0)
@@ -765,7 +765,7 @@ public sealed class DoctorTool
             sb.AppendLine();
             sb.AppendLine($"One command clears {auto.Count} mechanical finding(s):");
             sb.AppendLine();
-            sb.AppendLine("- [ ] Run `maf-doctor autofix-all .` (CLI) or `MafAutoFixAll(repoPath)` (MCP), then rebuild.");
+            sb.AppendLine("- [ ] Run `maf-doctor autofix-all . --apply` (CLI) or `MafAutoFixAll(repoPath, dryRun: false)` (MCP), then rebuild.");
             sb.AppendLine();
             sb.AppendLine("It applies deterministic Roslyn rewriters for the rules below (and may also clear build-surfaced fixes like the fan-in arg-order swap that the scan-time grader doesn't see):");
             foreach (var (rep, items) in GroupByRule(auto))
@@ -813,7 +813,7 @@ public sealed class DoctorTool
         var heuristicCount = manual.Count(f => f.Confidence == "heuristic");
 
         var phase1 = auto.Count == 0 ? null : new PlanPhase1(
-            Command: "maf-doctor autofix-all .",
+            Command: "maf-doctor autofix-all . --apply",
             FindingCount: auto.Count,
             ClearsRules: GroupByRule(auto).Select(g => g.Rep.RuleId).ToList());
 

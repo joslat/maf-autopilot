@@ -108,7 +108,7 @@ false positives without parsing prose. Schema version `"1"`.
   "repo": "C:/path/to/repo",
   "counts": { "total": 13, "auto_fixable": 3, "manual": 10, "heuristic": 3 },
   "phase1_autofix": {                         // null when nothing is auto-fixable
-    "command": "maf-doctor autofix-all .",
+    "command": "maf-doctor autofix-all . --apply",
     "finding_count": 3,
     "clears_rules": ["MAF-AP-SEC-001", "MAF-AP-SEC-003", "MAF-AP-WF-001"]
   },

@@ -124,7 +124,7 @@ cd your-maf-project && maf-doctor init    # re-run init to refresh the steering 
 
 ```powershell
 maf-doctor doctor .            # instant A/B/C/F health grade + top fixes
-maf-doctor autofix-all .       # apply every deterministic Roslyn rewriter
+maf-doctor autofix-all . --apply  # apply every deterministic Roslyn rewriter
 maf-doctor new agent ChatBot   # scaffold an anti-pattern-clean MAF agent + smoke test
 ```
 

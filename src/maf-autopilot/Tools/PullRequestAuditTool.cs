@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Text;
 using ModelContextProtocol.Server;
 
@@ -13,9 +12,9 @@ namespace MafDoctor.Tools;
 /// Turns a full-repo audit into a PR-comment-friendly scan — the CI integration
 /// unlock.
 ///
-/// Implementation: shells <c>git diff --name-only base...HEAD</c>, filters to
-/// <c>*.cs</c>, then runs each scanner per file using its pure-function entry
-/// point. No extra dependencies, no semantic model needed.
+/// Implementation: shells <c>git diff -z --name-only base...HEAD</c>, filters
+/// to <c>*.cs</c>, then runs each scanner per file using its pure-function
+/// entry point. No extra dependencies, no semantic model needed.
 /// </summary>
 [McpServerToolType]
 public sealed class PullRequestAuditTool
@@ -61,34 +60,28 @@ public sealed class PullRequestAuditTool
     /// </summary>
     internal static IReadOnlyList<string>? GetChangedCsFiles(string repoPath, string baseBranch)
     {
+        // F-09 — previously read stdout to completion synchronously before touching
+        // stderr, so a child that fills the stderr pipe while stdout is still being
+        // read could deadlock the parent inside ReadToEnd before the 30s timeout was
+        // ever evaluated. ProcessRunner.RunGit drains both streams concurrently.
+        //
         // `git diff --name-only base...HEAD` lists files changed since the merge-base.
         // The triple-dot form gives the symmetric difference with the merge-base,
         // which is what PR review wants.
-        var psi = new ProcessStartInfo("git")
-        {
-            ArgumentList = { "-C", repoPath, "diff", "--name-only", $"{baseBranch}...HEAD" },
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-
-        string stdout;
+        //
+        // F-07 (round-2 review fixup) — `-z` makes the entry separator NUL
+        // instead of newline. A newline-split parse mis-handles a filename
+        // containing a literal embedded newline (legal on POSIX filesystems):
+        // it would fragment into two bogus "paths". NUL is the only byte a
+        // POSIX path can never contain, so it's the only safe separator.
         int exitCode;
+        string stdout;
         try
         {
-            using var p = Process.Start(psi);
-            if (p is null) return null;
-            stdout = p.StandardOutput.ReadToEnd();
-            // Drain stderr so the child can't deadlock on a full stderr pipe.
-            _ = p.StandardError.ReadToEnd();
-            if (!p.WaitForExit(30_000))
-            {
-                try { p.Kill(entireProcessTree: true); } catch { /* best effort */ }
-                return null;
-            }
-            exitCode = p.ExitCode;
+            (exitCode, stdout) = ProcessRunner.RunGit(
+                repoPath, TimeSpan.FromSeconds(30), "diff", "-z", "--name-only", $"{baseBranch}...HEAD");
         }
-        catch (System.ComponentModel.Win32Exception)
+        catch (Win32Exception)
         {
             // git not on PATH
             return null;
@@ -99,14 +92,13 @@ public sealed class PullRequestAuditTool
     }
 
     /// <summary>
-    /// Parses the stdout of <c>git diff --name-only base...HEAD</c> into the
-    /// .cs paths we want to scan. Strips CR for Windows checkouts, filters to
-    /// .cs files, drops bin/obj noise. Pure: no I/O — the testable seam.
+    /// Parses the NUL-delimited stdout of <c>git diff -z --name-only base...HEAD</c>
+    /// into the .cs paths we want to scan: filters to .cs files, drops bin/obj
+    /// noise. Pure: no I/O — the testable seam.
     /// </summary>
     internal static IReadOnlyList<string> ParseGitDiffOutput(string stdout) =>
         stdout
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(line => line.TrimEnd('\r'))
+            .Split('\0', StringSplitOptions.RemoveEmptyEntries)
             .Where(line => line.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
             .Where(line => !line.Contains("/bin/", StringComparison.Ordinal)
                         && !line.Contains("/obj/", StringComparison.Ordinal))
@@ -116,15 +108,69 @@ public sealed class PullRequestAuditTool
     // Report
     // -------------------------------------------------------------------------
 
-    private static string BuildReport(string repoPath, string baseBranch, IReadOnlyList<string> changedFiles)
+    // F-07 — mirrors maf-pr-audit.yml's own compiler-bomb cap (200 changed files /
+    // 5 MB aggregate) so the MCP tool is bounded the same way when a client calls
+    // it directly, not only when the CI wrapper's shell-level pre-check runs first.
+    internal const int MaxChangedFiles = 200;
+    internal const long MaxFileBytes = 10 * 1024 * 1024; // matches SourceFileWalker.ScanBudget's default
+    internal const long MaxAggregateBytes = 5 * 1024 * 1024;
+
+    // internal (not private) so the test assembly can exercise the containment/
+    // size-cap logic directly, without needing a real git subprocess for every case
+    // — same pattern as RegistryService.ValidateOverridePath.
+    internal static string BuildReport(string repoPath, string baseBranch, IReadOnlyList<string> changedFiles)
     {
         var perFileFindings = new List<(string File, List<string> Lines)>();
         var totals = new Totals();
+        var skipped = new List<string>();
+        var scanComplete = true;
 
-        foreach (var relPath in changedFiles)
+        var filesToScan = changedFiles;
+        if (changedFiles.Count > MaxChangedFiles)
         {
-            var absPath = Path.Combine(repoPath, relPath);
+            filesToScan = changedFiles.Take(MaxChangedFiles).ToList();
+            scanComplete = false;
+            skipped.Add($"{changedFiles.Count - MaxChangedFiles} additional changed file(s) beyond the {MaxChangedFiles}-file audit cap were not scanned.");
+        }
+
+        long aggregateBytes = 0;
+        var actuallyScanned = 0;
+        foreach (var relPath in filesToScan)
+        {
+            // F-07 — previously combined repoPath + relPath with plain Path.Combine
+            // and read it with File.ReadAllText: no containment check (a symlinked
+            // changed-file entry could read outside the repo) and no per-file/
+            // aggregate size cap (a large diff'd file could pin Roslyn-host memory).
+            string absPath;
+            try
+            {
+                absPath = PathGuard.ValidateContainment(repoPath, relPath, "changed file");
+            }
+            catch (ArgumentException ex)
+            {
+                scanComplete = false;
+                skipped.Add($"`{relPath}` — refused: {ex.Message}");
+                continue;
+            }
+
             if (!File.Exists(absPath)) continue;     // file deleted in the diff
+
+            var length = new FileInfo(absPath).Length;
+            if (length > MaxFileBytes)
+            {
+                scanComplete = false;
+                skipped.Add($"`{relPath}` — {length / (1024 * 1024)} MB exceeds the {MaxFileBytes / (1024 * 1024)} MB per-file cap, skipped.");
+                continue;
+            }
+            if (aggregateBytes + length > MaxAggregateBytes)
+            {
+                scanComplete = false;
+                skipped.Add($"remaining changed file(s) beyond the {MaxAggregateBytes / (1024 * 1024)} MB aggregate cap were not scanned.");
+                break;
+            }
+            aggregateBytes += length;
+            actuallyScanned++;
+
             var source = File.ReadAllText(absPath);
 
             var anti = AntiPatternScannerTool.ScanFile(source, relPath);
@@ -160,7 +206,20 @@ public sealed class PullRequestAuditTool
         var sb = new StringBuilder();
         sb.AppendLine($"## 🔍 MAF PR audit — `{baseBranch}` → HEAD");
         sb.AppendLine();
-        sb.AppendLine($"**Files scanned:** {changedFiles.Count} changed `.cs` file(s).");
+        // Verified-in-review fixup: this used to always report changedFiles.Count
+        // (the total diff size), which read as "files scanned" even when F-07's
+        // caps/containment checks meant some of those files were never actually
+        // read — a report claiming "Files scanned: 500" immediately above a
+        // "Scan incomplete, only 200 processed" warning was self-contradictory.
+        sb.AppendLine(actuallyScanned == changedFiles.Count
+            ? $"**Files scanned:** {actuallyScanned} changed `.cs` file(s)."
+            : $"**Files scanned:** {actuallyScanned} of {changedFiles.Count} changed `.cs` file(s).");
+        if (!scanComplete)
+        {
+            sb.AppendLine();
+            sb.AppendLine("⚠️ **Scan incomplete** — do not treat this report as a clean bill of health:");
+            foreach (var reason in skipped) sb.AppendLine($"- {reason}");
+        }
         sb.AppendLine();
         sb.AppendLine($"| ❌ Errors | ⚠️ Warnings | ℹ️ Info |");
         sb.AppendLine($"|---:|---:|---:|");
@@ -169,7 +228,9 @@ public sealed class PullRequestAuditTool
 
         if (perFileFindings.Count == 0)
         {
-            sb.AppendLine("✅ All changed files are clean against the configured scanner rules. Ship it.");
+            sb.AppendLine(scanComplete
+                ? "✅ All changed files are clean against the configured scanner rules. Ship it."
+                : "⚠️ No findings in the file(s) that were scanned — but the scan above was incomplete. This is NOT a clean bill of health.");
             return sb.ToString();
         }
 

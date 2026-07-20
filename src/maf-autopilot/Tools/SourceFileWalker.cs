@@ -81,18 +81,34 @@ internal static class SourceFileWalker
         // "compiler-bomb cap" (maf-pr-audit.yml).
         public long MaxFileBytes { get; init; } = 10 * 1024 * 1024; // 10 MB
 
+        // F-10 (2026-07-19 security assessment) — MaxFiles × MaxFileBytes bounds
+        // any SINGLE file, but not the sum across an accepted batch: 50,000 files
+        // just under the 10 MB per-file cap is a 500 GB theoretical aggregate.
+        // This caps total accepted bytes across one enumeration, independent of
+        // file count — a caller that retains every source body in memory at
+        // once (e.g. SemanticKernelDetectorTool.Scan) is bounded by this even
+        // though it never touches MaxFiles.
+        public long MaxTotalBytes { get; init; } = 500 * 1024 * 1024; // 500 MB
+
         public int FilesSeen { get; private set; }
+        public long BytesAccepted { get; private set; }
         public int FilesSkippedOversized { get; private set; }
         public bool Truncated { get; private set; }
 
-        public bool TryAccept()
+        public bool TryAccept(long fileBytes)
         {
             if (FilesSeen >= MaxFiles)
             {
                 Truncated = true;
                 return false;
             }
+            if (BytesAccepted + fileBytes > MaxTotalBytes)
+            {
+                Truncated = true;
+                return false;
+            }
             FilesSeen++;
+            BytesAccepted += fileBytes;
             return true;
         }
 
@@ -162,8 +178,8 @@ internal static class SourceFileWalker
                 continue; // skip just this one file — the walk keeps going
             }
 
-            if (!budget.TryAccept())
-                yield break; // file-count cap — stop the walk entirely
+            if (!budget.TryAccept(length))
+                yield break; // file-count or aggregate-byte cap — stop the walk entirely
             yield return path;
         }
     }
@@ -214,10 +230,20 @@ internal static class SourceFileWalker
     /// </summary>
     public static string MakeRelative(string root, string file)
     {
-        var rootFull = Path.GetFullPath(root);
+        // F-23 — a bare StartsWith(rootFull) has no separator boundary, so
+        // /work/repo-evil/file.cs incorrectly passes containment against root
+        // /work/repo. Match PathGuard's boundary-safe comparison: equal, or
+        // starts with root + separator.
+        var rootFull = Path.GetFullPath(root)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var fileFull = Path.GetFullPath(file);
-        if (fileFull.StartsWith(rootFull, PathComparison))
-            return fileFull.Substring(rootFull.Length).TrimStart('/', '\\').Replace('\\', '/');
+
+        if (fileFull.Equals(rootFull, PathComparison))
+            return string.Empty;
+
+        var rootBoundary = rootFull + Path.DirectorySeparatorChar;
+        if (fileFull.StartsWith(rootBoundary, PathComparison))
+            return fileFull.Substring(rootBoundary.Length).Replace('\\', '/');
 
         // Non-leaky message: name the parameter class, not the input.
         throw new InvalidOperationException(

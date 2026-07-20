@@ -24,7 +24,14 @@
 # SDK 10.0 required because the csproj multi-targets net8.0/net9.0/net10.0
 # (multi-version test parity with the analyzer NuGet). SDK 8.0 — which we used
 # through the alphas — can't restore net9.0/net10.0 TFMs and fails NETSDK1045.
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+# F-27 (2026-07-19 security assessment) — digest-pinned, not a mutable `:10.0`
+# tag: what builds today is guaranteed to build identically tomorrow, and a
+# compromised/tampered upstream push under the same tag can't silently swap
+# in a different image. Dependabot's `docker` ecosystem entry
+# (.github/dependabot.yml) tracks and PRs digest bumps weekly, same pattern
+# as the SHA-pinned GitHub Actions elsewhere in this repo. Resolve the
+# current digest for a tag with: docker inspect <image>:<tag> --format '{{index .RepoDigests 0}}'
+FROM mcr.microsoft.com/dotnet/sdk@sha256:ed034a8bf0b24ded0cbbac07e17825d8e9ebfe21e308191d0f7421eaf5ad4664 AS build
 WORKDIR /src
 
 # Repo-root build-influencing files. CRITICAL: csproj uses Central Package
@@ -64,8 +71,9 @@ RUN dotnet publish src/maf-autopilot/maf-autopilot.csproj \
 
 # ---------- Stage 2 — runtime ----------
 # The runtime image is much smaller than the SDK image (~150 MB vs ~900 MB).
-# Must match the --framework TFM published above.
-FROM mcr.microsoft.com/dotnet/runtime:10.0
+# Must match the --framework TFM published above. Digest-pinned — see the
+# F-27 note on the build-stage FROM above.
+FROM mcr.microsoft.com/dotnet/runtime@sha256:ed5d539b27842d656a06a5984dbcb5114d3e885fbada612a49a5a7c3c3a44e1c
 WORKDIR /app
 
 # Copy build output. Embedded resources (registry.yaml, constraints.md,
@@ -78,10 +86,18 @@ LABEL org.opencontainers.image.description="MCP server + Roslyn analyzers for Mi
 LABEL org.opencontainers.image.source="https://github.com/joslat/maf-doctor"
 LABEL org.opencontainers.image.licenses="MIT"
 
-# Security: drop root. The MCP server speaks stdio only and writes nothing to the
-# filesystem at runtime, so a non-root UID is sufficient. Mounted user workspaces
-# (e.g. `docker run -v $PWD:/workspace`) need read access only; grant 1001:0 so the
-# server can still read default-permissioned workspace mounts on POSIX hosts.
+# Security: drop root regardless. The MCP server speaks stdio only, and most
+# tools are read-only, but auto-fix/scaffold/init tools DO write to a mounted
+# workspace when invoked with dryRun: false — "writes nothing" was never
+# accurate for those, and MafDoctorStatus/UpdateAdvisor also write a small
+# update-check cache. A non-root UID limits what any of those writes (or a
+# compromised dependency) can reach on the host. If you only want the
+# read-only tools, mount the workspace `:ro` — see docs/security.md for the
+# read-only vs. write-enabled run profiles.
+#
+# Mounted user workspaces (e.g. `docker run -v $PWD:/workspace`) need read
+# access at minimum; grant 1001:0 so the server can still read
+# default-permissioned workspace mounts on POSIX hosts.
 RUN groupadd -r maf && useradd -r -u 1001 -g maf -d /nonexistent -s /usr/sbin/nologin maf \
     && chown -R maf:maf /app
 USER maf

@@ -139,21 +139,30 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write           # commit the watcher's auto-generated registry/guide updates
-      pull-requests: write      # (reserved for future PR-based flow)
+      pull-requests: write      # `gh pr create`/`gh pr edit` for the scaffold PR (2026-06-28 "C" refactor)
       issues: write             # Phase 3.2 — escalation issue for major bumps
-      actions: write            # required for `gh workflow run maf-ai-fill-todos.yml` —
-                                # without this the cross-workflow dispatch fails with
-                                # HTTP 403 "Resource not accessible by integration".
-                                # Discovered 2026-05-17 during live-fire test of MAF 1.6.1.
+      # Round-3 review fixup — actions: write REMOVED. It was granted for
+      # `gh workflow run maf-ai-fill-todos.yml` (discovered 2026-05-17), but
+      # that cross-workflow dispatch was removed by the 2026-06-28 "C"
+      # refactor ("we no longer auto-dispatch a SEPARATE Copilot fill PR off
+      # main" — see "Summarize next steps" below). Grepped the whole file:
+      # no remaining use of the Actions API. Least-privilege — don't carry a
+      # scope this job (already contents/pull-requests/issues write plus a
+      # maintainer PAT) doesn't use.
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
-          # Use the maintainer's PAT (admin), not the workflow's GITHUB_TOKEN,
-          # so the final `git push origin HEAD:main` can bypass branch
-          # protection's required-status-check rule. Classic branch protection
-          # (which this repo uses) has no bypass-list — only Rulesets do. But
-          # admin users DO bypass when enforce_admins=False, and this PAT is
-          # owned by the maintainer.
+          # Use the maintainer's PAT, not the workflow's GITHUB_TOKEN. Round-3
+          # review fixup: this comment used to justify the PAT as needed to
+          # bypass branch protection on a direct push to main — stale since
+          # the 2026-06-28 "C" refactor (see "Commit to a release-watcher
+          # branch and open a PR" below), which pushes to a per-version
+          # branch and opens a PR instead. The PAT is still required, for a
+          # different reason: GitHub does not trigger `on: pull_request`
+          # workflows (build-test.yml, maf-pr-audit.yml, mcp-scanner.yml —
+          # all required checks) for a PR opened with the default
+          # GITHUB_TOKEN. Without a PAT, the scaffold PR this job opens would
+          # sit with none of its required checks ever running.
           #
           # Commit identity is still github-actions[bot] (set explicitly via
           # `git config` below). The PAT is only used for the push auth header.
@@ -166,14 +175,31 @@ jobs:
           # fill workflow's assignment breaks. Falls back to GITHUB_TOKEN if unset,
           # which will fail the push (loud, not silent). [task 3.5]
           token: ${{ secrets.COPILOT_ASSIGN_PAT || secrets.GITHUB_TOKEN }}
+          # F-06 (2026-07-19 security assessment) — persist-credentials defaults
+          # to true, which embeds this PAT into .git/config for the ENTIRE job:
+          # every later step (dotnet-inspect diff, python helpers, dotnet build)
+          # could read or reuse it, not just the one step that actually needs to
+          # push. Disable it here and authenticate explicitly, once, immediately
+          # before the single `git push` call in "Commit to a release-watcher
+          # branch and open a PR".
+          persist-credentials: false
 
       - name: Setup .NET
+        # Round-4 review fixup — continue-on-error, matching this same file's
+        # established pattern on Restore/Build below (a transient
+        # network/registry hiccup here previously hard-aborted the whole job
+        # — including the version-bump PR it exists to open — instead of
+        # degrading gracefully the way "Run diff" (continue-on-error: true
+        # already, next step) is explicitly designed to tolerate a missing
+        # dotnet-inspect).
+        continue-on-error: true
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1  # v5.4.0
         with:
           # Net8 LTS — install-only; we just run the published tool here.
           dotnet-version: '8.0.x'
 
       - name: Install dotnet-inspect
+        continue-on-error: true
         run: |
           # Install dotnet-inspect directly as a global tool.
           #
@@ -268,15 +294,50 @@ jobs:
           NEW_VERSION: ${{ needs.check-for-new-maf-release.outputs.new_version }}
         run: python3 .github/scripts/gen_guide_section.py
 
+      - name: Restore maf-doctor (locked mode)
+        # Round-2 review fixup — docs/security.md and threat-model.md both
+        # claimed "CI restores in --locked-mode" as a blanket statement, but
+        # this job (one of the 4 privileged, write-scoped jobs F-06/F-13
+        # hardened against floating/unreviewed installs) ran a plain
+        # `dotnet build` with an implicit, non-strict restore — a drifted
+        # dependency graph would be silently re-resolved instead of failing
+        # closed. Matches build-test.yml's restore-then-build split.
+        continue-on-error: true   # same fault-tolerance boundary as the build step below
+        run: dotnet restore src/maf-autopilot/maf-autopilot.csproj --locked-mode
+
+      - name: Build maf-doctor from this checkout
+        # F-06 (2026-07-19 security assessment) — this job has contents:write,
+        # pull-requests:write, issues:write, actions:write and a maintainer PAT
+        # that bypasses branch protection. It previously ran `dotnet tool
+        # install --global maf-doctor --prerelease`, executing whatever the
+        # newest floating prerelease on NuGet happened to be — not the reviewed
+        # code at this commit — inside that privileged context. Building from
+        # the already-checked-out, already-reviewed source removes the floating
+        # dependency entirely: what runs below is exactly this commit.
+        #
+        # continue-on-error: true — verified-in-review fixup: the install line
+        # this replaced lived INSIDE "Auto-append draft registry entries",
+        # which is (and remains) continue-on-error: true with the explicit
+        # intent "never block the PR on registry extraction." Hoisting the
+        # build into its own step without the same setting turned a
+        # contained, nice-to-have failure into a hard abort of the whole job
+        # — including the version-bump PR the workflow actually exists to
+        # open — on any transient build/restore hiccup. This restores the
+        # original fault-tolerance boundary.
+        continue-on-error: true
+        run: dotnet build src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0 --no-restore
+
       - name: Auto-append draft registry entries
         env:
           OLD: ${{ needs.check-for-new-maf-release.outputs.old_version }}
           NEW: ${{ needs.check-for-new-maf-release.outputs.new_version }}
         continue-on-error: true   # never block the PR on registry extraction
         run: |
-          # Install maf-autopilot itself so we can call the registry-extract subcommand.
-          dotnet tool install --global maf-doctor --prerelease \
-            || dotnet tool update --global maf-doctor --prerelease
+          MAF_DOCTOR="src/maf-autopilot/bin/Release/net8.0/maf-doctor.dll"
+          if [ ! -f "$MAF_DOCTOR" ]; then
+            echo "::warning title=Registry extraction skipped::maf-doctor build did not produce $MAF_DOCTOR (see the 'Build maf-doctor from this checkout' step above) — skipping draft registry extraction for this run."
+            exit 0
+          fi
 
           REGISTRY=".github/skills/maf-obsolete-api-registry/registry.yaml"
           TMP_ENTRIES="/tmp/draft-registry-entries.yaml"
@@ -285,7 +346,7 @@ jobs:
           : > "$TMP_ENTRIES"
           for pkg in Microsoft.Agents.AI Microsoft.Agents.AI.Workflows; do
             echo "=== Extracting draft entries for $pkg ($OLD → $NEW) ==="
-            maf-doctor registry-extract "$pkg" "$OLD" "$NEW" >> "$TMP_ENTRIES" || true
+            dotnet "$MAF_DOCTOR" registry-extract "$pkg" "$OLD" "$NEW" >> "$TMP_ENTRIES" || true
             echo "" >> "$TMP_ENTRIES"
           done
 
@@ -406,6 +467,10 @@ jobs:
           fi
           git checkout -b "$BRANCH"
           git commit -F "$RUNNER_TEMP/commit-msg.txt"
+          # F-06 — persist-credentials: false on checkout means the remote has no
+          # embedded auth; wire it up here, immediately before the one command
+          # that needs it, using the same GH_TOKEN already in this step's env:.
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           # --force-with-lease (not -f): a rerun updates its own branch idempotently without
           # blindly clobbering remote updates pushed in between.
           git push --force-with-lease origin "HEAD:${BRANCH}"

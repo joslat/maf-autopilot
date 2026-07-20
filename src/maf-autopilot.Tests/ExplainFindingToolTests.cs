@@ -62,6 +62,58 @@ public class ExplainFindingToolTests
     }
 
     [Fact]
+    public void OversizedFile_RejectedWithoutReading()
+    {
+        // F-20 — a file over the 10 MB cap must be refused before
+        // File.ReadAllText, not merely truncated after.
+        var dir = NewTempDir();
+        try
+        {
+            var path = Path.Combine(dir, "Huge.cs");
+            using (var fs = new FileStream(path, FileMode.Create))
+            {
+                fs.SetLength(10 * 1024 * 1024 + 1);
+            }
+
+            var output = new ExplainFindingTool().MafExplainFinding(dir, "Huge.cs", 1);
+
+            Assert.StartsWith("Error:", output, StringComparison.Ordinal);
+            Assert.Contains("byte cap", output, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void FileAtCap_StillProcessed()
+    {
+        // Boundary check: exactly at the cap must still succeed (only
+        // strictly-over is rejected).
+        //
+        // Round-3 review fixup — the padding here previously landed 6 bytes
+        // short of the actual 10 MB cap (a hand-computed "- 40" that didn't
+        // account for the prefix/suffix lengths), and the assertion used
+        // `<=` rather than exact equality, so this test never actually
+        // reached the boundary it claims to pin. Compute padding from the
+        // real prefix/suffix lengths and assert the exact byte count.
+        var dir = NewTempDir();
+        try
+        {
+            const string prefix = "public class C { int X() => 1; }";
+            const string suffix = "\n";
+            const int cap = 10 * 1024 * 1024;
+            var path = Path.Combine(dir, "AtCap.cs");
+            var content = prefix + new string(' ', cap - prefix.Length - suffix.Length) + suffix;
+            File.WriteAllText(path, content);
+            Assert.Equal(cap, new FileInfo(path).Length);
+
+            var output = new ExplainFindingTool().MafExplainFinding(dir, "AtCap.cs", 1);
+
+            Assert.DoesNotContain("byte cap", output, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
     public void NoFindingAtLine_ReturnsGracefulMessage()
     {
         var dir = NewTempDir();

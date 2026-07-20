@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using MafDoctor.Tools;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -275,10 +276,10 @@ internal static class UpdateAdvisor
     {
         try
         {
-            var path = CachePath;
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var payload = JsonSerializer.Serialize(new CacheRecord(latestVersion, DateTimeOffset.UtcNow), CacheJsonOptions);
-            File.WriteAllText(path, payload);
+            // F-24 — reject a pre-placed symlink at the predictable cache path rather
+            // than following it.
+            SafeWorkspaceWriter.WriteAtomic(CacheRoot, CachePath, payload);
         }
         catch
         {
@@ -286,15 +287,17 @@ internal static class UpdateAdvisor
         }
     }
 
-    private static string CachePath
+    private static string CacheRoot
     {
         get
         {
             var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             if (string.IsNullOrWhiteSpace(root)) root = Path.GetTempPath();
-            return Path.Combine(root, PackageId, "update-check.json");
+            return Path.Combine(root, PackageId);
         }
     }
+
+    private static string CachePath => Path.Combine(CacheRoot, "update-check.json");
 
     private sealed record CacheRecord(string LatestVersion, DateTimeOffset CheckedAtUtc);
 }

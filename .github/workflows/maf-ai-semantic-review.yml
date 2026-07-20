@@ -147,7 +147,8 @@ jobs:
           python-version: '3.12'
 
       - name: Install deps
-        run: pip install pyyaml
+        # F-13 — exact-pinned rather than floating latest.
+        run: pip install pyyaml==6.0.1
 
       - name: Build review prompt
         id: build

@@ -31,19 +31,31 @@ jobs:
           # Net8 LTS — install-only; nupkg multi-targets so any flavor works.
           dotnet-version: '8.0.x'
 
-      - name: Install maf-autopilot (prerelease)
-        run: dotnet tool install --global maf-doctor --prerelease || dotnet tool update --global maf-doctor --prerelease
+      - name: Restore maf-doctor (locked mode)
+        # Round-2 review fixup — docs claimed "CI restores in --locked-mode"
+        # as a blanket statement, but this job ran a plain `dotnet build`
+        # with an implicit, non-strict restore. Matches build-test.yml's
+        # restore-then-build split. No continue-on-error here, matching the
+        # build step below: this job's intentional fail-loud design (see
+        # notify-on-failure) is unaffected either way.
+        run: dotnet restore src/maf-autopilot/maf-autopilot.csproj --locked-mode
+
+      - name: Build maf-doctor from this checkout
+        # F-13 (2026-07-19 security assessment) — this job grades THIS repo's
+        # own code, so building from the same checkout being graded is
+        # strictly more correct than a floating `--prerelease` NuGet install,
+        # and this job has `issues: write` in scope.
+        run: dotnet build src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0 --no-restore
 
       - name: Run MafDoctor against repo
         id: doctor
         run: |
           set -o pipefail
+          MAF_DOCTOR="src/maf-autopilot/bin/Release/net8.0/maf-doctor.dll"
           # Scan PRODUCT code only — exclude samples/ and test fixtures, which
           # ship intentional anti-pattern bait that would otherwise force grade
-          # F regardless of real health. `--exclude` is honored by maf-autopilot
-          # builds carrying task 3.1; older published builds ignore the extra
-          # args (forward-compatible).
-          REPORT=$(maf-doctor doctor "$GITHUB_WORKSPACE" \
+          # F regardless of real health.
+          REPORT=$(dotnet "$MAF_DOCTOR" doctor "$GITHUB_WORKSPACE" \
             --exclude samples/ --exclude .Tests/ --exclude find-the-bug/)
           echo "$REPORT" > maf-doctor-report.md
           # Extract grade (first line: "## <emoji> MAF health grade: **X**").

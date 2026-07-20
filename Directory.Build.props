@@ -9,5 +9,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!--
+      F-27 (2026-07-19 security assessment): every project restores against
+      its own committed packages.lock.json, one per project under src/. CI
+      restores in locked mode (see .github/workflows), which fails if
+      Directory.Packages.props and the lock file disagree, instead of quietly
+      resolving to whatever the transitive graph happens to produce that day.
+      Regenerate the lock files after a real dependency bump by restoring the
+      solution with NuGet's lock file force-evaluate option.
+    -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 </Project>

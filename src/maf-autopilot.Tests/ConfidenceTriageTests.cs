@@ -115,7 +115,9 @@ public sealed class ConfidenceTriageTests
         Assert.Equal("1", root.GetProperty("schema_version").GetString());
         // Phase 1 batches the mechanical fix(es) into one command.
         var phase1 = root.GetProperty("phase1_autofix");
-        Assert.Equal("maf-doctor autofix-all .", phase1.GetProperty("command").GetString());
+        // F-11: the suggested command must actually write when run verbatim —
+        // autofix-all now previews by default, so the plan's command includes --apply.
+        Assert.Equal("maf-doctor autofix-all . --apply", phase1.GetProperty("command").GetString());
         Assert.Contains(phase1.GetProperty("clears_rules").EnumerateArray(),
             e => e.GetString() == "MAF-AP-SEC-001");
 

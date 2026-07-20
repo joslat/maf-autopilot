@@ -5,7 +5,7 @@ This folder holds the terminal demo casts for the project:
 | Source (`.tape`) | Renders to | Shows |
 |---|---|---|
 | `install-cast.tape` | `install-cast.gif` (committed, shown in the top-level `README.md`) | Install the tool + `maf-doctor doctor .` → grade **F** + top fixes |
-| `migration-cast.tape` | _(not rendered/committed yet)_ | `maf-doctor autofix-all .` → deterministic Roslyn rewriters clear the **mechanical** anti-patterns; the **semantic** fan-out fixes (`ValueTask` → `Task<T>`) are left for the `@maf-migration` agent. It does **not** reach grade A on its own — that needs the agent pass. |
+| `migration-cast.tape` | _(not rendered/committed yet)_ | `maf-doctor autofix-all . --apply` → deterministic Roslyn rewriters clear the **mechanical** anti-patterns; the **semantic** fan-out fixes (`ValueTask` → `Task<T>`) are left for the `@maf-migration` agent. It does **not** reach grade A on its own — that needs the agent pass. |
 
 ## What the `.tape` files are
 

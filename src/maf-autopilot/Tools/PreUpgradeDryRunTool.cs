@@ -49,6 +49,11 @@ public sealed class PreUpgradeDryRunTool
 
         Returns a markdown report with three sections: 🔴 high-impact (you ARE
         affected), 🟡 unused-but-breaking (you can ignore), 🟢 additive (safe).
+
+        Note: requires `dotnet-inspect` on PATH. If it's missing, this returns
+        install instructions rather than downloading it automatically — set
+        MAF_DOCTOR_ALLOW_TOOL_DOWNLOAD=1 in the MCP server's env config to allow
+        on-demand fetch via `dnx` instead.
         """)]
     public string MafPreUpgradeDryRun(
         [Description("Absolute path to the repository root.")] string repoPath,

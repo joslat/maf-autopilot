@@ -59,30 +59,54 @@ jobs:
         id: version
         # Phase 3.2 — read inputs via `env:` redirect, not `${{ }}` templating
         # inside the run block. Eliminates the template-injection surface.
+        #
+        # F-15 (2026-07-19 security assessment) — `override` and `is_tag` are
+        # computed HERE, once, as the single source of truth for the two
+        # downstream steps that used to each duplicate their own condition.
+        # The bug this closes: the "Override version in csproj" step's `if:`
+        # previously checked `inputs.version != '' || startsWith(ref, 'v')`
+        # only — it never covered the unprefixed-tag branch added below, even
+        # though THIS step's VERSION computation already handled it. Pushing
+        # an unprefixed tag (`1.13.0`) therefore computed the right VERSION
+        # for the release notes but silently packed whatever `<Version>` was
+        # already sitting in the csproj — a real tag/package mismatch, not
+        # just a cosmetic one. Deriving both flags from the same branch that
+        # sets VERSION makes that class of drift structurally impossible: a
+        # future third tag pattern only has to be added here, not in three
+        # separate `if:` conditions across the job.
         env:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
+          IS_TAG=false
           if [ -n "$INPUT_VERSION" ]; then
             VERSION="$INPUT_VERSION"
+            OVERRIDE=true
             echo "Using input version: $VERSION"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             # Canonical: tag with `v` prefix (e.g. `v1.3.0-alpha-5`).
             VERSION="${GITHUB_REF#refs/tags/v}"
+            OVERRIDE=true
+            IS_TAG=true
             echo "Using tag version (v-prefixed): $VERSION"
           elif [[ "$GITHUB_REF" == refs/tags/[0-9]* ]]; then
             # Tolerant: tag starts with a digit (e.g. `1.3.0-alpha-5` — what GitHub
             # UI release-create defaults to if the author omits the `v`).
             VERSION="${GITHUB_REF#refs/tags/}"
+            OVERRIDE=true
+            IS_TAG=true
             echo "Using tag version (unprefixed): $VERSION"
           else
             VERSION=$(grep -oP '(?<=<Version>)[^<]+' src/maf-autopilot/maf-autopilot.csproj)
+            OVERRIDE=false
             echo "Using csproj version: $VERSION"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "override=$OVERRIDE" >> $GITHUB_OUTPUT
+          echo "is_tag=$IS_TAG" >> $GITHUB_OUTPUT
           echo "Releasing version: $VERSION"
 
       - name: Override version in csproj
-        if: github.event.inputs.version != '' || startsWith(github.ref, 'refs/tags/v')
+        if: steps.version.outputs.override == 'true'
         # Phase 7.G fixup — env-redirect `steps.*.outputs.*` like we do for
         # `inputs.*`. Defense in depth: VERSION is already semver-validated
         # upstream by the validate-inputs job, but eliminating the templating
@@ -98,8 +122,28 @@ jobs:
           sed -i "s|<Version>.*</Version>|<Version>${VERSION}</Version>|" src/maf-autopilot.Analyzers/maf-autopilot.Analyzers.csproj
           echo "Set <Version> to $VERSION on both the server tool and the analyzer."
 
+      - name: Verify packed version matches the resolved version
+        if: steps.version.outputs.override == 'true'
+        # F-15 — belt-and-suspenders: fail loudly if the override step above
+        # somehow didn't take (e.g. a future refactor changes the sed target
+        # without updating this check), rather than silently publishing a
+        # mismatched package under the tag's release notes.
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          for csproj in src/maf-autopilot/maf-autopilot.csproj src/maf-autopilot.Analyzers/maf-autopilot.Analyzers.csproj; do
+            ACTUAL=$(grep -oP '(?<=<Version>)[^<]+' "$csproj")
+            if [ "$ACTUAL" != "$VERSION" ]; then
+              echo "::error::$csproj has <Version>$ACTUAL</Version>, expected $VERSION — refusing to publish a mismatched package."
+              exit 1
+            fi
+          done
+
       - name: Restore
-        run: dotnet restore maf-autopilot.sln
+        # F-27 — locked mode; see build-test.yml for the full rationale.
+        # Release builds are exactly where a silently-drifted transitive
+        # dependency graph matters most.
+        run: dotnet restore maf-autopilot.sln --locked-mode
 
       - name: Test (solution-level — gates analyzer + main project)
         run: |
@@ -147,10 +191,13 @@ jobs:
             --skip-duplicate
 
       - name: Create GitHub Release
-        # Fire for both v-prefixed and unprefixed numeric tags. Skip on workflow_dispatch
-        # (no tag ref) — in that case the user typically created the Release manually
-        # via the GitHub UI before dispatching.
-        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/0') || startsWith(github.ref, 'refs/tags/1') || startsWith(github.ref, 'refs/tags/2') || startsWith(github.ref, 'refs/tags/3') || startsWith(github.ref, 'refs/tags/4') || startsWith(github.ref, 'refs/tags/5') || startsWith(github.ref, 'refs/tags/6') || startsWith(github.ref, 'refs/tags/7') || startsWith(github.ref, 'refs/tags/8') || startsWith(github.ref, 'refs/tags/9')
+        # Fire for both v-prefixed and unprefixed numeric tags (steps.version's
+        # is_tag output, F-15 — previously a 10-way startsWith OR-chain
+        # duplicating the same tag-pattern logic as the "Determine version"
+        # step, with its own chance to drift out of sync). Skip on
+        # workflow_dispatch (no tag ref) — in that case the user typically
+        # created the Release manually via the GitHub UI before dispatching.
+        if: steps.version.outputs.is_tag == 'true'
         # SHA-pinned to softprops/action-gh-release v3.0.0 per supply-chain hardening:
         # a major-tag pin would let an upstream maintainer's compromised account push
         # arbitrary code into our release workflow with NUGET_API_KEY in scope.

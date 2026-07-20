@@ -104,6 +104,50 @@ public sealed class NewAgentToolMcpTests : IDisposable
         Assert.False(Directory.Exists(Path.Combine(_tempDir, "..", "etc", "passwd-attack")));
     }
 
+    // -------------------------------------------------------------------------
+    // F-03 — projectPath must be absolute (matches every tool description, and
+    // PathGuard.ValidateRepoPath's existing behavior); a relative value resolves
+    // against the MCP server process's cwd, not the caller's intended workspace.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MafNewAgent_RelativePath_Rejected()
+    {
+        var result = _tool.MafNewAgent(".", "Bot");
+        Assert.Contains("absolute path", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // -------------------------------------------------------------------------
+    // F-03 — a symlinked Agents/Tests directory (or the target file itself) must
+    // not be followed. Symlink creation on Windows requires admin or Developer
+    // Mode — skip gracefully if neither is available.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MafNewAgent_SymlinkedAgentsDirectory_RefusesWithoutFollowing()
+    {
+        var outsideDir = Path.Combine(Path.GetTempPath(), "new-agent-outside-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outsideDir);
+        var linkedAgentsDir = Path.Combine(_tempDir, "Agents");
+
+        try
+        {
+            try { Directory.CreateSymbolicLink(linkedAgentsDir, outsideDir); }
+            catch (UnauthorizedAccessException) { return; }
+            catch (IOException) { return; }
+            catch (PlatformNotSupportedException) { return; }
+
+            var result = _tool.MafNewAgent(_tempDir, "Bot");
+            Assert.False(File.Exists(Path.Combine(outsideDir, "Bot.cs")));
+            Assert.DoesNotContain("✅", result);
+        }
+        finally
+        {
+            try { Directory.Delete(linkedAgentsDir); } catch { /* best effort */ }
+            try { Directory.Delete(outsideDir, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
     [Fact]
     public void MafNewAgent_CustomInstructions_AreInlinedSafely()
     {
@@ -162,6 +206,53 @@ public sealed class NewAgentToolMcpTests : IDisposable
 
         Assert.Contains("Error", result, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(before, after);
+    }
+
+    // -------------------------------------------------------------------------
+    // F-03 — MafNewExecutor previously used its own ad-hoc check (non-empty +
+    // Directory.Exists) instead of ValidateProjectPath, so it accepted relative
+    // paths and '..' traversal that MafNewAgent already rejected. Both tools now
+    // share one validator.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MafNewExecutor_TraversalAttempt_BlockedByPathGuard()
+    {
+        var result = _tool.MafNewExecutor(_tempDir + "/../etc/passwd-attack", "Reviewer");
+        Assert.Contains("Error", result, StringComparison.OrdinalIgnoreCase);
+        Assert.False(Directory.Exists(Path.Combine(_tempDir, "..", "etc", "passwd-attack")));
+    }
+
+    [Fact]
+    public void MafNewExecutor_RelativePath_Rejected()
+    {
+        var result = _tool.MafNewExecutor(".", "Reviewer");
+        Assert.Contains("absolute path", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void MafNewExecutor_SymlinkedWorkflowsDirectory_RefusesWithoutFollowing()
+    {
+        var outsideDir = Path.Combine(Path.GetTempPath(), "new-executor-outside-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outsideDir);
+        var linkedWorkflowsDir = Path.Combine(_tempDir, "Workflows");
+
+        try
+        {
+            try { Directory.CreateSymbolicLink(linkedWorkflowsDir, outsideDir); }
+            catch (UnauthorizedAccessException) { return; }
+            catch (IOException) { return; }
+            catch (PlatformNotSupportedException) { return; }
+
+            var result = _tool.MafNewExecutor(_tempDir, "Reviewer");
+            Assert.False(File.Exists(Path.Combine(outsideDir, "ReviewerExecutor.cs")));
+            Assert.DoesNotContain("✅", result);
+        }
+        finally
+        {
+            try { Directory.Delete(linkedWorkflowsDir); } catch { /* best effort */ }
+            try { Directory.Delete(outsideDir, recursive: true); } catch { /* best effort */ }
+        }
     }
 
     // -------------------------------------------------------------------------

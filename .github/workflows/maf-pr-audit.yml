@@ -54,6 +54,7 @@ jobs:
           echo "$CHANGED_CODE" | sed 's/^/  /'
           if [ -z "$NON_SAMPLE" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
+            echo "skip_reason=samples-only" >> $GITHUB_OUTPUT
             echo "::notice title=MAF audit skipped::Only samples/ files changed — they're intentionally buggy demo corpora, not real code to audit."
             exit 0
           fi
@@ -93,6 +94,9 @@ jobs:
             echo "Compiler-bomb cap check: $COUNT .cs files, $TOTAL_BYTES bytes total."
             if [ "$COUNT" -gt 200 ] || [ "$TOTAL_BYTES" -gt 5242880 ]; then
               echo "skip=true" >> $GITHUB_OUTPUT
+              echo "skip_reason=compiler-bomb-cap" >> $GITHUB_OUTPUT
+              echo "changed_file_count=$COUNT" >> $GITHUB_OUTPUT
+              echo "changed_bytes=$TOTAL_BYTES" >> $GITHUB_OUTPUT
               echo "::warning title=MAF audit skipped (compiler-bomb cap)::PR changes $COUNT .cs files / $TOTAL_BYTES bytes. Caps are 200 files / 5 MB. Roslyn-heavy audit skipped to protect the runner; CI-side scanners still run."
               exit 0
             fi
@@ -101,14 +105,49 @@ jobs:
           echo "skip=false" >> $GITHUB_OUTPUT
 
       - name: Setup .NET
+        # Round-3 review fixup — continue-on-error so a transient setup-dotnet
+        # failure (network/registry hiccup) doesn't skip every downstream step
+        # via the implicit success() gate, which would leave this job's
+        # required check red with no artifact and no PR comment (the same
+        # class of gap the Restore/Build continue-on-error below already
+        # closes for build/restore failures specifically).
+        continue-on-error: true
         if: steps.scope.outputs.skip != 'true'
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1  # v5.4.0
         with:
           dotnet-version: '8.0.x'
 
-      - name: Install maf-autopilot (prerelease)
+      - name: Restore maf-doctor (locked mode)
+        # Round-2 review fixup — docs claimed "CI restores in --locked-mode"
+        # as a blanket statement, but this job ran a plain `dotnet build`
+        # with an implicit, non-strict restore. Matches build-test.yml's
+        # restore-then-build split. continue-on-error for the same reason as
+        # the build step below: a broken PR can legitimately fail restore
+        # too, and that must not crash the companion comment workflow.
+        continue-on-error: true
         if: steps.scope.outputs.skip != 'true'
-        run: dotnet tool install --global maf-doctor --prerelease || dotnet tool update --global maf-doctor --prerelease
+        run: dotnet restore src/maf-autopilot/maf-autopilot.csproj --locked-mode
+
+      - name: Build maf-doctor from this checkout
+        # F-13 (2026-07-19 security assessment) — this job audits the PR's own
+        # (possibly fork-supplied) source with maf-doctor; building maf-doctor
+        # itself from the SAME trusted checkout that produced this job's
+        # source tree (not a floating `--prerelease` NuGet install) means the
+        # tool doing the auditing is exactly the reviewed code at this commit,
+        # not whatever happens to be newest on NuGet at run time.
+        #
+        # continue-on-error: true — round-2 review fixup (mirrors the same
+        # fixup already applied to maf-release-watcher.yml for the identical
+        # F-13 refactor). This job's own audited source can legitimately fail
+        # to compile (that's what build-test.yml, a separate required check,
+        # exists to catch); without this, a broken PR skips every downstream
+        # step here — including "Upload audit result" — so the companion
+        # workflow maf-pr-audit-comment.yml downloads a nonexistent artifact
+        # and crashes with no PR-visible comment instead of the graceful
+        # "audit incomplete" message below.
+        continue-on-error: true
+        if: steps.scope.outputs.skip != 'true'
+        run: dotnet build src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0 --no-restore
 
       - name: Run MCP server and call MafAuditPullRequest
         if: steps.scope.outputs.skip != 'true'
@@ -119,30 +158,32 @@ jobs:
           # The MCP tool needs the base branch fetched locally as a branch ref.
           git fetch origin "$BASE_REF":"refs/heads/$BASE_REF" --depth=50 || true
 
-          # Capture stdout AND stderr — older alpha versions of maf-autopilot may not
-          # have the `doctor` CLI subcommand and fall back to MCP-server mode (which
-          # writes its banner to stderr). `|| true` keeps the job alive on any error
-          # so we still post a sticky comment with diagnostic content.
-          # Product-scoped (task 4.10 / 3.1): exclude samples/ + test fixtures so
-          # the audit reflects product code, matching the drift detector. Older
-          # published builds ignore the extra --exclude args (forward-compatible).
-          maf-doctor doctor "$GITHUB_WORKSPACE" \
-            --exclude samples/ --exclude .Tests/ --exclude find-the-bug/ \
-            > pr-audit-full.md 2>&1 || true
+          MAF_DOCTOR="src/maf-autopilot/bin/Release/net8.0/maf-doctor.dll"
 
-          # Defensive fallback: if the doctor invocation produced nothing (empty
-          # file), write an explanatory message. Pre-alpha-4 NuGet builds didn't
-          # have the doctor CLI as a subcommand — `maf-doctor doctor` falls
-          # into MCP-server-startup mode and exits cleanly with no useful output.
-          # The marocchino sticky-comment action errors with "Either message or
-          # path input is required" if the path resolves to an empty file.
+          # Defensive check for the continue-on-error build step above: a
+          # broken PR can fail to compile maf-doctor itself. Surface that
+          # plainly instead of letting `dotnet <missing-dll>` produce a
+          # cryptic "file not found" error in the sticky comment.
+          if [ ! -f "$MAF_DOCTOR" ]; then
+            echo "⚠️ **MAF audit INCOMPLETE for this PR.** maf-doctor failed to build from this checkout (see the 'Build maf-doctor from this checkout' step above) — the mechanical audit could not run. This is usually caused by a compile error in the PR; check the build-test.yml required check for details." > pr-audit-full.md
+            echo "maf-doctor build did not produce $MAF_DOCTOR — see the step above."
+          else
+            # Product-scoped (task 4.10 / 3.1): exclude samples/ + test fixtures so
+            # the audit reflects product code, matching the drift detector.
+            # `|| true` keeps the job alive on any error so we still post a sticky
+            # comment with diagnostic content.
+            dotnet "$MAF_DOCTOR" doctor "$GITHUB_WORKSPACE" \
+              --exclude samples/ --exclude .Tests/ --exclude find-the-bug/ \
+              > pr-audit-full.md 2>&1 || true
+          fi
+
+          # Defensive fallback: if the doctor invocation produced nothing
+          # (empty file), write an explanatory message rather than letting the
+          # marocchino sticky-comment action error with "Either message or
+          # path input is required" on an empty file.
           if [ ! -s pr-audit-full.md ]; then
             cat > pr-audit-full.md <<'EOF'
-          ⚠️ **maf-doctor doctor produced no output.**
-
-          Likely cause: the installed `maf-autopilot` NuGet (current latest prerelease) is older than the `doctor` CLI subcommand. Once `1.3.0-alpha-4` or newer ships, this audit will produce a full report.
-
-          Until then, you can run `maf-doctor doctor .` locally after `dotnet tool install -g maf-doctor --prerelease` to see the per-file findings.
+          ⚠️ **maf-doctor doctor produced no output.** See this workflow run's logs for the build/run error.
           EOF
           fi
 
@@ -155,8 +196,21 @@ jobs:
         # pr-audit-full.md wouldn't otherwise exist — an artifact must still be
         # produced so the companion workflow can tell "intentionally skipped"
         # apart from "something actually went wrong" (#148 finding 3 review).
+        env:
+          SKIP_REASON: ${{ steps.scope.outputs.skip_reason }}
+          FILE_COUNT: ${{ steps.scope.outputs.changed_file_count }}
+          BYTES: ${{ steps.scope.outputs.changed_bytes }}
         run: |
-          echo "ℹ️ **MAF audit skipped for this PR.** See this workflow run's annotations for why (only samples/ changed, or the diff exceeded the compiler-bomb cap — CI-side scanners still ran)." > pr-audit-full.md
+          if [ "$SKIP_REASON" = "compiler-bomb-cap" ]; then
+            # F-17 (2026-07-19 security assessment) — exact metrics, and this
+            # phrasing deliberately does NOT say "clean" or imply pass/fail:
+            # the mechanical audit did not run at all for this PR.
+            cat > pr-audit-full.md <<EOF
+          ⚠️ **MAF audit INCOMPLETE for this PR.** The Roslyn-heavy per-file audit was skipped: this PR changes $FILE_COUNT .cs files totaling $BYTES bytes, exceeding the 200-file / 5 MB compiler-bomb cap. CI-side scanners (mcp-scanner, dependency review) still ran. A maintainer should manually review this PR's size and content before merging — the automated mechanical audit has NOT evaluated it.
+          EOF
+          else
+            echo "ℹ️ **MAF audit skipped for this PR.** Only samples/ files changed — they're intentionally buggy demo corpora, not real code to audit." > pr-audit-full.md
+          fi
 
       - name: Record PR number for the comment workflow
         # No `if:` guard — runs whenever the job reaches this point without an
@@ -184,3 +238,18 @@ jobs:
             pr-audit-full.md
             pr-number.txt
           retention-days: 1
+
+      - name: Fail — mechanical audit did not run (compiler-bomb cap)
+        # F-17 (2026-07-19 security assessment) — the samples-only skip is an
+        # intentional, legitimate scope decision and must NOT fail; only the
+        # compiler-bomb-cap skip represents a genuine coverage gap. Previously
+        # BOTH cases exited the job successfully, so a PR could deliberately
+        # exceed the cap to dodge the mechanical audit while every check
+        # stayed green. This step runs LAST, after the artifact is already
+        # uploaded, so maf-pr-audit-comment.yml still posts the explanatory
+        # comment above even though this job's overall conclusion becomes
+        # `failure` (see that workflow's trigger condition).
+        if: steps.scope.outputs.skip_reason == 'compiler-bomb-cap'
+        run: |
+          echo "::error title=MAF audit incomplete::This PR's mechanical audit did not run (compiler-bomb cap exceeded). A maintainer must manually review before merging."
+          exit 1

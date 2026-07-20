@@ -8,11 +8,19 @@ namespace MafDoctor.Commands;
 /// subcommand, extracted from Program.cs so both halves are unit-testable
 /// without spawning a process (the rewriting itself lives in <see cref="AutoFixTool"/>).
 ///
-/// Grammar: <c>autofix-all [path] [--dry-run] [--json]</c>
+/// Grammar: <c>autofix-all [path] [--apply] [--dry-run] [--json]</c>
 /// <list type="bullet">
 ///   <item>The first non-flag token is the path (default: current directory at
 ///         the call site — left null here so the caller decides the default).</item>
-///   <item><c>--dry-run</c> previews the changes without writing any files.</item>
+///   <item><c>--apply</c> writes the changes. Without it, the command previews
+///         only — this is the safe default (F-11, 2026-07-19 security
+///         assessment: writing by default let a client that misread an MCP
+///         confirmation hint, or a human running the wrong command, apply
+///         changes nobody reviewed).</item>
+///   <item><c>--dry-run</c> is kept as an explicit, no-op spelling of the
+///         default so existing scripts and muscle memory keep working
+///         unchanged. If both <c>--apply</c> and <c>--dry-run</c> are given,
+///         preview wins.</item>
 ///   <item><c>--json</c> emits the machine-readable JSON (the MCP-tool shape).
 ///         Default is the human-readable summary produced by <see cref="Format"/>.</item>
 /// </list>
@@ -23,19 +31,24 @@ internal static class AutoFixCli
     {
         string? path = null;
         var json = false;
-        var dryRun = false;
+        var apply = false;
+        var explicitDryRun = false;
 
         // args[0] is "autofix-all"; options start at index 1.
         for (int i = 1; i < args.Length; i++)
         {
             if (args[i] is "--json") { json = true; continue; }
-            if (args[i] is "--dry-run") { dryRun = true; continue; }
+            if (args[i] is "--dry-run") { explicitDryRun = true; continue; }
+            if (args[i] is "--apply") { apply = true; continue; }
             // First non-flag token is the path. The `--` guard means a flag that
             // appears before the path (e.g. `autofix-all --json .`) is never
             // mistaken for the path.
             if (path is null && !args[i].StartsWith("--", StringComparison.Ordinal)) path = args[i];
         }
 
+        // F-11 — preview by default; --apply opts in to writing. --dry-run
+        // always wins if both are given (safety over convenience).
+        var dryRun = explicitDryRun || !apply;
         return (path, json, dryRun);
     }
 
@@ -94,7 +107,12 @@ internal static class AutoFixCli
             sb.AppendLine($"      - {f}");
         sb.AppendLine();
         if (report.DryRun)
-            sb.AppendLine("  Dry run — re-run without --dry-run to apply these changes.");
+            // F-11 (2026-07-19 security assessment, found in a subsequent review
+            // round): dry-run is now the DEFAULT, so "re-run without --dry-run"
+            // was stale/misleading advice for the common case (a user who ran
+            // `autofix-all <path>` with no flags never passed --dry-run in the
+            // first place). --apply is the actual opt-in flag.
+            sb.AppendLine("  Dry run — re-run with --apply to apply these changes.");
         sb.AppendLine("  Next: `maf-doctor doctor .` to re-grade.");
         sb.AppendLine();
         AppendRemediationGuidance(sb);

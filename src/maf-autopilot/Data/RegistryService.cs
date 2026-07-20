@@ -1,3 +1,4 @@
+using MafDoctor.Tools;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -311,7 +312,7 @@ public sealed class RegistryService
                 : StringComparison.Ordinal;
             var resolved = Path.GetFullPath(envPath);
             var roots = allowlist.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            var anyMatch = false;
+            string? matchedRoot = null;
             foreach (var root in roots)
             {
                 if (string.IsNullOrWhiteSpace(root)) continue;
@@ -320,14 +321,50 @@ public sealed class RegistryService
                 if (resolved.StartsWith(rootFull + Path.DirectorySeparatorChar, pathComparison)
                     || resolved.Equals(rootFull, pathComparison))
                 {
-                    anyMatch = true;
+                    matchedRoot = rootFull;
                     break;
                 }
             }
-            if (!anyMatch)
+            if (matchedRoot is null)
                 throw new InvalidOperationException(
                     "MAF_REGISTRY_PATH is outside the allowlist declared by MAF_REGISTRY_PATH_ROOTS. Refusing to load.");
+
+            // F-22 — Path.GetFullPath only collapses `.`/`..` syntactically; it does not
+            // resolve symlinks. A path like "<allowed-root>/link/registry.yaml", where
+            // `link` is a symlinked directory pointing outside the root and the leaf file
+            // itself is a regular file, satisfies both the leaf check above and the
+            // prefix check just above — but physically resolves outside the declared
+            // root. Walk every existing parent segment from the resolved file up to (but
+            // not including) the matched root and reject any reparse point in that chain.
+            if (ParentChainHasReparsePoint(resolved, matchedRoot, pathComparison))
+                throw new InvalidOperationException(
+                    "MAF_REGISTRY_PATH traverses a symlink/reparse point inside the allowlisted root. Refusing to load.");
         }
+    }
+
+    /// <summary>
+    /// Walks every existing directory segment from <paramref name="resolvedLeaf"/>'s
+    /// parent up to (but not including) <paramref name="rootFull"/>, returning
+    /// <c>true</c> if any segment is a symlink/reparse point. Mirrors the parent-chain
+    /// probe in <see cref="PathGuard.ValidateContainment"/>.
+    /// </summary>
+    private static bool ParentChainHasReparsePoint(string resolvedLeaf, string rootFull, StringComparison pathComparison)
+    {
+        var startPath = File.Exists(resolvedLeaf)
+            ? Path.GetDirectoryName(resolvedLeaf) ?? rootFull
+            : resolvedLeaf;
+        var probe = new DirectoryInfo(startPath);
+
+        while (probe is not null
+            && !probe.FullName.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .Equals(rootFull, pathComparison))
+        {
+            if (probe.Exists && (probe.Attributes & FileAttributes.ReparsePoint) != 0)
+                return true;
+            probe = probe.Parent;
+        }
+
+        return false;
     }
 
     private static string ReadYaml()

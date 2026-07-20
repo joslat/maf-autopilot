@@ -416,6 +416,66 @@ public sealed class SemanticKernelDetectorToolTests
         Assert.DoesNotContain(packages, p => p.Id == "Newtonsoft.Json");
     }
 
+    // Round-2 review fixup (F-10/F-20) — XDocument.Load(csproj) / .props) was
+    // unbounded, the same weakness already fixed for MafExplainFinding's
+    // .cs-file path. A pathologically large .csproj or Directory.Packages.props
+    // must be skipped, not fully materialized (twice over: raw bytes + XML DOM).
+    [Fact]
+    public void DetectPackages_CsprojOverSizeCap_SkippedWithoutCrashing()
+    {
+        using var repo = new TempDir(
+            ("Huge.csproj", """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <ItemGroup>
+                    <PackageReference Include="Microsoft.SemanticKernel" Version="1.45.0" />
+                  </ItemGroup>
+                </Project>
+                """));
+        var hugeCsproj = System.IO.Path.Combine(repo.Path, "Huge.csproj");
+        // Sparse length beyond the cap without allocating real bytes on disk —
+        // DetectPackages only inspects FileInfo.Length before deciding to skip.
+        using (var fs = new FileStream(hugeCsproj, FileMode.Open))
+        {
+            fs.SetLength(SemanticKernelDetectorTool.MaxProjectFileBytes + 1);
+        }
+
+        var packages = SemanticKernelDetectorTool.DetectPackages(repo.Path);
+
+        Assert.Empty(packages);
+    }
+
+    [Fact]
+    public void DetectPackages_CentralPackagePropsOverSizeCap_SkippedWithoutCrashing()
+    {
+        using var repo = new TempDir(
+            ("Directory.Packages.props", """
+                <Project>
+                  <ItemGroup>
+                    <PackageVersion Include="Microsoft.SemanticKernel" Version="1.45.0" />
+                  </ItemGroup>
+                </Project>
+                """),
+            ("App.csproj", """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <ItemGroup>
+                    <PackageReference Include="Microsoft.SemanticKernel" />
+                  </ItemGroup>
+                </Project>
+                """));
+        var propsPath = System.IO.Path.Combine(repo.Path, "Directory.Packages.props");
+        using (var fs = new FileStream(propsPath, FileMode.Open))
+        {
+            fs.SetLength(SemanticKernelDetectorTool.MaxProjectFileBytes + 1);
+        }
+
+        // The CPM pin is unreadable (props file skipped), so the PackageReference
+        // resolves to "(unpinned)" rather than crashing or silently vanishing.
+        var packages = SemanticKernelDetectorTool.DetectPackages(repo.Path);
+
+        var sk = Assert.Single(packages, p => p.Id == "Microsoft.SemanticKernel");
+        Assert.Equal("(unpinned)", sk.Version);
+    }
+
     [Fact]
     public void DetectPackages_ResolvesCentralPackageManagementVersion()
     {
@@ -646,6 +706,145 @@ public sealed class SemanticKernelDetectorToolTests
         var result = SemanticKernelDetectorTool.Scan(repo.Path);
         Assert.False(result.SemanticKernelDetected);
         Assert.Contains("No Semantic Kernel usage", result.ToMarkdown());
+    }
+
+    // -------------------------------------------------------------------------
+    // F-10 (2026-07-19 security assessment) — a truncated scan must not render
+    // as an unqualified clean/complete verdict. These construct SkScanResult
+    // directly (rather than forcing Scan() to truncate against real files,
+    // which would need thousands of on-disk files for a fast unit test) since
+    // what matters here is the rendering contract, not re-testing ScanBudget
+    // itself (already covered in SourceFileWalkerTests).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void ToMarkdown_TruncatedWithNoDetections_WarnsInsteadOfClaimingClean()
+    {
+        var result = new SemanticKernelDetectorTool.SkScanResult(
+            Packages: [], Constructs: [], Truncated: true);
+
+        var md = result.ToMarkdown();
+        Assert.DoesNotContain("✅ No Semantic Kernel usage detected", md);
+        Assert.Contains("partial result", md, System.StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ToMarkdown_TruncatedWithDetections_IncludesWarningBanner()
+    {
+        var result = new SemanticKernelDetectorTool.SkScanResult(
+            Packages: [new SkPackage("Microsoft.SemanticKernel", "1.0.0")],
+            Constructs: [new SkConstruct(
+                Kind: "[KernelFunction] plugin method", Strategy: MigrationStrategy.Bridgeable,
+                File: "Plugin.cs", Line: 1, Note: "note", Count: 1)],
+            Truncated: true);
+
+        var md = result.ToMarkdown();
+        Assert.Contains("Scan incomplete", md);
+    }
+
+    [Fact]
+    public void ToMarkdown_NotTruncated_NoWarningBanner()
+    {
+        var result = new SemanticKernelDetectorTool.SkScanResult(
+            Packages: [], Constructs: [], Truncated: false);
+
+        Assert.DoesNotContain("Scan incomplete", result.ToMarkdown());
+    }
+
+    [Fact]
+    public void ToJson_SurfacesTruncatedField()
+    {
+        var truncated = new SemanticKernelDetectorTool.SkScanResult(Packages: [], Constructs: [], Truncated: true);
+        var notTruncated = new SemanticKernelDetectorTool.SkScanResult(Packages: [], Constructs: [], Truncated: false);
+
+        var truncatedJson = JsonSerializer.Serialize(truncated.ToJson());
+        var cleanJson = JsonSerializer.Serialize(notTruncated.ToJson());
+
+        Assert.Contains("\"truncated\":true", truncatedJson);
+        Assert.Contains("\"truncated\":false", cleanJson);
+    }
+
+    [Fact]
+    public void Scan_SmallRepo_NotTruncated()
+    {
+        // Sanity: normal-sized repos (this project's own test fixtures) never
+        // trip the new aggregate cap — MaxTotalBytes defaults to 500 MB.
+        using var repo = new TempDir(("Plain.cs", "public class C { public int X() => 1; }"));
+        var result = SemanticKernelDetectorTool.Scan(repo.Path);
+        Assert.False(result.Truncated);
+    }
+
+    // -------------------------------------------------------------------------
+    // F-10 review follow-up — the budget-injectable Scan overload lets these
+    // exercise REAL truncation (via SourceFileWalker.EnumerateCsFiles actually
+    // stopping early), not just SkScanResult constructed with a hand-set
+    // Truncated bool (which only proves the rendering code reads the flag it's
+    // given, not that Scan() itself ever sets it correctly).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Scan_BudgetInjected_TinyFileCap_ReportsTruncatedForReal()
+    {
+        using var repo = new TempDir(
+            ("A.cs", "public class A { }"),
+            ("B.cs", "public class B { }"),
+            ("C.cs", "public class C { }"));
+
+        var result = SemanticKernelDetectorTool.Scan(
+            repo.Path,
+            pass1Budget: new SourceFileWalker.ScanBudget { MaxFiles = 1 },
+            pass2Budget: new SourceFileWalker.ScanBudget { MaxFiles = 1 });
+
+        Assert.True(result.Truncated);
+    }
+
+    [Fact]
+    public void Scan_Pass1BudgetExhaustedBeforeGlobalUsing_Pass2StillMissesSkContextInScannedFile()
+    {
+        // Deterministic reproduction of the reviewed correctness caveat
+        // documented on Scan(): pass 1 gets a budget that sees ZERO files
+        // (MaxFiles: 0 — true regardless of filesystem enumeration order, so
+        // this isn't a flaky ordering-dependent test), so repoEstablishesSk
+        // stays false even though the repo DOES rely on a global using
+        // elsewhere in spirit. Pass 2 gets a normal budget and DOES read
+        // Agent.cs — but since it has no LOCAL `using Microsoft.SemanticKernel`
+        // of its own, and repoEstablishesSk is false, AnalyzeSource's importsSk
+        // gate is false and the ChatCompletionAgent construct is silently
+        // never recorded, even though the file was genuinely scanned.
+        using var repo = new TempDir(
+            ("GlobalUsings.cs", "global using Microsoft.SemanticKernel;\nglobal using Microsoft.SemanticKernel.Agents;"),
+            ("Agent.cs", "public class Setup { public void M(ChatCompletionAgent agent) { } }"));
+
+        var result = SemanticKernelDetectorTool.Scan(
+            repo.Path,
+            pass1Budget: new SourceFileWalker.ScanBudget { MaxFiles = 0 },
+            pass2Budget: new SourceFileWalker.ScanBudget());
+
+        Assert.True(result.Truncated); // pass 1's budget was genuinely exhausted
+        // The construct that a full, single-pass scan WOULD have found
+        // (see Scan_GlobalUsingsFile_MakesOtherFilesSkContext) is missing —
+        // demonstrating the "in-budget file, silently under-detected" gap.
+        Assert.DoesNotContain(result.Constructs, c => c.Kind.Contains("ChatCompletionAgent", System.StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Scan_DefaultOverload_MatchesBudgetInjectedOverloadWithFreshBudgets()
+    {
+        // Regression guard: the public Scan(repoPath) overload must keep
+        // delegating to fresh default budgets, not silently share state
+        // across calls or drift from the tested overload's behavior.
+        using var repo = new TempDir(
+            ("GlobalUsings.cs", "global using Microsoft.SemanticKernel;\nglobal using Microsoft.SemanticKernel.Agents;"),
+            ("Agent.cs", "public class Setup { public void M(ChatCompletionAgent agent) { } }"));
+
+        var viaDefault = SemanticKernelDetectorTool.Scan(repo.Path);
+        var viaExplicit = SemanticKernelDetectorTool.Scan(
+            repo.Path, new SourceFileWalker.ScanBudget(), new SourceFileWalker.ScanBudget());
+
+        Assert.Equal(viaExplicit.Truncated, viaDefault.Truncated);
+        Assert.Equal(viaExplicit.Constructs.Count, viaDefault.Constructs.Count);
+        Assert.False(viaDefault.Truncated);
+        Assert.Contains(viaDefault.Constructs, c => c.Kind.Contains("ChatCompletionAgent", System.StringComparison.Ordinal));
     }
 
     [Fact]

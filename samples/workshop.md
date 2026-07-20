@@ -82,7 +82,7 @@ Run these in your terminal, one beat at a time. Each beat is 30-60 seconds with 
 | **2** | `dotnet build` | 4 Warning(s), 0 Error(s) — 1 × `CS0618` + 3 × `MAF001` | _"Builds clean — well, with 4 warnings the developer probably dismissed. The analyzer's already firing on three executor methods. We'll see why in a second."_ |
 | **3** | `maf-doctor doctor .` | 🔴 **Grade F** — 7 errors + 3 silent-starvation risks | _"The toolkit grades it: F. Seven anti-pattern errors — and three silent-starvation risks that compile clean and BREAK at runtime. No build warning. No exception. Just silently wrong output."_ |
 | **4** | `maf-doctor autofix-all . --dry-run` | human-readable: 4 files would change, per-rule breakdown (add `--json` for machine output) | _"This is what would change — preview only. Four files, across the mechanical rules. Deterministic. No LLM in this loop."_ |
-| **5** | `maf-doctor autofix-all .` | human-readable: 4 files changed + next step | _"Apply for real. Roslyn rewriters under the hood — same code path you'd trust in a Microsoft refactor extension."_ |
+| **5** | `maf-doctor autofix-all . --apply` | human-readable: 4 files changed + next step | _"Apply for real. Roslyn rewriters under the hood — same code path you'd trust in a Microsoft refactor extension."_ |
 | **6** | `maf-doctor doctor .` | 🟠 **Grade F** — 4 errors + 3 starvation (down from 7+3) | _"Three mechanical errors gone — deterministically, no LLM. Still F: the rest are semantic — a hard-coded key, shared provider state, and the fan-out starvation bugs — and those need judgment. That's the hand-off to the `@maf-migration` agent (next section), which is what drives the grade to A."_ |
 | **7** | `maf-doctor doctor . --plan` | ordered remediation plan | _"And here's the punch list: Phase 1 was the autofix we just ran; Phase 2 is the semantic work, as checkboxes you can paste into a GitHub issue or hand to the agent."_ |
 
@@ -281,7 +281,7 @@ _7 error(s) + 3 silent-starvation risk(s)_
 
 _…and 10 more. Run with `--all` (CLI) or `full: true` (MafDoctor) for every finding._
 
-💡 3 of 13 finding(s) are auto-fixable — apply with `maf-doctor autofix-all .`. The rest need your judgment.
+💡 3 of 13 finding(s) are auto-fixable — apply with `maf-doctor autofix-all . --apply`. The rest need your judgment.
 ```
 
 > **What `MafDoctor` does under the hood:** composes 4 scanners — anti-pattern (Roslyn + regex), fan-out validator (Roslyn), prompt-lint, and token-cap auditor — into a single weighted grade. The verdict is the single most actionable signal in the toolkit.
@@ -386,7 +386,7 @@ git restore samples/maf-1.3-sample/
 Then run the batch auto-fixer from the terminal:
 
 ```bash
-maf-doctor autofix-all .
+maf-doctor autofix-all . --apply
 ```
 
 Expected JSON output:
@@ -653,7 +653,7 @@ The first two are **automatable** (just run the `.tape` scripts). The last two a
    families. Deterministic — no LLM in this loop."
 
 [4:00 — 5:00]  Beat 5 — fix for real
-  maf-doctor autofix-all .
+  maf-doctor autofix-all . --apply
   "Apply for real. Roslyn rewriters — same machinery a Microsoft refactor
    extension would use."
 

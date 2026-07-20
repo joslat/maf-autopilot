@@ -31,7 +31,19 @@ permissions:
 
 jobs:
   comment:
-    if: github.event.workflow_run.conclusion == 'success'
+    # F-14 (2026-07-19 security assessment) — only proceed for a run that was
+    # actually triggered by a `pull_request` event. maf-pr-audit.yml today only
+    # has a `pull_request` trigger, so this is currently always true, but it's
+    # a one-line guard against a future trigger (schedule/dispatch) landing
+    # here with no real PR behind it.
+    #
+    # F-17 — `failure` is included alongside `success` because maf-pr-audit.yml
+    # now deliberately fails its own job when the compiler-bomb cap is
+    # exceeded (so the check is visibly red, not silently green), but still
+    # uploads the explanatory artifact BEFORE that failing step. Excluding
+    # `failure` here would have meant the informative "audit incomplete —
+    # exceeded the cap" comment never gets posted, right when it matters most.
+    if: (github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure') && github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       # maf-pr-audit.yml now ALWAYS uploads this artifact on a successful run
@@ -46,12 +58,60 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # workflow_run's `pull_requests` context is empty for fork PRs (a known
-      # GitHub Actions limitation) — the PR number travels in the artifact
-      # itself (written by maf-pr-audit.yml) instead of being read from the event.
-      - name: Read PR number
+      # F-14 — pr-number.txt is attacker-influenced (it's written inside
+      # maf-pr-audit.yml, which runs Roslyn analysis over fork-supplied source
+      # under a read-only token, but the artifact CONTENT itself isn't
+      # cryptographically bound to anything). Previously this job posted to
+      # whatever number that file contained, with no check that it was even a
+      # number, let alone the PR this run actually audited.
+      #
+      # Fix: resolve the PR number authoritatively from GitHub itself via the
+      # trusted `workflow_run.head_sha` (set by GitHub, not by artifact
+      # content) and cross-check it against the artifact's claim. Disagreement
+      # or an unparseable artifact value both fail closed — better to skip a
+      # comment than post a real audit report to the wrong PR, or attacker-
+      # chosen markdown to an arbitrary one.
+      - name: Resolve and verify PR number
         id: pr
-        run: echo "number=$(cat pr-number.txt)" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          RESOLVED=$(gh api "repos/${{ github.repository }}/commits/$HEAD_SHA/pulls" \
+            --jq '.[0].number' 2>/dev/null || true)
+          if [ -z "$RESOLVED" ] || ! [[ "$RESOLVED" =~ ^[0-9]+$ ]]; then
+            echo "::error::Could not resolve a PR number for head SHA $HEAD_SHA via the GitHub API — refusing to comment."
+            exit 1
+          fi
+
+          ARTIFACT_CLAIM=$(cat pr-number.txt 2>/dev/null || true)
+          if [ "$ARTIFACT_CLAIM" != "$RESOLVED" ]; then
+            echo "::error::Artifact-supplied PR number ($ARTIFACT_CLAIM) does not match the PR GitHub associates with head SHA $HEAD_SHA (#$RESOLVED) — refusing to comment."
+            exit 1
+          fi
+
+          echo "number=$RESOLVED" >> "$GITHUB_OUTPUT"
+
+      - name: Cap comment size and stamp audited SHA
+        # Defense in depth alongside PathGuard-style caps elsewhere in the
+        # project — pr-audit-full.md's content ultimately derives from the
+        # PR's own (possibly adversarial) source tree via `doctor`'s findings.
+        # The GitHub comment API already rejects bodies over 65536 chars, but
+        # failing that way is an opaque action error; truncate here with an
+        # explicit, honest marker instead. Also stamps the head SHA this run
+        # actually audited (from the trusted workflow_run context, not the
+        # artifact) so a reader can tell if the comment is stale against the
+        # PR's current head.
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          MAX_BYTES=60000
+          if [ "$(wc -c < pr-audit-full.md)" -gt "$MAX_BYTES" ]; then
+            head -c "$MAX_BYTES" pr-audit-full.md > pr-audit-full.trunc.md
+            printf '\n\n> ⚠️ **Report truncated** — exceeded %s bytes. See the full log in the workflow run.\n' "$MAX_BYTES" >> pr-audit-full.trunc.md
+            mv pr-audit-full.trunc.md pr-audit-full.md
+          fi
+          printf '\n\n_Audited commit: `%s`_\n' "$HEAD_SHA" >> pr-audit-full.md
 
       - name: Comment on PR
         # SHA-pinned per supply-chain hardening. Verify against tag with:

@@ -3,10 +3,11 @@
 # Anchored to the v1.1 security-hardening release (G1 in the hardening plan):
 # without CODEOWNERS, any contributor (including bot identities with write
 # tokens) could land changes in security-critical paths without an automatic
-# maintainer review. Combined with the existing `maf-release-watcher`
-# direct-to-main lane (intentional design tradeoff, documented in that
-# workflow at line 249), a compromise of the bot identity was unbounded by
-# review.
+# maintainer review. At the time this gate was added, `maf-release-watcher`
+# still pushed straight to main on minor/patch bumps, so a compromise of the
+# bot identity was unbounded by review; that direct-to-main lane was removed
+# on 2026-06-28 (the watcher now always opens a PR), but CODEOWNERS remains
+# the review gate for every other write-scoped path in this list.
 #
 # To activate the gate, also enable "Require review from Code Owners" in the
 # branch protection rule for `main`.
