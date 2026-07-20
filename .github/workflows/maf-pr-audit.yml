@@ -117,6 +117,17 @@ jobs:
         # source tree (not a floating `--prerelease` NuGet install) means the
         # tool doing the auditing is exactly the reviewed code at this commit,
         # not whatever happens to be newest on NuGet at run time.
+        #
+        # continue-on-error: true — round-2 review fixup (mirrors the same
+        # fixup already applied to maf-release-watcher.yml for the identical
+        # F-13 refactor). This job's own audited source can legitimately fail
+        # to compile (that's what build-test.yml, a separate required check,
+        # exists to catch); without this, a broken PR skips every downstream
+        # step here — including "Upload audit result" — so the companion
+        # workflow maf-pr-audit-comment.yml downloads a nonexistent artifact
+        # and crashes with no PR-visible comment instead of the graceful
+        # "audit incomplete" message below.
+        continue-on-error: true
         if: steps.scope.outputs.skip != 'true'
         run: dotnet build src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0
 
@@ -131,13 +142,22 @@ jobs:
 
           MAF_DOCTOR="src/maf-autopilot/bin/Release/net8.0/maf-doctor.dll"
 
-          # Product-scoped (task 4.10 / 3.1): exclude samples/ + test fixtures so
-          # the audit reflects product code, matching the drift detector.
-          # `|| true` keeps the job alive on any error so we still post a sticky
-          # comment with diagnostic content.
-          dotnet "$MAF_DOCTOR" doctor "$GITHUB_WORKSPACE" \
-            --exclude samples/ --exclude .Tests/ --exclude find-the-bug/ \
-            > pr-audit-full.md 2>&1 || true
+          # Defensive check for the continue-on-error build step above: a
+          # broken PR can fail to compile maf-doctor itself. Surface that
+          # plainly instead of letting `dotnet <missing-dll>` produce a
+          # cryptic "file not found" error in the sticky comment.
+          if [ ! -f "$MAF_DOCTOR" ]; then
+            echo "⚠️ **MAF audit INCOMPLETE for this PR.** maf-doctor failed to build from this checkout (see the 'Build maf-doctor from this checkout' step above) — the mechanical audit could not run. This is usually caused by a compile error in the PR; check the build-test.yml required check for details." > pr-audit-full.md
+            echo "maf-doctor build did not produce $MAF_DOCTOR — see the step above."
+          else
+            # Product-scoped (task 4.10 / 3.1): exclude samples/ + test fixtures so
+            # the audit reflects product code, matching the drift detector.
+            # `|| true` keeps the job alive on any error so we still post a sticky
+            # comment with diagnostic content.
+            dotnet "$MAF_DOCTOR" doctor "$GITHUB_WORKSPACE" \
+              --exclude samples/ --exclude .Tests/ --exclude find-the-bug/ \
+              > pr-audit-full.md 2>&1 || true
+          fi
 
           # Defensive fallback: if the doctor invocation produced nothing
           # (empty file), write an explanatory message rather than letting the

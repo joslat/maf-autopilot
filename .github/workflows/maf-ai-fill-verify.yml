@@ -81,6 +81,15 @@ jobs:
         # already being validated is strictly more correct than a floating
         # `--prerelease` NuGet install (which also has a `pull-requests: write`
         # token in scope for the sticky-comment step below it).
+        #
+        # continue-on-error: true — round-2 review fixup (same pattern as
+        # maf-release-watcher.yml / maf-pr-audit.yml). Without this, a build
+        # failure here skipped every downstream step (including the sticky
+        # PR comment steps, which all implicitly require success()), so an
+        # in-scope PR got a red required check with no explanation at all.
+        # The "Run verify-registry" step below now detects the missing DLL
+        # and reports a clear message instead.
+        continue-on-error: true
         if: steps.scope.outputs.in_scope == 'true'
         run: dotnet build src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0
 
@@ -109,8 +118,13 @@ jobs:
         run: |
           set +e
           MAF_DOCTOR="src/maf-autopilot/bin/Release/net8.0/maf-doctor.dll"
-          OUTPUT=$(dotnet "$MAF_DOCTOR" verify-registry 2>&1)
-          EXIT=$?
+          if [ ! -f "$MAF_DOCTOR" ]; then
+            OUTPUT="maf-doctor failed to build from this checkout (see the 'Build maf-doctor from this checkout' step above) — verification could not run. This is usually caused by a compile error in the PR."
+            EXIT=1
+          else
+            OUTPUT=$(dotnet "$MAF_DOCTOR" verify-registry 2>&1)
+            EXIT=$?
+          fi
           echo "$OUTPUT"
           # F-29 (2026-07-19 security assessment) — OUTPUT can echo content
           # derived from the PR's own registry.yaml (a fork-supplied, possibly
