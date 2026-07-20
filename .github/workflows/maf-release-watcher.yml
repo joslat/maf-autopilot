@@ -139,21 +139,30 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write           # commit the watcher's auto-generated registry/guide updates
-      pull-requests: write      # (reserved for future PR-based flow)
+      pull-requests: write      # `gh pr create`/`gh pr edit` for the scaffold PR (2026-06-28 "C" refactor)
       issues: write             # Phase 3.2 — escalation issue for major bumps
-      actions: write            # required for `gh workflow run maf-ai-fill-todos.yml` —
-                                # without this the cross-workflow dispatch fails with
-                                # HTTP 403 "Resource not accessible by integration".
-                                # Discovered 2026-05-17 during live-fire test of MAF 1.6.1.
+      # Round-3 review fixup — actions: write REMOVED. It was granted for
+      # `gh workflow run maf-ai-fill-todos.yml` (discovered 2026-05-17), but
+      # that cross-workflow dispatch was removed by the 2026-06-28 "C"
+      # refactor ("we no longer auto-dispatch a SEPARATE Copilot fill PR off
+      # main" — see "Summarize next steps" below). Grepped the whole file:
+      # no remaining use of the Actions API. Least-privilege — don't carry a
+      # scope this job (already contents/pull-requests/issues write plus a
+      # maintainer PAT) doesn't use.
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
-          # Use the maintainer's PAT (admin), not the workflow's GITHUB_TOKEN,
-          # so the final `git push origin HEAD:main` can bypass branch
-          # protection's required-status-check rule. Classic branch protection
-          # (which this repo uses) has no bypass-list — only Rulesets do. But
-          # admin users DO bypass when enforce_admins=False, and this PAT is
-          # owned by the maintainer.
+          # Use the maintainer's PAT, not the workflow's GITHUB_TOKEN. Round-3
+          # review fixup: this comment used to justify the PAT as needed to
+          # bypass branch protection on a direct push to main — stale since
+          # the 2026-06-28 "C" refactor (see "Commit to a release-watcher
+          # branch and open a PR" below), which pushes to a per-version
+          # branch and opens a PR instead. The PAT is still required, for a
+          # different reason: GitHub does not trigger `on: pull_request`
+          # workflows (build-test.yml, maf-pr-audit.yml, mcp-scanner.yml —
+          # all required checks) for a PR opened with the default
+          # GITHUB_TOKEN. Without a PAT, the scaffold PR this job opens would
+          # sit with none of its required checks ever running.
           #
           # Commit identity is still github-actions[bot] (set explicitly via
           # `git config` below). The PAT is only used for the push auth header.

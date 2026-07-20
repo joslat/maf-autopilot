@@ -230,6 +230,15 @@ jobs:
         # order" security property is unchanged, just no longer position-
         # fragile. Never false-negatives either way (verified: any extra
         # non-blank line, blank-padded or not, still fails closed).
+        #
+        # Round-3 review fixup: line 2's check used `grep -qF` (unanchored
+        # substring match) while line 1's used `grep -qE '^...$'` (fully
+        # anchored) — the exact "substring containment, not exact shape" bug
+        # this whole gate exists to avoid, just on the other line. A dirty
+        # line 2 that merely CONTAINS the safe phrase (e.g. a suppressed-
+        # count suffix, or a warning prefix) previously passed. Verified with
+        # a working repro before this fix, and re-verified against 10
+        # synthetic scenarios after: both lines are now anchored identically.
         run: |
           if [ ! -s scan-results.txt ]; then
             echo "::error::scan-results.txt is empty — the scan step likely crashed before producing output. Treating as a failure (fail closed)."
@@ -240,7 +249,7 @@ jobs:
           NONBLANK_COUNT=$(printf '%s\n' "$NONBLANK" | grep -c . || true)
           if [ "$NONBLANK_COUNT" -ne 2 ] \
              || ! printf '%s\n' "$NONBLANK" | sed -n '1p' | grep -qE '^Total tools scanned: [0-9]+$' \
-             || ! printf '%s\n' "$NONBLANK" | sed -n '2p' | grep -qF 'No results match the specified filters.'; then
+             || ! printf '%s\n' "$NONBLANK" | sed -n '2p' | grep -qE '^No results match the specified filters\.$'; then
             echo "::error::mcp-scanner reported findings (or produced an unexpected output shape) — see the 'Run mcp-scanner' step output above (and the PR comment, if this is a pull_request run)."
             exit 1
           fi

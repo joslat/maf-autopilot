@@ -70,6 +70,10 @@ jobs:
           fi
 
       - name: Setup .NET
+        # Round-3 review fixup — continue-on-error so a transient setup-dotnet
+        # failure doesn't skip every downstream step via the implicit
+        # success() gate (same reasoning as the Restore/Build steps below).
+        continue-on-error: true
         if: steps.scope.outputs.in_scope == 'true'
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1  # v5.4.0
         with:
@@ -103,12 +107,23 @@ jobs:
         if: steps.scope.outputs.in_scope == 'true'
         run: dotnet build src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0 --no-restore
 
+      # Round-3 review fixup — continue-on-error on both Python-toolchain
+      # steps below, matching the .NET steps above. Without this, a transient
+      # setup-python/pip failure skipped "Run cross-file consistency check"
+      # and every step after it via the implicit success() gate, leaving a
+      # red required check with no PR comment. "Run cross-file consistency
+      # check" already has its own continue-on-error + exit-code capture, so
+      # it still runs, fails informatively (python3/pyyaml missing surfaces
+      # in its captured output), and the existing failure-comment steps fire
+      # instead of being skipped.
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        continue-on-error: true
         if: steps.scope.outputs.in_scope == 'true'
         with:
           python-version: '3.12'
 
       - name: Install Python deps for cross-file check
+        continue-on-error: true
         if: steps.scope.outputs.in_scope == 'true'
         # F-13 — exact-pinned rather than floating latest.
         run: pip install pyyaml==6.0.1

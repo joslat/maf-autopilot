@@ -105,6 +105,13 @@ jobs:
           echo "skip=false" >> $GITHUB_OUTPUT
 
       - name: Setup .NET
+        # Round-3 review fixup — continue-on-error so a transient setup-dotnet
+        # failure (network/registry hiccup) doesn't skip every downstream step
+        # via the implicit success() gate, which would leave this job's
+        # required check red with no artifact and no PR comment (the same
+        # class of gap the Restore/Build continue-on-error below already
+        # closes for build/restore failures specifically).
+        continue-on-error: true
         if: steps.scope.outputs.skip != 'true'
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1  # v5.4.0
         with:
