@@ -185,12 +185,21 @@ jobs:
           persist-credentials: false
 
       - name: Setup .NET
+        # Round-4 review fixup — continue-on-error, matching this same file's
+        # established pattern on Restore/Build below (a transient
+        # network/registry hiccup here previously hard-aborted the whole job
+        # — including the version-bump PR it exists to open — instead of
+        # degrading gracefully the way "Run diff" (continue-on-error: true
+        # already, next step) is explicitly designed to tolerate a missing
+        # dotnet-inspect).
+        continue-on-error: true
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1  # v5.4.0
         with:
           # Net8 LTS — install-only; we just run the published tool here.
           dotnet-version: '8.0.x'
 
       - name: Install dotnet-inspect
+        continue-on-error: true
         run: |
           # Install dotnet-inspect directly as a global tool.
           #

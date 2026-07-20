@@ -16,6 +16,9 @@ name: ci-invariants
 # Job  (4) requires workflow_dispatch inputs to flow via env: redirect, not
 #          ${{ inputs.* }} substitution inside run: blocks.
 # Job  (5) requires every workflow to declare an explicit permissions: scope.
+# Job  (6) (F-13) validates every workflow YAML parses cleanly (no duplicate
+#          mapping keys), runs actionlint, and compiles + tests the repo's
+#          Python helper scripts.
 #
 # Allowlists are explicit and short. To add an entry, justify in the PR.
 
