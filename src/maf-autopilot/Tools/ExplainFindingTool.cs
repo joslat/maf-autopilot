@@ -25,6 +25,15 @@ public sealed class ExplainFindingTool
     private const int DefaultContext = 8;
     private const int MaxContext = 30;
 
+    // F-20 — matches SourceFileWalker.ScanBudget.MaxFileBytes: the primary
+    // recursive walker has capped individual files at this size since Phase
+    // E, but this tool's direct, containment-checked-but-otherwise-unbounded
+    // File.ReadAllText bypassed that budget entirely. A single pathologically
+    // large .cs file (deeply-nested generics, a giant generated source file,
+    // or one deliberately crafted to be huge) could still be fully
+    // materialized in memory before this fix.
+    private const long MaxFileBytes = 10 * 1024 * 1024; // 10 MB
+
     [McpServerTool(ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("""
         Deep-dive a SINGLE MAF Doctor finding into grounded context for explaining
@@ -45,9 +54,14 @@ public sealed class ExplainFindingTool
           - line: 1-based line number of the finding.
           - context: lines of surrounding code on each side (default 8, max 30).
 
-        Returns a markdown report. Lines that look like they contain a secret
-        (API keys, connection-string secrets, tokens, JWTs, PEM private keys) are
-        redacted, not echoed — best-effort, not exhaustive.
+        Returns a markdown report, including the source lines around the finding.
+        Lines that look like they contain a secret (API keys, connection-string
+        secrets, tokens, JWTs, PEM private keys) are redacted, not echoed — this
+        is best-effort, not exhaustive, so treat it as a safety net, not a
+        guarantee. The returned source is sent to whichever model is driving
+        this MCP session — do not point this at a repository where that isn't
+        acceptable. `ReadOnly=true` describes filesystem effects only, not data
+        exposure: it does not mean "safe to auto-approve" for a sensitive repo.
         """)]
     public string MafExplainFinding(
         [Description("Absolute path to the repository root.")] string repoPath,
@@ -74,6 +88,11 @@ public sealed class ExplainFindingTool
             return $"Error: MafExplainFinding only inspects C# source (.cs) files; got `{file}`.";
 
         if (!File.Exists(full)) return $"Error: file not found under the repository: `{file}`.";
+
+        var length = new FileInfo(full).Length;
+        if (length > MaxFileBytes)
+            return $"Error: `{file}` is {length:N0} bytes, over the {MaxFileBytes:N0}-byte cap for MafExplainFinding. " +
+                   "Findings on very large generated files are better inspected directly.";
 
         var source = File.ReadAllText(full);
         var rel = file.Replace('\\', '/');

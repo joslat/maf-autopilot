@@ -62,6 +62,48 @@ public class ExplainFindingToolTests
     }
 
     [Fact]
+    public void OversizedFile_RejectedWithoutReading()
+    {
+        // F-20 — a file over the 10 MB cap must be refused before
+        // File.ReadAllText, not merely truncated after.
+        var dir = NewTempDir();
+        try
+        {
+            var path = Path.Combine(dir, "Huge.cs");
+            using (var fs = new FileStream(path, FileMode.Create))
+            {
+                fs.SetLength(10 * 1024 * 1024 + 1);
+            }
+
+            var output = new ExplainFindingTool().MafExplainFinding(dir, "Huge.cs", 1);
+
+            Assert.StartsWith("Error:", output, StringComparison.Ordinal);
+            Assert.Contains("byte cap", output, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void FileAtCap_StillProcessed()
+    {
+        // Boundary check: exactly at the cap must still succeed (only
+        // strictly-over is rejected).
+        var dir = NewTempDir();
+        try
+        {
+            var path = Path.Combine(dir, "AtCap.cs");
+            var content = "public class C { int X() => 1; }" + new string(' ', 10 * 1024 * 1024 - 40) + "\n";
+            File.WriteAllText(path, content);
+            Assert.True(new FileInfo(path).Length <= 10 * 1024 * 1024);
+
+            var output = new ExplainFindingTool().MafExplainFinding(dir, "AtCap.cs", 1);
+
+            Assert.DoesNotContain("byte cap", output, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
     public void NoFindingAtLine_ReturnsGracefulMessage()
     {
         var dir = NewTempDir();
