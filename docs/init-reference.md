@@ -19,7 +19,7 @@ maf-doctor init --with-cursor   # also the Cursor rule
 |---|---|---|---|---|
 | `.vscode/mcp.json` | **VS Code / Copilot** | `servers` → `{ "type": "stdio", "command": "maf-doctor" }` | **merged** (your other servers preserved) | Registers the MCP server so Copilot Chat gets live tool calls. |
 | `.mcp.json` | **Claude Code** | `mcpServers` → `{ "command": "maf-doctor" }` (no `type`) | **merged** | Same server, Claude Code's project-config format. |
-| `.github/instructions/maf-doctor.instructions.md` | **Copilot** | front-matter `applyTo: '**'` | **overwritten** | Auto-loaded steering: "for MAF code, call `MafDoctor` first, use the registry before fixing CS0618, prefer `MafAutoFixAll --dry-run`…". |
+| `.github/instructions/maf-doctor.instructions.md` | **Copilot** | front-matter `applyTo: '**'` | **overwritten** | Auto-loaded steering: "for MAF code, call `MafDoctor` first, use the registry before fixing CS0618, `MafAutoFixAll(repoPath, dryRun: false)` to actually apply the mechanical fixes (previews by default)…". |
 | `.claude/maf-doctor.md` + one `@import` line in `CLAUDE.md` | **Claude Code** | sidecar file + import | sidecar **overwritten**; import added **once** | Same steering; Claude Code auto-loads `CLAUDE.md`, which pulls in the sidecar. Your own `CLAUDE.md` body is never edited. |
 | `AGENTS.md` | **GitHub Copilot coding agent, Cursor, and any other agentskills.io tool** | `<!-- BEGIN maf-doctor -->…<!-- END maf-doctor -->` managed block | block **replaced in place** | Steering for tools that read `AGENTS.md`. Content outside the block is left alone. |
 | `.cursor/rules/maf-doctor.mdc` *(only with `--with-cursor`)* | **Cursor** | `.mdc` front-matter (`alwaysApply: true`) | **overwritten** | A dedicated, more specific Cursor rule — a reinforcing layer on top of the `AGENTS.md` block above (Cursor reads both), not the only path to Cursor steering. |
@@ -40,6 +40,11 @@ maf-doctor init --with-cursor   # also the Cursor rule
 - **Managed entry is repaired:** if the `maf-doctor` entry already exists but points at an old command, has stale args, or was written by an older `maf-doctor`, init rewrites only that managed entry and preserves unrelated servers. The entry carries `MAF_DOCTOR_INIT_VERSION` so the MCP startup/status check can distinguish "tool package is current" from "this workspace only needs init refreshed."
 - **Corruption-safe:** if an existing config can't be parsed, init backs it up to `*.bak.<timestamp>` before writing (and caps the read at 1 MB so a malformed file can't OOM the host).
 - **Re-runnable:** run `init` again any time to refresh the steering to the installed version — sidecars are rewritten, the `CLAUDE.md` import and `AGENTS.md` block are upserted, never duplicated.
+
+## Environment variables
+
+- **`MAF_DOCTOR_WORKSPACE_ROOTS`** — `init` writes this into the MCP server entry's `env` block (first-time-only; re-running `init` never narrows a value you've since broadened) set to the initialized repo's absolute path. It scopes which absolute paths an MCP-connected agent can point tools at: filesystem roots and your home directory are always rejected regardless of configuration, and any tool call outside the configured root(s) is refused. **MCP-only** — a human running `maf-doctor` directly at their own shell is unaffected; this is a containment boundary for what an agent can reach through the MCP server, not a general path restriction. To scope one server to multiple repos, edit the value to a `;`-separated list of absolute paths.
+- **`MAF_DOCTOR_ALLOW_TOOL_DOWNLOAD`** — not written by `init`; set this yourself if you want `MafDiffPackage`/`MafPreUpgradeDryRun`/`registry-extract` to fall back to downloading and running `dnx dotnet-inspect@<pinned-version>` when `dotnet-inspect` isn't already installed. Default (unset) is off — those tools instead return install instructions rather than silently fetching and executing a package.
 
 ## Update / init freshness checks
 
