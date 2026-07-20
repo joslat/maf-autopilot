@@ -14,12 +14,25 @@ namespace MafDoctor.Tools;
 ///   3. Concurrent stdout + stderr drain to avoid pipe-buffer deadlock
 ///      (the classic "synchronous ReadToEnd on stdout while stderr fills up"
 ///      hang).
-///   4. Bounded output (16 MB cap) to protect against pathological build logs.
+///   4. Bounded output (16M-character cap) to protect against pathological
+///      build logs.
 /// </summary>
 internal static class ProcessRunner
 {
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(5);
-    private const int MaxBytes = 16 * 1024 * 1024;
+
+    // Round-2 review fixup (F-08) — this was named/documented as MaxBytes and
+    // described as a "16 MB cap", but SharedCharBudget consumes .NET `char`
+    // units (UTF-16 code units) read from the pipe, not UTF-8 bytes. For
+    // ASCII-heavy output the two are near-identical; for heavy non-ASCII
+    // output (e.g. CJK text, where one UTF-16 code unit can decode to a
+    // multi-byte UTF-8 sequence) the actual pipe bytes consumed before this
+    // cap kicks in can run several times past the number the name implied.
+    // The memory-safety property this exists for is unaffected either way —
+    // retained managed memory is bounded to MaxChars UTF-16 code units
+    // (a fixed, deterministic ceiling) regardless of the source encoding —
+    // so this is a naming/message-accuracy fix, not a behavior change.
+    private const int MaxChars = 16 * 1024 * 1024;
 
     public static (int ExitCode, string Output) RunDotnetBuild(string projectOrSolutionPath)
     {
@@ -155,7 +168,7 @@ internal static class ProcessRunner
         // budget (matching the prior "16 MB of combined output" contract) and keep
         // consuming-and-discarding past the cap so a chatty child can't block on a
         // full pipe waiting for a drain that stopped early.
-        var budget = new SharedCharBudget(MaxBytes);
+        var budget = new SharedCharBudget(MaxChars);
         var stdoutTask = DrainBoundedAsync(p.StandardOutput, budget);
         var stderrTask = DrainBoundedAsync(p.StandardError, budget);
 
@@ -174,7 +187,7 @@ internal static class ProcessRunner
 
         var combined = stdout + Environment.NewLine + stderr;
         if (stdoutTruncated || stderrTruncated)
-            combined += Environment.NewLine + $"⚠️ Output truncated at {MaxBytes / (1024 * 1024)} MB.";
+            combined += Environment.NewLine + $"⚠️ Output truncated at {MaxChars:N0} characters.";
 
         return (p.ExitCode, combined);
     }
@@ -201,7 +214,8 @@ internal static class ProcessRunner
 
     /// <summary>
     /// Thread-safe shared cap consumed by both the stdout and stderr drains, so the
-    /// combined output — not each stream independently — stays under <see cref="MaxBytes"/>.
+    /// combined output — not each stream independently — stays under <see cref="MaxChars"/>
+    /// UTF-16 characters (not UTF-8 bytes — see the constant's doc comment).
     /// </summary>
     internal sealed class SharedCharBudget(int maxChars)
     {
