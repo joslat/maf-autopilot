@@ -12,10 +12,11 @@ name: MCP server security scan (Cisco mcp-scanner)
 #     tools. That's expensive enough (build + restore + dotnet run + scan)
 #     that we don't want it on every push to a feature branch — only on PRs
 #     against main, where the cost is paid once per merge candidate.
-#   - Failure is informational at first (continue-on-error: true) — we want
-#     to surface findings as a PR annotation without blocking merge during
-#     the initial rollout. After 2 weeks of clean runs, the maintainer can
-#     flip this to hard-fail.
+#   - Failure was informational at first (continue-on-error: true), to surface
+#     findings as a PR annotation without blocking merge during the initial
+#     rollout. PROMOTED TO HARD-FAIL on 2026-07-20 after 5 consecutive clean
+#     runs (see the job-level comment below for the exact criterion and the
+#     rollback playbook if a false-positive lands post-promotion).
 
 on:
   pull_request:
@@ -220,16 +221,26 @@ jobs:
         # whole (safe) story. Now requires the file to consist of exactly
         # those two non-blank lines, in that shape — any additional non-blank
         # line fails closed instead of passing.
+        #
+        # Round-2 review fixup: that rewrite anchored to fixed line POSITIONS
+        # (sed -n '1p'/'2p' against the raw file), so a leading or interstitial
+        # blank line — still only 2 non-blank lines total — false-failed a
+        # genuinely clean scan. Strip blank lines first, then check shape
+        # against what remains; the "exactly 2 lines, this exact content, in
+        # order" security property is unchanged, just no longer position-
+        # fragile. Never false-negatives either way (verified: any extra
+        # non-blank line, blank-padded or not, still fails closed).
         run: |
           if [ ! -s scan-results.txt ]; then
             echo "::error::scan-results.txt is empty — the scan step likely crashed before producing output. Treating as a failure (fail closed)."
             exit 1
           fi
 
-          NONBLANK=$(grep -c . scan-results.txt || true)
-          if [ "$NONBLANK" -ne 2 ] \
-             || ! sed -n '1p' scan-results.txt | grep -qE '^Total tools scanned: [0-9]+$' \
-             || ! sed -n '2p' scan-results.txt | grep -qF 'No results match the specified filters.'; then
+          NONBLANK=$(grep -v '^[[:space:]]*$' scan-results.txt || true)
+          NONBLANK_COUNT=$(printf '%s\n' "$NONBLANK" | grep -c . || true)
+          if [ "$NONBLANK_COUNT" -ne 2 ] \
+             || ! printf '%s\n' "$NONBLANK" | sed -n '1p' | grep -qE '^Total tools scanned: [0-9]+$' \
+             || ! printf '%s\n' "$NONBLANK" | sed -n '2p' | grep -qF 'No results match the specified filters.'; then
             echo "::error::mcp-scanner reported findings (or produced an unexpected output shape) — see the 'Run mcp-scanner' step output above (and the PR comment, if this is a pull_request run)."
             exit 1
           fi
