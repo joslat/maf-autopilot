@@ -144,8 +144,33 @@ internal static class SafeWorkspaceWriter
             ?? throw new ArgumentException("destinationPath has no parent directory.", nameof(destinationPath));
         Directory.CreateDirectory(dir);
 
-        using var destStream = new FileStream(resolved, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        // Round-3 review fixup — open the source BEFORE creating the destination.
+        // The prior ordering opened the destination (FileMode.CreateNew, which
+        // creates the file immediately) first, so a missing/unreadable
+        // sourcePath threw only after an orphaned, zero-byte file already
+        // existed at the destination. Opening the source first means that
+        // failure now propagates before the destination is ever touched.
         using var srcStream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        srcStream.CopyTo(destStream);
+
+        var destStream = new FileStream(resolved, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        try
+        {
+            using (destStream)
+            {
+                srcStream.CopyTo(destStream);
+            }
+        }
+        catch
+        {
+            // destStream is only non-null and open past this point once
+            // FileMode.CreateNew has actually succeeded — i.e. we know we
+            // created this file ourselves, not that it pre-existed (CreateNew
+            // throws before creating anything if the destination already
+            // exists, and that throw happens outside this try). Safe to clean
+            // up an entry that failed mid-copy without risking a pre-existing
+            // file that was never ours to touch.
+            try { if (File.Exists(resolved)) File.Delete(resolved); } catch { /* best-effort cleanup */ }
+            throw;
+        }
     }
 }

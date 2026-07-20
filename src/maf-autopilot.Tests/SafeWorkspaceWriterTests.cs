@@ -225,6 +225,41 @@ public sealed class SafeWorkspaceWriterTests : IDisposable
         Assert.Equal("must not be overwritten", File.ReadAllText(dest));
     }
 
+    // Round-3 review fixup — CopyNew used to open the destination
+    // (FileMode.CreateNew, which creates the file immediately) BEFORE the
+    // source, so a missing source left an orphaned zero-byte file behind at
+    // the destination. Fixed by opening the source first; these two tests
+    // pin both halves of that fix.
+    [Fact]
+    public void CopyNew_SourceDoesNotExist_ThrowsAndLeavesNoOrphanFile()
+    {
+        var source = Path.Combine(_root, "does-not-exist.txt");
+        var dest = Path.Combine(_root, "backup.txt");
+
+        Assert.Throws<FileNotFoundException>(() => SafeWorkspaceWriter.CopyNew(_root, source, dest));
+        Assert.False(File.Exists(dest));
+    }
+
+    [Fact]
+    public void CopyNew_DestinationAlreadyExists_LeavesNoDestinationSideEffectFromFailedCreate()
+    {
+        // The catch-and-cleanup path in CopyNew must only ever delete a file
+        // IT created (mid-copy failure) — never a pre-existing destination
+        // that FileMode.CreateNew itself refused to touch. This is the
+        // regression the "delete on any failure" cleanup could introduce if
+        // written naively (delete-on-catch without checking whether create
+        // actually succeeded first).
+        var source = Path.Combine(_root, "source.txt");
+        File.WriteAllText(source, "new content");
+        var dest = Path.Combine(_root, "existing.txt");
+        File.WriteAllText(dest, "PRE-EXISTING — must survive untouched");
+
+        Assert.Throws<IOException>(() => SafeWorkspaceWriter.CopyNew(_root, source, dest));
+
+        Assert.True(File.Exists(dest));
+        Assert.Equal("PRE-EXISTING — must survive untouched", File.ReadAllText(dest));
+    }
+
     [Fact]
     public void CopyNew_SymlinkedTargetFile_RefusesWithoutFollowing()
     {
