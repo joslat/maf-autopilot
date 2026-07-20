@@ -232,7 +232,6 @@ Several `docs/security.md` claims had drifted from the implementation they descr
 ## 5. Acknowledged residual gaps
 
 - ❌ **No sandbox around `dotnet build`** — `MafRunCs0618Hunt` now correctly annotated `ReadOnly=false, OpenWorld=true` so MCP-spec-compliant clients prompt before invoking. True OS sandboxing remains out of scope for an OSS .NET CLI. Users running maf-doctor on untrusted repos should sandbox externally (devcontainer, AppArmor, etc.).
-- ❌ **Direct-to-main commits by `maf-release-watcher.yml`** — intentional design tradeoff documented at watcher line 249 (dated 2026-05-12). Acceptable for solo-maintainer state; revisit if external maintainers join.
 - ❌ **Rewriter pure-syntax matching** — `DefaultAzureCredentialRewriter`/`FanInArgOrderRewriter` semantic-model upgrade deferred to v1.2.x (significant refactor; bounded by `--dry-run` default + idempotence tests).
 - ✅ **`ProcessRunner` streaming output cap** — closed in the 2026-07-19 pass (§3.15); memory is now bounded during the read, not just the returned string.
 - ❌ **`ProcessRunner` env scrubbing** — still open. Subprocess environment inheritance from the MCP host is not filtered before spawning `dotnet`/`dotnet-inspect`/`git`.

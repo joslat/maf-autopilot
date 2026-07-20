@@ -693,9 +693,9 @@ jobs:
 - **Promote from advisory to hard-fail after N consecutive clean runs** (we use 5) — **but verify the criterion for real, not from job status alone.** We did this for maf-doctor itself (2026-07-20): if your scan step swallows the scanner's own exit code with `|| true` (see why above — its exit-code semantics for "found something" are undocumented, and you don't want a benign CLI hiccup to silently drop your only evidence), then a "green" job history proves nothing about whether the scans were actually clean. Pull the *actual scanner output* for your candidate runs (`gh api repos/{owner}/{repo}/actions/jobs/{id}/logs`, not just `gh run list`) and confirm each one's content, not just its conclusion, before removing `continue-on-error`. Once promoted, put the actual pass/fail decision in a separate final step (as above) that checks the file's exact shape — a `grep -q` for the clean-marker phrase alone would still pass a hypothetical future output that mixes the clean marker with real findings elsewhere in the file, since substring presence doesn't rule out other content.
 - **Rollback playbook:** if a false-positive lands post-flip, restore `continue-on-error: true` on the scan step AS A SHORT-TERM UNBLOCK, open an issue documenting the YARA rule that fired, triage within 1 week (suppress upstream, refactor on our side, or pin scanner version). The triage-not-suppress posture preserves the gate's signal value.
 
-### 4.2 CI invariants — lock the code-side hardening in five jobs
+### 4.2 CI invariants — lock the code-side hardening in six jobs
 
-Beyond the external scanner, every code-side invariant from §2 should be enforced by a CI grep-guard. The maf-doctor pattern is one workflow with five jobs:
+Beyond the external scanner, every code-side invariant from §2 should be enforced by a CI grep-guard. The maf-doctor pattern is one workflow with six jobs:
 
 | Job | What it locks |
 |---|---|
@@ -704,6 +704,7 @@ Beyond the external scanner, every code-side invariant from §2 should be enforc
 | `enumeration-options` | Every recursive `Directory.EnumerateFiles/GetFiles(..., SearchOption.AllDirectories)` passes `EnumerationOptions` (so `AttributesToSkip = ReparsePoint` can be enforced). |
 | `workflow-input-redirect` | No `${{ inputs.* \| github.event.inputs.* \| needs.*.outputs.* \| steps.*.outputs.* }}` inside `run:` blocks. |
 | `permissions-required` | Every workflow declares an explicit `permissions:` scope (top-level or per-job). |
+| `lint-workflows-and-scripts` | Every workflow YAML parses cleanly (no duplicate mapping keys — GitHub's parser rejects those as a `startup_failure`); `actionlint`; the repo's Python helper scripts compile and their unit tests pass. |
 
 Implementation tips:
 - **Inline Python heredocs work fine** on GHA Ubuntu runners. Use `<<'PY'` (single-quoted) so `$` and backticks aren't shell-expanded.
@@ -823,7 +824,7 @@ Copy-paste this into your repo's `SECURITY-CHECKLIST.md` and tick items as they 
 
 ### CI
 
-- [ ] `.github/workflows/ci-invariants.yml` with 5 jobs (§4.2).
+- [ ] `.github/workflows/ci-invariants.yml` with 6 jobs (§4.2).
 - [ ] Every `workflow_dispatch` workflow has a `validate-inputs` job (`permissions: {}`).
 - [ ] Every `${{ }}` template that flows into a `run:` block uses `env:` redirect (covers `inputs.*` / `needs.*.outputs.*` / `steps.*.outputs.*`).
 - [ ] Every third-party action SHA-pinned with a trailing tag comment.
@@ -926,5 +927,5 @@ The complete source list, with one-line descriptions of what each names:
 - [`docs/security/threat-model.md`](security/threat-model.md) — the deeper technical record for maf-doctor's specific threat surface.
 - [`CONTRIBUTING.md`](../CONTRIBUTING.md) — the contributor-facing security rubric + helper composition decision tree.
 - [`CHANGELOG.md`](../CHANGELOG.md) — the per-release closure list.
-- [`.github/workflows/ci-invariants.yml`](../.github/workflows/ci-invariants.yml) — the five-job CI invariant pattern in production.
+- [`.github/workflows/ci-invariants.yml`](../.github/workflows/ci-invariants.yml) — the six-job CI invariant pattern in production.
 - [`.github/workflows/mcp-scanner.yml`](../.github/workflows/mcp-scanner.yml) — the Cisco mcp-scanner PR + weekly cron wiring.
