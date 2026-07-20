@@ -139,7 +139,7 @@ public class AutoFixCliTests
         // Pin the apply-vs-dry-run wording split in the OTHER direction too: the real-apply
         // path must NOT leak the dry-run verb or footer.
         Assert.DoesNotContain("would change", output);
-        Assert.DoesNotContain("re-run without --dry-run", output);
+        Assert.DoesNotContain("re-run with --apply", output);
     }
 
     [Fact]
@@ -163,7 +163,10 @@ public class AutoFixCliTests
 
         Assert.Contains("would change", output);
         Assert.Contains("dry run", output, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("re-run without --dry-run", output);
+        // F-11 follow-up: dry-run is now the default, so the message must point
+        // to --apply (the actual opt-in), not "re-run without --dry-run" (stale
+        // advice for the common case of a user who never passed --dry-run).
+        Assert.Contains("re-run with --apply", output);
     }
 
     [Fact]

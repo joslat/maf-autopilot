@@ -107,7 +107,12 @@ internal static class AutoFixCli
             sb.AppendLine($"      - {f}");
         sb.AppendLine();
         if (report.DryRun)
-            sb.AppendLine("  Dry run — re-run without --dry-run to apply these changes.");
+            // F-11 (2026-07-19 security assessment, found in a subsequent review
+            // round): dry-run is now the DEFAULT, so "re-run without --dry-run"
+            // was stale/misleading advice for the common case (a user who ran
+            // `autofix-all <path>` with no flags never passed --dry-run in the
+            // first place). --apply is the actual opt-in flag.
+            sb.AppendLine("  Dry run — re-run with --apply to apply these changes.");
         sb.AppendLine("  Next: `maf-doctor doctor .` to re-grade.");
         sb.AppendLine();
         AppendRemediationGuidance(sb);
