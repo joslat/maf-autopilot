@@ -78,10 +78,18 @@ LABEL org.opencontainers.image.description="MCP server + Roslyn analyzers for Mi
 LABEL org.opencontainers.image.source="https://github.com/joslat/maf-doctor"
 LABEL org.opencontainers.image.licenses="MIT"
 
-# Security: drop root. The MCP server speaks stdio only and writes nothing to the
-# filesystem at runtime, so a non-root UID is sufficient. Mounted user workspaces
-# (e.g. `docker run -v $PWD:/workspace`) need read access only; grant 1001:0 so the
-# server can still read default-permissioned workspace mounts on POSIX hosts.
+# Security: drop root regardless. The MCP server speaks stdio only, and most
+# tools are read-only, but auto-fix/scaffold/init tools DO write to a mounted
+# workspace when invoked with dryRun: false — "writes nothing" was never
+# accurate for those, and MafDoctorStatus/UpdateAdvisor also write a small
+# update-check cache. A non-root UID limits what any of those writes (or a
+# compromised dependency) can reach on the host. If you only want the
+# read-only tools, mount the workspace `:ro` — see docs/security.md for the
+# read-only vs. write-enabled run profiles.
+#
+# Mounted user workspaces (e.g. `docker run -v $PWD:/workspace`) need read
+# access at minimum; grant 1001:0 so the server can still read
+# default-permissioned workspace mounts on POSIX hosts.
 RUN groupadd -r maf && useradd -r -u 1001 -g maf -d /nonexistent -s /usr/sbin/nologin maf \
     && chown -R maf:maf /app
 USER maf

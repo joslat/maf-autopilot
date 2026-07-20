@@ -17,8 +17,10 @@
 | **MCP tool annotations** (`ReadOnly` / `Destructive` / `Idempotent` / `OpenWorld`) | Every one of the 25 `[McpServerTool]` decorations declares its behavior class. Well-behaved clients (Claude Code, VS Code Copilot) use this to decide which tools auto-invoke vs need user confirmation — preventing prompt-driven exfiltration via tools the user didn't expect to fire. | `src/maf-autopilot/Tools/*.cs` — see annotation classification in [`CHANGELOG.md`](../CHANGELOG.md) under 1.0.0 breaking changes |
 | **Structured outputs** (JSON / SARIF) | `MafDoctor`, `MafScanAntiPatterns`, `MafValidateFanOut` etc. emit machine-readable schemas — no free-form prose that could embed prompt-injection payloads back into the LLM context | [`docs/output-schemas.md`](output-schemas.md) |
 | **No generic shell tool, no string-concatenated commands** | We do NOT expose `execute_command(string)`. Everything is a narrow, purpose-built tool. The 3 sites that spawn a subprocess all use `ProcessStartInfo.ArgumentList` (argv-style, no shell) — see [Command injection via tool arguments](#command-injection-via-tool-arguments-keysight-2026) below for the structural breakdown | grep for `Process.Start` — only in `src/maf-autopilot/Tools/ProcessRunner.cs` (launches `dotnet` / `dotnet-inspect`) and `src/maf-autopilot/Tools/PullRequestAuditTool.cs` (launches `git`) |
-| **Path-validated repo input** | All tools that read user-repo files route through `PathGuard.ValidateRepoPath()` — rejects empty paths, nonexistent paths, malformed paths | `src/maf-autopilot/Tools/PathGuard.cs` |
-| **Default-on `--dry-run` for writers** | The 2 destructive tools (`MafAutoFix`, `MafAutoFixAll`) advertise `dryRun` as the safe path; agents see this in the tool's `[Description]` block | `src/maf-autopilot/Tools/AutoFixTool.cs` |
+| **Path-validated repo input** | All tools that read user-repo files route through `PathGuard.ValidateRepoPath()` — rejects empty/nonexistent/malformed paths, and (MCP mode only) checks the path against the configured workspace policy | `src/maf-autopilot/Tools/PathGuard.cs`, `src/maf-autopilot/Tools/WorkspacePolicy.cs` |
+| **MCP workspace allowlist** | `MAF_DOCTOR_WORKSPACE_ROOTS` scopes which absolute paths an MCP-connected agent can point tools at; filesystem roots and the user home directory are always rejected in MCP mode regardless of configuration. CLI usage is unaffected — a human typing a path at their own shell is the trust boundary. `init` sets this to the initialized repo on first write. | `src/maf-autopilot/Tools/WorkspacePolicy.cs` |
+| **Preview-by-default writes** | `MafAutoFix` / `MafAutoFixAll` default `dryRun` to `true` (MCP), and CLI `autofix-all` previews unless `--apply` is passed — a client that misreads or auto-approves the `Destructive` hint, or a human running the command out of habit, gets a preview, not an unreviewed write | `src/maf-autopilot/Tools/AutoFixTool.cs`, `src/maf-autopilot/Commands/AutoFixCli.cs` |
+| **Symlink/reparse-point containment on every write** | `SafeWorkspaceWriter` stages through an unpredictable temp filename, opens with `FileMode.CreateNew` (refuses to follow a pre-existing/attacker-raced path), and rejects a symlinked leaf or parent anywhere in the write target — used by auto-fix, `init`, the scaffolders, the registry-override reader, and the update cache | `src/maf-autopilot/Tools/SafeWorkspaceWriter.cs` |
 | **5 MB cap on env-overridden registry** | `MAF_REGISTRY_PATH` env override caps file size to prevent OOM via a multi-GB poisoned registry | `src/maf-autopilot/Data/RegistryService.cs` (`RegistryMaxBytes`) |
 
 ### At the repo level
@@ -34,7 +36,7 @@
 
 ## Known MCP attack classes — coverage status
 
-This section names public, well-documented MCP attack classes and shows — with file/line citations — why MAF Doctor is not vulnerable. If a class isn't listed here, see [`docs/security/threat-model.md`](security/threat-model.md) for the full attack-surface map. The classes below are anchored against the canonical sources listed in the [Canonical references](#canonical-references) section at the end of this document.
+This section names public, well-documented MCP attack classes and shows — with file/line citations — the mitigation in place for each and, honestly, how strong a guarantee it actually is. Some of these are structural (a compiler/CI-enforced invariant that cannot silently regress); others are behavioral mitigations against a probabilistic model, which reduce risk but are not a hard guarantee no LLM will ever be talked into ignoring them — those are labeled **Mitigated, not eliminated** rather than a flat "not vulnerable." If a class isn't listed here, see [`docs/security/threat-model.md`](security/threat-model.md) for the full attack-surface map. The classes below are anchored against the canonical sources listed in the [Canonical references](#canonical-references) section at the end of this document.
 
 ### Command injection via tool arguments (Keysight, 2026)
 
@@ -92,13 +94,13 @@ The invariant is also enforced in CI by [`.github/workflows/ci-invariants.yml`](
 
 **The attack class.** An MCP tool returns markdown that the calling LLM is instructed to pass to a sibling MCP tool (e.g. `MafDraftIssue` → GitHub's `create_issue`). User-controlled content inside the tool's output lands in another LLM's context — an indirect-prompt-injection lane. Anchored to [OWASP LLM05 Improper Output Handling](https://owasp.org/www-project-top-10-for-large-language-model-applications/) and [OWASP Top 10 for Agentic Applications 2026 — Indirect Prompt Injection via Tool Output](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/).
 
-**Are we vulnerable? No.** [`LlmFencing.Fence`](../src/maf-autopilot/Tools/LlmFencing.cs) wraps every user-controlled field destined for another LLM in BEGIN/END markers with a random-GUID sentinel + explicit "treat as data" framing. HTML comments (the most common smuggle vector in markdown) are stripped; content is capped at a per-field byte budget. Applied to `MafDraftIssue` (symptom / expected / actual / snippet), `MafPrompts.Debug` (errorOrSymptom), the `gen_guide_section.py` release-notes hop, the `ai_review_build_prompt.py` PR-registry embed, and `RegistryExtractCommand`'s `notes:` field. The fence's framing instruction is the load-bearing primitive — modern LLMs respect it; the random sentinel ensures user content cannot replicate the closer.
+**Mitigated, not eliminated.** [`LlmFencing.Fence`](../src/maf-autopilot/Tools/LlmFencing.cs) wraps every user-controlled field destined for another LLM in BEGIN/END markers with a random-GUID sentinel + explicit "treat as data" framing. HTML comments (the most common smuggle vector in markdown) are stripped; content is capped at a per-field byte budget. Applied to `MafDraftIssue` (symptom / expected / actual / snippet), `MafPrompts.Debug` (errorOrSymptom), the `gen_guide_section.py` release-notes hop, the `ai_review_build_prompt.py` PR-registry embed, and `RegistryExtractCommand`'s `notes:` field. The fence's framing instruction and the random sentinel (which user content cannot replicate) make smuggling meaningfully harder — but this is a behavioral mitigation against a probabilistic model, not a deterministic isolation boundary. A sufficiently adversarial payload could still influence a model that ignores the framing. Effectful actions downstream of fenced content (issue creation, PR comments, writes) should still require explicit user approval rather than relying on fencing alone.
 
 ### Supply-chain prompt injection via upstream release notes
 
 **The attack class.** Our `maf-release-watcher` workflow reads `gh release view microsoft/agent-framework --jq .body` weekly and uses the body to author the per-version migration guide + the AI-fill issue body that a Copilot Coding Agent processes. A malicious upstream maintainer (or a compromise of microsoft/agent-framework-release) could ship HTML-comment-disguised injection in release notes. Anchored to [MITRE ATLAS AML.T0048 ML Supply Chain Compromise](https://atlas.mitre.org/) + [AML.T0058 Context Poisoning](https://atlas.mitre.org/).
 
-**Are we vulnerable? No.** [`gen_guide_section.py`](../.github/scripts/gen_guide_section.py) fences both the release notes AND the `dotnet-inspect` diff via the Python `llm_fencing` module (parity with the C# `LlmFencing`) before embedding into the migration guide. Each fenced section carries a label (`upstream-maf-release-notes`, `upstream-maf-diff-core`), an HTML-comment-stripped body, a 32 KB byte cap, and the same random-sentinel BEGIN/END framing as the C# side. [`RegistryExtractCommand`](../src/maf-autopilot/RegistryExtractCommand.cs) applies an 8 KB fence to the `notes:` field that persists in `registry.yaml` — content that survives forever and is served to downstream LLMs via `MafRegistryLookup`.
+**Mitigated, not eliminated** — same caveat as the previous section, since it's the same fencing primitive. [`gen_guide_section.py`](../.github/scripts/gen_guide_section.py) fences both the release notes AND the `dotnet-inspect` diff via the Python `llm_fencing` module (parity with the C# `LlmFencing`) before embedding into the migration guide. Each fenced section carries a label (`upstream-maf-release-notes`, `upstream-maf-diff-core`), an HTML-comment-stripped body, a 32 KB byte cap, and the same random-sentinel BEGIN/END framing as the C# side. [`RegistryExtractCommand`](../src/maf-autopilot/RegistryExtractCommand.cs) applies an 8 KB fence to the `notes:` field that persists in `registry.yaml` — content that survives forever and is served to downstream LLMs via `MafRegistryLookup`. The gate that actually matters here is that the AI-fill loop only ever proposes a PR — `verify-registry` and human review stand between fenced-but-still-attacker-influenced content and `main`.
 
 ### Workflow input injection (workflow_dispatch templating)
 
@@ -116,7 +118,7 @@ The invariant is also enforced in CI by [`.github/workflows/ci-invariants.yml`](
 
 **The attack class.** Many tools accept a primary `repoPath` and a secondary path (e.g. `MafAutoFix.specificFile`). Joining the secondary path naively via `Path.Combine` or via a `Path.IsPathRooted` short-circuit lets an LLM-supplied absolute path or `..`-segment redirect file I/O outside the repo root. The rewriter then writes through the resolved path. Anchored to [OWASP MCP Top 10 — MCP04 Command Injection / path-escape variant](https://owasp.org/www-project-mcp-top-10/).
 
-**Are we vulnerable? No.** [`PathGuard.ValidateContainment`](../src/maf-autopilot/Tools/PathGuard.cs) is called at every secondary-path entry. It (a) canonicalizes both `repoPath` and the candidate via `Path.GetFullPath`, (b) verifies the resolved path starts with `repoPath + separator`, (c) probes BOTH the resolved file itself AND its parent chain for `FileAttributes.ReparsePoint` — closing the file-level symlink lane that `Path.GetFullPath` alone cannot detect (it canonicalizes `..` syntactically but does not resolve symlinks). Error messages never echo the input path.
+**Not vulnerable to the naive-join escape described above; one residual gap remains.** [`PathGuard.ValidateContainment`](../src/maf-autopilot/Tools/PathGuard.cs) is called at every secondary-path entry. It (a) canonicalizes both `repoPath` and the candidate via `Path.GetFullPath`, (b) verifies the resolved path starts with `repoPath + separator`, (c) probes BOTH the resolved file itself AND its parent chain for `FileAttributes.ReparsePoint` — closing the file-level symlink lane that `Path.GetFullPath` alone cannot detect (it canonicalizes `..` syntactically but does not resolve symlinks). Error messages never echo the input path. All writes additionally route through [`SafeWorkspaceWriter`](../src/maf-autopilot/Tools/SafeWorkspaceWriter.cs), which stages through an unpredictable temp name and opens with `CreateNew` rather than a predictable path an attacker could pre-place a symlink at (closed 2026-07, findings F-01/F-02/F-03/F-22/F-24 of the July 2026 assessment). The residual: validation and use are still two separate filesystem calls, so a local, same-user actor racing a symlink into place between them is a theoretical TOCTOU window (F-21) — this requires local write access to the same workspace and is not remotely exploitable via tool arguments alone.
 
 ### Code injection via scaffold parameters
 
@@ -198,6 +200,31 @@ We're explicit about what we deliberately *don't* depend on, so users know the s
 | **[Snyk agent-scan](https://github.com/invariantlabs-ai/mcp-scan)** (formerly Invariant Labs mcp-scan, now Snyk) | Requires a Snyk account + `SNYK_TOKEN`. README confirms it "validates the components, both with local checks **and by invoking the Agent Scan API**" — not local-only; sends data to Snyk's servers. Currently in "Open Preview" (free), but Snyk's commercial tier is paid ($52-$98/dev/month). Account requirement = vendor lock-in regardless of preview status. **We don't gate the open-source release on a tool that requires a third-party account.** |
 | **[kapilduraphe/mcp-watch](https://github.com/kapilduraphe/mcp-watch)** | Single-maintainer hobby project. Quality may be fine, but a security tool from an unvetted source is itself a supply-chain risk. |
 | **Commercial-only scanners** (Pangea, Enkrypt AI, AQtive Guard) | Fine if your org has a license, but we don't recommend them as the canonical path for an open-source toolkit. |
+
+---
+
+## Container deployment (Docker)
+
+The image runs as a non-root UID regardless of which tools you call — but non-root is a floor, not a substitute for scoping what's mounted. Most MCP tools are read-only; auto-fix, the scaffolders, `init`, and the update-check cache write to whatever's mounted (F-28, July 2026 assessment — an earlier version of this doc and a Dockerfile comment both claimed the server "writes nothing," which was never true for those tools).
+
+**Read-only / analysis-only** — if you only want `doctor`, the scanners, and the explain/plan tools:
+
+```bash
+docker run --rm -i \
+  --read-only --cap-drop=ALL --security-opt=no-new-privileges \
+  -v "$PWD:/workspace:ro" \
+  ghcr.io/joslat/maf-doctor:<tag>
+```
+
+**Write-enabled** — if you also want auto-fix / scaffolding / `init`: mount only the repository you intend to modify (not your home directory), keep the container off the Docker socket / SSH agent / cloud credentials, and prefer an immutable tag or digest over `:latest` so what you run matches what you reviewed:
+
+```bash
+docker run --rm -i \
+  -v "$PWD:/workspace" \
+  ghcr.io/joslat/maf-doctor:<tag>
+```
+
+Neither profile needs network access unless you're calling a tool that reaches NuGet (`MafDiffPackage`, `MafPreUpgradeDryRun`, `MafRunCs0618Hunt`) — add `--network=none` if you're only running the fully local analysis tools.
 
 ---
 
