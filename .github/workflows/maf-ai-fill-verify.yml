@@ -121,7 +121,13 @@ jobs:
           # `output` value. Generate a random delimiter per run and confirm
           # it can't collide with OUTPUT's own content before using it.
           DELIM="EOF_${RANDOM}${RANDOM}${RANDOM}"
+          ATTEMPT=0
           while grep -qF "$DELIM" <<< "$OUTPUT"; do
+            ATTEMPT=$((ATTEMPT + 1))
+            if [ "$ATTEMPT" -ge 20 ]; then
+              echo "::error::Could not find a GITHUB_OUTPUT delimiter that doesn't collide with the tool's own output after 20 attempts — refusing to proceed rather than risk a corrupted GITHUB_OUTPUT file."
+              exit 1
+            fi
             DELIM="EOF_${RANDOM}${RANDOM}${RANDOM}"
           done
           {
@@ -145,7 +151,13 @@ jobs:
           # script also reports on the PR's own registry.yaml content, so use
           # a random delimiter rather than a fixed "EOF".
           DELIM="EOF_${RANDOM}${RANDOM}${RANDOM}"
+          ATTEMPT=0
           while grep -qF "$DELIM" <<< "$OUTPUT"; do
+            ATTEMPT=$((ATTEMPT + 1))
+            if [ "$ATTEMPT" -ge 20 ]; then
+              echo "::error::Could not find a GITHUB_OUTPUT delimiter that doesn't collide with the tool's own output after 20 attempts — refusing to proceed rather than risk a corrupted GITHUB_OUTPUT file."
+              exit 1
+            fi
             DELIM="EOF_${RANDOM}${RANDOM}${RANDOM}"
           done
           {

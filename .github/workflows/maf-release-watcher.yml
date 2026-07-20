@@ -277,6 +277,17 @@ jobs:
         # code at this commit — inside that privileged context. Building from
         # the already-checked-out, already-reviewed source removes the floating
         # dependency entirely: what runs below is exactly this commit.
+        #
+        # continue-on-error: true — verified-in-review fixup: the install line
+        # this replaced lived INSIDE "Auto-append draft registry entries",
+        # which is (and remains) continue-on-error: true with the explicit
+        # intent "never block the PR on registry extraction." Hoisting the
+        # build into its own step without the same setting turned a
+        # contained, nice-to-have failure into a hard abort of the whole job
+        # — including the version-bump PR the workflow actually exists to
+        # open — on any transient build/restore hiccup. This restores the
+        # original fault-tolerance boundary.
+        continue-on-error: true
         run: dotnet build src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0
 
       - name: Auto-append draft registry entries
@@ -286,6 +297,10 @@ jobs:
         continue-on-error: true   # never block the PR on registry extraction
         run: |
           MAF_DOCTOR="src/maf-autopilot/bin/Release/net8.0/maf-doctor.dll"
+          if [ ! -f "$MAF_DOCTOR" ]; then
+            echo "::warning title=Registry extraction skipped::maf-doctor build did not produce $MAF_DOCTOR (see the 'Build maf-doctor from this checkout' step above) — skipping draft registry extraction for this run."
+            exit 0
+          fi
 
           REGISTRY=".github/skills/maf-obsolete-api-registry/registry.yaml"
           TMP_ENTRIES="/tmp/draft-registry-entries.yaml"

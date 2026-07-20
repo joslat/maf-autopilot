@@ -39,7 +39,8 @@ fixing, and migrating MAF code.
    training data — MAF ships breaking changes every minor version, so
    training data is likely outdated.
 
-4. **To fix issues** — `MafAutoFixAll --dry-run` then apply handles the
+4. **To fix issues** — `MafAutoFixAll(repoPath)` previews (dryRun defaults to
+   true), `MafAutoFixAll(repoPath, dryRun: false)` applies. Handles the
    *mechanical* rules deterministically (offer this first; the rewrites are
    tested). To fix **everything**, run the `maf-remediate` prompt (or just
    ask "fix all the issues maf-doctor found"): it grades → plans → autofixes

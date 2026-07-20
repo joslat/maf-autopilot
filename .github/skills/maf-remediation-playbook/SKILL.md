@@ -10,7 +10,7 @@ description: "The fix-everything playbook for the maf-remediate loop: per-rule c
 ## The loop (quick reference)
 
 1. `MafDoctor(repoPath, format: "plan")` + `MafDoctor(repoPath, format: "json", full: true)` — the plan + every finding with a `confidence`.
-2. `MafAutoFixAll(repoPath)` — the deterministic, mechanical fixes. `dotnet build` (green).
+2. `MafAutoFixAll(repoPath, dryRun: false)` — the deterministic, mechanical fixes (F-11: `dryRun` now defaults to `true`/preview-only; omitting it here would silently apply nothing). `dotnet build` (green).
 3. For each remaining finding **in plan order**: triage by `confidence` (below) → fix or skip → `dotnet build` → confirm the finding actually cleared (re-scan), not just a green build.
 4. Re-pull `MafDoctor(format: "json", full: true)` (line numbers shift after edits) and keep working findings until the only ones left are explicitly skipped (false positive) or deferred to human judgment — **NOT** merely until the A/B/C/F letter stops moving (the grade has wide bands and won't shift for most single fixes). Report fixed vs skipped-as-false-positive.
 

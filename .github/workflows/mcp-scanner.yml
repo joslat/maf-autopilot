@@ -208,16 +208,29 @@ jobs:
         # the scan step (which must not fail the job before the PR comment
         # steps above get a chance to run) and from that step's own exit
         # code (undocumented semantics, per the note above). `--hide-safe`
-        # means a clean run's summary output is exactly "No results match
-        # the specified filters." — anything else in scan-results.txt means
-        # at least one tool was flagged.
+        # means a clean run's summary output is exactly two non-blank lines:
+        # "Total tools scanned: N" then "No results match the specified
+        # filters." Anything else means at least one tool was flagged.
+        #
+        # Verified-in-review fixup: an earlier version of this check used
+        # `grep -q` (substring containment) — it would have passed a
+        # hypothetical future output shape where that boilerplate phrase
+        # appears alongside OTHER lines listing real findings, since `grep -q`
+        # only proves the phrase is present *somewhere*, not that it's the
+        # whole (safe) story. Now requires the file to consist of exactly
+        # those two non-blank lines, in that shape — any additional non-blank
+        # line fails closed instead of passing.
         run: |
           if [ ! -s scan-results.txt ]; then
             echo "::error::scan-results.txt is empty — the scan step likely crashed before producing output. Treating as a failure (fail closed)."
             exit 1
           fi
-          if ! grep -q "No results match the specified filters\." scan-results.txt; then
-            echo "::error::mcp-scanner reported findings — see the 'Run mcp-scanner' step output above (and the PR comment, if this is a pull_request run)."
+
+          NONBLANK=$(grep -c . scan-results.txt || true)
+          if [ "$NONBLANK" -ne 2 ] \
+             || ! sed -n '1p' scan-results.txt | grep -qE '^Total tools scanned: [0-9]+$' \
+             || ! sed -n '2p' scan-results.txt | grep -qF 'No results match the specified filters.'; then
+            echo "::error::mcp-scanner reported findings (or produced an unexpected output shape) — see the 'Run mcp-scanner' step output above (and the PR comment, if this is a pull_request run)."
             exit 1
           fi
           echo "Clean scan confirmed — no findings."
