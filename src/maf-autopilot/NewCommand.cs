@@ -107,18 +107,30 @@ internal static class NewCommand
 
     private static void WriteFiles(string baseDir, IReadOnlyList<AgentScaffolder.ScaffoldedFile> files)
     {
+        // F-03 — this CLI path bypasses NewAgentTool entirely, so it needs its own
+        // containment + symlink guard (SafeWorkspaceWriter.TryCreateNew rejects a
+        // symlinked Agents/Workflows/Tests directory or a symlinked target file; it
+        // preserves the existing skip-on-exist behavior via a secure CreateNew).
+        var root = Path.GetFullPath(baseDir);
         foreach (var file in files)
         {
-            var absolute = Path.Combine(baseDir, file.RelativePath);
-            var dir = Path.GetDirectoryName(absolute);
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            var absolute = Path.Combine(root, file.RelativePath);
+            bool created;
+            try
+            {
+                created = SafeWorkspaceWriter.TryCreateNew(root, absolute, file.Content);
+            }
+            catch (ArgumentException ex)
+            {
+                Console.WriteLine($"  ⚠ {file.RelativePath} — refused: {ex.Message}");
+                continue;
+            }
 
-            if (File.Exists(absolute))
+            if (!created)
             {
                 Console.WriteLine($"  ⚠ {file.RelativePath} exists — skipped");
                 continue;
             }
-            File.WriteAllText(absolute, file.Content);
             var lineCount = file.Content.Split('\n').Length;
             Console.WriteLine($"  ✓ {file.RelativePath} ({lineCount} lines)");
         }

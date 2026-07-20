@@ -317,7 +317,7 @@ public sealed class AutoFixTool
                 if (ReferenceEquals(newRoot, oldRoot)) continue;
 
                 if (!dryRun)
-                    WriteAtomic(file, newRoot.ToFullString());
+                    SafeWorkspaceWriter.WriteAtomic(repoPath, file, newRoot.ToFullString());
 
                 changedFiles.Add(relative);
             }
@@ -357,14 +357,4 @@ public sealed class AutoFixTool
         return File.Exists(resolved) ? new[] { resolved } : Array.Empty<string>();
     }
 
-    /// <summary>
-    /// Atomic file write: stage to a temp file beside the target, then move.
-    /// Avoids torn writes if the process is killed mid-rewrite.
-    /// </summary>
-    private static void WriteAtomic(string path, string contents)
-    {
-        var tmp = path + ".autofix.tmp";
-        File.WriteAllText(tmp, contents);
-        File.Move(tmp, path, overwrite: true);
-    }
 }

@@ -140,4 +140,59 @@ public class SourceFileWalkerTests
         Directory.CreateDirectory(root);
         return root;
     }
+
+    // -------------------------------------------------------------------------
+    // F-23 — MakeRelative used a bare StartsWith(rootFull) with no separator
+    // boundary, so "/work/repo-evil/file.cs" incorrectly passed containment
+    // against root "/work/repo" (prefix collision, not a real subdirectory).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MakeRelative_PrefixCollisionSibling_Throws()
+    {
+        var root = CreateTempRoot();
+        var sibling = root + "-evil";
+        Directory.CreateDirectory(sibling);
+        var siblingFile = Path.Combine(sibling, "file.cs");
+        File.WriteAllText(siblingFile, "// x");
+
+        try
+        {
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => SourceFileWalker.MakeRelative(root, siblingFile));
+            Assert.Contains("outside the repository root", ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+            Directory.Delete(sibling, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void MakeRelative_FileDirectlyUnderRoot_ReturnsRelativePath()
+    {
+        var root = CreateTempRoot();
+        var file = Path.Combine(root, "sub", "Foo.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        File.WriteAllText(file, "// x");
+
+        try
+        {
+            var relative = SourceFileWalker.MakeRelative(root, file);
+            Assert.Equal("sub/Foo.cs", relative);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void MakeRelative_FileEqualsRoot_ReturnsEmptyString()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            Assert.Equal(string.Empty, SourceFileWalker.MakeRelative(root, root));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
 }

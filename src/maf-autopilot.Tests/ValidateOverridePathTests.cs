@@ -188,4 +188,49 @@ public sealed class ValidateOverridePathTests
             Environment.SetEnvironmentVariable("MAF_REGISTRY_PATH_ROOTS", prior);
         }
     }
+
+    // -------------------------------------------------------------------------
+    // F-22 — Path.GetFullPath only collapses `.`/`..` syntactically; it never
+    // resolves symlinks. "<allowed-root>/link/registry.yaml", where `link` is a
+    // symlinked directory pointing outside the root and the leaf file itself is
+    // regular, satisfied both the leaf check and the prefix check above while
+    // physically resolving outside the declared root. Symlink creation on
+    // Windows requires admin/Developer Mode — skip gracefully if unavailable.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void ValidateOverridePath_SymlinkedParentInsideAllowlist_Throws()
+    {
+        var temp = Path.GetTempPath().TrimEnd(
+            Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var allowedRoot = Path.Combine(temp, "vop-allowed-" + Guid.NewGuid().ToString("N"));
+        var outsideDir = Path.Combine(temp, "vop-outside-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(allowedRoot);
+        Directory.CreateDirectory(outsideDir);
+        var outsideRegistry = Path.Combine(outsideDir, "registry.yaml");
+        File.WriteAllText(outsideRegistry, "schema_version: 1.0\nentries: []\n");
+        var linkedDir = Path.Combine(allowedRoot, "link");
+
+        try { Directory.CreateSymbolicLink(linkedDir, outsideDir); }
+        catch (UnauthorizedAccessException) { return; }
+        catch (IOException) { return; }
+        catch (PlatformNotSupportedException) { return; }
+
+        var candidateThroughLink = Path.Combine(linkedDir, "registry.yaml");
+        var prior = Environment.GetEnvironmentVariable("MAF_REGISTRY_PATH_ROOTS");
+        try
+        {
+            Environment.SetEnvironmentVariable("MAF_REGISTRY_PATH_ROOTS", allowedRoot);
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => RegistryService.ValidateOverridePath(candidateThroughLink));
+            Assert.Contains("symlink", ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MAF_REGISTRY_PATH_ROOTS", prior);
+            try { Directory.Delete(linkedDir); } catch { /* best effort */ }
+            try { Directory.Delete(allowedRoot, recursive: true); } catch { /* best effort */ }
+            try { Directory.Delete(outsideDir, recursive: true); } catch { /* best effort */ }
+        }
+    }
 }

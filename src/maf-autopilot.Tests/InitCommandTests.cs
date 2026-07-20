@@ -439,4 +439,102 @@ public sealed class InitCommandTests : IDisposable
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
     }
+
+    // -------------------------------------------------------------------------
+    // F-02 — a malicious repo can make a managed path (or its parent directory)
+    // a symlink/junction; init must refuse the write rather than following it
+    // outside the workspace. Symlink creation on Windows requires admin or
+    // Developer Mode — skip gracefully if neither is available (matches
+    // PathGuardTests' convention).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task WriteMcpJsonAsync_SymlinkedLeaf_RefusesWithoutFollowing()
+    {
+        var outsideTarget = Path.Combine(Path.GetTempPath(), "init-symlink-target-" + Guid.NewGuid().ToString("N") + ".json");
+        await File.WriteAllTextAsync(outsideTarget, "SECRET-OUTSIDE-CONTENT");
+        var vscodeDir = Path.Combine(_tempDir, ".vscode");
+        Directory.CreateDirectory(vscodeDir);
+        var mcpJsonPath = Path.Combine(vscodeDir, "mcp.json");
+
+        try { File.CreateSymbolicLink(mcpJsonPath, outsideTarget); }
+        catch (UnauthorizedAccessException) { return; }
+        catch (IOException) { return; }
+        catch (PlatformNotSupportedException) { return; }
+
+        try
+        {
+            await InitCommand.WriteMcpJsonAsync(_tempDir);
+            var outsideContent = await File.ReadAllTextAsync(outsideTarget);
+            Assert.Equal("SECRET-OUTSIDE-CONTENT", outsideContent);
+        }
+        finally
+        {
+            try { File.Delete(mcpJsonPath); } catch { /* best effort */ }
+            try { File.Delete(outsideTarget); } catch { /* best effort */ }
+        }
+    }
+
+    [Fact]
+    public async Task WriteClaudeSteeringAsync_SymlinkedClaudeMd_RefusesWithoutFollowing()
+    {
+        var outsideTarget = Path.Combine(Path.GetTempPath(), "init-symlink-target-" + Guid.NewGuid().ToString("N") + ".md");
+        await File.WriteAllTextAsync(outsideTarget, "SECRET-OUTSIDE-CONTENT");
+        var claudePath = Path.Combine(_tempDir, "CLAUDE.md");
+
+        try { File.CreateSymbolicLink(claudePath, outsideTarget); }
+        catch (UnauthorizedAccessException) { return; }
+        catch (IOException) { return; }
+        catch (PlatformNotSupportedException) { return; }
+
+        try
+        {
+            await InitCommand.WriteClaudeSteeringAsync(_tempDir);
+            var outsideContent = await File.ReadAllTextAsync(outsideTarget);
+            Assert.Equal("SECRET-OUTSIDE-CONTENT", outsideContent);
+        }
+        finally
+        {
+            try { File.Delete(claudePath); } catch { /* best effort */ }
+            try { File.Delete(outsideTarget); } catch { /* best effort */ }
+        }
+    }
+
+    [Fact]
+    public async Task UpsertManagedBlockAsync_SymlinkedAgentsMd_RefusesWithoutFollowing()
+    {
+        var outsideTarget = Path.Combine(Path.GetTempPath(), "init-symlink-target-" + Guid.NewGuid().ToString("N") + ".md");
+        await File.WriteAllTextAsync(outsideTarget, "SECRET-OUTSIDE-CONTENT");
+        var agentsPath = Path.Combine(_tempDir, "AGENTS.md");
+
+        try { File.CreateSymbolicLink(agentsPath, outsideTarget); }
+        catch (UnauthorizedAccessException) { return; }
+        catch (IOException) { return; }
+        catch (PlatformNotSupportedException) { return; }
+
+        try
+        {
+            await InitCommand.UpsertManagedBlockAsync(_tempDir, "steering/agents.md", "AGENTS.md");
+            var outsideContent = await File.ReadAllTextAsync(outsideTarget);
+            Assert.Equal("SECRET-OUTSIDE-CONTENT", outsideContent);
+        }
+        finally
+        {
+            try { File.Delete(agentsPath); } catch { /* best effort */ }
+            try { File.Delete(outsideTarget); } catch { /* best effort */ }
+        }
+    }
+
+    [Fact]
+    public async Task WriteMcpJsonAsync_NormalWrite_StillSucceeds_AfterSafeWriterRetrofit()
+    {
+        // Regression guard for the F-01/F-02 SafeWorkspaceWriter retrofit: the
+        // ordinary, no-symlink path must still work exactly as before.
+        await InitCommand.WriteMcpJsonAsync(_tempDir);
+
+        var mcpJsonPath = Path.Combine(_tempDir, ".vscode", "mcp.json");
+        Assert.True(File.Exists(mcpJsonPath));
+        var root = JsonNode.Parse(await File.ReadAllTextAsync(mcpJsonPath))!.AsObject();
+        Assert.True(root["servers"]!.AsObject().ContainsKey("maf-doctor"));
+    }
 }

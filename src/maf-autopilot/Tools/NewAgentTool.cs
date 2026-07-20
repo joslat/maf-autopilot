@@ -108,10 +108,11 @@ public sealed class NewAgentTool
         [Description("Incoming message type (e.g. string, FraudCheckRequest). Default: string.")] string inputType = "string",
         [Description("Outgoing message type (e.g. string, FraudReport). Default: string.")] string outputType = "string")
     {
-        if (string.IsNullOrWhiteSpace(projectPath))
-            return "Error: projectPath must not be empty.";
-        if (!Directory.Exists(projectPath))
-            return $"Error: directory does not exist: '{projectPath}'.";
+        // F-03 — previously used an ad-hoc non-empty + Directory.Exists check that,
+        // unlike MafNewAgent's ValidateProjectPath, didn't reject '..' traversal or
+        // shell metacharacters. Both tools now share one validator.
+        var pathError = ValidateProjectPath(projectPath);
+        if (pathError is not null) return pathError;
         if (!IsSafeIdentifier(executorName))
             return $"Error: '{executorName}' is not a valid PascalCase identifier.";
 
@@ -208,6 +209,13 @@ public sealed class NewAgentTool
             if (segment == "..")
                 return "Error: projectPath must not contain '..' segments (path traversal).";
 
+        // F-03 — both tool descriptions tell the LLM caller to pass an absolute
+        // path, but nothing enforced it: a relative value resolves against the
+        // MCP server process's cwd, not the workspace the caller meant. Matches
+        // PathGuard.ValidateRepoPath's IsPathFullyQualified check.
+        if (!Path.IsPathFullyQualified(projectPath))
+            return "Error: projectPath must be an absolute path (got a relative path).";
+
         if (!Directory.Exists(projectPath))
             return $"Error: directory does not exist: '{projectPath}'.";
         return null;
@@ -265,16 +273,27 @@ public sealed class NewAgentTool
         foreach (var file in files)
         {
             var absolute = Path.Combine(projectPath, file.RelativePath);
-            var dir = Path.GetDirectoryName(absolute);
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-            if (File.Exists(absolute))
+            // F-03 — reject a symlinked Agents/Workflows/Tests directory or a
+            // symlinked target file rather than following it; secure CreateNew
+            // preserves the existing skip-on-exist behavior.
+            bool created;
+            try
+            {
+                created = SafeWorkspaceWriter.TryCreateNew(projectPath, absolute, file.Content);
+            }
+            catch (ArgumentException ex)
+            {
+                sb.AppendLine($"- ⚠️ `{file.RelativePath}` refused: {ex.Message}");
+                continue;
+            }
+
+            if (!created)
             {
                 sb.AppendLine($"- ⚠️ `{file.RelativePath}` already exists — skipped (delete and re-run to overwrite).");
                 continue;
             }
 
-            File.WriteAllText(absolute, file.Content);
             sb.AppendLine($"- ✅ `{file.RelativePath}` ({file.Content.Split('\n').Length} lines)");
         }
 

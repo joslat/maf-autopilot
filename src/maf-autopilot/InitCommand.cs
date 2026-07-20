@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using MafDoctor.Tools;
 
 namespace MafDoctor;
 
@@ -41,15 +42,21 @@ internal static class InitCommand
 
     /// <summary>
     /// Copies the file to a backup path with a unique suffix, retrying on collision.
-    /// Returns the path that was actually used.
+    /// Returns the path that was actually used. <paramref name="originalPath"/> must
+    /// already be a validated, non-symlinked path (the caller resolves it via
+    /// <see cref="PathGuard.ValidateContainment"/> before calling this). Each backup
+    /// candidate is itself validated against <paramref name="targetDir"/> before the
+    /// copy, so a symlinked directory placed inside the workspace can't redirect the
+    /// backup outside it (F-02).
     /// </summary>
-    private static string CreateBackupWithRetry(string originalPath)
+    private static string CreateBackupWithRetry(string targetDir, string originalPath)
     {
         for (var attempt = 0; attempt < 5; attempt++)
         {
             var candidate = $"{originalPath}.bak.{DateTime.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid().ToString("N")[..8]}";
             try
             {
+                PathGuard.ValidateContainment(targetDir, candidate, "backup path");
                 File.Copy(originalPath, candidate, overwrite: false);
                 return candidate;
             }
@@ -130,6 +137,7 @@ internal static class InitCommand
         // VS Code reads .vscode/mcp.json with a top-level "servers" object and
         // expects an explicit "type": "stdio" on each entry.
         await WriteMcpServerEntryAsync(
+            targetDir,
             Path.Combine(targetDir, ".vscode", "mcp.json"),
             serversKey: "servers",
             label: ".vscode/mcp.json (VS Code / Copilot)",
@@ -142,6 +150,7 @@ internal static class InitCommand
         // object. Its entries are {command, args, env} — stdio is the implied default,
         // so we OMIT the "type" field (older Claude Code builds don't recognize it).
         await WriteMcpServerEntryAsync(
+            targetDir,
             Path.Combine(targetDir, ".mcp.json"),
             serversKey: "mcpServers",
             label: ".mcp.json (Claude Code)",
@@ -155,9 +164,23 @@ internal static class InitCommand
     /// .vscode/mcp.json, "mcpServers" for Claude Code's .mcp.json. Recognizes the legacy
     /// "maf-autopilot" server key so re-running init on a pre-rename repo never duplicates.
     /// </summary>
-    private static async Task WriteMcpServerEntryAsync(string mcpJsonPath, string serversKey, string label, bool includeType)
+    private static async Task WriteMcpServerEntryAsync(string targetDir, string mcpJsonPath, string serversKey, string label, bool includeType)
     {
-        var dir = Path.GetDirectoryName(mcpJsonPath);
+        // F-02 — a malicious repo can make `.vscode/mcp.json` / `.mcp.json` (or a parent
+        // directory) a symlink/junction. Resolve and reject before any read or write so
+        // we never follow it into reading or overwriting a file outside the workspace.
+        string resolvedPath;
+        try
+        {
+            resolvedPath = PathGuard.ValidateContainment(targetDir, mcpJsonPath, label);
+        }
+        catch (ArgumentException ex)
+        {
+            Console.WriteLine($"  ⚠ {label} — refused: {ex.Message}");
+            return;
+        }
+
+        var dir = Path.GetDirectoryName(resolvedPath);
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
 
@@ -169,12 +192,12 @@ internal static class InitCommand
         // template repo, a stale upstream, or a paste accident) could otherwise OOM the
         // host on the very first `maf-doctor init`. Real config files are kilobytes at most.
         JsonObject root;
-        if (File.Exists(mcpJsonPath))
+        if (File.Exists(resolvedPath))
         {
-            var info = new FileInfo(mcpJsonPath);
+            var info = new FileInfo(resolvedPath);
             if (info.Length > McpJsonMaxBytes)
             {
-                var backupPath = CreateBackupWithRetry(mcpJsonPath);
+                var backupPath = CreateBackupWithRetry(targetDir, resolvedPath);
                 Console.WriteLine($"  ⚠ {label} is {info.Length / 1024} KB — exceeds the 1 MB safety cap.");
                 Console.WriteLine($"    Backed up to: {backupPath}");
                 Console.WriteLine($"    Starting fresh — restore any other server entries from the backup manually.");
@@ -182,14 +205,14 @@ internal static class InitCommand
             }
             else
             {
-                var raw = await File.ReadAllTextAsync(mcpJsonPath);
+                var raw = await File.ReadAllTextAsync(resolvedPath);
                 try
                 {
                     root = JsonNode.Parse(raw, nodeOptions: null, documentOptions: JsoncOptions)!.AsObject();
                 }
                 catch
                 {
-                    var backupPath = CreateBackupWithRetry(mcpJsonPath);
+                    var backupPath = CreateBackupWithRetry(targetDir, resolvedPath);
                     Console.WriteLine($"  ⚠ {label} exists but could not be parsed as JSON (even allowing // comments).");
                     Console.WriteLine($"    Backed up to: {backupPath}");
                     Console.WriteLine($"    Starting fresh — restore any other server entries from the backup manually.");
@@ -215,7 +238,15 @@ internal static class InitCommand
         }
 
         var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-        await File.WriteAllTextAsync(mcpJsonPath, json + Environment.NewLine);
+        try
+        {
+            SafeWorkspaceWriter.WriteAtomic(targetDir, resolvedPath, json + Environment.NewLine);
+        }
+        catch (ArgumentException ex)
+        {
+            Console.WriteLine($"  ⚠ {label} — refused: {ex.Message}");
+            return;
+        }
         Console.WriteLine($"  ✓ {label} — {action}");
     }
 
@@ -470,23 +501,31 @@ internal static class InitCommand
     /// (re-running init refreshes the guidance). The snippet's leading HTML-comment
     /// header is stripped; optional convention-specific frontmatter is prepended.
     /// </summary>
-    internal static async Task WriteSidecarAsync(
+    internal static Task WriteSidecarAsync(
         string targetDir, string embeddedResourceName, string outputRelativePath, string? frontmatter = null)
     {
         var body = ReadSteeringBody(embeddedResourceName);
         if (body is null)
         {
             Console.WriteLine($"  ⚠ Steering resource '{embeddedResourceName}' not found in assembly — skipped");
-            return;
+            return Task.CompletedTask;
         }
 
         var outputPath = Path.Combine(targetDir, outputRelativePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
-
         var content = (frontmatter ?? string.Empty) + body;
         if (!content.EndsWith("\n", StringComparison.Ordinal)) content += "\n";
-        await File.WriteAllTextAsync(outputPath, content);
+
+        try
+        {
+            SafeWorkspaceWriter.WriteAtomic(targetDir, outputPath, content);
+        }
+        catch (ArgumentException ex)
+        {
+            Console.WriteLine($"  ⚠ {outputRelativePath} — refused: {ex.Message}");
+            return Task.CompletedTask;
+        }
         Console.WriteLine($"  ✓ {outputRelativePath} — written (refreshed on each init)");
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -506,30 +545,50 @@ internal static class InitCommand
 
         // Sidecar — overwrite-always.
         var sidecarPath = Path.Combine(targetDir, ".claude", "maf-doctor.md");
-        Directory.CreateDirectory(Path.GetDirectoryName(sidecarPath)!);
         var sidecarContent = ManagedSidecarNote("your own CLAUDE.md body") + body;
-        await File.WriteAllTextAsync(sidecarPath, sidecarContent.EndsWith("\n", StringComparison.Ordinal) ? sidecarContent : sidecarContent + "\n");
+        if (!sidecarContent.EndsWith("\n", StringComparison.Ordinal)) sidecarContent += "\n";
+        try
+        {
+            SafeWorkspaceWriter.WriteAtomic(targetDir, sidecarPath, sidecarContent);
+        }
+        catch (ArgumentException ex)
+        {
+            Console.WriteLine($"  ⚠ .claude/maf-doctor.md — refused: {ex.Message}");
+            return;
+        }
         Console.WriteLine("  ✓ .claude/maf-doctor.md — written (refreshed on each init)");
 
         // Ensure CLAUDE.md imports it (one stable line; add only if absent).
         const string importLine = "@.claude/maf-doctor.md";
         const string managedComment = "<!-- MAF Doctor steering — managed by `maf-doctor init`; .claude/maf-doctor.md is overwritten on re-run -->";
         var claudePath = Path.Combine(targetDir, "CLAUDE.md");
-        if (File.Exists(claudePath))
+
+        string resolvedClaudePath;
+        try
         {
-            var existing = await File.ReadAllTextAsync(claudePath);
+            resolvedClaudePath = PathGuard.ValidateContainment(targetDir, claudePath, "CLAUDE.md");
+        }
+        catch (ArgumentException ex)
+        {
+            Console.WriteLine($"  ⚠ CLAUDE.md — refused: {ex.Message}");
+            return;
+        }
+
+        if (File.Exists(resolvedClaudePath))
+        {
+            var existing = await File.ReadAllTextAsync(resolvedClaudePath);
             if (existing.Contains(importLine, StringComparison.Ordinal))
             {
                 Console.WriteLine("  ✓ CLAUDE.md — already imports MAF Doctor steering, no change");
                 return;
             }
             var sep = existing.Length == 0 || existing.EndsWith("\n", StringComparison.Ordinal) ? string.Empty : "\n";
-            await File.AppendAllTextAsync(claudePath, $"{sep}\n{managedComment}\n{importLine}\n");
+            SafeWorkspaceWriter.WriteAtomic(targetDir, resolvedClaudePath, existing + $"{sep}\n{managedComment}\n{importLine}\n");
             Console.WriteLine("  ✓ CLAUDE.md — added @import for MAF Doctor steering");
         }
         else
         {
-            await File.WriteAllTextAsync(claudePath, $"{managedComment}\n{importLine}\n");
+            SafeWorkspaceWriter.WriteAtomic(targetDir, resolvedClaudePath, $"{managedComment}\n{importLine}\n");
             Console.WriteLine("  ✓ CLAUDE.md — created with @import for MAF Doctor steering");
         }
     }
@@ -556,31 +615,44 @@ internal static class InitCommand
         var block = $"{begin}\n{body.TrimEnd()}\n{end}";
 
         var outputPath = Path.Combine(targetDir, outputRelativePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
-
-        if (File.Exists(outputPath))
+        string resolvedPath;
+        try
         {
-            var existing = await File.ReadAllTextAsync(outputPath);
+            resolvedPath = PathGuard.ValidateContainment(targetDir, outputPath, outputRelativePath);
+        }
+        catch (ArgumentException ex)
+        {
+            Console.WriteLine($"  ⚠ {outputRelativePath} — refused: {ex.Message}");
+            return;
+        }
+
+        string finalContent;
+        string verb;
+        if (File.Exists(resolvedPath))
+        {
+            var existing = await File.ReadAllTextAsync(resolvedPath);
             var bi = existing.IndexOf(begin, StringComparison.Ordinal);
             var ei = existing.IndexOf(end, StringComparison.Ordinal);
             if (bi >= 0 && ei > bi)
             {
-                var updated = existing[..bi] + block + existing[(ei + end.Length)..];
-                await File.WriteAllTextAsync(outputPath, updated);
-                Console.WriteLine($"  ✓ {outputRelativePath} — refreshed managed maf-doctor block");
+                finalContent = existing[..bi] + block + existing[(ei + end.Length)..];
+                verb = "refreshed managed maf-doctor block";
             }
             else
             {
                 var sep = existing.Length == 0 || existing.EndsWith("\n", StringComparison.Ordinal) ? string.Empty : "\n";
-                await File.AppendAllTextAsync(outputPath, $"{sep}\n{block}\n");
-                Console.WriteLine($"  ✓ {outputRelativePath} — added managed maf-doctor block");
+                finalContent = existing + $"{sep}\n{block}\n";
+                verb = "added managed maf-doctor block";
             }
         }
         else
         {
-            await File.WriteAllTextAsync(outputPath, block + "\n");
-            Console.WriteLine($"  ✓ {outputRelativePath} — created with managed maf-doctor block");
+            finalContent = block + "\n";
+            verb = "created with managed maf-doctor block";
         }
+
+        SafeWorkspaceWriter.WriteAtomic(targetDir, resolvedPath, finalContent);
+        Console.WriteLine($"  ✓ {outputRelativePath} — {verb}");
     }
 
     private static string? ReadSteeringBody(string embeddedResourceName)

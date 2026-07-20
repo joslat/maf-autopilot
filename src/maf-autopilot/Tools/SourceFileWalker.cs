@@ -214,10 +214,20 @@ internal static class SourceFileWalker
     /// </summary>
     public static string MakeRelative(string root, string file)
     {
-        var rootFull = Path.GetFullPath(root);
+        // F-23 — a bare StartsWith(rootFull) has no separator boundary, so
+        // /work/repo-evil/file.cs incorrectly passes containment against root
+        // /work/repo. Match PathGuard's boundary-safe comparison: equal, or
+        // starts with root + separator.
+        var rootFull = Path.GetFullPath(root)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var fileFull = Path.GetFullPath(file);
-        if (fileFull.StartsWith(rootFull, PathComparison))
-            return fileFull.Substring(rootFull.Length).TrimStart('/', '\\').Replace('\\', '/');
+
+        if (fileFull.Equals(rootFull, PathComparison))
+            return string.Empty;
+
+        var rootBoundary = rootFull + Path.DirectorySeparatorChar;
+        if (fileFull.StartsWith(rootBoundary, PathComparison))
+            return fileFull.Substring(rootBoundary.Length).Replace('\\', '/');
 
         // Non-leaky message: name the parameter class, not the input.
         throw new InvalidOperationException(
