@@ -60,14 +60,14 @@ None of the 28 `[McpServerTool]`s accept "a command to run." Every tool is a nar
 
 With `ProcessStartInfo.ArgumentList`, .NET passes each element to the OS as a separate `argv[i]`. There is no shell to inject into — a payload like `; rm -rf /` would arrive at the child process as a single literal argv string and be rejected as a malformed argument. The unsafe `ProcessStartInfo.Arguments` *string* property (which Windows re-parses with shell-style splitting) is **not used anywhere** in the codebase.
 
-The exhaustive list of argv-construction sites, all four inside `ProcessRunner` and funneling through its one shared `Process.Start` call (`ProcessRunner.cs:148`) — as of the 2026-07-19 pass (F-09), `PullRequestAuditTool`'s git invocation was folded in here too, replacing a standalone spawn site with a call to `ProcessRunner.RunGit`:
+The exhaustive list of argv-construction sites, all four inside `ProcessRunner` and funneling through its one shared `Process.Start` call (`ProcessRunner.cs:161`) — as of the 2026-07-19 pass (F-09), `PullRequestAuditTool`'s git invocation was folded in here too, replacing a standalone spawn site with a call to `ProcessRunner.RunGit`:
 
 | File:line | Process | Argument construction |
 |---|---|---|
-| [`Tools/ProcessRunner.cs:26`](../src/maf-autopilot/Tools/ProcessRunner.cs) | `dotnet build` | `ArgumentList = { "build", projectOrSolutionPath, "--nologo" }` |
-| [`Tools/ProcessRunner.cs:74`](../src/maf-autopilot/Tools/ProcessRunner.cs) | `dotnet-inspect diff` | `ArgumentList = { "diff", "--package", $"{id}@{old}..{new}", "--source", … }` |
-| [`Tools/ProcessRunner.cs:102`](../src/maf-autopilot/Tools/ProcessRunner.cs) | `dnx dotnet-inspect@0.7.8` (on-demand fallback, gated by `MAF_DOCTOR_ALLOW_TOOL_DOWNLOAD` — see F-12 in [`docs/security/threat-model.md`](security/threat-model.md#316-auto-fix-and-scaffold-tool-readonlydestructive-semantics-2026-07-19-closure)) | `ArgumentList = { "dotnet-inspect@0.7.8", "-y", "--source", …, "--", "diff", … }` |
-| [`Tools/ProcessRunner.cs:131`](../src/maf-autopilot/Tools/ProcessRunner.cs) | `git` (diff, invoked by `PullRequestAuditTool`) | `ArgumentList = { "-C", repoPath, args... }` |
+| [`Tools/ProcessRunner.cs:41`](../src/maf-autopilot/Tools/ProcessRunner.cs) | `dotnet build` | `ArgumentList = { "build", projectOrSolutionPath, "--nologo" }` |
+| [`Tools/ProcessRunner.cs:89`](../src/maf-autopilot/Tools/ProcessRunner.cs) | `dotnet-inspect diff` | `ArgumentList = { "diff", "--package", $"{id}@{old}..{new}", "--source", … }` |
+| [`Tools/ProcessRunner.cs:117`](../src/maf-autopilot/Tools/ProcessRunner.cs) | `dnx dotnet-inspect@0.7.8` (on-demand fallback, gated by `MAF_DOCTOR_ALLOW_TOOL_DOWNLOAD` — see F-12 in [`docs/security/threat-model.md`](security/threat-model.md#316-auto-fix-and-scaffold-tool-readonlydestructive-semantics-2026-07-19-closure)) | `ArgumentList = { "dotnet-inspect@0.7.8", "-y", "--source", …, "--", "diff", … }` |
+| [`Tools/ProcessRunner.cs:150`](../src/maf-autopilot/Tools/ProcessRunner.cs) | `git` (diff, invoked by `PullRequestAuditTool` via `RunGit`, now `-z`-delimited — F-07) | `ArgumentList = { "-C", repoPath, args... }` |
 
 All four set `UseShellExecute = false`. There is no `cmd.exe /c`, no `bash -c`, no PowerShell pipeline anywhere in the spawn path.
 
@@ -77,7 +77,7 @@ All four set `UseShellExecute = false`. There is no `cmd.exe /c`, no `bash -c`, 
 grep -rn "Process.Start" src/
 ```
 
-Returns exactly one real call site (`ProcessRunner.cs:148`, inside the shared `Run` helper every construction site above funnels through) plus (a) security-documentation comments in `src/maf-autopilot/Scaffolding/AgentScaffolder.cs` that name `Process.Start` inside a code-injection-payload example, and (b) negative-test fixtures in `src/maf-autopilot.Tests/ScaffolderSecurityTests.cs` that prove the scaffolder rejects those payloads. Both comment-only and test-only hits are correctly excluded by [`ci-invariants.yml` Job 1](../.github/workflows/ci-invariants.yml), which scopes its regex to call-site syntax and skips both the tests directory and lines beginning with `//`. The allowlist was tightened in the 2026-07-19 pass to just `ProcessRunner.cs` (previously also exempted `PullRequestAuditTool.cs`, before its git call moved into `ProcessRunner`). If a future PR adds a new spawn site outside `ProcessRunner.cs`, or one that uses the unsafe `Arguments` string property instead of `ArgumentList`, CI fails — see also [`CONTRIBUTING.md`](../CONTRIBUTING.md) §"Adding an MCP server tool."
+Returns exactly one real call site (`ProcessRunner.cs:161`, inside the shared `Run` helper every construction site above funnels through) plus (a) security-documentation comments in `src/maf-autopilot/Scaffolding/AgentScaffolder.cs` that name `Process.Start` inside a code-injection-payload example, and (b) negative-test fixtures in `src/maf-autopilot.Tests/ScaffolderSecurityTests.cs` that prove the scaffolder rejects those payloads. Both comment-only and test-only hits are correctly excluded by [`ci-invariants.yml` Job 1](../.github/workflows/ci-invariants.yml), which scopes its regex to call-site syntax and skips both the tests directory and lines beginning with `//`. The allowlist was tightened in the 2026-07-19 pass to just `ProcessRunner.cs` (previously also exempted `PullRequestAuditTool.cs`, before its git call moved into `ProcessRunner`). If a future PR adds a new spawn site outside `ProcessRunner.cs`, or one that uses the unsafe `Arguments` string property instead of `ArgumentList`, CI fails — see also [`CONTRIBUTING.md`](../CONTRIBUTING.md) §"Adding an MCP server tool."
 
 #### 4. Cisco mcp-scanner enforces this from the outside
 
