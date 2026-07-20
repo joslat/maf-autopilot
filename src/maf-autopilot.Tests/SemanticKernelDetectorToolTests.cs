@@ -714,6 +714,79 @@ public sealed class SemanticKernelDetectorToolTests
         Assert.False(result.Truncated);
     }
 
+    // -------------------------------------------------------------------------
+    // F-10 review follow-up — the budget-injectable Scan overload lets these
+    // exercise REAL truncation (via SourceFileWalker.EnumerateCsFiles actually
+    // stopping early), not just SkScanResult constructed with a hand-set
+    // Truncated bool (which only proves the rendering code reads the flag it's
+    // given, not that Scan() itself ever sets it correctly).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Scan_BudgetInjected_TinyFileCap_ReportsTruncatedForReal()
+    {
+        using var repo = new TempDir(
+            ("A.cs", "public class A { }"),
+            ("B.cs", "public class B { }"),
+            ("C.cs", "public class C { }"));
+
+        var result = SemanticKernelDetectorTool.Scan(
+            repo.Path,
+            pass1Budget: new SourceFileWalker.ScanBudget { MaxFiles = 1 },
+            pass2Budget: new SourceFileWalker.ScanBudget { MaxFiles = 1 });
+
+        Assert.True(result.Truncated);
+    }
+
+    [Fact]
+    public void Scan_Pass1BudgetExhaustedBeforeGlobalUsing_Pass2StillMissesSkContextInScannedFile()
+    {
+        // Deterministic reproduction of the reviewed correctness caveat
+        // documented on Scan(): pass 1 gets a budget that sees ZERO files
+        // (MaxFiles: 0 — true regardless of filesystem enumeration order, so
+        // this isn't a flaky ordering-dependent test), so repoEstablishesSk
+        // stays false even though the repo DOES rely on a global using
+        // elsewhere in spirit. Pass 2 gets a normal budget and DOES read
+        // Agent.cs — but since it has no LOCAL `using Microsoft.SemanticKernel`
+        // of its own, and repoEstablishesSk is false, AnalyzeSource's importsSk
+        // gate is false and the ChatCompletionAgent construct is silently
+        // never recorded, even though the file was genuinely scanned.
+        using var repo = new TempDir(
+            ("GlobalUsings.cs", "global using Microsoft.SemanticKernel;\nglobal using Microsoft.SemanticKernel.Agents;"),
+            ("Agent.cs", "public class Setup { public void M(ChatCompletionAgent agent) { } }"));
+
+        var result = SemanticKernelDetectorTool.Scan(
+            repo.Path,
+            pass1Budget: new SourceFileWalker.ScanBudget { MaxFiles = 0 },
+            pass2Budget: new SourceFileWalker.ScanBudget());
+
+        Assert.True(result.Truncated); // pass 1's budget was genuinely exhausted
+        // The construct that a full, single-pass scan WOULD have found
+        // (see Scan_GlobalUsingsFile_MakesOtherFilesSkContext) is missing —
+        // demonstrating the "in-budget file, silently under-detected" gap.
+        Assert.DoesNotContain(result.Constructs, c => c.Kind.Contains("ChatCompletionAgent", System.StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Scan_DefaultOverload_MatchesBudgetInjectedOverloadWithFreshBudgets()
+    {
+        // Regression guard: the public Scan(repoPath) overload must keep
+        // delegating to fresh default budgets, not silently share state
+        // across calls or drift from the tested overload's behavior.
+        using var repo = new TempDir(
+            ("GlobalUsings.cs", "global using Microsoft.SemanticKernel;\nglobal using Microsoft.SemanticKernel.Agents;"),
+            ("Agent.cs", "public class Setup { public void M(ChatCompletionAgent agent) { } }"));
+
+        var viaDefault = SemanticKernelDetectorTool.Scan(repo.Path);
+        var viaExplicit = SemanticKernelDetectorTool.Scan(
+            repo.Path, new SourceFileWalker.ScanBudget(), new SourceFileWalker.ScanBudget());
+
+        Assert.Equal(viaExplicit.Truncated, viaDefault.Truncated);
+        Assert.Equal(viaExplicit.Constructs.Count, viaDefault.Constructs.Count);
+        Assert.False(viaDefault.Truncated);
+        Assert.Contains(viaDefault.Constructs, c => c.Kind.Contains("ChatCompletionAgent", System.StringComparison.Ordinal));
+    }
+
     [Fact]
     public void MigrateFromResource_SemanticKernel_Resolves()
     {

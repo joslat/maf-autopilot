@@ -159,6 +159,33 @@ public class PullRequestAuditToolTests
 
         Assert.DoesNotContain("Scan incomplete", report, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("clean", report, StringComparison.OrdinalIgnoreCase);
+        // Verified-in-review fixup: when every changed file was actually
+        // scanned, the count must not carry a misleading "N of M" qualifier.
+        Assert.Contains("**Files scanned:** 1 changed", report, StringComparison.Ordinal);
+        Assert.DoesNotContain(" of 1 changed", report, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildReport_PartialScan_FilesScannedCountReflectsActuallyScannedNotTotalChanged()
+    {
+        // Verified-in-review fixup: "Files scanned" used to always report
+        // changedFiles.Count (the total diff size) even when the per-file cap
+        // meant one of them was never actually read — self-contradictory
+        // alongside a "Scan incomplete" warning. Two changed files, one over
+        // the per-file cap: exactly 1 of 2 should be reported as scanned.
+        using var repo = new TempRepo();
+        var small = System.IO.Path.Combine(repo.Path, "Small.cs");
+        File.WriteAllText(small, "class Small { }");
+        var huge = System.IO.Path.Combine(repo.Path, "Huge.cs");
+        using (var fs = new FileStream(huge, FileMode.Create))
+        {
+            fs.SetLength(PullRequestAuditTool.MaxFileBytes + 1);
+        }
+
+        var report = PullRequestAuditTool.BuildReport(repo.Path, "main", ["Small.cs", "Huge.cs"]);
+
+        Assert.Contains("Scan incomplete", report, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("**Files scanned:** 1 of 2 changed", report, StringComparison.Ordinal);
     }
 
     [Fact]

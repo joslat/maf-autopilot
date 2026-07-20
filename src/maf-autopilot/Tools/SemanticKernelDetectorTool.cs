@@ -103,6 +103,16 @@ public sealed class SemanticKernelDetectorTool
 
     /// <summary>Scans a repo: csproj package references + every .cs file's SK constructs.</summary>
     internal static SkScanResult Scan(string repoPath)
+        => Scan(repoPath, new SourceFileWalker.ScanBudget(), new SourceFileWalker.ScanBudget());
+
+    /// <summary>
+    /// Budget-injectable overload — the production entry point above always
+    /// passes two fresh default budgets; this overload exists so tests can
+    /// pass small budgets and exercise the two-pass truncation interaction
+    /// for real (see the caveat below) without needing a multi-hundred-MB
+    /// fixture to actually trip the default 500 MB aggregate cap.
+    /// </summary>
+    internal static SkScanResult Scan(string repoPath, SourceFileWalker.ScanBudget pass1Budget, SourceFileWalker.ScanBudget pass2Budget)
     {
         var packages = DetectPackages(repoPath);
 
@@ -110,15 +120,25 @@ public sealed class SemanticKernelDetectorTool
         // accepted .cs file into one in-memory list before analysis. With a
         // 50,000-file / 10 MB-per-file walker cap and no aggregate limit, the
         // theoretical retained set was unbounded (hundreds of GB). Two passes
-        // over a shared ScanBudget bound BOTH: pass 1 only checks for a global
-        // SK using (never retains a source body); pass 2 re-enumerates and
-        // analyzes one file at a time. The budget object is shared across both
-        // passes so its file-count/aggregate-byte accounting reflects the
-        // whole scan, not each pass independently.
-        var budget = new SourceFileWalker.ScanBudget();
-
+        // bound this: pass 1 only checks for a global SK using (never retains
+        // a source body); pass 2 re-enumerates and analyzes one file at a
+        // time. Each pass gets its OWN ScanBudget (see the comment at pass 2
+        // below for why) — reviewed correctness caveat: on a repo large
+        // enough to hit the aggregate cap, if the file declaring the global
+        // using sorts AFTER pass 1's budget is exhausted, pass 1 never sees
+        // it and repoEstablishesSk stays false even though pass 2 may still
+        // fully analyze in-budget files that were relying on that global
+        // using for SK-context — those files can be silently under-detected,
+        // not merely "not looked at." `Truncated` still fires in this case
+        // (either budget hit its cap), so the result is flagged incomplete,
+        // just not with this exact mechanism spelled out. Requires several
+        // hundred MB of .cs source to trigger in production (see
+        // SemanticKernelDetectorToolTests for a budget-injected repro at
+        // ordinary file sizes); not fixed here as a two-pass redesign to
+        // close it precisely would trade this narrow, flagged edge case for
+        // meaningfully more complexity.
         var repoEstablishesSk = false;
-        foreach (var file in SourceFileWalker.EnumerateCsFiles(repoPath, excludes: null, budget))
+        foreach (var file in SourceFileWalker.EnumerateCsFiles(repoPath, excludes: null, pass1Budget))
         {
             string text;
             try { text = File.ReadAllText(file); }
@@ -135,8 +155,7 @@ public sealed class SemanticKernelDetectorTool
         // Independent budget for pass 2: pass 1's early-break-on-global-using
         // means its FilesSeen/BytesAccepted don't reflect the full walk, and
         // pass 2 needs its own accounting to decide whether IT truncated.
-        var analyzeBudget = new SourceFileWalker.ScanBudget();
-        foreach (var file in SourceFileWalker.EnumerateCsFiles(repoPath, excludes: null, analyzeBudget))
+        foreach (var file in SourceFileWalker.EnumerateCsFiles(repoPath, excludes: null, pass2Budget))
         {
             string rel;
             try { rel = SourceFileWalker.MakeRelative(repoPath, file); }
@@ -150,7 +169,7 @@ public sealed class SemanticKernelDetectorTool
             constructs.AddRange(AnalyzeSource(text, rel, repoEstablishesSk));
         }
 
-        return new SkScanResult(packages, constructs, Truncated: budget.Truncated || analyzeBudget.Truncated);
+        return new SkScanResult(packages, constructs, Truncated: pass1Budget.Truncated || pass2Budget.Truncated);
     }
 
     /// <summary>

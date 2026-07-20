@@ -129,6 +129,7 @@ public sealed class PullRequestAuditTool
         }
 
         long aggregateBytes = 0;
+        var actuallyScanned = 0;
         foreach (var relPath in filesToScan)
         {
             // F-07 — previously combined repoPath + relPath with plain Path.Combine
@@ -163,6 +164,7 @@ public sealed class PullRequestAuditTool
                 break;
             }
             aggregateBytes += length;
+            actuallyScanned++;
 
             var source = File.ReadAllText(absPath);
 
@@ -199,7 +201,14 @@ public sealed class PullRequestAuditTool
         var sb = new StringBuilder();
         sb.AppendLine($"## 🔍 MAF PR audit — `{baseBranch}` → HEAD");
         sb.AppendLine();
-        sb.AppendLine($"**Files scanned:** {changedFiles.Count} changed `.cs` file(s).");
+        // Verified-in-review fixup: this used to always report changedFiles.Count
+        // (the total diff size), which read as "files scanned" even when F-07's
+        // caps/containment checks meant some of those files were never actually
+        // read — a report claiming "Files scanned: 500" immediately above a
+        // "Scan incomplete, only 200 processed" warning was self-contradictory.
+        sb.AppendLine(actuallyScanned == changedFiles.Count
+            ? $"**Files scanned:** {actuallyScanned} changed `.cs` file(s)."
+            : $"**Files scanned:** {actuallyScanned} of {changedFiles.Count} changed `.cs` file(s).");
         if (!scanComplete)
         {
             sb.AppendLine();

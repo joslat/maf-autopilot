@@ -45,6 +45,18 @@ internal static class ProcessRunner
     // environment), gate the download itself behind an explicit opt-in that
     // defaults to off — a client auto-invoking this ReadOnly tool can no
     // longer trigger a silent download as a side effect.
+    //
+    // Reviewed scope note: RegistryExtractCommand's `maf-doctor
+    // registry-extract` CLI subcommand also calls this method (shared code,
+    // not duplicated), so a local developer running it by hand without
+    // dotnet-inspect pre-installed now sees the same "disabled by default"
+    // message instead of a silent download, unless they set this env var.
+    // CI is unaffected — maf-release-watcher.yml installs dotnet-inspect at
+    // an exact pinned version before this ever runs. A human running the CLI
+    // deliberately is a lower-risk case than an MCP client auto-invoking a
+    // ReadOnly tool, but splitting this into two code paths just to restore
+    // the old CLI-only auto-download convenience isn't worth the duplication
+    // for a one-time `dotnet tool install` a developer can run themselves.
     public const string AllowToolDownloadEnvName = "MAF_DOCTOR_ALLOW_TOOL_DOWNLOAD";
 
     // internal (not private) so tests can verify the gating logic directly
