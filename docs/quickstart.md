@@ -55,17 +55,17 @@ You'll see a **🔴 grade F** — with the top fixes. These include **silent fan
 ## Beat 4 — Fix the mechanical issues, deterministically (30s)
 
 ```bash
-# Preview first (no writes)
-maf-doctor autofix-all . --dry-run
+# Preview by default (no writes)
+maf-doctor autofix-all .
 
 # Apply — Roslyn rewriters, no LLM in this loop
-maf-doctor autofix-all .
+maf-doctor autofix-all . --apply
 
 # Re-grade
 maf-doctor doctor .
 ```
 
-`autofix-all` prints a **human-readable summary** by default — a per-rule breakdown, the files it changed, and the next step. Add **`--json`** if you want the machine-readable output for CI/scripts. (And `0 files changed` is normal: it only means none of the 5 *mechanical* rules matched — your semantic findings are still there; run `doctor` to see them.)
+`autofix-all` prints a **human-readable summary** by default — a per-rule breakdown, the files it would change, and the next step. Add **`--json`** if you want the machine-readable output for CI/scripts. (And `0 files changed` is normal: it only means none of the 5 *mechanical* rules matched — your semantic findings are still there; run `doctor` to see them.)
 
 The grade stays **🔴 F** — but **three mechanical errors are gone (7 → 4)**, deterministically, in under 30 seconds, no LLM in the loop. The rest are *semantic* (a hard-coded key, shared provider state, the fan-out starvation bugs) and need judgment — that's the hand-off to the `@maf-migration` agent, which is what drives the grade to A. The fixes are deterministic Roslyn rewriters — the same machinery you'd trust in a Microsoft refactor extension, not guesses.
 
@@ -86,8 +86,8 @@ dotnet add package Microsoft.Agents.AI --version 1.10.0
 dotnet build         # CS0618 / CS0246 surface the changed/removed APIs
 
 # 3. Let the toolkit map each break to its canonical fix:
-maf-doctor doctor .          # re-grade against the new version
-maf-doctor autofix-all .     # auto-apply the mechanical migrations
+maf-doctor doctor .              # re-grade against the new version
+maf-doctor autofix-all . --apply # apply the mechanical migrations
 
 # 4. For anything left, the migration guide + agent drive it in Copilot Chat:
 #    @maf-migration   →  reads guides/maf-<version>-migration-guide.md, fixes task-by-task

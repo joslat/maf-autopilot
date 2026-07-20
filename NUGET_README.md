@@ -17,7 +17,7 @@ Then, in any MAF repo:
 
 ```
 maf-doctor doctor .          # instant A–F health grade + the top fixes (add --all for every finding)
-maf-doctor autofix-all .     # apply every deterministic Roslyn rewriter
+maf-doctor autofix-all . --apply  # apply every deterministic Roslyn rewriter
 maf-doctor init              # wire the MCP server + MAF steering into this repo
 ```
 

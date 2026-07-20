@@ -41,7 +41,7 @@ Sleep 5s
 Type "# Roslyn rewriters, no LLM — the deterministic mechanical fixes."
 Enter
 Sleep 700ms
-Type "maf-doctor autofix-all ."
+Type "maf-doctor autofix-all . --apply"
 Sleep 200ms
 Enter
 Sleep 4s

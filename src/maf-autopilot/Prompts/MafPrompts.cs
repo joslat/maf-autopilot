@@ -158,7 +158,7 @@ public static class MafPrompts
         sb.AppendLine();
         sb.AppendLine("REMEDIATION LOOP:");
         sb.AppendLine("1. PLAN — call `MafDoctor(repoPath, format: \"plan\")` for the ordered plan, and `MafDoctor(repoPath, format: \"json\", full: true)` for the machine-readable findings (each with `confidence`).");
-        sb.AppendLine("2. MECHANICAL — run `MafAutoFixAll(repoPath)` (Phase 1). Then `dotnet build`; it must be green before continuing.");
+        sb.AppendLine("2. MECHANICAL — run `MafAutoFixAll(repoPath, dryRun: false)` (Phase 1). Then `dotnet build`; it must be green before continuing.");
         sb.AppendLine("3. SEMANTIC — for each remaining finding, in plan order:");
         sb.AppendLine("   a. TRIAGE: if `confidence` is `heuristic`, FIRST call `MafExplainFinding(repoPath, file, line)` and read the surrounding code. Decide: is this a REAL issue here, or a false positive? If it's a false positive (e.g. an `IMessageHandler<T>` that's MediatR, an `app.RunAsync()` host call, an `AgentResponse<T>.Result`), SKIP it and record it under \"Skipped as false positive\" with a one-line reason. If you cannot decide after reading the code (inconclusive) — in EITHER mode — SKIP and record it for human review; never edit on a maybe.");
         sb.AppendLine("   b. FIX: for a confirmed finding, apply the canonical fix from the playbook / the finding's `Fix`. Make the MINIMAL change that resolves it.");
@@ -456,7 +456,7 @@ public static class MafPrompts
         sb.AppendLine("2. Read `maf://constraints` (the hard rules) and the relevant section of `maf://guide`. For an obsolete / removed-surface finding (e.g. `MAF-AP-EXEC-001`), also call `MafRegistryLookup` for the canonical before/after.");
         sb.AppendLine("3. Explain to the user, grounded in those sources:");
         sb.AppendLine("   - **What** the finding is and **why it matters** (the concrete failure mode, not a restatement of the rule name).");
-        sb.AppendLine("   - **The fix.** If the tool reports it is *auto-fixable*, tell the user to run `maf-doctor autofix-all .` (or call `MafAutoFixAll`) — the rewrite is deterministic. If it *needs judgment*, propose the exact change as a minimal diff against the shown code.");
+        sb.AppendLine("   - **The fix.** If the tool reports it is *auto-fixable*, tell the user to run `maf-doctor autofix-all . --apply` (or call `MafAutoFixAll(repoPath, dryRun: false)`) — the rewrite is deterministic. If it *needs judgment*, propose the exact change as a minimal diff against the shown code.");
         sb.AppendLine("4. Before finalizing a hand-written fix, re-check it against `maf://constraints` so the fix doesn't violate a hard rule.");
         sb.AppendLine();
         sb.AppendLine("Keep it tight: one finding, one clear fix. If `MafExplainFinding` reports no finding at that line, say so and suggest re-running `MafDoctor` for the current `file:line`.");

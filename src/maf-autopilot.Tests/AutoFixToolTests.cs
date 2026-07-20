@@ -532,7 +532,9 @@ public class AutoFixToolTests
         {
             // Act.
             var tool = new AutoFixTool();
-            var resultJson = tool.MafAutoFix(tempRoot, "MAF-AP-SEC-001");
+            // F-11: dryRun now defaults to true — this test is specifically about
+            // the write path, so it opts in explicitly.
+            var resultJson = tool.MafAutoFix(tempRoot, "MAF-AP-SEC-001", dryRun: false);
             var result = JsonSerializer.Deserialize<JsonDocument>(resultJson)!;
 
             // Assert — JSON says 1 file changed; disk reflects the rewrite.
@@ -583,7 +585,9 @@ public class AutoFixToolTests
         {
             // Act.
             var tool = new AutoFixTool();
-            var resultJson = tool.MafAutoFixAll(tempRoot);
+            // F-11: dryRun now defaults to true — this test is specifically about
+            // the write path, so it opts in explicitly.
+            var resultJson = tool.MafAutoFixAll(tempRoot, dryRun: false);
             var result = JsonSerializer.Deserialize<JsonDocument>(resultJson)!;
 
             // Assert — 2 distinct files changed across the rule set.

@@ -129,7 +129,8 @@ public sealed class AutoFixTool
           - ruleId: which rule's auto-fixer to run.
           - specificFile: optional. Limit fixes to a single file (path relative to repoPath).
           - dryRun: if true, no files are written — just returns the JSON summary
-            of what WOULD change. Default false (writes are applied).
+            of what WOULD change. Default true (preview-only) — pass dryRun: false
+            to actually write.
 
         Returns a JSON document with `ruleId`, `dryRun`, `filesChanged` count,
         `changedFiles` list, and any per-file `error` strings.
@@ -140,7 +141,7 @@ public sealed class AutoFixTool
         [Description("Absolute path to the repo or project to fix.")] string repoPath,
         [Description("Rule ID, e.g. 'MAF-AP-SEC-001' or 'MAF130-FAN-IN-001'.")] string ruleId,
         [Description("Optional: relative path to limit fixes to a single file.")] string? specificFile = null,
-        [Description("If true, no files written — just preview.")] bool dryRun = false)
+        [Description("If true (the default), no files written — preview only. Pass false to write.")] bool dryRun = true)
     {
         if (PathGuard.ValidateRepoPath(repoPath) is { } err)
             return JsonSerializer.Serialize(new { error = err });
@@ -193,7 +194,8 @@ public sealed class AutoFixTool
           - repoPath: absolute path to the repo or project to fix.
           - specificFile: optional, relative path to limit fixes to a single file.
           - dryRun: if true, no files are written — just returns the JSON
-            summary of what WOULD change. Default false.
+            summary of what WOULD change. Default true (preview-only) — pass
+            dryRun: false to actually write.
 
         Returns aggregate JSON with the ordered rule list + total distinct files
         changed (union across all rules) + per-rule breakdown.
@@ -201,7 +203,7 @@ public sealed class AutoFixTool
     public string MafAutoFixAll(
         [Description("Absolute path to the repo or project to fix.")] string repoPath,
         [Description("Optional: relative path to limit fixes to a single file.")] string? specificFile = null,
-        [Description("If true, no files written — just preview.")] bool dryRun = false)
+        [Description("If true (the default), no files written — preview only. Pass false to write.")] bool dryRun = true)
     {
         var report = RunAll(repoPath, specificFile, dryRun, out var error);
         if (report is null)

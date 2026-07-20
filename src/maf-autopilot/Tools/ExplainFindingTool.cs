@@ -143,7 +143,7 @@ public sealed class ExplainFindingTool
         sb.AppendLine("### How to resolve");
         sb.AppendLine();
         if (atLine.Any(f => f.AutoFixable))
-            sb.AppendLine("- **Mechanical** (auto-fixable above): apply deterministically with `maf-doctor autofix-all .` (CLI) or `MafAutoFixAll(repoPath)` (MCP), then re-run the doctor.");
+            sb.AppendLine("- **Mechanical** (auto-fixable above): apply deterministically with `maf-doctor autofix-all . --apply` (CLI) or `MafAutoFixAll(repoPath, dryRun: false)` (MCP), then re-run the doctor.");
         if (atLine.Any(f => !f.AutoFixable))
             sb.AppendLine("- **Semantic** (needs your judgment): apply the **Fix** above by hand or via the `@maf-migration` agent. Verify the change against the hard rules before committing.");
         sb.AppendLine();

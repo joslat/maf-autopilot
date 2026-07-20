@@ -47,9 +47,9 @@ if (args.Length > 0 && (args[0] is "--help" or "-h" or "help"))
                                             not just the top 3; --json = machine-readable findings;
                                             --plan = ordered, checkboxed remediation plan;
                                             --plan --json = structured remediation manifest (for an automated fix loop).
-          autofix-all [path] [--dry-run] [--json]
-                                            Apply deterministic Roslyn fixes. Human-readable summary
-                                            by default; --dry-run = preview only (no writes);
+          autofix-all [path] [--apply] [--json]
+                                            Deterministic Roslyn fixes. Preview only by default
+                                            (no writes); --apply = actually write the changes;
                                             --json = machine-readable output.
           new agent <Name>                  Scaffold a MAF agent + smoke test.
           new executor <Name> [In] [Out]    Scaffold a workflow executor + smoke test.
@@ -120,9 +120,11 @@ if (args.Length >= 1 && args[0] == "autofix-all")
 {
     // Phase W bonus + #8 enabler — surface MafAutoFixAll on the CLI so the
     // migration-cast.tape can drive the auto-fix flow without going through
-    // Copilot Chat. Usage: `maf-doctor autofix-all [path] [--dry-run] [--json]`.
-    // Default output is human-readable; `--json` emits the machine-readable
-    // (MCP-tool) shape. Parsing lives in AutoFixCli so it's unit-testable.
+    // Copilot Chat. Usage: `maf-doctor autofix-all [path] [--apply] [--json]`.
+    // F-11 — preview-only unless --apply is given (--dry-run remains a no-op
+    // alias for the default). Default output is human-readable; `--json`
+    // emits the machine-readable (MCP-tool) shape. Parsing lives in
+    // AutoFixCli so it's unit-testable.
     var (parsedPath, json, dryRun) = MafDoctor.Commands.AutoFixCli.Parse(args);
     var path = ResolveCliPath(parsedPath);
     var tool = new MafDoctor.Tools.AutoFixTool();

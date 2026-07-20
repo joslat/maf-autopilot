@@ -17,12 +17,13 @@ public class AutoFixCliTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Parse_NoFlags_DefaultsToHumanNoDryRun()
+    public void Parse_NoFlags_DefaultsToPreview()
     {
+        // F-11 — preview is the safe default; a caller must opt in with --apply.
         var (path, json, dryRun) = AutoFixCli.Parse(new[] { "autofix-all", "." });
         Assert.Equal(".", path);
         Assert.False(json);
-        Assert.False(dryRun);
+        Assert.True(dryRun);
     }
 
     [Fact]
@@ -36,6 +37,21 @@ public class AutoFixCliTests
     public void Parse_DryRunFlag_SetsDryRun()
     {
         var (_, _, dryRun) = AutoFixCli.Parse(new[] { "autofix-all", ".", "--dry-run" });
+        Assert.True(dryRun);
+    }
+
+    [Fact]
+    public void Parse_ApplyFlag_ClearsDryRun()
+    {
+        var (_, _, dryRun) = AutoFixCli.Parse(new[] { "autofix-all", ".", "--apply" });
+        Assert.False(dryRun);
+    }
+
+    [Fact]
+    public void Parse_ApplyAndDryRun_DryRunWins()
+    {
+        // Safety over convenience if both are given.
+        var (_, _, dryRun) = AutoFixCli.Parse(new[] { "autofix-all", ".", "--apply", "--dry-run" });
         Assert.True(dryRun);
     }
 
