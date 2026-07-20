@@ -34,10 +34,31 @@ internal static class ProcessRunner
         return Run(psi);
     }
 
+    // F-12 (2026-07-19 security assessment) — MafDiffPackage / MafPreUpgradeDryRun
+    // are annotated ReadOnly=true, which a client can read as "safe to
+    // auto-invoke without confirmation." The dnx fallback below downloads and
+    // executes a NuGet tool package on demand, which is a materially different
+    // risk than a passive read even though it writes nothing to the user's
+    // *workspace* (the annotation's literal scope). Rather than change the
+    // annotation (which would also block the common, low-risk case where
+    // dotnet-inspect just isn't on PATH yet in an otherwise-trusted dev
+    // environment), gate the download itself behind an explicit opt-in that
+    // defaults to off — a client auto-invoking this ReadOnly tool can no
+    // longer trigger a silent download as a side effect.
+    public const string AllowToolDownloadEnvName = "MAF_DOCTOR_ALLOW_TOOL_DOWNLOAD";
+
+    // internal (not private) so tests can verify the gating logic directly
+    // without depending on whether dotnet-inspect happens to be installed in
+    // the test environment (which would otherwise never even reach this
+    // check, making the opt-in path untestable in CI).
+    internal static bool ToolDownloadAllowed() =>
+        Environment.GetEnvironmentVariable(AllowToolDownloadEnvName) is "1" or "true";
+
     public static (int ExitCode, string Output) RunDotnetInspectDiff(
         string packageId, string oldVersion, string newVersion)
     {
-        // We try the installed global tool first; fall back to `dnx dotnet-inspect@0.7.8`.
+        // We try the installed global tool first; fall back to `dnx dotnet-inspect@0.7.8`
+        // only when the operator has explicitly opted in.
         var psi = new ProcessStartInfo("dotnet-inspect")
         {
             ArgumentList =
@@ -56,7 +77,16 @@ internal static class ProcessRunner
         }
         catch (System.ComponentModel.Win32Exception)
         {
-            // dotnet-inspect not on PATH — fall back to dnx-on-demand.
+            // dotnet-inspect not on PATH.
+            if (!ToolDownloadAllowed())
+            {
+                return (1,
+                    "dotnet-inspect is not installed and on-demand download is disabled by default. " +
+                    $"Install it with `dotnet tool install --global dotnet-inspect --version 0.7.8`, " +
+                    $"or set {AllowToolDownloadEnvName}=1 in the MCP server's env config to allow " +
+                    "this tool to fetch and run it on demand via `dnx` when needed.");
+            }
+
             var fallback = new ProcessStartInfo("dnx")
             {
                 ArgumentList =

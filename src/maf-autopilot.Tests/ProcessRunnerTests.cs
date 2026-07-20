@@ -11,8 +11,45 @@ namespace MafDoctor.Tests;
 /// real subprocess that emits 16+ MB just to prove truncation would be slow and
 /// environment-dependent for no extra coverage value.
 /// </summary>
-public sealed class ProcessRunnerTests
+public sealed class ProcessRunnerTests : IDisposable
 {
+    public void Dispose() =>
+        Environment.SetEnvironmentVariable(ProcessRunner.AllowToolDownloadEnvName, null);
+
+    // -------------------------------------------------------------------------
+    // F-12 (2026-07-19 security assessment) — the dnx-on-demand fallback must
+    // stay off unless explicitly opted into, since MafDiffPackage/
+    // MafPreUpgradeDryRun are annotated ReadOnly=true and a client can
+    // auto-invoke a ReadOnly tool without confirmation.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void ToolDownloadAllowed_Unset_DefaultsToFalse()
+    {
+        Environment.SetEnvironmentVariable(ProcessRunner.AllowToolDownloadEnvName, null);
+        Assert.False(ProcessRunner.ToolDownloadAllowed());
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("false")]
+    [InlineData("yes")]
+    [InlineData("")]
+    public void ToolDownloadAllowed_NonAffirmativeValues_False(string value)
+    {
+        Environment.SetEnvironmentVariable(ProcessRunner.AllowToolDownloadEnvName, value);
+        Assert.False(ProcessRunner.ToolDownloadAllowed());
+    }
+
+    [Theory]
+    [InlineData("1")]
+    [InlineData("true")]
+    public void ToolDownloadAllowed_AffirmativeValues_True(string value)
+    {
+        Environment.SetEnvironmentVariable(ProcessRunner.AllowToolDownloadEnvName, value);
+        Assert.True(ProcessRunner.ToolDownloadAllowed());
+    }
+
     [Fact]
     public async Task DrainBoundedAsync_UnderBudget_ReturnsFullTextNotTruncated()
     {
