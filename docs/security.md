@@ -178,7 +178,7 @@ mcp-scanner --analyzers yara --format summary --hide-safe \
 
 ### Latest scan results
 
-**2026-05-17 — Cisco mcp-scanner v4.6.0 (yara analyzer)**
+**2026-05-17 — Cisco mcp-scanner v4.6.0 (yara analyzer)** — a point-in-time manual record, not auto-updated; the authoritative current status is whatever CI's mcp-scanner check shows on the latest `main` run, now a required, hard-failing check (see [Scan cadence](#scan-cadence) above). Tool count has grown since this snapshot (25 → 28 as of the 2026-07-19 assessment, verified by grep); re-run and update this block at the next tagged release.
 
 ```
 === Scan Statistics ===
@@ -189,7 +189,7 @@ Severity breakdown: HIGH: 0, UNKNOWN: 0, MEDIUM: 0, LOW: 0, SAFE: 25
 Analyzer stats: yara_analyzer: 25/25 scanned, 0 findings
 ```
 
-**Triage: zero findings.** All 25 MCP tools enumerated cleanly via stdio. No prompt injection, tool poisoning, credential harvesting, or code execution patterns matched.
+**Triage: zero findings.** All 25 MCP tools enumerated cleanly via stdio (at the time of this snapshot) — no prompt injection, tool poisoning, credential harvesting, or code execution patterns matched.
 
 ### Scan cadence
 
