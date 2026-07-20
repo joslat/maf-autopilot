@@ -48,6 +48,38 @@ public sealed class InitCommandTests : IDisposable
         Assert.Equal("maf-doctor", servers["maf-doctor"]!["command"]!.GetValue<string>());
         Assert.Equal(InitCommand.CurrentVersion,
           servers["maf-doctor"]!["env"]![InitCommand.InitVersionEnvName]!.GetValue<string>());
+        // F-04 — a freshly-initialized workspace is scoped to itself by default,
+        // closing the loop with WorkspacePolicy's MCP-side containment check.
+        Assert.Equal(_tempDir,
+          servers["maf-doctor"]!["env"]![MafDoctor.Tools.WorkspacePolicy.WorkspaceRootsEnvName]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task WriteMcpJsonAsync_ExistingCustomWorkspaceRoots_NotClobberedOnReinit()
+    {
+        var vscodeDir = Path.Combine(_tempDir, ".vscode");
+        Directory.CreateDirectory(vscodeDir);
+        var mcpJsonPath = Path.Combine(vscodeDir, "mcp.json");
+        var customRoots = $"{_tempDir};C:\\some\\other\\repo";
+        await File.WriteAllTextAsync(mcpJsonPath, $$"""
+            {
+              "servers": {
+                "maf-doctor": {
+                  "type": "stdio",
+                  "command": "maf-doctor",
+                  "args": [],
+                  "env": { "MAF_DOCTOR_WORKSPACE_ROOTS": "{{customRoots.Replace("\\", "\\\\")}}" }
+                }
+              }
+            }
+            """);
+
+        await InitCommand.WriteMcpJsonAsync(_tempDir);
+
+        var root = JsonNode.Parse(await File.ReadAllTextAsync(mcpJsonPath))!.AsObject();
+        var entry = root["servers"]!["maf-doctor"]!.AsObject();
+        Assert.Equal(customRoots,
+            entry["env"]![MafDoctor.Tools.WorkspacePolicy.WorkspaceRootsEnvName]!.GetValue<string>());
     }
 
     [Fact]

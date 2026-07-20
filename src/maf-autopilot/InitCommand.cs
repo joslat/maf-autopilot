@@ -230,7 +230,7 @@ internal static class InitCommand
 
         var servers = root[serversKey]!.AsObject();
 
-        var changed = UpsertCanonicalMcpEntry(servers, includeType, out var action);
+        var changed = UpsertCanonicalMcpEntry(servers, includeType, targetDir, out var action);
         if (!changed)
         {
             Console.WriteLine($"  ✓ {label} — MAF Doctor server entry already current");
@@ -250,7 +250,7 @@ internal static class InitCommand
         Console.WriteLine($"  ✓ {label} — {action}");
     }
 
-    internal static bool UpsertCanonicalMcpEntry(JsonObject servers, bool includeType, out string action)
+    internal static bool UpsertCanonicalMcpEntry(JsonObject servers, bool includeType, string targetDir, out string action)
     {
         var changed = false;
         action = "updated MAF Doctor (maf-doctor) global-tool server entry";
@@ -287,7 +287,7 @@ internal static class InitCommand
 
         changed |= SetString(entry, "command", "maf-doctor");
         changed |= SetEmptyArray(entry, "args");
-        changed |= SetInitEnv(entry);
+        changed |= SetInitEnv(entry, targetDir);
 
         return changed;
     }
@@ -319,7 +319,7 @@ internal static class InitCommand
         return true;
     }
 
-    private static bool SetInitEnv(JsonObject entry)
+    private static bool SetInitEnv(JsonObject entry, string targetDir)
     {
         var changed = false;
         JsonObject env;
@@ -335,6 +335,17 @@ internal static class InitCommand
         }
 
         changed |= SetString(env, InitVersionEnvName, CurrentVersion);
+
+        // F-04 — first-time-only: scope newly-initialized workspaces to
+        // themselves by default. Deliberately does NOT overwrite an existing
+        // value on re-init — a user may have broadened this to cover multiple
+        // repositories, and re-running `init` must not silently narrow it back.
+        if (!env.ContainsKey(WorkspacePolicy.WorkspaceRootsEnvName))
+        {
+            env[WorkspacePolicy.WorkspaceRootsEnvName] = targetDir;
+            changed = true;
+        }
+
         return changed;
     }
 

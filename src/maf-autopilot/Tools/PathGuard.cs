@@ -67,6 +67,12 @@ internal static class PathGuard
         if (!Directory.Exists(path))
             return $"Error: directory does not exist: '{path}'.";
 
+        // F-04 — MCP-only workspace containment. A no-op for CLI invocations;
+        // see WorkspacePolicy's class remarks for why the boundary lives there
+        // and not here.
+        if (WorkspacePolicy.Validate(path) is { } policyError)
+            return policyError;
+
         return null;
     }
 

@@ -179,6 +179,12 @@ if (args.Length >= 1 && args[0] == "registry-extract")
     return;
 }
 
+// F-04 — every branch above this point is a CLI subcommand and returns before
+// reaching here. Only the MCP-server path below falls through, so this is the
+// one and only place WorkspacePolicy's containment check turns on; CLI usage
+// (a human directly invoking `maf-doctor doctor <any path>`) is unaffected.
+WorkspacePolicy.EnableMcpMode();
+
 // All logs must go to stderr — stdout is reserved for the MCP JSON-RPC protocol.
 // CreateEmptyApplicationBuilder, not CreateApplicationBuilder: the server reads no
 // appsettings/host config, and the defaults register a reloadOnChange file watcher
