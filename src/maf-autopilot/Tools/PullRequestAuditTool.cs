@@ -12,9 +12,9 @@ namespace MafDoctor.Tools;
 /// Turns a full-repo audit into a PR-comment-friendly scan — the CI integration
 /// unlock.
 ///
-/// Implementation: shells <c>git diff --name-only base...HEAD</c>, filters to
-/// <c>*.cs</c>, then runs each scanner per file using its pure-function entry
-/// point. No extra dependencies, no semantic model needed.
+/// Implementation: shells <c>git diff -z --name-only base...HEAD</c>, filters
+/// to <c>*.cs</c>, then runs each scanner per file using its pure-function
+/// entry point. No extra dependencies, no semantic model needed.
 /// </summary>
 [McpServerToolType]
 public sealed class PullRequestAuditTool
@@ -68,12 +68,18 @@ public sealed class PullRequestAuditTool
         // `git diff --name-only base...HEAD` lists files changed since the merge-base.
         // The triple-dot form gives the symmetric difference with the merge-base,
         // which is what PR review wants.
+        //
+        // F-07 (round-2 review fixup) — `-z` makes the entry separator NUL
+        // instead of newline. A newline-split parse mis-handles a filename
+        // containing a literal embedded newline (legal on POSIX filesystems):
+        // it would fragment into two bogus "paths". NUL is the only byte a
+        // POSIX path can never contain, so it's the only safe separator.
         int exitCode;
         string stdout;
         try
         {
             (exitCode, stdout) = ProcessRunner.RunGit(
-                repoPath, TimeSpan.FromSeconds(30), "diff", "--name-only", $"{baseBranch}...HEAD");
+                repoPath, TimeSpan.FromSeconds(30), "diff", "-z", "--name-only", $"{baseBranch}...HEAD");
         }
         catch (Win32Exception)
         {
@@ -86,14 +92,13 @@ public sealed class PullRequestAuditTool
     }
 
     /// <summary>
-    /// Parses the stdout of <c>git diff --name-only base...HEAD</c> into the
-    /// .cs paths we want to scan. Strips CR for Windows checkouts, filters to
-    /// .cs files, drops bin/obj noise. Pure: no I/O — the testable seam.
+    /// Parses the NUL-delimited stdout of <c>git diff -z --name-only base...HEAD</c>
+    /// into the .cs paths we want to scan: filters to .cs files, drops bin/obj
+    /// noise. Pure: no I/O — the testable seam.
     /// </summary>
     internal static IReadOnlyList<string> ParseGitDiffOutput(string stdout) =>
         stdout
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(line => line.TrimEnd('\r'))
+            .Split('\0', StringSplitOptions.RemoveEmptyEntries)
             .Where(line => line.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
             .Where(line => !line.Contains("/bin/", StringComparison.Ordinal)
                         && !line.Contains("/obj/", StringComparison.Ordinal))

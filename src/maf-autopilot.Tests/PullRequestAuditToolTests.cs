@@ -53,7 +53,7 @@ public class PullRequestAuditToolTests
     }
 
     // -------------------------------------------------------------------------
-    // Phase I.1 — hermetic parser tests for `git diff --name-only` output.
+    // Phase I.1 — hermetic parser tests for `git diff -z --name-only` output.
     // The shell-out boundary is excluded; the parser is the testable seam.
     // -------------------------------------------------------------------------
 
@@ -61,7 +61,7 @@ public class PullRequestAuditToolTests
     public void ParseGitDiffOutput_HandlesMixedFiles_FiltersToCsOnly()
     {
         // Arrange
-        var stdout = "src/Foo.cs\nREADME.md\nsrc/Bar.cs\n.gitignore\n";
+        var stdout = "src/Foo.cs\0README.md\0src/Bar.cs\0.gitignore\0";
 
         // Act
         var result = PullRequestAuditTool.ParseGitDiffOutput(stdout);
@@ -71,24 +71,25 @@ public class PullRequestAuditToolTests
     }
 
     [Fact]
-    public void ParseGitDiffOutput_StripsCarriageReturns_OnWindowsCheckouts()
+    public void ParseGitDiffOutput_FilenameWithEmbeddedNewline_ParsedAsOneEntry()
     {
-        // Arrange — git on Windows emits CRLF.
-        var stdout = "src/Foo.cs\r\nsrc/Bar.cs\r\n";
+        // F-07 (round-2 review fixup) — the whole point of `-z`/NUL-delimited
+        // parsing: a filename containing a literal newline (legal on POSIX
+        // filesystems) must not fragment into two bogus paths the way a
+        // newline-split parse would.
+        var weirdName = "weird\nname.cs";
+        var stdout = weirdName + "\0src/Bar.cs\0";
 
-        // Act
         var result = PullRequestAuditTool.ParseGitDiffOutput(stdout);
 
-        // Assert
-        Assert.All(result, line => Assert.DoesNotContain('\r', line));
-        Assert.Equal(2, result.Count);
+        Assert.Equal(new[] { weirdName, "src/Bar.cs" }, result);
     }
 
     [Fact]
     public void ParseGitDiffOutput_IgnoresBinAndObjPaths()
     {
         // Arrange
-        var stdout = "src/Foo.cs\nsrc/bin/Debug/net9.0/Foo.cs\nsrc/obj/Release/Bar.cs\nsrc/Bar.cs\n";
+        var stdout = "src/Foo.cs\0src/bin/Debug/net9.0/Foo.cs\0src/obj/Release/Bar.cs\0src/Bar.cs\0";
 
         // Act
         var result = PullRequestAuditTool.ParseGitDiffOutput(stdout);
@@ -117,7 +118,7 @@ public class PullRequestAuditToolTests
     public void ParseGitDiffOutput_AcceptsValidCsPaths(string path)
     {
         // Arrange
-        var stdout = path + "\n";
+        var stdout = path + "\0";
 
         // Act
         var result = PullRequestAuditTool.ParseGitDiffOutput(stdout);
