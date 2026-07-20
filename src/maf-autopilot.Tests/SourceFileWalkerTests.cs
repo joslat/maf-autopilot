@@ -86,6 +86,71 @@ public class SourceFileWalkerTests
     }
 
     // -------------------------------------------------------------------------
+    // Aggregate-byte cap — F-10, 2026-07-19 security assessment. MaxFiles ×
+    // MaxFileBytes bounds any single file but not the SUM across an accepted
+    // batch (a caller that retains every source body in memory at once, like
+    // SemanticKernelDetectorTool.Scan, was unbounded in aggregate even though
+    // no individual file tripped the per-file cap).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void EnumerateCsFiles_UnderAggregateBudget_ReturnsEveryFile_NotTruncated()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            for (var i = 0; i < 3; i++)
+                File.WriteAllText(Path.Combine(root, $"File{i}.cs"), new string('x', 100));
+
+            var budget = new SourceFileWalker.ScanBudget { MaxTotalBytes = 10_000 };
+            var files = SourceFileWalker.EnumerateCsFiles(root, excludes: null, budget).ToList();
+
+            Assert.Equal(3, files.Count);
+            Assert.False(budget.Truncated);
+            Assert.True(budget.BytesAccepted >= 300);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void EnumerateCsFiles_OverAggregateBudget_StopsEarlyAndReportsTruncated()
+    {
+        var root = CreateTempRoot();
+        try
+        {
+            // Each file is ~500 bytes; a 1000-byte aggregate cap should accept
+            // roughly 2 before truncating, well short of all 10.
+            for (var i = 0; i < 10; i++)
+                File.WriteAllText(Path.Combine(root, $"File{i}.cs"), new string('x', 500));
+
+            var budget = new SourceFileWalker.ScanBudget { MaxTotalBytes = 1000 };
+            var files = SourceFileWalker.EnumerateCsFiles(root, excludes: null, budget).ToList();
+
+            Assert.True(files.Count < 10, "aggregate cap should have stopped enumeration before all 10 files");
+            Assert.True(budget.Truncated);
+            Assert.True(budget.BytesAccepted <= 1000);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void ScanBudget_TryAccept_SingleFileUnderPerFileCapButOverAggregate_Truncates()
+    {
+        // Direct unit test of the budget object itself, independent of the
+        // filesystem — a file well under MaxFileBytes can still trip the
+        // aggregate cap once enough of them accumulate.
+        var budget = new SourceFileWalker.ScanBudget { MaxTotalBytes = 150 };
+
+        Assert.True(budget.TryAccept(100));
+        Assert.False(budget.Truncated);
+        Assert.True(budget.TryAccept(40));
+        Assert.False(budget.Truncated);
+        Assert.False(budget.TryAccept(50)); // 100+40+50 = 190 > 150
+        Assert.True(budget.Truncated);
+        Assert.Equal(140, budget.BytesAccepted); // the rejected file's bytes were never added
+    }
+
+    // -------------------------------------------------------------------------
     // Per-file size cap — lives in the shared ScanBudget (not per-tool) so
     // EVERY caller of EnumerateCsFiles (AntiPatternScannerTool, EstimateCostTool,
     // AutoFixTool, etc.), not just DoctorTool, is protected against a single

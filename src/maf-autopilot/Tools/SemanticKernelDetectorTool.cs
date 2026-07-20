@@ -106,9 +106,37 @@ public sealed class SemanticKernelDetectorTool
     {
         var packages = DetectPackages(repoPath);
 
-        // Read every .cs file once.
-        var sources = new List<(string Rel, string Text)>();
-        foreach (var file in SourceFileWalker.EnumerateCsFiles(repoPath))
+        // F-10 (2026-07-19 security assessment) — this previously read every
+        // accepted .cs file into one in-memory list before analysis. With a
+        // 50,000-file / 10 MB-per-file walker cap and no aggregate limit, the
+        // theoretical retained set was unbounded (hundreds of GB). Two passes
+        // over a shared ScanBudget bound BOTH: pass 1 only checks for a global
+        // SK using (never retains a source body); pass 2 re-enumerates and
+        // analyzes one file at a time. The budget object is shared across both
+        // passes so its file-count/aggregate-byte accounting reflects the
+        // whole scan, not each pass independently.
+        var budget = new SourceFileWalker.ScanBudget();
+
+        var repoEstablishesSk = false;
+        foreach (var file in SourceFileWalker.EnumerateCsFiles(repoPath, excludes: null, budget))
+        {
+            string text;
+            try { text = File.ReadAllText(file); }
+            catch (IOException) { continue; }
+            catch (UnauthorizedAccessException) { continue; }
+            if (HasGlobalSemanticKernelUsing(text))
+            {
+                repoEstablishesSk = true;
+                break; // global using found — no need to keep reading for pass 1's purpose
+            }
+        }
+
+        var constructs = new List<SkConstruct>();
+        // Independent budget for pass 2: pass 1's early-break-on-global-using
+        // means its FilesSeen/BytesAccepted don't reflect the full walk, and
+        // pass 2 needs its own accounting to decide whether IT truncated.
+        var analyzeBudget = new SourceFileWalker.ScanBudget();
+        foreach (var file in SourceFileWalker.EnumerateCsFiles(repoPath, excludes: null, analyzeBudget))
         {
             string rel;
             try { rel = SourceFileWalker.MakeRelative(repoPath, file); }
@@ -119,19 +147,10 @@ public sealed class SemanticKernelDetectorTool
             try { text = File.ReadAllText(file); }
             catch (IOException) { continue; }
             catch (UnauthorizedAccessException) { continue; }
-            sources.Add((rel, text));
+            constructs.AddRange(AnalyzeSource(text, rel, repoEstablishesSk));
         }
 
-        // A `global using Microsoft.SemanticKernel;` (commonly in a GlobalUsings.cs) puts SK
-        // in scope for EVERY file in its project, so those files carry no local using. If any
-        // file declares such a global using, treat all scanned files as SK-context so their
-        // constructs aren't missed (a per-file local-using gate alone would under-scope the plan).
-        var repoEstablishesSk = sources.Any(s => HasGlobalSemanticKernelUsing(s.Text));
-
-        var constructs = new List<SkConstruct>();
-        foreach (var (rel, text) in sources)
-            constructs.AddRange(AnalyzeSource(text, rel, repoEstablishesSk));
-        return new SkScanResult(packages, constructs);
+        return new SkScanResult(packages, constructs, Truncated: budget.Truncated || analyzeBudget.Truncated);
     }
 
     /// <summary>
@@ -519,7 +538,7 @@ public sealed class SemanticKernelDetectorTool
     // Result model + rendering
     // -------------------------------------------------------------------------
 
-    internal sealed record SkScanResult(IReadOnlyList<SkPackage> Packages, IReadOnlyList<SkConstruct> Constructs)
+    internal sealed record SkScanResult(IReadOnlyList<SkPackage> Packages, IReadOnlyList<SkConstruct> Constructs, bool Truncated = false)
     {
         public bool SemanticKernelDetected => Packages.Count > 0 || Constructs.Count > 0;
 
@@ -559,7 +578,10 @@ public sealed class SemanticKernelDetectorTool
             sb.AppendLine();
             if (!SemanticKernelDetected)
             {
-                sb.AppendLine("✅ No Semantic Kernel usage detected (no `Microsoft.SemanticKernel` package reference or source import). Nothing to migrate from SK.");
+                sb.AppendLine(Truncated
+                    ? "⚠️ No Semantic Kernel usage detected **in the files scanned before hitting the scan's " +
+                      "file-count or aggregate-size budget** — this is a partial result, not a clean verdict."
+                    : "✅ No Semantic Kernel usage detected (no `Microsoft.SemanticKernel` package reference or source import). Nothing to migrate from SK.");
                 return sb.ToString();
             }
 
@@ -573,6 +595,13 @@ public sealed class SemanticKernelDetectorTool
             sb.AppendLine($"**Migration complexity: {Verdict}** — {Constructs.Count} construct kind(s), {TotalOccurrences} occurrence(s): " +
                           $"🌉 {Bridgeable} bridgeable · 🔁 {Rewrite} rewrite · 🏗 {Rearchitect} re-architect.");
             sb.AppendLine();
+
+            if (Truncated)
+            {
+                sb.AppendLine("> ⚠️ **Scan incomplete** — this repository exceeds the scan's file-count or " +
+                              "aggregate-size budget. Results above are a partial inventory, not a complete one.");
+                sb.AppendLine();
+            }
 
             AppendGroup(sb, MigrationStrategy.Bridgeable, "🌉 Bridgeable — reuse the SK code via an interop shim (gradual / side-by-side)");
             AppendGroup(sb, MigrationStrategy.Rewrite, "🔁 Rewrite — mechanical SK→MAF API swap");
@@ -600,6 +629,7 @@ public sealed class SemanticKernelDetectorTool
         public object ToJson() => new
         {
             semantic_kernel_detected = SemanticKernelDetected,
+            truncated = Truncated,
             verdict = Verdict,
             packages = Packages.Select(p => new { id = p.Id, version = p.Version }),
             counts = new { bridgeable = Bridgeable, rewrite = Rewrite, rearchitect = Rearchitect, occurrences = TotalOccurrences },

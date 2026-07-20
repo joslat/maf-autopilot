@@ -648,6 +648,72 @@ public sealed class SemanticKernelDetectorToolTests
         Assert.Contains("No Semantic Kernel usage", result.ToMarkdown());
     }
 
+    // -------------------------------------------------------------------------
+    // F-10 (2026-07-19 security assessment) — a truncated scan must not render
+    // as an unqualified clean/complete verdict. These construct SkScanResult
+    // directly (rather than forcing Scan() to truncate against real files,
+    // which would need thousands of on-disk files for a fast unit test) since
+    // what matters here is the rendering contract, not re-testing ScanBudget
+    // itself (already covered in SourceFileWalkerTests).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void ToMarkdown_TruncatedWithNoDetections_WarnsInsteadOfClaimingClean()
+    {
+        var result = new SemanticKernelDetectorTool.SkScanResult(
+            Packages: [], Constructs: [], Truncated: true);
+
+        var md = result.ToMarkdown();
+        Assert.DoesNotContain("✅ No Semantic Kernel usage detected", md);
+        Assert.Contains("partial result", md, System.StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ToMarkdown_TruncatedWithDetections_IncludesWarningBanner()
+    {
+        var result = new SemanticKernelDetectorTool.SkScanResult(
+            Packages: [new SkPackage("Microsoft.SemanticKernel", "1.0.0")],
+            Constructs: [new SkConstruct(
+                Kind: "[KernelFunction] plugin method", Strategy: MigrationStrategy.Bridgeable,
+                File: "Plugin.cs", Line: 1, Note: "note", Count: 1)],
+            Truncated: true);
+
+        var md = result.ToMarkdown();
+        Assert.Contains("Scan incomplete", md);
+    }
+
+    [Fact]
+    public void ToMarkdown_NotTruncated_NoWarningBanner()
+    {
+        var result = new SemanticKernelDetectorTool.SkScanResult(
+            Packages: [], Constructs: [], Truncated: false);
+
+        Assert.DoesNotContain("Scan incomplete", result.ToMarkdown());
+    }
+
+    [Fact]
+    public void ToJson_SurfacesTruncatedField()
+    {
+        var truncated = new SemanticKernelDetectorTool.SkScanResult(Packages: [], Constructs: [], Truncated: true);
+        var notTruncated = new SemanticKernelDetectorTool.SkScanResult(Packages: [], Constructs: [], Truncated: false);
+
+        var truncatedJson = JsonSerializer.Serialize(truncated.ToJson());
+        var cleanJson = JsonSerializer.Serialize(notTruncated.ToJson());
+
+        Assert.Contains("\"truncated\":true", truncatedJson);
+        Assert.Contains("\"truncated\":false", cleanJson);
+    }
+
+    [Fact]
+    public void Scan_SmallRepo_NotTruncated()
+    {
+        // Sanity: normal-sized repos (this project's own test fixtures) never
+        // trip the new aggregate cap — MaxTotalBytes defaults to 500 MB.
+        using var repo = new TempDir(("Plain.cs", "public class C { public int X() => 1; }"));
+        var result = SemanticKernelDetectorTool.Scan(repo.Path);
+        Assert.False(result.Truncated);
+    }
+
     [Fact]
     public void MigrateFromResource_SemanticKernel_Resolves()
     {
