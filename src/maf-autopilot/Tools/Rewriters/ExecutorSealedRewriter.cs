@@ -55,8 +55,24 @@ internal sealed class ExecutorSealedRewriter : CSharpSyntaxRewriter, IRuleRewrit
         {
             var sealedToken = SyntaxFactory.Token(SyntaxKind.SealedKeyword)
                 .WithTrailingTrivia(SyntaxFactory.Space);
-            // Insert after the first modifier; if there are none, prepend.
-            list.Insert(list.Count == 0 ? 0 : 1, sealedToken);
+            // `partial` MUST stay immediately before `class` (CS0267), so `sealed`
+            // has to be inserted BEFORE any existing `partial`. Insert right at the
+            // first `partial` if present; otherwise after the access modifier
+            // (index 1), or at the front when there are no modifiers at all.
+            // Without this, a `partial`-first declaration (`partial class X`, the
+            // idiomatic internal-by-default shape) was rewritten to the uncompilable
+            // `partial sealed class X`.
+            var partialIdx = list.FindIndex(t => t.IsKind(SyntaxKind.PartialKeyword));
+            var insertAt = partialIdx >= 0 ? partialIdx : Math.Min(1, list.Count);
+            // When `sealed` becomes the new first modifier, carry the leading trivia
+            // (indentation / xmldoc) from the token that is currently first so the
+            // declaration stays laid out correctly.
+            if (insertAt == 0 && list.Count > 0)
+            {
+                sealedToken = sealedToken.WithLeadingTrivia(list[0].LeadingTrivia);
+                list[0] = list[0].WithLeadingTrivia();
+            }
+            list.Insert(insertAt, sealedToken);
         }
         if (needsPartial)
         {

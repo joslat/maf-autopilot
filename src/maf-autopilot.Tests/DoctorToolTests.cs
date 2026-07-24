@@ -811,10 +811,10 @@ public class DoctorToolTests
                 using System.Collections.Generic;
                 using System.Threading.Tasks;
                 public class C {
-                  Task<List<int>> Foo() => Task.FromResult(new List<int>());
+                  Task<List<int>> FooAsync() => Task.FromResult(new List<int>());
                   public async Task M() {
                     var b = new List<int>();
-                    var q = from x in b join y in Foo().Result on x equals y select x;
+                    var q = from x in b join y in FooAsync().Result on x equals y select x;
                     await Task.Yield();
                     _ = q.ToList();
                   }
@@ -864,8 +864,8 @@ public class DoctorToolTests
             var file = Path.Combine(dir, "Ok.cs");
             File.WriteAllText(file, """
                 using System.Threading.Tasks;
-                public class C { static Task<int> Foo() => Task.FromResult(1);
-                  public async Task<int> M() { return Foo().Result; } }
+                public class C { static Task<int> FooAsync() => Task.FromResult(1);
+                  public async Task<int> M() { return FooAsync().Result; } }
                 """);
             new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
             var after = File.ReadAllText(file);
@@ -915,10 +915,10 @@ public class DoctorToolTests
             File.WriteAllText(file, """
                 using System.Threading.Tasks;
                 public class C {
-                  static Task<int> Foo() => Task.FromResult(1);
+                  static Task<int> FooAsync() => Task.FromResult(1);
                   public async Task M() {
                     try { await Task.Yield(); }
-                    catch (System.Exception) { var x = Foo().Result; }
+                    catch (System.Exception) { var x = FooAsync().Result; }
                   }
                 }
                 """);
@@ -1050,9 +1050,9 @@ public class DoctorToolTests
                 using System.Threading.Tasks;
                 public class C {
                   readonly object _lock = new();
-                  static Task<int> Foo() => Task.FromResult(1);
+                  static Task<int> FooAsync() => Task.FromResult(1);
                   public async Task M() {
-                    lock (_lock) { Func<Task> a = async () => { var x = Foo().Result; }; }
+                    lock (_lock) { Func<Task> a = async () => { var x = FooAsync().Result; }; }
                     await Task.Yield();
                   }
                 }
@@ -1079,9 +1079,9 @@ public class DoctorToolTests
                 using System.Threading.Tasks;
                 public class C {
                   readonly object _lock = new();
-                  static Task<int> Foo() => Task.FromResult(1);
+                  static Task<int> FooAsync() => Task.FromResult(1);
                   public void M() {
-                    lock (_lock) { async Task Inner() { var x = Foo().Result; } _ = Inner(); }
+                    lock (_lock) { async Task Inner() { var x = FooAsync().Result; } _ = Inner(); }
                   }
                 }
                 """);

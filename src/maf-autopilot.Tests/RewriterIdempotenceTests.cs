@@ -153,20 +153,21 @@ public sealed class RewriterIdempotenceTests
     [Fact]
     public void SyncOverAsyncRewriter_Idempotent_AsyncMethod_HappyPath()
     {
-        // After the rewrite produces `await Foo()`, a second pass should NOT
-        // re-rewrite (`.Result` is gone; nothing matches).
+        // After the rewrite produces `await FooAsync()`, a second pass should NOT
+        // re-rewrite (`.Result` is gone; nothing matches). Method named `*Async` so
+        // the syntax-only awaitability gate (LooksAwaitableReceiver) rewrites it.
         const string src = """
             class C
             {
                 async System.Threading.Tasks.Task M()
                 {
-                    var x = Foo().Result;
+                    var x = FooAsync().Result;
                 }
-                System.Threading.Tasks.Task<int> Foo() => null!;
+                System.Threading.Tasks.Task<int> FooAsync() => null!;
             }
             """;
         var output = ApplyTwice(new SyncOverAsyncRewriter(), src);
-        Assert.Contains("await Foo()", output);
+        Assert.Contains("await FooAsync()", output);
         Assert.DoesNotContain(".Result", output);
     }
 
@@ -202,12 +203,12 @@ public sealed class RewriterIdempotenceTests
             {
                 async System.Threading.Tasks.Task M()
                 {
-                    Foo().Wait();
+                    FooAsync().Wait();
                 }
-                System.Threading.Tasks.Task Foo() => null!;
+                System.Threading.Tasks.Task FooAsync() => null!;
             }
             """;
         var output = ApplyTwice(new SyncOverAsyncRewriter(), src);
-        Assert.Contains("await Foo()", output);
+        Assert.Contains("await FooAsync()", output);
     }
 }

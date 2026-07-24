@@ -906,19 +906,21 @@ public class AutoFixToolTests
     [Fact]
     public void SyncOverAsyncRewriter_AsyncMethodOutsideLock_StillRewritten()
     {
-        // Sanity check — the guard doesn't break the happy path.
+        // Sanity check — the guard doesn't break the happy path. Method named
+        // `*Async` so the syntax-only awaitability gate rewrites it (a non-Async
+        // name would now be a safe skip — see SemaphoreSlim/custom-.Result cases).
         var src = """
             class C
             {
                 async System.Threading.Tasks.Task M()
                 {
-                    var x = Foo().Result;
+                    var x = FooAsync().Result;
                 }
-                System.Threading.Tasks.Task<int> Foo() => null!;
+                System.Threading.Tasks.Task<int> FooAsync() => null!;
             }
             """;
         var output = ApplyRewriter(new SyncOverAsyncRewriter(), src);
-        Assert.Contains("await Foo()", output);
+        Assert.Contains("await FooAsync()", output);
         Assert.DoesNotContain(".Result", output);
     }
 

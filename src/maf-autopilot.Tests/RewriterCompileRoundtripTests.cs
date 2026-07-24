@@ -308,16 +308,16 @@ public class RewriterCompileRoundtripTests
         yield return F("conc002-rewrite-async-method-body", """
             using System.Threading.Tasks;
             public class C {
-              static Task<int> Foo() => Task.FromResult(1);
-              public async Task<int> M() { return Foo().Result; }
+              static Task<int> FooAsync() => Task.FromResult(1);
+              public async Task<int> M() { return FooAsync().Result; }
             }
             """);
 
         yield return F("conc002-rewrite-wait-async-method-body", """
             using System.Threading.Tasks;
             public class C {
-              static Task Foo() => Task.CompletedTask;
-              public async Task M() { Foo().Wait(); await Task.Yield(); }
+              static Task FooAsync() => Task.CompletedTask;
+              public async Task M() { FooAsync().Wait(); await Task.Yield(); }
             }
             """);
 
@@ -326,10 +326,10 @@ public class RewriterCompileRoundtripTests
             using System.Collections.Generic;
             using System.Threading.Tasks;
             public class C {
-              Task<List<int>> Foo() => Task.FromResult(new List<int>());
+              Task<List<int>> FooAsync() => Task.FromResult(new List<int>());
               public async Task M() {
                 var b = new List<int>();
-                var q = from x in b join y in Foo().Result on x equals y select x;
+                var q = from x in b join y in FooAsync().Result on x equals y select x;
                 await Task.Yield();
                 _ = q.ToList();
               }
@@ -341,8 +341,8 @@ public class RewriterCompileRoundtripTests
             using System.Threading.Tasks;
             public class C {
               readonly object _lock = new();
-              static Task<int> Foo() => Task.FromResult(1);
-              public async Task M() { lock (_lock) { Func<Task> f = async () => { var x = Foo().Result; }; } await Task.Yield(); }
+              static Task<int> FooAsync() => Task.FromResult(1);
+              public async Task M() { lock (_lock) { Func<Task> f = async () => { var x = FooAsync().Result; }; } await Task.Yield(); }
             }
             """);
 
@@ -350,16 +350,48 @@ public class RewriterCompileRoundtripTests
             using System;
             using System.Threading.Tasks;
             public class C {
-              static Task<int> Foo() => Task.FromResult(1);
-              public async Task M() { try { await Task.Yield(); } catch (Exception) { var x = Foo().Result; } }
+              static Task<int> FooAsync() => Task.FromResult(1);
+              public async Task M() { try { await Task.Yield(); } catch (Exception) { var x = FooAsync().Result; } }
             }
             """);
 
         yield return F("conc002-rewrite-async-finally", """
             using System.Threading.Tasks;
             public class C {
-              static Task<int> Foo() => Task.FromResult(1);
-              public async Task M() { try { await Task.Yield(); } finally { var x = Foo().Result; } }
+              static Task<int> FooAsync() => Task.FromResult(1);
+              public async Task M() { try { await Task.Yield(); } finally { var x = FooAsync().Result; } }
+            }
+            """);
+
+        // ---- CONC-002: WM-03 regression — non-awaitable receivers must SKIP. ----
+        // Valid inputs. Without the syntax-only awaitability gate the rewriter injected
+        // `await` and produced CS1061 (SemaphoreSlim / a custom `.Result` wrapper have
+        // no GetAwaiter). The skip-with-comment output still compiles ⇒ roundtrip green;
+        // a regression that drops the gate makes the output fail to compile ⇒ red.
+        yield return F("conc002-skip-semaphore-wait-nonawaitable", """
+            using System.Threading;
+            using System.Threading.Tasks;
+            public class C {
+              readonly SemaphoreSlim _sem = new(1);
+              SemaphoreSlim GetLock() => _sem;
+              public async Task M() { GetLock().Wait(); await Task.Yield(); }
+            }
+            """);
+
+        yield return F("conc002-skip-custom-result-property", """
+            using System.Threading.Tasks;
+            public class OpResult { public int Result { get; set; } }
+            public class C {
+              OpResult Parse(string s) => new OpResult();
+              public async Task M() { var x = Parse("a").Result; await Task.Yield(); }
+            }
+            """);
+
+        // A Task/ValueTask factory receiver IS recognised as awaitable ⇒ still rewrites.
+        yield return F("conc002-rewrite-task-run-result", """
+            using System.Threading.Tasks;
+            public class C {
+              public async Task<int> M() { return Task.Run(() => 1).Result; }
             }
             """);
 
@@ -379,6 +411,19 @@ public class RewriterCompileRoundtripTests
             public class Executor<TIn, TOut> { }
             public sealed class MessageHandlerAttribute : System.Attribute { }
             public partial class MyExec : Executor<string, int> {
+              [MessageHandler]
+              public Task<int> Handle(string s) => Task.FromResult(0);
+            }
+            """);
+
+        // WM-02 regression: `partial`-first with NO access modifier (idiomatic
+        // internal-by-default). Pre-fix the rewriter inserted `sealed` AFTER `partial`
+        // → `partial sealed class` → CS0267. Output must compile as `sealed partial`.
+        yield return F("wf001-rewrite-partial-first-no-access-modifier", """
+            using System.Threading.Tasks;
+            public class Executor { }
+            public sealed class MessageHandlerAttribute : System.Attribute { }
+            partial class MyExec : Executor {
               [MessageHandler]
               public Task<int> Handle(string s) => Task.FromResult(0);
             }
