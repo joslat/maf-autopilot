@@ -495,9 +495,18 @@ public sealed class AutoFixTool
         // invalid-bytes decode in force even for a BOM'd file: StreamReader silently
         // swaps in the detected encoding's REPLACEMENT-fallback decoder, so invalid
         // bytes after a BOM would become U+FFFD instead of being rejected.
+        // UTF-32 BOMs must be checked BEFORE UTF-16: a UTF-32 LE file starts
+        // `FF FE 00 00`, whose first two bytes also match the UTF-16 LE BOM — sniffing
+        // UTF-16 first would strip 2 bytes and decode the UTF-32 payload as UTF-16
+        // (silent garbage, no throw). Real UTF-16 files never begin with a U+0000, so
+        // the trailing `00 00` disambiguates.
         Encoding detected;
         int bomLength;
-        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+        if (bytes.Length >= 4 && bytes[0] == 0xFF && bytes[1] == 0xFE && bytes[2] == 0x00 && bytes[3] == 0x00)
+        { detected = new UTF32Encoding(bigEndian: false, byteOrderMark: true, throwOnInvalidCharacters: true); bomLength = 4; }
+        else if (bytes.Length >= 4 && bytes[0] == 0x00 && bytes[1] == 0x00 && bytes[2] == 0xFE && bytes[3] == 0xFF)
+        { detected = new UTF32Encoding(bigEndian: true, byteOrderMark: true, throwOnInvalidCharacters: true); bomLength = 4; }
+        else if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
         { detected = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true, throwOnInvalidBytes: true); bomLength = 3; }
         else if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
         { detected = new UnicodeEncoding(bigEndian: false, byteOrderMark: true, throwOnInvalidBytes: true); bomLength = 2; }

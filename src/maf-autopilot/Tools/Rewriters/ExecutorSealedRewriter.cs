@@ -71,13 +71,15 @@ internal sealed class ExecutorSealedRewriter : CSharpSyntaxRewriter, IRuleRewrit
                 sealedToken = sealedToken.WithLeadingTrivia(list[0].LeadingTrivia);
                 list[0] = list[0].WithLeadingTrivia();
             }
-            else if (insertAt == 0 && node.AttributeLists.Count == 0)
+            else if (insertAt == 0)
             {
-                // No modifiers AND no attributes: `sealed` becomes the first token of
-                // the whole declaration. Carry the `class` keyword's leading trivia
-                // (indentation + any `///` doc) onto `sealed`, else it strands between
-                // the modifiers and `class` — de-indenting the line and DETACHING the
-                // XML doc from the type (CS1587, documentation lost).
+                // No modifiers: `sealed` becomes the first MODIFIER. Carry the `class`
+                // keyword's leading trivia onto it, else the modifiers strand between
+                // the keyword's indentation and `class` — de-indenting the line and,
+                // when there are no attributes, DETACHING a leading `///` doc (CS1587,
+                // documentation lost). With attributes the keyword's leading trivia is
+                // just the indentation (the doc sits on the attribute list, which is
+                // left untouched), so carrying it is correct there too.
                 sealedToken = sealedToken.WithLeadingTrivia(node.Keyword.LeadingTrivia);
                 node = node.WithKeyword(node.Keyword.WithLeadingTrivia());
             }

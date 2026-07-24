@@ -23,6 +23,26 @@ public class AutoFixToolTests
         return newRoot.ToFullString();
     }
 
+    // A clean WF-001 Executor target (so a rewriter WILL match) with one invalid
+    // UTF-8 byte (0x80) inside a `//` comment, optionally UTF-8-BOM-prefixed. Because
+    // a rewriter matches, the "byte-identical after apply" assertion is load-bearing:
+    // if the strict decode were reverted the file would be U+FFFD-decoded, gain
+    // `sealed`, and be written back — no longer byte-identical.
+    private static byte[] ExecutorSourceWithInvalidByte(bool utf8Bom)
+    {
+        const string head =
+            "using System.Threading.Tasks;\npublic class Executor { }\n" +
+            "public sealed class MessageHandlerAttribute : System.Attribute { }\n" +
+            "public partial class MyExec : Executor {\n  // ";
+        const string tail =
+            "\n  [MessageHandler]\n  public Task<int> Handle(string s) => Task.FromResult(0);\n}\n";
+        IEnumerable<byte> bytes = System.Text.Encoding.ASCII.GetBytes(head)
+            .Concat(new byte[] { 0x80 })
+            .Concat(System.Text.Encoding.ASCII.GetBytes(tail));
+        if (utf8Bom) bytes = new byte[] { 0xEF, 0xBB, 0xBF }.Concat(bytes);
+        return bytes.ToArray();
+    }
+
     // -------------------------------------------------------------------------
     // DefaultAzureCredentialRewriter (MAF-AP-SEC-001 / MAF002)
     // -------------------------------------------------------------------------
@@ -1045,15 +1065,17 @@ public class AutoFixToolTests
         Directory.CreateDirectory(dir);
         try
         {
-            var file = Path.Combine(dir, "Bad.cs");
-            // "class \x80C {}" — 0x80 is a lone UTF-8 continuation byte (invalid).
-            var badBytes = new byte[] { 0x63, 0x6C, 0x61, 0x73, 0x73, 0x20, 0x80, 0x43, 0x20, 0x7B, 0x7D };
+            // A WF-001-matching Executor with an invalid byte in a comment — so if the
+            // strict decode were reverted, WF-001 would add `sealed` and the file WOULD
+            // be rewritten (0x80 → EF BF BD), making the byte-identical check fail.
+            var file = Path.Combine(dir, "MyExec.cs");
+            var badBytes = ExecutorSourceWithInvalidByte(utf8Bom: false);
             File.WriteAllBytes(file, badBytes);
             var json = new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
             var doc = JsonSerializer.Deserialize<JsonDocument>(json)!;
             Assert.True(doc.RootElement.GetProperty("errors").GetArrayLength() >= 1,
                 "an undecodable file must be reported, not silently swallowed: " + json);
-            Assert.Equal(badBytes, File.ReadAllBytes(file)); // left byte-identical, no U+FFFD corruption
+            Assert.Equal(badBytes, File.ReadAllBytes(file)); // skipped whole — not U+FFFD-rewritten
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
@@ -1306,9 +1328,11 @@ public class AutoFixToolTests
         Directory.CreateDirectory(dir);
         try
         {
-            var file = Path.Combine(dir, "BomBad.cs");
-            // BOM + "class C \x80{}" (0x80 is a lone continuation byte — invalid UTF-8).
-            var bytes = new byte[] { 0xEF, 0xBB, 0xBF, 0x63, 0x6C, 0x61, 0x73, 0x73, 0x20, 0x43, 0x20, 0x80, 0x7B, 0x7D };
+            // UTF-8-BOM + a WF-001 target + an invalid byte: proves the strict decode
+            // holds for BOM'd files too (StreamReader's BOM path would otherwise swap in
+            // a replacement-fallback decoder, U+FFFD the byte, then rewrite the file).
+            var file = Path.Combine(dir, "MyExec.cs");
+            var bytes = ExecutorSourceWithInvalidByte(utf8Bom: true);
             File.WriteAllBytes(file, bytes);
             var json = new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
             var doc = JsonSerializer.Deserialize<JsonDocument>(json)!;
@@ -1319,13 +1343,12 @@ public class AutoFixToolTests
     }
 
     [Fact]
-    public void MafAutoFixAll_LockedFile_RecordedAsError_PassContinues()
+    public void MafAutoFixAll_UnreadableFile_RecordedAsError_PassContinues()
     {
-        // A file locked by another process must be a per-file error, not a whole-pass
-        // abort — and every OTHER file must still be fixed. (Exclusive-share read
-        // blocking is a Windows behavior; the assertion runs there.)
-        if (!OperatingSystem.IsWindows()) return;
-        var dir = Path.Combine(Path.GetTempPath(), "maf-lockedfile-" + Guid.NewGuid().ToString("N"));
+        // An unreadable .cs (locked / permission-denied) must be a per-file error, not
+        // a whole-pass abort — and every OTHER file must still be fixed. Forced via a
+        // Windows exclusive-share lock or a POSIX chmod-000 so it runs on Linux CI too.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-unreadable-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         try
         {
@@ -1340,14 +1363,125 @@ public class AutoFixToolTests
                 """);
             var bad = Path.Combine(dir, "Bad.cs");
             File.WriteAllText(bad, "public class Bad {}");
-            using (new FileStream(bad, FileMode.Open, FileAccess.Read, FileShare.None)) // exclusive lock
+
+            FileStream? winLock = null;
+            if (OperatingSystem.IsWindows())
+            {
+                winLock = new FileStream(bad, FileMode.Open, FileAccess.Read, FileShare.None); // exclusive
+            }
+            else
+            {
+                File.SetUnixFileMode(bad, UnixFileMode.None); // chmod 000
+                // Running as root (common in CI containers) ignores the mode; then the
+                // failure can't be forced, so skip rather than assert a false negative.
+                try { using var probe = File.OpenRead(bad); File.SetUnixFileMode(bad, UnixFileMode.UserRead | UnixFileMode.UserWrite); return; }
+                catch { /* good — genuinely unreadable */ }
+            }
+
+            try
             {
                 var json = new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
                 var doc = JsonSerializer.Deserialize<JsonDocument>(json)!;
-                Assert.True(doc.RootElement.GetProperty("errors").GetArrayLength() >= 1, json); // locked file reported
-                Assert.Contains("sealed partial", File.ReadAllText(Path.Combine(dir, "Good.cs"))); // other file still fixed
+                Assert.True(doc.RootElement.GetProperty("errors").GetArrayLength() >= 1, json); // unreadable file reported
+                Assert.Contains("sealed partial", File.ReadAllText(Path.Combine(dir, "Good.cs"))); // other file STILL fixed
+            }
+            finally
+            {
+                winLock?.Dispose();
+                if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(bad, UnixFileMode.UserRead | UnixFileMode.UserWrite);
             }
         }
         finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Theory]
+    [InlineData(false)] // UTF-16 LE
+    [InlineData(true)]  // UTF-16 BE
+    public void MafAutoFixAll_PreservesUtf16Bom_OnApply(bool bigEndian)
+    {
+        // The UTF-16 detect+preserve branches must round-trip byte-faithfully: the BOM
+        // (and endianness) survive and the file is NOT normalised to UTF-8.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-utf16-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "U16.cs");
+            var enc = new System.Text.UnicodeEncoding(bigEndian, byteOrderMark: true);
+            File.WriteAllText(file, """
+                using System.Threading.Tasks;
+                public class Executor { }
+                public sealed class MessageHandlerAttribute : System.Attribute { }
+                public partial class MyExec : Executor {
+                  [MessageHandler]
+                  public Task<int> Handle(string s) => Task.FromResult(0);
+                }
+                """, enc);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false); // WF-001 adds `sealed`
+            var bytes = File.ReadAllBytes(file);
+            if (bigEndian) Assert.True(bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF, "UTF-16 BE BOM preserved");
+            else Assert.True(bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE, "UTF-16 LE BOM preserved");
+            Assert.Contains("sealed partial", File.ReadAllText(file, enc)); // rewrite applied, still UTF-16
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Theory]
+    [InlineData(false)] // UTF-32 LE (FF FE 00 00) — must NOT be misread as UTF-16 LE
+    [InlineData(true)]  // UTF-32 BE (00 00 FE FF)
+    public void MafAutoFixAll_PreservesUtf32Bom_OnApply(bool bigEndian)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-utf32-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "U32.cs");
+            var enc = new System.Text.UTF32Encoding(bigEndian, byteOrderMark: true);
+            File.WriteAllText(file, """
+                using System.Threading.Tasks;
+                public class Executor { }
+                public sealed class MessageHandlerAttribute : System.Attribute { }
+                public partial class MyExec : Executor {
+                  [MessageHandler]
+                  public Task<int> Handle(string s) => Task.FromResult(0);
+                }
+                """, enc);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var bytes = File.ReadAllBytes(file);
+            if (bigEndian) Assert.True(bytes.Length >= 4 && bytes[0] == 0x00 && bytes[1] == 0x00 && bytes[2] == 0xFE && bytes[3] == 0xFF, "UTF-32 BE BOM preserved");
+            else Assert.True(bytes.Length >= 4 && bytes[0] == 0xFF && bytes[1] == 0xFE && bytes[2] == 0x00 && bytes[3] == 0x00, "UTF-32 LE BOM preserved");
+            Assert.Contains("sealed partial", File.ReadAllText(file, enc)); // decoded as UTF-32, rewrite applied
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void ApplyLockPath_TrailingSeparator_MapsToSameLock()
+    {
+        // `C:\repo` and `C:\repo\` must resolve to ONE lock key, else two callers
+        // spelling the path differently fail to serialise (WM-44).
+        var dir = Path.Combine(Path.GetTempPath(), "maf-locktrim-" + Guid.NewGuid().ToString("N"));
+        Assert.Equal(AutoFixTool.ApplyLockPath(dir), AutoFixTool.ApplyLockPath(dir + Path.DirectorySeparatorChar));
+    }
+
+    [Fact]
+    public void ExecutorSealedRewriter_AttributedZeroModifierClass_StaysIndented()
+    {
+        // A zero-modifier Executor WITH an attribute: `sealed partial` must inherit the
+        // declaration's indentation, not de-indent to column 0.
+        var input = """
+            namespace N
+            {
+                [System.Obsolete]
+                class Worker : Executor
+                {
+                    [MessageHandler]
+                    public System.Threading.Tasks.Task<int> Handle(string s) => null!;
+                }
+            }
+            """;
+        var output = ApplyRewriter(new ExecutorSealedRewriter(), input).Replace("\r\n", "\n");
+        Assert.Contains("    sealed partial class Worker", output); // indented, not column 0
+        Assert.DoesNotContain("\nsealed partial", output);          // never at column 0
+        Assert.Contains("[System.Obsolete]", output);               // attribute untouched
     }
 }
