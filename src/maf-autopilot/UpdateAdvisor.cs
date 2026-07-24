@@ -22,8 +22,18 @@ internal sealed class UpdateNoticeHostedService(ILogger<UpdateNoticeHostedServic
                 timeout: TimeSpan.FromSeconds(3),
                 ignoreCache: false,
                 cancellationToken: cancellationToken);
-            var workspaceRoot = InitCommand.FindInitializedWorkspaceRoot(Directory.GetCurrentDirectory());
-            var init = InitCommand.GetWorkspaceInitStatus(workspaceRoot);
+            // WM-07: resolve the REAL workspace, not the server's cwd — MCP hosts spawn
+            // stdio servers with cwd = the user's home directory, so deriving staleness
+            // from cwd produced a false "init is stale" nag on every startup. Prefer a
+            // configured workspace root that exists; else walk up from cwd. If the
+            // resolved directory is not actually an initialized workspace (no .mcp.json /
+            // .vscode/mcp.json), skip the init-staleness half of the notice entirely.
+            var cwd = Directory.GetCurrentDirectory();
+            var root = WorkspacePolicy.ConfiguredRoots.FirstOrDefault(Directory.Exists)
+                       ?? InitCommand.FindInitializedWorkspaceRoot(cwd);
+            var initialized = File.Exists(Path.Combine(root, ".mcp.json"))
+                              || File.Exists(Path.Combine(root, ".vscode", "mcp.json"));
+            var init = initialized ? InitCommand.GetWorkspaceInitStatus(root) : (InitCommand.InitStatus?)null;
             var notice = UpdateAdvisor.BuildStartupNotice(update, init);
             if (!string.IsNullOrWhiteSpace(notice))
                 logger.LogWarning("{Notice}", notice);
@@ -152,7 +162,10 @@ internal static class UpdateAdvisor
         return sb.ToString();
     }
 
-    public static string? BuildStartupNotice(UpdateStatus update, InitCommand.InitStatus init)
+    // WM-07: `init` is nullable — a null value means "the workspace couldn't be
+    // resolved / isn't initialized", so the init-staleness half is skipped entirely
+    // (the update-available half still fires).
+    public static string? BuildStartupNotice(UpdateStatus update, InitCommand.InitStatus? init)
     {
         var lines = new List<string>();
         if (update.State == UpdateState.UpdateAvailable && update.LatestVersion is not null)
@@ -163,7 +176,7 @@ internal static class UpdateAdvisor
             lines.Add("Reload the editor or MCP host so it starts the new binary.");
         }
 
-        if (update.State != UpdateState.UpdateAvailable && init.NeedsRefresh)
+        if (update.State != UpdateState.UpdateAvailable && init is { NeedsRefresh: true })
         {
             lines.Add("maf-doctor is running, but this workspace's MCP/steering init is stale or incomplete.");
             lines.Add("Refresh it with: maf-doctor init");

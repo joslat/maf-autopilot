@@ -85,4 +85,58 @@ public sealed class ProgramCliDispatchTests
         Assert.Equal(0, exitCode);
         Assert.False(string.IsNullOrWhiteSpace(stdout));
     }
+
+    // ---- Phase 2 ----
+
+    [Fact]
+    public void Doctor_UnknownFlag_ExitsUsageError() // WM-04
+    {
+        var (exitCode, _, stderr) = Run(TimeSpan.FromSeconds(30), "doctor", Path.GetTempPath(), "--bogus");
+        Assert.Equal(2, exitCode);
+        Assert.Contains("--bogus", stderr, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Doctor_ExcludeSwallowingFlag_ExitsUsageError() // REP-05
+    {
+        var (exitCode, _, _) = Run(TimeSpan.FromSeconds(30), "doctor", Path.GetTempPath(), "--exclude", "--json");
+        Assert.Equal(2, exitCode);
+    }
+
+    [Fact]
+    public void Doctor_InvalidPath_HumanErrorGoesToStdErr_NotStdOut() // REP-08
+    {
+        var badPath = Path.Combine(Path.GetTempPath(), "maf-doctor-nope-" + Guid.NewGuid().ToString("N"));
+        var (exitCode, stdout, stderr) = Run(TimeSpan.FromSeconds(30), "doctor", badPath);
+        Assert.Equal(1, exitCode);
+        Assert.False(string.IsNullOrWhiteSpace(stderr)); // error on stderr...
+        Assert.True(string.IsNullOrWhiteSpace(stdout));   // ...not stdout
+    }
+
+    [Fact]
+    public void Doctor_FailOnA_GateAlwaysFails_ExitsThree() // REP-09 (fail path)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-failon-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var (exitCode, _, _) = Run(TimeSpan.FromSeconds(30), "doctor", dir, "--fail-on", "A");
+            Assert.Equal(3, exitCode); // any grade is at-or-below A → gate fails
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void Doctor_FailOnF_CleanRepo_GatePasses_ExitsZero() // REP-09 (pass path)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-failonf-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "Clean.cs"), "public class Clean { public int X => 1; }");
+            var (exitCode, _, _) = Run(TimeSpan.FromSeconds(30), "doctor", dir, "--fail-on", "F");
+            Assert.Equal(0, exitCode); // a clean repo grades above F → gate passes
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
 }

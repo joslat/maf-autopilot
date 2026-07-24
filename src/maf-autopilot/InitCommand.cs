@@ -96,22 +96,32 @@ internal static class InitCommand
         if (withCursor) Console.WriteLine("  --with-cursor: .cursor/rules/maf-doctor.mdc will also be dropped");
         Console.WriteLine();
 
-        await WriteMcpJsonAsync(targetDir);
-        await WriteClaudeMcpJsonAsync(targetDir);
+        try
+        {
+            await WriteMcpJsonAsync(targetDir);
+            await WriteClaudeMcpJsonAsync(targetDir);
 
-        // Steering — overwrite-on-reinit sidecars in each tool's auto-loaded
-        // convention dir. We never merge into the user's own copilot-instructions.md
-        // / CLAUDE.md, and re-running init refreshes the guidance (no duplicates).
-        await WriteSidecarAsync(targetDir, "steering/copilot-instructions.md",
-            ".github/instructions/maf-doctor.instructions.md",
-            "---\napplyTo: '**'\n---\n\n" + ManagedSidecarNote(".github/copilot-instructions.md"));
-        await WriteClaudeSteeringAsync(targetDir);
-        await UpsertManagedBlockAsync(targetDir, "steering/agents.md", "AGENTS.md");
-        if (withCursor)
-            await WriteSidecarAsync(targetDir, "steering/cursor-rules.md",
-                ".cursor/rules/maf-doctor.mdc",
-                "---\ndescription: MAF Doctor — use the MCP tools for Microsoft Agent Framework code\nalwaysApply: true\n---\n\n"
-                    + ManagedSidecarNote("a separate .cursor/rules/*.mdc file"));
+            // Steering — overwrite-on-reinit sidecars in each tool's auto-loaded
+            // convention dir. We never merge into the user's own copilot-instructions.md
+            // / CLAUDE.md, and re-running init refreshes the guidance (no duplicates).
+            await WriteSidecarAsync(targetDir, "steering/copilot-instructions.md",
+                ".github/instructions/maf-doctor.instructions.md",
+                "---\napplyTo: '**'\n---\n\n" + ManagedSidecarNote(".github/copilot-instructions.md"));
+            await WriteClaudeSteeringAsync(targetDir);
+            await UpsertManagedBlockAsync(targetDir, "steering/agents.md", "AGENTS.md");
+            if (withCursor)
+                await WriteSidecarAsync(targetDir, "steering/cursor-rules.md",
+                    ".cursor/rules/maf-doctor.mdc",
+                    "---\ndescription: MAF Doctor — use the MCP tools for Microsoft Agent Framework code\nalwaysApply: true\n---\n\n"
+                        + ManagedSidecarNote("a separate .cursor/rules/*.mdc file"));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            // WM-10: an unexpected I/O error (or a containment refusal that propagated)
+            // fails init gracefully with a message + non-zero exit, not a raw stack trace.
+            Console.Error.WriteLine($"init failed: {ex.Message}");
+            return 1;
+        }
 
         Console.WriteLine();
         Console.WriteLine("Done. ⚡ Try these three commands first:");
@@ -339,17 +349,52 @@ internal static class InitCommand
 
         changed |= SetString(env, InitVersionEnvName, CurrentVersion);
 
-        // F-04 — first-time-only: scope newly-initialized workspaces to
-        // themselves by default. Deliberately does NOT overwrite an existing
-        // value on re-init — a user may have broadened this to cover multiple
-        // repositories, and re-running `init` must not silently narrow it back.
-        if (!env.ContainsKey(WorkspacePolicy.WorkspaceRootsEnvName))
+        // F-04 — first-time-only default: scope a newly-initialized workspace to
+        // itself. Deliberately does NOT overwrite an existing value on re-init — a
+        // user may have broadened this to cover multiple repositories.
+        // WM-01 — but if a stored value exists and does NOT cover this directory
+        // (the repo was moved/renamed, or init is re-run in a new location), APPEND
+        // this directory so re-running `init` SELF-HEALS the lockout instead of being
+        // a no-op that leaves every MCP tool blocked. Append-only never narrows a
+        // user's deliberately-broadened list.
+        var rootsKey = WorkspacePolicy.WorkspaceRootsEnvName;
+        if (!env.ContainsKey(rootsKey))
         {
-            env[WorkspacePolicy.WorkspaceRootsEnvName] = targetDir;
+            env[rootsKey] = targetDir;
             changed = true;
+        }
+        else
+        {
+            var stored = env[rootsKey]?.GetValue<string>() ?? string.Empty;
+            var covered = stored
+                .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Any(root => PathCovers(root, targetDir));
+            if (!covered)
+            {
+                env[rootsKey] = string.IsNullOrWhiteSpace(stored) ? targetDir : stored + ";" + targetDir;
+                changed = true;
+                Console.WriteLine($"  ↺ MAF_DOCTOR_WORKSPACE_ROOTS did not cover this directory — appended it so tools work here again.");
+            }
         }
 
         return changed;
+    }
+
+    /// <summary>
+    /// True when <paramref name="target"/> is <paramref name="root"/> itself or a
+    /// directory beneath it. Case-insensitive on Windows. Used by WM-01 to decide
+    /// whether a stored workspace-root already covers the current directory.
+    /// </summary>
+    private static bool PathCovers(string root, string target)
+    {
+        try
+        {
+            var r = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+            var t = Path.TrimEndingDirectorySeparator(Path.GetFullPath(target));
+            var cmp = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            return t.Equals(r, cmp) || t.StartsWith(r + Path.DirectorySeparatorChar, cmp);
+        }
+        catch { return false; } // an unresolvable stored root simply doesn't count as coverage
     }
 
     internal static InitStatus GetWorkspaceInitStatus(string targetDir)
@@ -649,11 +694,27 @@ internal static class InitCommand
             var ei = existing.IndexOf(end, StringComparison.Ordinal);
             if (bi >= 0 && ei > bi)
             {
+                // Well-formed managed block — replace it in place.
                 finalContent = existing[..bi] + block + existing[(ei + end.Length)..];
                 verb = "refreshed managed maf-doctor block";
             }
+            else if (bi >= 0)
+            {
+                // WM-27: a BEGIN marker with NO matching END after it (missing END, or an
+                // END that precedes BEGIN from a hand-edit). The old code fell through to
+                // the append branch and DUPLICATED the block. Instead replace from the
+                // BEGIN marker to end-of-file (dropping any orphaned END before it), so the
+                // never-duplicates invariant holds even under damaged markers.
+                Console.Error.WriteLine("  ⚠ AGENTS.md — a BEGIN marker without a matching END; replacing from the marker to end-of-file.");
+                var prefix = existing[..bi];
+                var strayEnd = prefix.IndexOf(end, StringComparison.Ordinal);
+                if (strayEnd >= 0) prefix = prefix.Remove(strayEnd, end.Length);
+                finalContent = prefix + block + "\n";
+                verb = "repaired managed maf-doctor block";
+            }
             else
             {
+                // No BEGIN marker at all — first-time add (append cleanly).
                 var sep = existing.Length == 0 || existing.EndsWith("\n", StringComparison.Ordinal) ? string.Empty : "\n";
                 finalContent = existing + $"{sep}\n{block}\n";
                 verb = "added managed maf-doctor block";

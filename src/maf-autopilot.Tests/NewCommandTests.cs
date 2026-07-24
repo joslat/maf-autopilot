@@ -45,6 +45,39 @@ public sealed class NewCommandTests : IDisposable
         Assert.Equal("// USER-EDITED — must not be overwritten\n", File.ReadAllText(path));
     }
 
+    // ---- WM-05: the advertised `new executor <Name> [In] [Out]` positionals work ----
+
+    [Fact]
+    public void PositionalsAfter_SkipsFlagsAndTheirValues()
+    {
+        var pos = NewCommand.PositionalsAfter(
+            ["new", "executor", "Foo", "In", "--path", "/dir", "Out"],
+            startIndex: 3, "--path", "--input", "--output");
+        Assert.Equal(new[] { "In", "Out" }, pos);
+    }
+
+    [Fact]
+    public void Run_NewExecutor_PositionalTypes_AreHonored()
+    {
+        var exitCode = NewCommand.Run(["new", "executor", "FraudReviewer", "FraudCheck", "FraudReport", "--path", _tempDir]);
+        Assert.Equal(0, exitCode);
+        var file = Path.Combine(_tempDir, "Workflows", "FraudReviewerExecutor.cs"); // scaffolder appends "Executor"
+        Assert.True(File.Exists(file), file);
+        var content = File.ReadAllText(file);
+        Assert.Contains("FraudCheck", content);
+        Assert.Contains("FraudReport", content);
+    }
+
+    [Fact]
+    public void Run_NewExecutor_FlagsWinOverPositionals()
+    {
+        NewCommand.Run(["new", "executor", "Rev", "PosIn", "PosOut", "--input", "FlagIn", "--output", "FlagOut", "--path", _tempDir]);
+        var content = File.ReadAllText(Path.Combine(_tempDir, "Workflows", "RevExecutor.cs"));
+        Assert.Contains("FlagIn", content);
+        Assert.Contains("FlagOut", content);
+        Assert.DoesNotContain("PosIn", content);
+    }
+
     // -------------------------------------------------------------------------
     // F-03 — WriteFiles previously wrote through a symlinked Agents/Workflows
     // directory (or a symlinked target file) with plain File.WriteAllText, no

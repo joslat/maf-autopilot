@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using MafDoctor.Data;
@@ -45,13 +46,25 @@ internal static class RegistryExtractCommand
         }
 
         var (exitCode, output) = ProcessRunner.RunDotnetInspectDiff(packageId, oldVersion, newVersion);
-        if (exitCode != 0)
-        {
-            Console.Error.WriteLine($"⚠️ dotnet-inspect exited with code {exitCode}. Output may be partial.");
-        }
 
         var parsed = DiffPackageTool.ParseDiffOutput(output);
         var entries = ExtractDraftEntries(parsed, packageId, newVersion);
+
+        // WM-09: a non-zero exit WITH no parseable entries is a TOOL FAILURE, not a
+        // clean diff — surface it distinctly (stderr + a poisoned stdout marker + exit 3)
+        // so neither the release-watcher nor a human ever mistakes a dotnet-inspect crash
+        // for "no breaking changes".
+        if (exitCode != 0 && entries.Count == 0)
+        {
+            Console.Error.WriteLine($"❌ dotnet-inspect failed (exit {exitCode}) and produced no parseable diff — extraction FAILED, not a clean diff.");
+            Console.WriteLine("# EXTRACTION FAILED — dotnet-inspect error; do not treat as a clean diff.");
+            return 3;
+        }
+        if (exitCode != 0)
+        {
+            // Partial output: some entries parsed despite the non-zero exit — proceed but warn.
+            Console.Error.WriteLine($"⚠️ dotnet-inspect exited with code {exitCode}; output may be partial.");
+        }
 
         if (entries.Count == 0)
         {
@@ -59,7 +72,9 @@ internal static class RegistryExtractCommand
             return 0;
         }
 
-        Console.WriteLine($"# Draft registry entries — auto-generated 2026-05-12 from {packageId} {oldVersion} → {newVersion}");
+        // WM-25: stamp the ACTUAL generation date (invariant so the Gregorian date
+        // survives a non-default-calendar host), not a hard-coded literal.
+        Console.WriteLine($"# Draft registry entries — auto-generated {DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)} from {packageId} {oldVersion} → {newVersion}");
         Console.WriteLine($"# {entries.Count} candidate(s). Review each before merging — TODO fields require human input.");
         Console.WriteLine();
         foreach (var entry in entries)

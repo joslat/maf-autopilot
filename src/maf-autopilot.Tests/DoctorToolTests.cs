@@ -1383,14 +1383,14 @@ public class DoctorToolTests
     [Fact]
     public void DoctorCli_Parse_JsonFlag_SetsJsonFormat()
     {
-        var (_, format, _, _) = MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--json" });
+        var (_, format, _, _, _, _) = MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--json" });
         Assert.Equal("json", format);
     }
 
     [Fact]
     public void DoctorCli_Parse_PlanFlag_SetsPlanFormat()
     {
-        var (_, format, _, _) = MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--plan" });
+        var (_, format, _, _, _, _) = MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--plan" });
         Assert.Equal("plan", format);
     }
 
@@ -1408,7 +1408,7 @@ public class DoctorToolTests
     [Fact]
     public void DoctorCli_Parse_NoFormatFlag_DefaultsToMarkdown()
     {
-        var (path, format, _, full) = MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", "." });
+        var (path, format, _, full, _, _) = MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", "." });
         Assert.Equal(".", path);
         Assert.Equal("markdown", format);
         Assert.False(full);
@@ -1418,7 +1418,7 @@ public class DoctorToolTests
     public void DoctorCli_Parse_FlagBeforePath_StillCapturesPath()
     {
         // The `--` guard means a flag preceding the path isn't mistaken for it.
-        var (path, format, _, full) = MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", "--all", "--json", "myrepo" });
+        var (path, format, _, full, _, _) = MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", "--all", "--json", "myrepo" });
         Assert.Equal("myrepo", path);
         Assert.Equal("json", format);
         Assert.True(full);
@@ -1427,9 +1427,42 @@ public class DoctorToolTests
     [Fact]
     public void DoctorCli_Parse_ExcludeIsRepeatable()
     {
-        var (_, _, excludes, _) = MafDoctor.Commands.DoctorCli.Parse(
+        var (_, _, excludes, _, _, _) = MafDoctor.Commands.DoctorCli.Parse(
             new[] { "doctor", ".", "--exclude", "samples/", "--exclude", "tests/" });
         Assert.Equal(new[] { "samples/", "tests/" }, excludes);
+    }
+
+    [Fact]
+    public void DoctorCli_Parse_UnknownFlag_ReturnsError()
+    {
+        var (_, _, _, _, _, error) = MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--nope" });
+        Assert.NotNull(error);
+        Assert.Contains("--nope", error);
+    }
+
+    [Fact]
+    public void DoctorCli_Parse_ExtraPositional_ReturnsError()
+    {
+        var (_, _, _, _, _, error) = MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", "a", "b" });
+        Assert.NotNull(error);
+    }
+
+    [Fact]
+    public void DoctorCli_Parse_ExcludeSwallowingFlag_ReturnsError()
+    {
+        // REP-05: `--exclude --json` must NOT eat --json; it errors loudly instead.
+        var (_, _, excludes, _, _, error) = MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--exclude", "--json" });
+        Assert.NotNull(error);
+        Assert.Empty(excludes);
+    }
+
+    [Fact]
+    public void DoctorCli_Parse_FailOn_ParsesGradeAndRejectsJunk()
+    {
+        Assert.Equal("C", MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--fail-on", "c" }).FailOn);
+        Assert.Null(MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--fail-on", "C" }).Error);
+        Assert.NotNull(MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--fail-on", "Z" }).Error);
+        Assert.NotNull(MafDoctor.Commands.DoctorCli.Parse(new[] { "doctor", ".", "--fail-on", "--json" }).Error);
     }
 
     [Fact]

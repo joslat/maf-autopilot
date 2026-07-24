@@ -20,25 +20,54 @@ namespace MafDoctor.Commands;
 /// </summary>
 internal static class DoctorCli
 {
-    public static (string? Path, string Format, List<string> Excludes, bool Full) Parse(string[] args)
+    public static (string? Path, string Format, List<string> Excludes, bool Full, string? FailOn, string? Error) Parse(string[] args)
     {
         var excludes = new List<string>();
         string? path = null;
         var full = false;
         var json = false;
         var plan = false;
+        string? failOn = null;
+        var unknown = new List<string>();
+        string? error = null;
 
         // args[0] is "doctor"; options start at index 1.
         for (int i = 1; i < args.Length; i++)
         {
-            if (args[i] == "--exclude" && i + 1 < args.Length) { excludes.Add(args[++i]); continue; }
-            if (args[i] is "--all" or "--full") { full = true; continue; }
-            if (args[i] is "--json") { json = true; continue; }
-            if (args[i] is "--plan") { plan = true; continue; }
-            // First non-flag token is the path. The `--` guard means a flag that
-            // appears before the path (e.g. `doctor --json .`) is never mistaken
-            // for the path.
-            if (path is null && !args[i].StartsWith("--", StringComparison.Ordinal)) path = args[i];
+            var a = args[i];
+            // REP-05: `--exclude` requires a value and must never swallow a following
+            // flag (`doctor --exclude --json` used to silently disable --json).
+            if (a == "--exclude")
+            {
+                if (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal)) excludes.Add(args[++i]);
+                else error ??= "--exclude requires a value (e.g. `--exclude tests`)";
+                continue;
+            }
+            // REP-09: opt-in CI gate — exit 3 when the grade is at-or-below <grade>.
+            if (a == "--fail-on")
+            {
+                if (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal)) failOn = args[++i];
+                else error ??= "--fail-on requires a grade (A|B|C|F)";
+                continue;
+            }
+            if (a is "--all" or "--full") { full = true; continue; }
+            if (a is "--json") { json = true; continue; }
+            if (a is "--plan") { plan = true; continue; }
+            // WM-04: reject unknown flags and extra positionals loudly (exit 2 in
+            // Program.cs) instead of silently ignoring them.
+            if (a.StartsWith("--", StringComparison.Ordinal)) { unknown.Add(a); continue; }
+            if (path is null) { path = a; continue; }
+            unknown.Add(a); // a second positional is not expected
+        }
+
+        if (error is null && unknown.Count > 0)
+            error = "unknown option(s) / extra argument(s): " + string.Join(", ", unknown);
+
+        if (error is null && failOn is not null)
+        {
+            failOn = failOn.ToUpperInvariant();
+            if (failOn is not ("A" or "B" or "C" or "F"))
+                error = $"--fail-on must be one of A, B, C, F (got '{failOn}')";
         }
 
         // `--plan --json` (either order) = the machine-readable remediation MANIFEST
@@ -52,6 +81,6 @@ internal static class DoctorCli
             _ => "markdown",
         };
 
-        return (path, format, excludes, full);
+        return (path, format, excludes, full, failOn, error);
     }
 }
