@@ -77,11 +77,16 @@ public sealed class RegistryLookupTool
         sb.AppendLine($"## MAF {_registry.TargetVersion} Obsolete-API Registry");
         sb.AppendLine($"*Last updated: {_registry.LastUpdated} — {ids.Count} entries*");
         sb.AppendLine();
+        // REP-36: emit the header row so the output actually renders as a table (and add
+        // the Fix column the description promises). Upstream fix text is MdInline-neutralized.
+        sb.AppendLine("| ID | Obsolete method | CS warning | Detection | Fix |");
+        sb.AppendLine("|---|---|---|---|---|");
         foreach (var id in ids)
         {
             var entry = _registry.FindById(id)!;
             var detectable = entry.DotnetInspectDetectable ? "dotnet-inspect ✅" : "compiler only ⚠️";
-            sb.AppendLine($"| `{id}` | `{entry.Method}` | `{entry.CsWarning}` | {detectable} |");
+            var fixFirst = entry.FixDescription.Split('\n')[0].Trim();
+            sb.AppendLine($"| `{id}` | `{entry.Method}` | `{entry.CsWarning}` | {detectable} | {LlmFencing.MdInline(fixFirst)} |");
         }
         sb.AppendLine();
         sb.AppendLine("Use `MafRegistryLookup <id>` for the full fix details of any entry.");

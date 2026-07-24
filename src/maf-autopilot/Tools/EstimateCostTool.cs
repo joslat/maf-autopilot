@@ -92,12 +92,13 @@ public sealed class EstimateCostTool
     {
         var findings = new List<CostFinding>();
 
-        // Build a global view of ChatOptions initializers in this file — each
-        // captures: file-position, MaxOutputTokens value (if set), Instructions literal.
+        // Build a view of ChatOptions initializers in this file — each captures its
+        // syntax node (for REP-17 member-span scoping) plus file-position, MaxOutputTokens
+        // value (if set), and the Instructions literal length.
         var chatOptions = root.DescendantNodes()
             .OfType<ObjectCreationExpressionSyntax>()
             .Where(IsChatOptionsCreation)
-            .Select(ExtractChatOptionsInfo)
+            .Select(n => (Node: n, Info: ExtractChatOptionsInfo(n)))
             .ToList();
 
         foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
@@ -137,13 +138,24 @@ public sealed class EstimateCostTool
             //   });
             //   await agent.RunAsync(...);                                     // line N+2
             // Without merge, the wrapper at line N+1 would shadow the real options at line N.
+            // REP-17: scope the merge to the invocation's enclosing member so a ChatOptions
+            // in an UNRELATED method/property/field above can't be inherited — that produced
+            // false negatives (an uncapped call reported as capped). Top-level statements
+            // (no enclosing member) fall back to file scope, preserving that pattern.
+            var enclosingMember = invocation.Ancestors().FirstOrDefault(a =>
+                a is BaseMethodDeclarationSyntax or PropertyDeclarationSyntax or FieldDeclarationSyntax);
+            var memberSpan = enclosingMember?.Span;
+
             int? maxTokens = null;
             int? estimatedInputTokens = null;
-            foreach (var co in chatOptions.Where(o => o.Line <= line).OrderBy(o => o.Line))
+            foreach (var co in chatOptions
+                .Where(o => o.Info.Line <= line
+                         && (memberSpan is null || memberSpan.Value.Contains(o.Node.Span)))
+                .OrderBy(o => o.Info.Line))
             {
-                if (co.MaxOutputTokens is not null) maxTokens = co.MaxOutputTokens;
-                if (co.InstructionsLiteralChars > 0)
-                    estimatedInputTokens = co.InstructionsLiteralChars / CharsPerToken;
+                if (co.Info.MaxOutputTokens is not null) maxTokens = co.Info.MaxOutputTokens;
+                if (co.Info.InstructionsLiteralChars > 0)
+                    estimatedInputTokens = co.Info.InstructionsLiteralChars / CharsPerToken;
             }
 
             findings.Add(new CostFinding(

@@ -50,6 +50,12 @@ public sealed class MigrationRiskScoreTool
         Returns HARD / MEDIUM / EASY plus the per-category breakdown that
         produced the score.
 
+        Note: the cs0246/cs0618 counts are SOURCE-TEXT heuristics (substring proxies
+        for obsolete-API touches) — NOT compiler diagnostics — so treat them as a rough
+        signal, not a guaranteed build outcome. The cs0117 count is the AST-precise
+        MAF-AP-AGENT-001 finding (top-level Instructions), not a substring guess. See the
+        `counts_method` field in the returned JSON.
+
         Input:
           - repoPath: absolute path to the codebase.
 
@@ -114,8 +120,13 @@ public sealed class MigrationRiskScoreTool
             // for a full dotnet build. Counted against the already-in-memory source.
             cs0246Count += CountMatches(source, "AgentThread", "MapA2A", "InProcessExecution", "AgentRunUpdateEvent");
             cs0618Count += CountMatches(source, "AddFanInBarrierEdge(", "SerializeSession(");
-            cs0117Count += CountMatches(source, ".Instructions");
         }
+
+        // REP-18: the old `.Instructions` needle scored the CANONICAL CORRECT idiom
+        // (`ChatClientAgentOptions.Instructions` inside ChatOptions) as risk. Replace it
+        // with the AST-precise MAF-AP-AGENT-001 finding (already computed above), which
+        // matches ONLY the genuinely-broken top-level Instructions placement.
+        cs0117Count = antiPatternFindings.Count(f => f.RuleId == "MAF-AP-AGENT-001");
 
         var antiPatternErrors = antiPatternFindings.Count(f => f.Severity == AntiPatternSeverity.Error);
         var silentStarvation = handlers.Count(h =>
@@ -142,8 +153,14 @@ public sealed class MigrationRiskScoreTool
 
         return JsonSerializer.Serialize(new
         {
+            schema_version = "1",
             verdict,
             score,
+            // REP-18: state the evidence class. cs0246/cs0618 are SOURCE-TEXT heuristics
+            // (substring proxies for obsolete-API touches, NOT compiler diagnostics); a
+            // hit does not guarantee a real CS0246/CS0618. cs0117 is now the AST-precise
+            // MAF-AP-AGENT-001 count (top-level Instructions), not a substring guess.
+            counts_method = "cs0246Count/cs0618Count = source-text-heuristic proxies (not compiler diagnostics); cs0117Count = MAF-AP-AGENT-001 AST finding",
             thresholds = new
             {
                 easyBelow = EasyThreshold,

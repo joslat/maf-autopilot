@@ -78,7 +78,16 @@ public sealed class Cs0618HuntTool
 
         var (exitCode, output) = ProcessRunner.RunDotnetBuild(resolved);
         var findings = ParseBuildOutput(output);
-        return FormatReport(resolved, exitCode, findings, _registry);
+        return FormatReport(resolved, exitCode, findings, _registry, output);
+    }
+
+    /// <summary>REP-16: the last <paramref name="n"/> lines of build output, for the fenced excerpt.</summary>
+    private static string TailLines(string text, int n)
+    {
+        if (string.IsNullOrEmpty(text)) return string.Empty;
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        var start = Math.Max(0, lines.Length - n);
+        return string.Join("\n", lines[start..]);
     }
 
     // -------------------------------------------------------------------------
@@ -246,7 +255,8 @@ public sealed class Cs0618HuntTool
     private static string FormatReport(
         string target, int exitCode,
         IReadOnlyList<BuildDiagnostic> findings,
-        RegistryService registry)
+        RegistryService registry,
+        string buildOutput)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"## CS0618 hunt — `{target}`");
@@ -255,28 +265,44 @@ public sealed class Cs0618HuntTool
 
         if (findings.Count == 0)
         {
-            sb.AppendLine(exitCode == 0
-                ? "✅ Build clean, zero CS0618/CS0246 diagnostics."
-                : "⚠️ Build failed but no CS0618/CS0246 diagnostics were extracted — see raw build output for unrelated errors.");
+            if (exitCode == 0)
+            {
+                sb.AppendLine("✅ Build clean, zero CS0618/CS0246 diagnostics.");
+                return sb.ToString();
+            }
+            // REP-16: the tool used to tell the agent to "see raw build output" it never
+            // returned. A failed build with no extracted CS0618/CS0246 is only diagnosable
+            // if we actually include the output — bounded + fenced (untrusted build text).
+            sb.AppendLine("⚠️ Build failed but no CS0618/CS0246 diagnostics were extracted — the errors below are unrelated (or a build-config problem).");
+            var tail = TailLines(buildOutput, 100);
+            if (!string.IsNullOrWhiteSpace(tail))
+            {
+                sb.AppendLine();
+                sb.AppendLine("**Build output (last lines):**");
+                sb.Append(LlmFencing.Fence("dotnet-build-output", tail, maxBytes: 16 * 1024));
+            }
             return sb.ToString();
         }
 
         foreach (var diag in findings)
         {
-            sb.AppendLine($"### {diag.File}({diag.Line}) — {diag.Severity} {diag.Code}");
-            sb.AppendLine($"> {diag.Message}");
+            // SEC-06: diag.File / diag.Message are MSBuild-emitted text derived from source
+            // paths / member names — neutralize before echoing into the markdown report.
+            sb.AppendLine($"### {LlmFencing.MdInline(diag.File)}({diag.Line}) — {diag.Severity} {diag.Code}");
+            sb.AppendLine($"> {LlmFencing.StripHtmlComments(diag.Message)}");
             sb.AppendLine();
 
             var match = MatchToRegistry(diag, registry);
             if (match is not null)
             {
                 sb.AppendLine($"**Registry match:** `{match.Id}`");
-                sb.AppendLine(match.FixDescription.Trim());
+                sb.AppendLine(LlmFencing.StripHtmlComments(match.FixDescription.Trim()));
                 if (!string.IsNullOrWhiteSpace(match.ExampleAfter))
                 {
                     sb.AppendLine();
                     sb.AppendLine("```csharp");
-                    sb.AppendLine(match.ExampleAfter.Trim());
+                    // SEC-06: a ``` inside the registry example would close the fence.
+                    sb.AppendLine(MafDoctor.Data.RegistryService.NeutralizeFences(match.ExampleAfter.Trim()));
                     sb.AppendLine("```");
                 }
             }

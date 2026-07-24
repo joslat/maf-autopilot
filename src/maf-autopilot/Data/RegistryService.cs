@@ -208,13 +208,13 @@ public sealed class RegistryService
         sb.AppendLine($"`{e.ReplacementSignature}`");
         sb.AppendLine();
         sb.AppendLine($"### Fix");
-        sb.AppendLine(e.FixDescription.Trim());
+        sb.AppendLine(Sanitize(e.FixDescription));
         sb.AppendLine();
         if (!string.IsNullOrWhiteSpace(e.ExampleBefore))
         {
             sb.AppendLine("### Before");
             sb.AppendLine("```csharp");
-            sb.AppendLine(NeutralizeFences(e.ExampleBefore.Trim()));
+            sb.AppendLine(Sanitize(e.ExampleBefore));
             sb.AppendLine("```");
             sb.AppendLine();
         }
@@ -222,17 +222,28 @@ public sealed class RegistryService
         {
             sb.AppendLine("### After");
             sb.AppendLine("```csharp");
-            sb.AppendLine(NeutralizeFences(e.ExampleAfter.Trim()));
+            sb.AppendLine(Sanitize(e.ExampleAfter));
             sb.AppendLine("```");
             sb.AppendLine();
         }
         if (!string.IsNullOrWhiteSpace(e.Notes))
         {
             sb.AppendLine("### Notes");
-            sb.AppendLine(e.Notes.Trim());
+            sb.AppendLine(Sanitize(e.Notes));
         }
         return sb.ToString();
     }
+
+    /// <summary>
+    /// SEC-07: sanitize an upstream-derived free-text field before markdown embedding.
+    /// Strips HTML comments (a smuggle vector — never legitimate in registry text) AND
+    /// neutralizes triple-backtick fences. Applied to EVERY upstream free-text field
+    /// (fix_description, example_before/after, notes) so none can inject markdown or
+    /// escape a code fence — the Example fields previously neutralized fences but not
+    /// HTML comments, and fix_description/notes were echoed entirely raw.
+    /// </summary>
+    private static string Sanitize(string s) =>
+        NeutralizeFences(MafDoctor.Tools.LlmFencing.StripHtmlComments(s.Trim()));
 
     /// <summary>
     /// Neutralize triple-backtick fences embedded inside an example so the

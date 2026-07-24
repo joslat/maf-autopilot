@@ -250,8 +250,14 @@ public sealed class SimulateWorkflowTool
                 if (resolvedType is null)
                 {
                     anyUnresolved = true;
-                    // Keep the raw expression text so the report can show what couldn't be resolved.
-                    resolved.Add(arg.Expression.ToString().Trim());
+                    // REP-19: store a SANITIZED placeholder (the first identifier in the
+                    // expression, else "unresolved") instead of raw expression text. Raw text
+                    // flows into the Mermaid flow diagram as a node label, where unresolved
+                    // characters (quotes, operators, newlines, pipes) would corrupt the diagram
+                    // render or inject markdown. The first identifier is a readable, safe hint.
+                    var raw = arg.Expression.ToString();
+                    var idMatch = AnyIdentifierRegex.Match(raw);
+                    resolved.Add(idMatch.Success ? idMatch.Value : "unresolved");
                 }
                 else
                 {
