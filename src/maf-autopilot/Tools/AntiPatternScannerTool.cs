@@ -39,7 +39,13 @@ public sealed class AntiPatternScannerTool
         [Description("Absolute path to the repository root (or any directory).")] string repoPath,
         [Description("Output format: \"markdown\" (default) or \"sarif\" (v2.1.0 JSON).")] string format = "markdown")
     {
-        if (PathGuard.ValidateRepoPath(repoPath) is { } err) return err;
+        // REP-22: a machine consumer that asked for SARIF must get SARIF back on
+        // failure too — a plain-text error would break its parser. Route validation
+        // errors through the SARIF invocation channel when that's the requested format.
+        if (PathGuard.ValidateRepoPath(repoPath) is { } err)
+            return format.Equals("sarif", StringComparison.OrdinalIgnoreCase)
+                ? SarifExportTool.EmitAntiPatternsError(err)
+                : err;
 
         var findings = new List<AntiPatternFinding>();
         var budget = new SourceFileWalker.ScanBudget();

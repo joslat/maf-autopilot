@@ -31,8 +31,11 @@ public static class BadgeCommand
     /// </summary>
     public static string Build(string repoPath)
     {
-        var doctorReport = new DoctorTool().MafDoctor(repoPath);
-        var grade = ExtractGrade(doctorReport) ?? "?";
+        // REP-39: consume the machine-readable `verdict` from the schema_version-1 JSON
+        // contract instead of regex-scraping the markdown headline — the badge no longer
+        // breaks when the report prose changes, and it rides the single-source grade.
+        var json = new DoctorTool().Run(repoPath, "json", excludes: null);
+        var grade = ExtractVerdict(json) ?? "?";
         var color = ColorForGrade(grade);
 
         return JsonSerializer.Serialize(new
@@ -45,7 +48,28 @@ public static class BadgeCommand
     }
 
     /// <summary>
-    /// Extract the bold grade letter from the doctor's markdown:
+    /// Read the single-source grade from the doctor's <c>--json</c> <c>verdict</c> field.
+    /// Returns <see langword="null"/> when the doctor reported an error (no verdict) or the
+    /// JSON is unparseable — the caller then renders "?" (lightgrey).
+    /// </summary>
+    internal static string? ExtractVerdict(string doctorJson)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(doctorJson);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return null;
+            if (root.TryGetProperty("error", out _)) return null;
+            return root.TryGetProperty("verdict", out var v) && v.ValueKind == JsonValueKind.String
+                ? v.GetString()
+                : null;
+        }
+        catch (JsonException) { return null; }
+    }
+
+    /// <summary>
+    /// Legacy markdown grade extractor, retained for callers/tests that still parse the
+    /// headline. Production <see cref="Build"/> now uses <see cref="ExtractVerdict"/>.
     /// "## 🟢 MAF health grade: **A**" → "A".
     /// </summary>
     internal static string? ExtractGrade(string doctorReport)
@@ -55,14 +79,16 @@ public static class BadgeCommand
     }
 
     /// <summary>
-    /// Map A/B/C/D/F → shields.io named colours. Anything else → grey.
+    /// Map the grade to a shields.io named colour, aligned with the doctor header's
+    /// grade-emoji scale (REP-38): one colour semantic per grade across every surface.
+    /// Grade D is unreachable (the rubric only emits A/B/C/F), so there is no D arm —
+    /// anything unrecognized falls to grey.
     /// </summary>
     internal static string ColorForGrade(string grade) => grade switch
     {
         "A" => "brightgreen",
-        "B" => "green",
-        "C" => "yellow",
-        "D" => "orange",
+        "B" => "yellow",
+        "C" => "orange",
         "F" => "red",
         _   => "lightgrey",
     };

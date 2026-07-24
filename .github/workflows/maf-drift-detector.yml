@@ -55,16 +55,18 @@ jobs:
           # Scan PRODUCT code only — exclude samples/ and test fixtures, which
           # ship intentional anti-pattern bait that would otherwise force grade
           # F regardless of real health.
-          REPORT=$(dotnet "$MAF_DOCTOR" doctor "$GITHUB_WORKSPACE" \
-            --exclude samples/ --exclude .Tests/ --exclude find-the-bug/)
-          echo "$REPORT" > maf-doctor-report.md
-          # Extract grade (first line: "## <emoji> MAF health grade: **X**").
-          # Tolerate a grep miss with `|| true` — otherwise a future reword of
-          # the doctor headline yields an empty grade, which is != 'A' and would
-          # file a blank-grade issue. Empty -> UNKNOWN, which the issue gate skips.
-          GRADE=$(echo "$REPORT" | grep -oP 'health grade: \*\*\K[A-F]' | head -1 || true)
-          if [ -z "$GRADE" ]; then
-            echo "::warning::Could not parse health grade from doctor output — treating as UNKNOWN."
+          #
+          # REP-39: consume the machine-readable JSON contract (schema_version 1)
+          # instead of regex-scraping the markdown headline. `verdict` is the
+          # single-source grade; `summary_md` carries the SAME markdown report for
+          # the issue body — so grade extraction no longer breaks on a prose reword.
+          dotnet "$MAF_DOCTOR" doctor "$GITHUB_WORKSPACE" \
+            --exclude samples/ --exclude .Tests/ --exclude find-the-bug/ \
+            --json > doctor.json
+          jq -r '.summary_md // ""' doctor.json > maf-doctor-report.md
+          GRADE=$(jq -r '.verdict // "UNKNOWN"' doctor.json)
+          if [ -z "$GRADE" ] || [ "$GRADE" = "null" ]; then
+            echo "::warning::Could not read verdict from doctor JSON — treating as UNKNOWN."
             GRADE="UNKNOWN"
           fi
           echo "grade=$GRADE" >> "$GITHUB_OUTPUT"

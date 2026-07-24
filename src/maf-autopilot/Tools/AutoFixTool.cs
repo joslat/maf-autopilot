@@ -162,7 +162,7 @@ public sealed class AutoFixTool
         [Description("If true (the default), no files written — preview only. Pass false to write.")] bool dryRun = true)
     {
         if (PathGuard.ValidateRepoPath(repoPath) is { } err)
-            return JsonSerializer.Serialize(new { error = err });
+            return JsonSerializer.Serialize(new { schema_version = "1", error = err });
 
         // C1 mitigation: `specificFile` was previously joined to repoPath with a
         // `Path.IsPathRooted` short-circuit that accepted absolute paths and
@@ -174,17 +174,18 @@ public sealed class AutoFixTool
             try { PathGuard.ValidateContainment(repoPath, specificFile, nameof(specificFile)); }
             catch (ArgumentException ex)
             {
-                return JsonSerializer.Serialize(new { error = $"Error: {ex.Message}" });
+                return JsonSerializer.Serialize(new { schema_version = "1", error = $"Error: {ex.Message}" });
             }
             // WM-41: a missing or non-.cs specificFile previously yielded a silent
             // "0 changes" success. Surface it as an error instead.
             if (ValidateSpecificFile(repoPath, specificFile) is { } fileErr)
-                return JsonSerializer.Serialize(new { error = fileErr });
+                return JsonSerializer.Serialize(new { schema_version = "1", error = fileErr });
         }
 
         if (!_factories.TryGetValue(ruleId, out var factory))
             return JsonSerializer.Serialize(new
             {
+                schema_version = "1",
                 error = $"Unknown ruleId '{ruleId}'. Supported: {string.Join(", ", SupportedRuleIds)}",
             });
 
@@ -193,7 +194,7 @@ public sealed class AutoFixTool
         if (!dryRun)
         {
             applyLock = TryAcquireApplyLock(repoPath, out var lockErr);
-            if (applyLock is null) return JsonSerializer.Serialize(new { error = lockErr });
+            if (applyLock is null) return JsonSerializer.Serialize(new { schema_version = "1", error = lockErr });
         }
         using var _lock = applyLock;
 
@@ -203,6 +204,7 @@ public sealed class AutoFixTool
 
         return JsonSerializer.Serialize(new
         {
+            schema_version = "1", // REP-24: version every machine-readable surface
             ruleId,
             dryRun,
             filesChanged = changedFiles.Count,
@@ -242,7 +244,7 @@ public sealed class AutoFixTool
     {
         var report = RunAll(repoPath, specificFile, dryRun, out var error);
         return report is null
-            ? JsonSerializer.Serialize(new { error })
+            ? JsonSerializer.Serialize(new { schema_version = "1", error })
             : SerializeReport(report);
     }
 
@@ -263,6 +265,7 @@ public sealed class AutoFixTool
 
         return JsonSerializer.Serialize(new
         {
+            schema_version = "1", // REP-24: version every machine-readable surface
             dryRun = report.DryRun,
             orderOfExecution = report.OrderOfExecution,
             totalDistinctFilesChanged = report.TotalDistinctFilesChanged,

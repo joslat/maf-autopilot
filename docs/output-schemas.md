@@ -52,6 +52,7 @@ Pass `format: "json"` to get machine-readable output.
   - `auto_fixable`: `true` if `MafAutoFixAll` has a deterministic rewriter for this rule
   - `why`: one-line consequence / rationale for the finding. **Always present**; the empty string `""` when no rationale is defined for the rule.
   - `confidence`: detector trust level for **false-positive triage** — `"certain"` (compiler ground-truth) | `"high"` (structural AST, low FP) | `"heuristic"` (name-only / text / scope-limited — **verify before fixing**). Additive within schema v1; consumers that don't recognize it can ignore it. The `maf-remediate` prompt reads this to decide which findings to confirm before changing code.
+  - `fingerprint`: a short, drift-stable finding identifier (first 12 hex of a SHA-256 over `rule_id | file | whitespace-collapsed, secret-redacted source line`). A **line move leaves it stable**; a content edit of the offending line changes it. Lets an automated remediation loop key its skip-set on the fingerprint instead of `file:line`. Additive within schema v1. **Degradation:** when the source line is unavailable or was secret-redacted, it falls back to a `rule_id | file | line` hash — always present, but that fallback is **not** drift-stable.
 - `summary_md`: the same markdown that `format: "markdown"` would emit (for hybrid consumers). It includes the offending source line per finding, so it inherits the markdown report's **best-effort, content-aware secret redaction** — the structured `top_fixes` array carries no source text and is the safer channel for machine consumers.
 - `scan_truncated`: `true` if the repo-size cap (file count or per-file size) meant the scan did NOT cover every file — the verdict/findings above reflect a partial repo, not the whole one. Additive within schema v1; consumers that don't recognize it can ignore it, but a CI gate reading only the typed fields (not `summary_md`) should check it before trusting a clean verdict.
 - `files_scanned`: how many files were actually included in the scan (integer).
@@ -99,7 +100,9 @@ snippets** — only `file:line` — so it never echoes a secret.
 
 The machine-readable sibling of `--plan` — the same phased plan, structured so an
 automated remediation loop (the `maf-remediate` prompt) can iterate it and triage
-false positives without parsing prose. Schema version `"1"`.
+false positives without parsing prose. Schema version `"1"`. CLI: `doctor <path> --plan --json`;
+MCP: `MafDoctor(repoPath, format: "plan-json")`. (An unrecognized `format` returns a
+structured error, not a silent markdown fallback.)
 
 ```jsonc
 {
@@ -108,7 +111,7 @@ false positives without parsing prose. Schema version `"1"`.
   "repo": "C:/path/to/repo",
   "counts": { "total": 13, "auto_fixable": 3, "manual": 10, "heuristic": 3 },
   "phase1_autofix": {                         // null when nothing is auto-fixable
-    "command": "maf-doctor autofix-all . --apply",
+    "command": "maf-doctor autofix-all \"C:/path/to/repo\" --apply",  // targets the scanned repo, not cwd
     "finding_count": 3,
     "clears_rules": ["MAF-AP-SEC-001", "MAF-AP-SEC-003", "MAF-AP-WF-001"]
   },
@@ -122,7 +125,7 @@ false positives without parsing prose. Schema version `"1"`.
       "auto_fixable": false,
       "why": "An agent call with no MaxOutputTokens cap can emit an unbounded response…",
       "fix": "Set MaxOutputTokens on the nearest ChatOptions to cap the per-call cost.",
-      "occurrences": [ { "file": "AGUIClient/Program.cs", "line": 90 } ]
+      "occurrences": [ { "file": "AGUIClient/Program.cs", "line": 90, "fingerprint": "a1b2c3d4e5f6" } ]
     }
   ],
   "scan_truncated": false,
@@ -133,10 +136,46 @@ false positives without parsing prose. Schema version `"1"`.
 - `counts.heuristic` — how many Phase-2 findings are `heuristic` (likely false positives; confirm before fixing).
 - `phase1_autofix` — `null` if there are no auto-fixable findings; otherwise the single command + the rules it clears.
 - `phase2_semantic[].verify_first` — `true` for `heuristic` findings: confirm the finding is real (e.g. via `MafExplainFinding`) **before** editing.
-- `phase2_semantic[].occurrences` — every `file`/`line` for that rule (a group of N hits is one entry with N occurrences).
+- `phase2_semantic[].occurrences` — every `file`/`line` for that rule (a group of N hits is one entry with N occurrences). Each occurrence also carries a `fingerprint` (see the `--json` field definitions) so the loop can track a finding across edits.
 - `scan_truncated` — `true` if the repo-size cap meant this plan does NOT cover the whole repo. An automated consumer (the `maf-remediate` loop) MUST check this before treating the plan as complete — clearing every listed finding would otherwise look like "fully remediated" when it isn't. Additive within schema v1.
 - `files_scanned` — how many files were actually included in the scan (integer).
-- Invalid path / scan failure returns the same `{ "schema_version": "1", "error": "…" }` shape as `--json`.
+- Invalid path / scan failure returns the same `{ "schema_version": "1", "error": "…" }` shape as `--json` (the `DoctorJsonError` shape — see below).
+
+> **Error shape (`DoctorJsonError`).** Every JSON-shaped `MafDoctor` surface (`--json`,
+> `--plan --json`) returns `{ "schema_version": "1", "error": "…" }` on a validation/scan
+> failure, so a machine consumer parses one uniform error shape regardless of the format it
+> requested. `MafAutoFix` / `MafAutoFixAll` (below) reuse the same `schema_version` + `error` shape.
+
+---
+
+## `MafAutoFixAll` / `MafAutoFix` (machine-readable JSON)
+
+Both apply-tools return JSON. Keys are **camelCase** (retained for backward compatibility);
+every object carries `schema_version: "1"` (additive — existing consumers ignore it).
+
+```jsonc
+// MafAutoFixAll — success
+{
+  "schema_version": "1",
+  "dryRun": true,
+  "orderOfExecution": ["MAF-AP-SEC-001", "MAF-AP-WF-001"],
+  "totalDistinctFilesChanged": 2,
+  "affectedFiles": ["Agents/Prod.cs", "Workflows/Inv.cs"],
+  "perRule": { "MAF-AP-SEC-001": { "filesChanged": 1, "changedFiles": ["Agents/Prod.cs"] } },
+  "errors": [ { "file": "Locked.cs", "error": "could not be read (IOException)" } ], // previously-swallowed per-file failures
+  "diffs":  [ { "file": "Agents/Prod.cs", "ruleIds": ["MAF-AP-SEC-001"], "diff": "@@ …" } ] // preview diffs (WM-24)
+}
+
+// MafAutoFix (single rule) — success
+{ "schema_version": "1", "ruleId": "MAF-AP-SEC-001", "dryRun": true, "filesChanged": 1, "changedFiles": ["Agents/Prod.cs"], "errors": [] }
+
+// Either tool — error (bad path, unknown ruleId, lock contention, …)
+{ "schema_version": "1", "error": "…" }
+```
+
+- `dryRun` — `true` (preview, the default) or `false` (files written). Apply mode serializes concurrent applies on the same repo.
+- `errors[]` — per-file failures that were previously swallowed; a non-empty array is what the CLI's non-zero exit code keys on.
+- Both tools reuse the `schema_version` + `error` shape above so the failure shape is identical to `MafDoctor`.
 
 ---
 

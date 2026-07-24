@@ -26,9 +26,9 @@ public sealed class DoctorTool
         and produce a single A/B/C/F health letter with the top 3 fixes to address
         (or every finding, grouped by rule, when full: true).
 
-        Grading:
-          A — no errors, no silent-starvation risks, < 5 warnings
-          B — no errors, no silent-starvation risks, some warnings/info
+        Grading (errors = anti-pattern + prompt-lint errors):
+          A — no errors, no silent-starvation risks, zero warnings/info notes/uncapped agent call sites
+          B — no errors, no silent-starvation risks, one or more warnings/info notes/uncapped call sites
           C — 1–3 errors OR 1 silent-starvation risk
           F — 4+ errors OR 2+ silent-starvation risks
 
@@ -36,9 +36,11 @@ public sealed class DoctorTool
           - repoPath: absolute path to the repository root.
           - format: output format — 'markdown' (default, human-readable), 'json'
             (machine-readable for CI/dashboards; schema in docs/output-schemas.md),
-            or 'plan' (an ordered, checkboxed remediation plan covering every
-            finding — Phase 1 batches the auto-fixable ones into one autofix-all
-            command, Phase 2 lists the semantic fixes as impact-ordered tasks).
+            'plan' (an ordered, checkboxed remediation plan covering every finding —
+            Phase 1 batches the auto-fixable ones into one autofix-all command,
+            Phase 2 lists the semantic fixes as impact-ordered tasks), or 'plan-json'
+            (the same phased plan as a machine-readable manifest). An unrecognized
+            format returns a structured error, not a silent markdown fallback.
           - full: when true, list EVERY finding (grouped by rule, ordered by
             impact) instead of only the top 3 — full triage / CI. (Ignored for
             format 'plan', which always covers everything.)
@@ -48,7 +50,7 @@ public sealed class DoctorTool
         """)]
     public string MafDoctor(
         [Description("Absolute path to the repository root.")] string repoPath,
-        [Description("Output format: 'markdown' (default, human-readable), 'json' (machine-readable for CI/dashboards), or 'plan' (an ordered, checkboxed remediation plan to drop into a GitHub issue).")]
+        [Description("Output format: 'markdown' (default, human-readable), 'json' (machine-readable for CI/dashboards), 'plan' (an ordered, checkboxed remediation plan to drop into a GitHub issue), or 'plan-json' (the plan as a machine-readable manifest). Unknown values return a structured error.")]
         string format = "markdown",
         [Description("When true, list EVERY finding (grouped by rule, ordered by impact) instead of only the top 3 fixes. Use for full triage / CI.")]
         bool full = false)
@@ -112,7 +114,13 @@ public sealed class DoctorTool
         if (format.Equals("plan", StringComparison.OrdinalIgnoreCase))
             return FormatPlan(repoPath, s); // always covers every finding
 
-        return FormatReport(repoPath, s, full);
+        if (format.Equals("markdown", StringComparison.OrdinalIgnoreCase))
+            return FormatReport(repoPath, s, full);
+
+        // REP-27: an unrecognized format used to silently fall through to markdown,
+        // hiding caller typos (e.g. "sarif"/"csv"). Fail loudly instead. Plain text is
+        // fine — the caller's intended shape is unknowable, so we can't echo it as JSON.
+        return $"Error: unknown format '{format}'. Supported: markdown | json | plan | plan-json.";
     }
 
     // -------------------------------------------------------------------------
@@ -182,7 +190,7 @@ public sealed class DoctorTool
             .Select(h => new DoctorRecommendation(
                 Priority: 1,
                 Source: "MafValidateFanOut",
-                Description: $"`{h.MethodName}` at {h.File}:{h.Line} returns `{h.ReturnType}` — fan-out handler must return Task<T>",
+                Description: $"`{h.MethodName}` at {LlmFencing.MdInline(h.File)}:{h.Line} returns `{h.ReturnType}` — fan-out handler must return Task<T>", // SEC-02: neutralize untrusted path
                 RuleId: "MAF001",
                 File: h.File,
                 Line: h.Line,
@@ -195,7 +203,7 @@ public sealed class DoctorTool
                 .Select(a => new DoctorRecommendation(
                     Priority: 2,
                     Source: "MafScanAntiPatterns",
-                    Description: $"{a.RuleId} at {a.File}:{a.Line} — {a.RuleName}",
+                    Description: $"{a.RuleId} at {LlmFencing.MdInline(a.File)}:{a.Line} — {a.RuleName}", // SEC-02: neutralize untrusted path
                     RuleId: a.RuleId,
                     File: a.File,
                     Line: a.Line,
@@ -208,7 +216,7 @@ public sealed class DoctorTool
                 .Select(p => new DoctorRecommendation(
                     Priority: 2,
                     Source: "MafLintAgentPrompt",
-                    Description: $"{p.RuleId} at {p.File}:{p.Line} — {p.Message}",
+                    Description: $"{p.RuleId} at {LlmFencing.MdInline(p.File)}:{p.Line} — {p.Message}", // SEC-02: neutralize untrusted path
                     RuleId: p.RuleId,
                     File: p.File,
                     Line: p.Line,
@@ -221,7 +229,7 @@ public sealed class DoctorTool
                 .Select(c => new DoctorRecommendation(
                     Priority: 3,
                     Source: "MafEstimateCost",
-                    Description: $"Unbounded `{c.CallSite}` at {c.File}:{c.Line} — set MaxOutputTokens on the nearest ChatOptions",
+                    Description: $"Unbounded `{c.CallSite}` at {LlmFencing.MdInline(c.File)}:{c.Line} — set MaxOutputTokens on the nearest ChatOptions", // SEC-02: neutralize untrusted path
                     RuleId: "COST-001",
                     File: c.File,
                     Line: c.Line,
@@ -234,7 +242,7 @@ public sealed class DoctorTool
                 .Select(a => new DoctorRecommendation(
                     Priority: 4,
                     Source: "MafScanAntiPatterns",
-                    Description: $"{a.RuleId} at {a.File}:{a.Line} — {a.RuleName}",
+                    Description: $"{a.RuleId} at {LlmFencing.MdInline(a.File)}:{a.Line} — {a.RuleName}", // SEC-02: neutralize untrusted path
                     RuleId: a.RuleId,
                     File: a.File,
                     Line: a.Line,
@@ -250,7 +258,7 @@ public sealed class DoctorTool
                 .Select(p => new DoctorRecommendation(
                     Priority: 4,
                     Source: "MafLintAgentPrompt",
-                    Description: $"{p.RuleId} at {p.File}:{p.Line} — {p.Message}",
+                    Description: $"{p.RuleId} at {LlmFencing.MdInline(p.File)}:{p.Line} — {p.Message}", // SEC-02: neutralize untrusted path
                     RuleId: p.RuleId,
                     File: p.File,
                     Line: p.Line,
@@ -265,7 +273,7 @@ public sealed class DoctorTool
                 .Select(a => new DoctorRecommendation(
                     Priority: 4,
                     Source: "MafScanAntiPatterns",
-                    Description: $"{a.RuleId} at {a.File}:{a.Line} — {a.RuleName}",
+                    Description: $"{a.RuleId} at {LlmFencing.MdInline(a.File)}:{a.Line} — {a.RuleName}", // SEC-02: neutralize untrusted path
                     RuleId: a.RuleId,
                     File: a.File,
                     Line: a.Line,
@@ -307,6 +315,7 @@ public sealed class DoctorTool
     private static DoctorJsonResult BuildJsonResult(string repoPath, DoctorSummary s, bool full = false)
     {
         var markdownSummary = FormatReport(repoPath, s, full);
+        var lineCache = new Dictionary<string, string[]?>(StringComparer.Ordinal);
         var findings = (full ? s.AllFixes : s.TopFixes)
             .Select(f => new DoctorJsonFinding(
                 RuleId: f.RuleId,
@@ -317,7 +326,8 @@ public sealed class DoctorTool
                 FixDescription: f.FixDescription,
                 AutoFixable: f.AutoFixable,
                 Why: f.Why,
-                Confidence: f.Confidence))
+                Confidence: f.Confidence,
+                Fingerprint: Fingerprint(repoPath, f.RuleId, f.File, f.Line, lineCache)))
             .ToList();
 
         return new DoctorJsonResult(
@@ -555,6 +565,14 @@ public sealed class DoctorTool
         sb.AppendLine();
     }
 
+    /// <summary>
+    /// REP-07 + SEC-02: a CLI command argument for the SCANNED repo — quoted (paths
+    /// may contain spaces) and backtick/newline-neutralized (the command is rendered
+    /// inside a markdown <c>`code span`</c>). repoPath is already validated absolute.
+    /// Replaces the hard-coded <c>.</c> that targeted cwd rather than the scanned path.
+    /// </summary>
+    private static string CliRepoArg(string repoPath) => "\"" + LlmFencing.MdInline(repoPath) + "\"";
+
     internal static string FormatReport(string repoPath, DoctorSummary s, bool full = false)
     {
         var sb = new StringBuilder();
@@ -564,13 +582,21 @@ public sealed class DoctorTool
         sb.AppendLine();
         sb.AppendLine($"_{s.Reason}_");
         sb.AppendLine();
-        sb.AppendLine($"**Repo:** `{repoPath.Replace('`', '\'')}`");
+        sb.AppendLine($"**Repo:** `{LlmFencing.MdInline(repoPath)}`");
         sb.AppendLine();
         AppendScanIncompleteNote(sb, s, "The grade and findings below reflect a partial scan, not the whole repo.");
-        // `doctor` is read-only by design — it diagnoses and grades but never
-        // edits files. Spelled out here because "doctor didn't fix anything" is
-        // a common first-run misread; the fix path is autofix-all + the agent.
-        sb.AppendLine("> 🩺 This is a **read-only diagnosis** — `doctor` never edits your files. To fix: run `maf-doctor autofix-all . --apply` for the mechanical issues, then hand the rest to the `@maf-migration` agent.");
+
+        // REP-28: the read-only banner must match what the scan actually found — a
+        // clean repo or an all-manual finding set must NOT suggest a no-op `autofix-all`.
+        // REP-07: the suggested command targets the scanned repo, not cwd '.'.
+        var totalFindings = s.AllFixes.Count;
+        var autoFixable = s.AllFixes.Count(f => f.AutoFixable);
+        if (totalFindings == 0)
+            sb.AppendLine("> 🩺 This is a **read-only diagnosis** — `doctor` never edits your files. Nothing needs fixing.");
+        else if (autoFixable == 0)
+            sb.AppendLine($"> 🩺 This is a **read-only diagnosis** — `doctor` never edits your files. To fix: these findings need judgment — run `maf-doctor doctor {CliRepoArg(repoPath)} --plan` for an ordered plan, or hand them to the `@maf-migration` agent (nothing here is mechanically auto-fixable).");
+        else
+            sb.AppendLine($"> 🩺 This is a **read-only diagnosis** — `doctor` never edits your files. To fix: run `maf-doctor autofix-all {CliRepoArg(repoPath)} --apply` for the mechanical issues, then hand the rest to the `@maf-migration` agent.");
         sb.AppendLine();
         sb.AppendLine("| Metric | Count |");
         sb.AppendLine("|---|---:|");
@@ -601,7 +627,7 @@ public sealed class DoctorTool
             var autoCount = s.AllFixes.Count(f => f.AutoFixable);
             if (autoCount > 0)
             {
-                sb.AppendLine($"💡 **{autoCount} of {s.AllFixes.Count} finding(s) are auto-fixable** — apply the deterministic Roslyn rewriters with `maf-doctor autofix-all . --apply` (CLI) or `MafAutoFixAll(repoPath, dryRun: false)` (MCP). The rest need your judgment (or hand them to the `@maf-migration` agent).");
+                sb.AppendLine($"💡 **{autoCount} of {s.AllFixes.Count} finding(s) are auto-fixable** — apply the deterministic Roslyn rewriters with `maf-doctor autofix-all {CliRepoArg(repoPath)} --apply` (CLI) or `MafAutoFixAll(repoPath, dryRun: false)` (MCP). The rest need your judgment (or hand them to the `@maf-migration` agent).");
                 sb.AppendLine();
             }
 
@@ -611,12 +637,12 @@ public sealed class DoctorTool
             var manualCount = s.AllFixes.Count(f => !f.AutoFixable);
             sb.AppendLine("**What the tags mean**");
             sb.AppendLine();
-            sb.AppendLine("- _auto-fixable_ — a deterministic **Roslyn rewriter** exists. Run `maf-doctor autofix-all . --apply` — no LLM involved. That is the **only** class of fix `autofix-all` can apply; it is purely mechanical/syntactic.");
+            sb.AppendLine($"- _auto-fixable_ — a deterministic **Roslyn rewriter** exists. Run `maf-doctor autofix-all {CliRepoArg(repoPath)} --apply` — no LLM involved. That is the **only** class of fix `autofix-all` can apply; it is purely mechanical/syntactic.");
             sb.AppendLine("- _needs your judgment_ — there is **no mechanical fix**: the right change depends on what your code is meant to do (e.g. which token cap, what message type, whether a `#if` guard belongs there). The ones tagged **⚠ heuristic** are name/text-based and may be **false positives** in your codebase — confirm each is real before changing it; the rest are high-confidence structural findings.");
             sb.AppendLine();
             if (manualCount > 0)
             {
-                sb.AppendLine($"To work through the {manualCount} _needs-your-judgment_ finding(s), let an LLM drive maf-doctor: run `maf-doctor doctor . --plan` for an ordered, checkboxed remediation plan — or, in an MCP client (Copilot / Claude / Cursor), just ask **\"make me a plan to fix these issues\"** and the model will work through them using maf-doctor's tools and the `@maf-migration` agent.");
+                sb.AppendLine($"To work through the {manualCount} _needs-your-judgment_ finding(s), let an LLM drive maf-doctor: run `maf-doctor doctor {CliRepoArg(repoPath)} --plan` for an ordered, checkboxed remediation plan — or, in an MCP client (Copilot / Claude / Cursor), just ask **\"make me a plan to fix these issues\"** and the model will work through them using maf-doctor's tools and the `@maf-migration` agent.");
                 sb.AppendLine();
             }
         }
@@ -656,14 +682,17 @@ public sealed class DoctorTool
         var i = 1;
         foreach (var fix in s.TopFixes)
         {
+            // SEC-02: the untrusted file path inside Description is neutralized at its
+            // construction in Grade() (so tool-authored markdown here — backticks around
+            // method/type names — is preserved). The code-span echo below is neutralized too.
             sb.AppendLine($"{i}. **[{fix.Source}]** {fix.Description} · _{FixTag(fix)}_");
             if (!string.IsNullOrEmpty(fix.Why)) sb.AppendLine($"   - **Why:** {fix.Why}");
             if (!string.IsNullOrEmpty(fix.FixDescription)) sb.AppendLine($"   - **Fix:** {fix.FixDescription}");
             var (src, redacted) = TryReadSourceLine(repoPath, fix.File, fix.Line, lineCache);
             if (redacted)
-                sb.AppendLine($"   - `{fix.File}:{fix.Line}` → _(source line redacted — may contain a secret)_");
+                sb.AppendLine($"   - `{LlmFencing.MdInline(fix.File)}:{fix.Line}` → _(source line redacted — may contain a secret)_");
             else if (src is not null)
-                sb.AppendLine($"   - `{fix.File}:{fix.Line}` → `{src}`");
+                sb.AppendLine($"   - `{LlmFencing.MdInline(fix.File)}:{fix.Line}` → `{src}`");
             i++;
         }
         sb.AppendLine();
@@ -704,7 +733,7 @@ public sealed class DoctorTool
                 var suffix = redacted ? " → _(redacted — may contain a secret)_"
                     : src is not null ? $" → `{src}`"
                     : "";
-                sb.AppendLine($"  - `{it.File}:{it.Line}`{suffix}");
+                sb.AppendLine($"  - `{LlmFencing.MdInline(it.File)}:{it.Line}`{suffix}");
             }
             sb.AppendLine();
         }
@@ -785,7 +814,7 @@ public sealed class DoctorTool
         sb.AppendLine();
         sb.AppendLine($"_{s.Reason}_");
         sb.AppendLine();
-        sb.AppendLine($"**Repo:** `{repoPath.Replace('`', '\'')}`");
+        sb.AppendLine($"**Repo:** `{LlmFencing.MdInline(repoPath)}`");
         sb.AppendLine();
         AppendScanIncompleteNote(sb, s, "This plan does NOT cover the whole repo.");
 
@@ -810,7 +839,7 @@ public sealed class DoctorTool
             sb.AppendLine();
             sb.AppendLine($"One command clears {auto.Count} mechanical finding(s):");
             sb.AppendLine();
-            sb.AppendLine("- [ ] Run `maf-doctor autofix-all . --apply` (CLI) or `MafAutoFixAll(repoPath, dryRun: false)` (MCP), then rebuild.");
+            sb.AppendLine($"- [ ] Run `maf-doctor autofix-all {CliRepoArg(repoPath)} --apply` (CLI) or `MafAutoFixAll(repoPath, dryRun: false)` (MCP), then rebuild.");
             sb.AppendLine();
             sb.AppendLine("It applies deterministic Roslyn rewriters for the rules below (and may also clear build-surfaced fixes like the fan-in arg-order swap that the scan-time grader doesn't see):");
             foreach (var (rep, items) in GroupByRule(auto))
@@ -832,14 +861,14 @@ public sealed class DoctorTool
                 if (!string.IsNullOrEmpty(rep.Why)) sb.AppendLine($"  - **Why:** {rep.Why}");
                 if (!string.IsNullOrEmpty(rep.FixDescription)) sb.AppendLine($"  - **Fix:** {rep.FixDescription}");
                 foreach (var it in items)
-                    sb.AppendLine($"  - `{it.File}:{it.Line}`");
+                    sb.AppendLine($"  - `{LlmFencing.MdInline(it.File)}:{it.Line}`");
                 sb.AppendLine();
             }
         }
 
         sb.AppendLine("## After");
         sb.AppendLine();
-        sb.AppendLine("Re-run `maf-doctor doctor .` to confirm the grade improved. In an MCP client (Copilot / Claude / Cursor), `MafExplainFinding(repoPath, file, line)` gives a grounded per-finding deep-dive + fix.");
+        sb.AppendLine($"Re-run `maf-doctor doctor {CliRepoArg(repoPath)}` to confirm the grade improved. In an MCP client (Copilot / Claude / Cursor), `MafExplainFinding(repoPath, file, line)` gives a grounded per-finding deep-dive + fix.");
         return sb.ToString();
     }
 
@@ -856,9 +885,12 @@ public sealed class DoctorTool
         var auto = all.Where(f => f.AutoFixable).ToList();
         var manual = all.Where(f => !f.AutoFixable).ToList();
         var heuristicCount = manual.Count(f => f.Confidence == "heuristic");
+        var lineCache = new Dictionary<string, string[]?>(StringComparer.Ordinal);
 
         var phase1 = auto.Count == 0 ? null : new PlanPhase1(
-            Command: "maf-doctor autofix-all . --apply",
+            // REP-07: target the scanned repo, not cwd '.'. This is JSON (not markdown),
+            // so the serializer escapes the path — no MdInline neutralization needed here.
+            Command: $"maf-doctor autofix-all \"{repoPath}\" --apply",
             FindingCount: auto.Count,
             ClearsRules: GroupByRule(auto).Select(g => g.Rep.RuleId).ToList());
 
@@ -871,7 +903,8 @@ public sealed class DoctorTool
             AutoFixable: false,
             Why: g.Rep.Why,
             Fix: g.Rep.FixDescription,
-            Occurrences: g.Items.Select(it => new PlanOccurrence(it.File, it.Line)).ToList()))
+            Occurrences: g.Items.Select(it => new PlanOccurrence(
+                it.File, it.Line, Fingerprint(repoPath, it.RuleId, it.File, it.Line, lineCache))).ToList()))
             .ToList();
 
         return new DoctorPlanJson(
@@ -935,6 +968,28 @@ public sealed class DoctorTool
         // Don't slice through a surrogate pair (would emit U+FFFD mojibake).
         var cut = char.IsHighSurrogate(text[99]) ? 99 : 100;
         return (text[..cut] + "…", false);
+    }
+
+    /// <summary>
+    /// REP-37: a short, drift-stable identifier for a finding, so an automated loop
+    /// (the maf-remediate prompt) can track it across edits. Hashes
+    /// <c>rule_id | file | whitespace-collapsed, secret-redacted source line</c> — the
+    /// SAME text <see cref="TryReadSourceLine"/> produces, so a secret never enters the
+    /// hash. Line movement leaves it stable; a content edit changes it (correct — the
+    /// finding was touched). Falls back to hashing <c>rule_id | file | line</c> when the
+    /// source line is unavailable or was secret-redacted — that fallback is present but
+    /// NOT drift-stable (documented degradation, not a silent gap). First 12 hex of SHA-256.
+    /// </summary>
+    private static string Fingerprint(
+        string repoPath, string ruleId, string file, int line, Dictionary<string, string[]?> lineCache)
+    {
+        var (src, _) = TryReadSourceLine(repoPath, file, line, lineCache);
+        var basisTail = string.IsNullOrEmpty(src)
+            ? line.ToString(System.Globalization.CultureInfo.InvariantCulture) // fallback: not drift-stable
+            : string.Join(' ', src.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            Encoding.UTF8.GetBytes($"{ruleId}|{file}|{basisTail}"));
+        return Convert.ToHexString(hash, 0, 6).ToLowerInvariant(); // 12 hex chars
     }
 }
 
@@ -1020,7 +1075,11 @@ public sealed record DoctorJsonFinding(
     [property: JsonPropertyName("why")] string Why = "",
     // Detector trust for false-positive triage: "certain" | "high" | "heuristic".
     // Additive within schema_version "1" (consumers ignore unknown fields).
-    [property: JsonPropertyName("confidence")] string Confidence = "high");
+    [property: JsonPropertyName("confidence")] string Confidence = "high",
+    // REP-37: drift-stable finding id for automated remediation loops. Hash of
+    // rule_id + file + redacted/collapsed source line; survives line moves.
+    // Additive within schema_version "1".
+    [property: JsonPropertyName("fingerprint")] string Fingerprint = "");
 
 /// <summary>
 /// `--plan --json` manifest schema. Schema version "1". A structured, phased
@@ -1070,7 +1129,9 @@ public sealed record PlanFinding(
 
 public sealed record PlanOccurrence(
     [property: JsonPropertyName("file")] string File,
-    [property: JsonPropertyName("line")] int Line);
+    [property: JsonPropertyName("line")] int Line,
+    // REP-37: drift-stable finding id (additive within schema_version "1").
+    [property: JsonPropertyName("fingerprint")] string Fingerprint = "");
 
 [JsonSerializable(typeof(DoctorJsonResult))]
 [JsonSerializable(typeof(DoctorJsonFinding))]

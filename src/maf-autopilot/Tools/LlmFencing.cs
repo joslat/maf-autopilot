@@ -101,6 +101,30 @@ internal static class LlmFencing
     }
 
     /// <summary>
+    /// Neutralize an untrusted single value (a repo file path, a rule label, a
+    /// finding message) for safe <em>inline</em> embedding in a markdown surface —
+    /// a table cell, a <c>`code span`</c>, or a plain Description line. Collapses to
+    /// one line and removes the metacharacters that let the value escape its context:
+    /// <list type="bullet">
+    ///   <item>CR / LF — would break out of a markdown table row or list item;</item>
+    ///   <item>backtick — would close an enclosing <c>`code span`</c>;</item>
+    ///   <item>HTML comments (<c>&lt;!-- … --&gt;</c>) — comment-smuggling in the
+    ///         no-code-span Description case, removed via <see cref="StripHtmlComments"/>.</item>
+    /// </list>
+    /// F5-SEC-02. Distinct from <see cref="Fence"/> (which wraps a multi-line DATA
+    /// block handed to an LLM); this is the cheap per-value escaper for report text.
+    /// A normal file name is returned unchanged.
+    /// </summary>
+    public static string MdInline(string? s)
+    {
+        if (string.IsNullOrEmpty(s)) return string.Empty;
+        return StripHtmlComments(s)
+            .Replace("\r", string.Empty)
+            .Replace('\n', ' ')
+            .Replace('`', '\'');
+    }
+
+    /// <summary>
     /// Strip HTML comments from <paramref name="content"/> without applying
     /// the rest of the fence (length cap, BEGIN/END delimiters, framing text).
     /// Useful when a caller needs sanitization for a non-LLM destination

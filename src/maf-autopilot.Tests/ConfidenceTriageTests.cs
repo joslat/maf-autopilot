@@ -117,7 +117,8 @@ public sealed class ConfidenceTriageTests
         var phase1 = root.GetProperty("phase1_autofix");
         // F-11: the suggested command must actually write when run verbatim —
         // autofix-all now previews by default, so the plan's command includes --apply.
-        Assert.Equal("maf-doctor autofix-all . --apply", phase1.GetProperty("command").GetString());
+        // REP-07: the command targets the scanned repo (quoted), not cwd '.'.
+        Assert.Equal($"maf-doctor autofix-all \"{repo.Path}\" --apply", phase1.GetProperty("command").GetString());
         Assert.Contains(phase1.GetProperty("clears_rules").EnumerateArray(),
             e => e.GetString() == "MAF-AP-SEC-001");
 
