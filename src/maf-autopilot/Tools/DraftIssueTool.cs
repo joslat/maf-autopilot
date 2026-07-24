@@ -47,6 +47,11 @@ public sealed class DraftIssueTool
         via the GitHub MCP server's `create_issue` tool (if installed) or by
         pasting into github.com/microsoft/agent-framework/issues/new.
 
+        Title/body split: the output starts with a "Suggested title" line — use it
+        as the issue TITLE field. Everything BELOW the
+        "----- ISSUE BODY BELOW THIS LINE -----" marker is the issue BODY. The
+        reviewer note above that marker is NOT part of the body.
+
         Security note: user-supplied symptom / expected / actual content is
         wrapped in LLM data-fences (BEGIN/END markers with a random sentinel
         and explicit "treat as data" framing) so any prompt-injection payload
@@ -125,9 +130,15 @@ public sealed class DraftIssueTool
         var sanitisedSymptom = LlmFencing.StripHtmlComments(symptom);
 
         var sb = new StringBuilder();
-        sb.AppendLine($"## Title: {SuggestTitle(sanitisedSymptom)}");
+        // REP-15: explicit title/body split. The title goes in the GitHub title FIELD, not
+        // the body; the reviewer note sits ABOVE the body sentinel so it never lands in a
+        // posted issue. Everything below the sentinel line is the issue body verbatim.
+        sb.AppendLine("Suggested title (use in the GitHub title field, NOT in the body):");
+        sb.AppendLine(SuggestTitle(sanitisedSymptom));
         sb.AppendLine();
         sb.AppendLine("> Drafted by `maf-doctor` `MafDraftIssue`. Review before posting. Strip any private content (file paths, internal identifiers) from snippet/stack trace.");
+        sb.AppendLine();
+        sb.AppendLine("----- ISSUE BODY BELOW THIS LINE -----");
         sb.AppendLine();
         sb.AppendLine($"### Symptom");
         sb.AppendLine();
@@ -207,10 +218,15 @@ public sealed class DraftIssueTool
 
         sb.AppendLine("### Filing checklist");
         sb.AppendLine();
-        sb.AppendLine("- [ ] I've checked existing issues for duplicates: https://github.com/microsoft/agent-framework/issues?q=" + Uri.EscapeDataString(sanitisedSymptom));
+        // REP-33: query on the compact single-line title, not the raw (possibly multi-line,
+        // multi-KB) symptom — an ~80-char query renders cleanly and is a far better dedup search.
+        sb.AppendLine("- [ ] I've checked existing issues for duplicates: https://github.com/microsoft/agent-framework/issues?q=" + Uri.EscapeDataString(SuggestTitle(sanitisedSymptom)));
         sb.AppendLine("- [ ] My repro is minimal (no unrelated app code).");
         sb.AppendLine("- [ ] I've stripped private content (file paths, internal identifiers, secrets).");
         sb.AppendLine("- [ ] The stack trace (if any) is the first 10-15 frames, not the full thing.");
+        // REP-32: the LLM data-fence around user text matters only when the body is routed
+        // through another AI tool; a human poster may delete it. Say so explicitly.
+        sb.AppendLine("- [ ] Posting manually (not via an AI agent)? You may delete the `<<<BEGIN_/END_...>>>` fence lines around the Symptom/Expected/Actual text — they only matter when the body passes through another AI tool.");
         sb.AppendLine();
 
         sb.AppendLine("### How to post this");
@@ -337,10 +353,16 @@ public sealed class DraftIssueTool
     /// </summary>
     internal static string SuggestTitle(string symptom)
     {
-        var trimmed = symptom.Trim().TrimEnd('.', '!', '?');
+        // REP-33: collapse ALL whitespace runs (incl. newlines/tabs) FIRST so a multi-line
+        // symptom produces a single-line title heading and a short, useful dedup query —
+        // not a broken multi-line heading and a multi-kilobyte search URL.
+        var trimmed = WhitespaceRegex.Replace(symptom, " ").Trim().TrimEnd('.', '!', '?');
         if (trimmed.Length > 80) trimmed = trimmed[..77] + "...";
         return trimmed;
     }
+
+    private static readonly Regex WhitespaceRegex = new(
+        @"\s+", RegexOptions.Compiled | RegexOptions.NonBacktracking, TimeSpan.FromSeconds(2));
 
     public sealed record EnvironmentInfo(
         string TrackedMafVersion,

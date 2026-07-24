@@ -232,7 +232,8 @@ public sealed class DraftIssueToolTests
             actual: "NullReferenceException at MAF.Workflows.WorkflowBuilder.AddFanInBarrierEdge");
 
         // Assert — every section header is present.
-        Assert.Contains("## Title:", body);
+        Assert.Contains("Suggested title", body); // REP-15: title split out of the body
+        Assert.Contains("----- ISSUE BODY BELOW THIS LINE -----", body);
         Assert.Contains("### Symptom", body);
         Assert.Contains("### Environment", body);
         Assert.Contains("### Steps to reproduce", body);
