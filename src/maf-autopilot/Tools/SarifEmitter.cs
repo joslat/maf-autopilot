@@ -22,7 +22,8 @@ internal static class SarifEmitter
     public static string Emit(
         string toolVersion,
         IEnumerable<SarifFinding> findings,
-        IEnumerable<SarifRule>? ruleCatalog = null)
+        IEnumerable<SarifRule>? ruleCatalog = null,
+        string? invocationError = null)
     {
         var rules = (ruleCatalog ?? []).ToList();
         var results = findings.ToList();
@@ -41,6 +42,24 @@ internal static class SarifEmitter
             },
             ["results"] = BuildResults(results),
         };
+
+        // REP-22: carry a validation/processing error through SARIF's own channel
+        // (an invocation with executionSuccessful:false + a toolExecutionNotification)
+        // so a machine consumer requesting SARIF still receives parseable SARIF — the
+        // same error-shape guarantee the doctor's JSON formats already provide — rather
+        // than a bare plain-text error string that breaks their parser.
+        if (invocationError is not null)
+        {
+            run["invocations"] = new JsonArray(new JsonObject
+            {
+                ["executionSuccessful"] = false,
+                ["toolExecutionNotifications"] = new JsonArray(new JsonObject
+                {
+                    ["level"] = "error",
+                    ["message"] = new JsonObject { ["text"] = invocationError },
+                }),
+            });
+        }
 
         var doc = new JsonObject
         {

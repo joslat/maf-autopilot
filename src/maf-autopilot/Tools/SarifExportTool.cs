@@ -31,6 +31,16 @@ internal static class SarifExportTool
     }
 
     /// <summary>
+    /// REP-22: a valid empty SARIF v2.1.0 envelope that carries <paramref name="error"/>
+    /// through SARIF's own invocation channel (<c>executionSuccessful:false</c> +
+    /// a <c>toolExecutionNotification</c>). Lets <c>MafScanAntiPatterns(format:"sarif")</c>
+    /// return parseable SARIF on invalid input instead of a plain-text error string
+    /// that would break a machine consumer's parser.
+    /// </summary>
+    public static string EmitAntiPatternsError(string error)
+        => SarifEmitter.Emit(ToolVersion, [], BuildAntiPatternRuleCatalog(), invocationError: error);
+
+    /// <summary>
     /// Builds a SARIF v2.1.0 document from fan-out handler findings. Only the
     /// risk verdicts are surfaced (<c>SilentStarvationRisk</c>, <c>LikelyInvalid</c>);
     /// <c>Ok</c> handlers are dropped from SARIF reports.

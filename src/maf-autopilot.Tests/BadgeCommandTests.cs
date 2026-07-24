@@ -14,10 +14,11 @@ namespace MafDoctor.Tests;
 public class BadgeCommandTests
 {
     [Theory]
+    // REP-38: badge colours aligned with the doctor header's emoji scale
+    // (B yellow, C orange). Grade D is unreachable, so no D row.
     [InlineData("A", "brightgreen")]
-    [InlineData("B", "green")]
-    [InlineData("C", "yellow")]
-    [InlineData("D", "orange")]
+    [InlineData("B", "yellow")]
+    [InlineData("C", "orange")]
     [InlineData("F", "red")]
     [InlineData("?", "lightgrey")]
     public void ColorForGrade_MapsEveryGrade(string grade, string expectedColor)
