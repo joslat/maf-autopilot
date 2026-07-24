@@ -130,8 +130,9 @@ public static class MafPrompts
         "The 'fix it all' conductor. Drives the full remediation loop end-to-end: grade + plan, " +
         "apply the deterministic mechanical fixes, then work the semantic findings one by one — " +
         "VERIFYING each heuristic (possible false-positive) finding before changing code — building " +
-        "after every step and re-grading until the grade stops improving. Composes MafDoctor, " +
-        "MafAutoFixAll, and MafExplainFinding; no extra LLM budget of its own.")]
+        "after every step and re-grading after each pass until zero actionable findings remain " +
+        "(skipped false positives and human-review items excepted) — the letter grade alone is not " +
+        "the stop signal. Composes MafDoctor, MafAutoFixAll, and MafExplainFinding; no extra LLM budget of its own.")]
     public static IList<PromptMessage> Remediate(
         [Description("Path to the repository root or solution file to remediate.")] string repoPath,
         [Description("Triage mode: \"safe\" (default) confirms every heuristic finding before touching code; \"thorough\" also attempts the heuristic ones but still verifies each first.")] string? mode = "safe")
@@ -386,7 +387,16 @@ public static class MafPrompts
             sb.Append(LlmFencing.Fence("user-error-or-symptom", errorOrSymptom, maxBytes: BoundedInput.ShortTextBytes));
             sb.AppendLine();
         }
-        if (projectPath is not null) sb.AppendLine($"Project: `{projectPath}`");
+        // SEC-08: cap + neutralize projectPath (was echoed raw — unlike every other
+        // echoed prompt parameter). MdInline strips HTML comments + neutralizes the
+        // backtick that would otherwise escape the code span.
+        if (projectPath is not null)
+        {
+            try { BoundedInput.Validate(projectPath, BoundedInput.PathBytes, nameof(projectPath)); }
+            catch (ArgumentException) { projectPath = null; }
+        }
+        if (!string.IsNullOrEmpty(projectPath))
+            sb.AppendLine($"Project: `{LlmFencing.MdInline(projectPath)}`");
         sb.AppendLine();
         sb.AppendLine("**Diagnostic playbook — pick by symptom class:**");
         sb.AppendLine();
@@ -487,6 +497,10 @@ public static class MafPrompts
         var safeName = LlmFencing.StripHtmlComments(name);
         var safeInputType = LlmFencing.StripHtmlComments(inputType);
         var safeOutputType = LlmFencing.StripHtmlComments(outputType);
+        // SEC-08: cap + strip template too (it was the one Scaffold param echoed uncapped/raw).
+        try { BoundedInput.Validate(template, BoundedInput.IdentifierBytes, nameof(template)); }
+        catch (ArgumentException) { template = "agent"; }
+        var safeTemplate = LlmFencing.StripHtmlComments(template);
 
         var sb = new StringBuilder();
         var t = (template ?? "agent").Trim().ToLowerInvariant();
@@ -514,7 +528,7 @@ public static class MafPrompts
                 sb.AppendLine("Type-expression validation: `inputType` and `outputType` are Roslyn-parsed + roundtrip-validated (security-pinned in `ScaffolderSecurityTests`).");
                 break;
             default:
-                sb.AppendLine($"⚠️ Unknown template `{template}`. Supported: `agent`, `executor`.");
+                sb.AppendLine($"⚠️ Unknown template `{LlmFencing.MdInline(safeTemplate)}`. Supported: `agent`, `executor`.");
                 sb.AppendLine();
                 sb.AppendLine("If you need a session-provider or A2A server scaffold (not yet auto-generated), follow the patterns in `maf://guide` §§7–9 or 17 respectively, and call `maf-review` after writing to verify.");
                 break;

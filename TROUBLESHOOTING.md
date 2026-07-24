@@ -144,7 +144,7 @@ dotnet tool install --global dnx
 
 Two scheduled workflows keep the repo in sync with MAF:
 
-- **MAF Release Watcher** (`maf-release-watcher.yml`) — Mondays; checks NuGet for a new **stable** MAF, then commits matrix/guide/registry updates **directly to `main`** (no PR gate — a deliberate solo-maintainer trade-off) and dispatches the Copilot AI-fill flow. Prereleases and (until task 3.2 lands) major bumps are manual-dispatch only.
+- **MAF Release Watcher** (`maf-release-watcher.yml`) — Thursdays 06:00 UTC (aligned with MAF's ship cadence); checks NuGet for a new **stable** MAF, then commits matrix/guide/registry updates **directly to `main`** (no PR gate — a deliberate solo-maintainer trade-off) and dispatches the Copilot AI-fill flow. Prereleases and major bumps are manual-dispatch only.
 - **MAF Drift Detector** (`maf-drift-detector.yml`) — Mondays; runs `MafDoctor` and opens/updates a `maf-drift` issue when the grade drops below A.
 
 ### How do I know if a scheduled run failed?
@@ -167,7 +167,7 @@ Release notes are fetched from `microsoft/agent-framework` (tags `dotnet-X.Y.Z`,
 
 ### Drift detector keeps reporting grade F / re-opening the same issue
 
-The doctor scans the whole repo, which ships intentional anti-pattern *bait* (`samples/`, scanner test fixtures). Until task 3.1 (scan exclusions) lands, the drift grade reflects that bait, not product health. After 3.1 the detector scans only product code.
+The drift detector excludes `samples/`, `*.Tests/`, and `find-the-bug/` (the intentional anti-pattern bait), so a drift grade below A reflects **product** code — treat a re-opening issue as a real regression and run `maf-doctor doctor . --exclude samples/ --exclude .Tests/ --exclude find-the-bug/` locally to reproduce.
 
 ## CI
 
@@ -175,7 +175,7 @@ The doctor scans the whole repo, which ships intentional anti-pattern *bait* (`s
 
 Check the test SDK version drift — `src/maf-autopilot.Tests/maf-autopilot.Tests.csproj` pins specific versions for `xunit`, `Microsoft.NET.Test.Sdk`, `xunit.runner.visualstudio`, `coverlet.collector`. If `dotnet restore` resolves different versions locally, your `nuget.config` is overriding.
 
-### The test suite (~365 tests as of 2026-05-12) times out on Windows
+### The test suite (~1,200 tests as of 2026-07) times out on Windows
 
 xUnit's parallel runner respects logical-CPU count. On constrained machines, force serial:
 

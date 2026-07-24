@@ -60,6 +60,8 @@ if (args.Length > 0 && (args[0] is "--help" or "-h" or "help"))
                                             not just the top 3; --json = machine-readable findings;
                                             --plan = ordered, checkboxed remediation plan;
                                             --plan --json = structured remediation manifest (for an automated fix loop);
+                                            --exclude <substr> = skip files whose repo-relative path
+                                              contains <substr> (repeatable; substring match, NOT a glob);
                                             --fail-on = exit 3 if the grade is at/below the given letter (CI gate).
           autofix-all [path] [--apply] [--json]
                                             Deterministic Roslyn fixes. Preview only by default

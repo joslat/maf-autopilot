@@ -48,7 +48,7 @@ You'll see a **🔴 grade F** — with the top fixes. These include **silent fan
 
 > 🎙️ *"Grade F. Seven anti-pattern errors, plus three silent-starvation risks — they compile clean and break at runtime."*
 >
-> *Tip:* in a monorepo, scope the scan with `maf-doctor doctor . --exclude samples/ --exclude '**/*.Tests/**'`.
+> *Tip:* in a monorepo, scope the scan with `maf-doctor doctor . --exclude samples/ --exclude .Tests/` (substring match against the repo-relative path — **not** a glob).
 
 > 💡 **Act on it:** every finding shows a one-line **Why** + **Fix** and a **`confidence`** (`certain`/`high`/`heuristic` — *heuristic* ones are flagged "⚠ verify it's real first", your false-positive signal). Add `--all` to list them grouped by rule, `--plan` for a checkboxed remediation plan (`--plan --json` for a structured manifest). In an MCP client (Copilot / Claude / Cursor), ask *"explain the finding at `Executors/OsintInvestigator.cs:25`"* — it calls **`MafExplainFinding`** to return that code in context + why + fix, using your host model (no extra LLM cost).
 
