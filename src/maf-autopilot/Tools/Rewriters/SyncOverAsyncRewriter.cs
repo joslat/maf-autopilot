@@ -36,6 +36,53 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
 {
     public string RuleId => "MAF-AP-CONC-002";
 
+    private const string NonAwaitableReason =
+        "// MAF-AP-CONC-002: cannot verify the awaited call returns a Task (no semantic model) — review manually. If it does, give the method an 'Async' suffix or await it explicitly.";
+
+    // Well-known Task / ValueTask static factory methods whose result is awaitable.
+    private static readonly HashSet<string> TaskFactoryMethods = new(StringComparer.Ordinal)
+    {
+        "Run", "FromResult", "FromCanceled", "FromException", "WhenAll", "WhenAny", "WhenEach", "Delay",
+    };
+
+    /// <summary>
+    /// Syntax-only heuristic (this rewriter has no semantic model) for whether
+    /// <paramref name="inv"/> is likely to return an awaitable (Task/ValueTask).
+    /// We rewrite ONLY when the receiver is syntactically recognizable as a task
+    /// source — the invoked method's simple name ends in <c>Async</c>, or it is a
+    /// well-known <c>Task</c>/<c>ValueTask</c> factory (<c>Task.Run</c>,
+    /// <c>Task.WhenAll</c>, …). Everything else is left untouched with a
+    /// review-manually TODO: a safe skip always beats corrupting source by awaiting
+    /// a non-Task (e.g. <c>SemaphoreSlim.Wait()</c> or a custom <c>.Result</c>).
+    /// </summary>
+    private static bool LooksAwaitableReceiver(InvocationExpressionSyntax inv)
+    {
+        var name = InvokedSimpleName(inv);
+        if (name is null) return false;
+        if (name.EndsWith("Async", StringComparison.Ordinal)) return true;
+        return inv.Expression is MemberAccessExpressionSyntax ma
+            && TaskFactoryMethods.Contains(name)
+            && ReceiverTypeName(ma.Expression) is "Task" or "ValueTask";
+    }
+
+    private static string? InvokedSimpleName(InvocationExpressionSyntax inv) => inv.Expression switch
+    {
+        IdentifierNameSyntax id => id.Identifier.ValueText,
+        GenericNameSyntax gn => gn.Identifier.ValueText,
+        MemberAccessExpressionSyntax ma => ma.Name.Identifier.ValueText,
+        MemberBindingExpressionSyntax mb => mb.Name.Identifier.ValueText,
+        _ => null,
+    };
+
+    // Rightmost identifier of a factory receiver: `Task`, `System.Threading.Tasks.Task` → "Task".
+    private static string? ReceiverTypeName(ExpressionSyntax expr) => expr switch
+    {
+        IdentifierNameSyntax id => id.Identifier.ValueText,
+        GenericNameSyntax gn => gn.Identifier.ValueText,
+        MemberAccessExpressionSyntax ma => ma.Name.Identifier.ValueText,
+        _ => null,
+    };
+
     public override SyntaxNode? VisitMemberAccessExpression(MemberAccessExpressionSyntax node)
     {
         // Pattern: <invocation>.Result
@@ -44,6 +91,14 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
         {
             if (ShouldSkipForContext(node, out var reason))
                 return WithTodoTrivia(node, reason);
+
+            // Syntax-only awaitability gate: with no semantic model we cannot tell a
+            // Task-returning invocation from `GetLock()` (SemaphoreSlim) or a custom
+            // `.Result` wrapper — rewriting the latter to `await …` emits uncompilable
+            // code (CS1061). Rewrite only when the receiver is syntactically a task
+            // source (see LooksAwaitableReceiver); otherwise leave it with a TODO.
+            if (!LooksAwaitableReceiver(inv))
+                return WithTodoTrivia(node, NonAwaitableReason);
 
             // Rewrite `Foo().Result` → `(await Foo())`.
             // Wrap in parens so the surrounding member-access / arg context
@@ -69,6 +124,13 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
         {
             if (ShouldSkipForContext(node, out var reason))
                 return WithTodoTrivia(node, reason);
+
+            // Same syntax-only awaitability gate as the `.Result` path: `_sem.Wait()`
+            // is not matched (receiver is not an invocation), but `GetLock().Wait()`
+            // on a SemaphoreSlim IS — and awaiting it would not compile. Skip unless
+            // the receiver is syntactically a task source.
+            if (!LooksAwaitableReceiver(inner))
+                return WithTodoTrivia(node, NonAwaitableReason);
 
             // Rewrite `Foo().Wait()` → `await Foo()`. Need an explicit
             // trailing-space on the `await` token.
@@ -235,6 +297,22 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
         return node.WithLeadingTrivia(
             node.GetLeadingTrivia()
                 .Add(SyntaxFactory.Comment(commentText))
-                .Add(SyntaxFactory.EndOfLine("\n")));
+                .Add(SyntaxFactory.EndOfLine(DetectNewLine(node))));
+    }
+
+    /// <summary>
+    /// WM-42: the skip-with-TODO comment must use the FILE's newline, not a
+    /// hard-coded LF — otherwise a CRLF file gets a lone LF spliced in, producing
+    /// mixed line endings. Detect the convention from the first end-of-line trivia
+    /// in the tree; default to LF for a single-line source with none.
+    /// </summary>
+    private static string DetectNewLine(SyntaxNode node)
+    {
+        var root = node.SyntaxTree?.GetRoot();
+        if (root is not null)
+            foreach (var trivia in root.DescendantTrivia())
+                if (trivia.IsKind(SyntaxKind.EndOfLineTrivia))
+                    return trivia.ToString();
+        return "\n";
     }
 }

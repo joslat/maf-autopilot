@@ -34,17 +34,25 @@ internal sealed class EnableSensitiveDataRewriter : CSharpSyntaxRewriter, IRuleR
 
     public override SyntaxNode? VisitInitializerExpression(InitializerExpressionSyntax node)
     {
-        var filtered = node.Expressions
-            .Where(e => !IsEnableSensitiveDataTrueAssignment(e))
-            .ToArray();
+        // Recurse FIRST so a nested `EnableSensitiveData = true` inside a SURVIVING
+        // sibling entry is cleaned too — the autofix pipeline runs each rewriter
+        // exactly once (no fixpoint pass), so a missed nested flag would otherwise
+        // silently stay enabled.
+        var visited = (InitializerExpressionSyntax)base.VisitInitializerExpression(node)!;
 
-        if (filtered.Length == node.Expressions.Count)
-            return base.VisitInitializerExpression(node); // no removal
+        var toRemove = visited.Expressions
+            .Where(IsEnableSensitiveDataTrueAssignment)
+            .ToList();
 
-        // Rebuild the initializer with the filtered list, preserving the
-        // outer braces and any trivia on the unchanged expressions.
-        var newList = SyntaxFactory.SeparatedList(filtered);
-        return node.WithExpressions(newList);
+        if (toRemove.Count == 0)
+            return visited;
+
+        // WM-22: the previous `SyntaxFactory.SeparatedList(filtered)` rebuild dropped
+        // ALL separator trivia — collapsing the surviving entries onto one line and
+        // deleting their comments. RemoveNodes excises each flagged entry together
+        // with its OWN adjacent separator while leaving the survivors' separators —
+        // newlines, inline comments, trailing comma — intact.
+        return visited.RemoveNodes(toRemove, SyntaxRemoveOptions.KeepNoTrivia)!;
     }
 
     /// <summary>

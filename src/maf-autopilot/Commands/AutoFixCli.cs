@@ -69,6 +69,18 @@ internal static class AutoFixCli
             : "🔧 maf-doctor autofix-all — deterministic Roslyn fixes (mechanical only)");
         sb.AppendLine();
 
+        // WM-21: surface per-file failures that previously vanished. A non-empty
+        // list means the pass did NOT fully succeed — some files were skipped —
+        // and (in Program.cs) drives a non-zero exit code.
+        var errors = report.Errors ?? Array.Empty<AutoFixTool.AutoFixError>();
+        if (errors.Count > 0)
+        {
+            sb.AppendLine($"  ⚠ {Count(errors.Count, "file")} could not be processed and {(errors.Count == 1 ? "was" : "were")} skipped:");
+            foreach (var e in errors)
+                sb.AppendLine($"      - {e.File}: {e.Message}");
+            sb.AppendLine();
+        }
+
         var total = report.TotalDistinctFilesChanged;
 
         if (total == 0)
@@ -76,7 +88,7 @@ internal static class AutoFixCli
             sb.AppendLine($"  ✓ 0 files {verb} — nothing mechanical to fix here.");
             sb.AppendLine();
             sb.AppendLine("  This is normal, and does NOT mean your code is clean. autofix-all only");
-            sb.AppendLine("  applies these 5 deterministic rewriters, and found none of them:");
+            sb.AppendLine($"  applies these {report.PerRule.Count} deterministic rewriters, and found none of them:");
             sb.AppendLine();
             foreach (var r in report.PerRule)
                 sb.AppendLine($"      • {r.RuleId,-18} {Describe(r.RuleId)}");
@@ -107,12 +119,38 @@ internal static class AutoFixCli
             sb.AppendLine($"      - {f}");
         sb.AppendLine();
         if (report.DryRun)
+        {
+            // WM-24: a preview that shows only file NAMES gives the F-11
+            // "review before apply" gate nothing to review. Inline the actual
+            // unified diff for each changed file when the set is small enough to
+            // read; otherwise point at --json for the full per-file diffs.
+            var diffs = report.Diffs ?? Array.Empty<AutoFixTool.AutoFixFileDiff>();
+            const int inlineDiffCap = 10;
+            if (diffs.Count > 0 && total <= inlineDiffCap)
+            {
+                sb.AppendLine("  Preview (unified diff — nothing has been written):");
+                sb.AppendLine();
+                foreach (var d in diffs)
+                {
+                    sb.AppendLine($"      ── {d.File}   [{string.Join(", ", d.RuleIds)}]");
+                    foreach (var line in d.Diff.TrimEnd('\n').Split('\n'))
+                        sb.AppendLine("        " + line);
+                    sb.AppendLine();
+                }
+            }
+            else if (diffs.Count > 0)
+            {
+                sb.AppendLine($"  ({total} files would change — too many to inline; re-run with --json for the full per-file diffs.)");
+                sb.AppendLine();
+            }
+
             // F-11 (2026-07-19 security assessment, found in a subsequent review
             // round): dry-run is now the DEFAULT, so "re-run without --dry-run"
             // was stale/misleading advice for the common case (a user who ran
             // `autofix-all <path>` with no flags never passed --dry-run in the
             // first place). --apply is the actual opt-in flag.
             sb.AppendLine("  Dry run — re-run with --apply to apply these changes.");
+        }
         sb.AppendLine("  Next: `maf-doctor doctor .` to re-grade.");
         sb.AppendLine();
         AppendRemediationGuidance(sb);

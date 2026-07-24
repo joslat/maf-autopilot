@@ -146,24 +146,29 @@ if (args.Length >= 1 && args[0] == "autofix-all")
     // Round-4 review fixup — this unconditionally exited 0 below, even on the
     // `error is not null` branch that already prints "❌ {error}" — the exit
     // code contradicted the tool's own visible error indicator.
-    var succeeded = true;
-    if (json)
+    // Compute the report ONCE, then render it as JSON or human text. Success is
+    // derived from that same report — a top-level error (bad path/specificFile)
+    // OR, on an actual apply, any per-file failure (WM-21) that used to be
+    // swallowed. Dry-run per-file errors are shown but don't fail the preview.
+    var report = tool.RunAll(path, specificFile: null, dryRun: dryRun, out var error);
+    if (report is null)
     {
-        // Machine-readable: identical to the MafAutoFixAll MCP tool output.
-        // MafAutoFixAll's sole failure source is the same PathGuard check
-        // Run/RunAll use internally.
-        Console.WriteLine(tool.MafAutoFixAll(path, dryRun: dryRun));
-        succeeded = PathGuard.ValidateRepoPath(path) is null;
+        // On the error path RunAll returned null fast (bad path/specificFile);
+        // re-running MafAutoFixAll here just re-fails the same way and yields the
+        // structured { "error": ... } JSON — cheap, and only on this branch.
+        Console.WriteLine(json
+            ? tool.MafAutoFixAll(path, dryRun: dryRun)
+            : $"❌ {error}");
+        Environment.Exit(1);
+        return;
     }
-    else
-    {
-        var report = tool.RunAll(path, specificFile: null, dryRun: dryRun, out var error);
-        Console.WriteLine(error is not null
-            ? $"❌ {error}"
-            : MafDoctor.Commands.AutoFixCli.Format(report!));
-        succeeded = error is null;
-    }
-    Environment.Exit(succeeded ? 0 : 1);
+
+    Console.WriteLine(json
+        ? MafDoctor.Tools.AutoFixTool.SerializeReport(report)
+        : MafDoctor.Commands.AutoFixCli.Format(report));
+
+    var applyErrors = !dryRun && report.Errors is { Count: > 0 };
+    Environment.Exit(applyErrors ? 1 : 0);
     return;
 }
 if (args.Length >= 1 && args[0] == "migrate-scan")

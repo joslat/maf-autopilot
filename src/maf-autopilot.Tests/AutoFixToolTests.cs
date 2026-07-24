@@ -23,6 +23,26 @@ public class AutoFixToolTests
         return newRoot.ToFullString();
     }
 
+    // A clean WF-001 Executor target (so a rewriter WILL match) with one invalid
+    // UTF-8 byte (0x80) inside a `//` comment, optionally UTF-8-BOM-prefixed. Because
+    // a rewriter matches, the "byte-identical after apply" assertion is load-bearing:
+    // if the strict decode were reverted the file would be U+FFFD-decoded, gain
+    // `sealed`, and be written back — no longer byte-identical.
+    private static byte[] ExecutorSourceWithInvalidByte(bool utf8Bom)
+    {
+        const string head =
+            "using System.Threading.Tasks;\npublic class Executor { }\n" +
+            "public sealed class MessageHandlerAttribute : System.Attribute { }\n" +
+            "public partial class MyExec : Executor {\n  // ";
+        const string tail =
+            "\n  [MessageHandler]\n  public Task<int> Handle(string s) => Task.FromResult(0);\n}\n";
+        IEnumerable<byte> bytes = System.Text.Encoding.ASCII.GetBytes(head)
+            .Concat(new byte[] { 0x80 })
+            .Concat(System.Text.Encoding.ASCII.GetBytes(tail));
+        if (utf8Bom) bytes = new byte[] { 0xEF, 0xBB, 0xBF }.Concat(bytes);
+        return bytes.ToArray();
+    }
+
     // -------------------------------------------------------------------------
     // DefaultAzureCredentialRewriter (MAF-AP-SEC-001 / MAF002)
     // -------------------------------------------------------------------------
@@ -906,19 +926,21 @@ public class AutoFixToolTests
     [Fact]
     public void SyncOverAsyncRewriter_AsyncMethodOutsideLock_StillRewritten()
     {
-        // Sanity check — the guard doesn't break the happy path.
+        // Sanity check — the guard doesn't break the happy path. Method named
+        // `*Async` so the syntax-only awaitability gate rewrites it (a non-Async
+        // name would now be a safe skip — see SemaphoreSlim/custom-.Result cases).
         var src = """
             class C
             {
                 async System.Threading.Tasks.Task M()
                 {
-                    var x = Foo().Result;
+                    var x = FooAsync().Result;
                 }
-                System.Threading.Tasks.Task<int> Foo() => null!;
+                System.Threading.Tasks.Task<int> FooAsync() => null!;
             }
             """;
         var output = ApplyRewriter(new SyncOverAsyncRewriter(), src);
-        Assert.Contains("await Foo()", output);
+        Assert.Contains("await FooAsync()", output);
         Assert.DoesNotContain(".Result", output);
     }
 
@@ -968,5 +990,498 @@ public class AutoFixToolTests
         {
             Directory.Delete(tempRoot, recursive: true);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // WM-41: a missing / non-.cs specificFile is an ERROR, not a silent 0-change.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MafAutoFix_MissingSpecificFile_ReturnsError()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-wm41-missing-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var json = new AutoFixTool().MafAutoFix(dir, "MAF-AP-CONC-002", specificFile: "nope.cs", dryRun: true);
+            var doc = JsonSerializer.Deserialize<JsonDocument>(json)!;
+            Assert.True(doc.RootElement.TryGetProperty("error", out var err), json);
+            Assert.Contains("not found", err.GetString(), StringComparison.OrdinalIgnoreCase);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void MafAutoFix_NonCsSpecificFile_ReturnsError()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-wm41-noncs-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "readme.txt"), "not code");
+            var json = new AutoFixTool().MafAutoFix(dir, "MAF-AP-CONC-002", specificFile: "readme.txt", dryRun: true);
+            var doc = JsonSerializer.Deserialize<JsonDocument>(json)!;
+            Assert.True(doc.RootElement.TryGetProperty("error", out var err), json);
+            Assert.Contains(".cs file", err.GetString(), StringComparison.OrdinalIgnoreCase);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    // -------------------------------------------------------------------------
+    // WM-20: encoding/BOM preservation + undecodable-file safety on apply.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MafAutoFixAll_PreservesUtf8Bom_OnApply()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-wm20-bom-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "Bom.cs");
+            var code = """
+                using System.Threading.Tasks;
+                public class Executor { }
+                public sealed class MessageHandlerAttribute : System.Attribute { }
+                public partial class MyExec : Executor {
+                  [MessageHandler]
+                  public Task<int> Handle(string s) => Task.FromResult(0);
+                }
+                """;
+            File.WriteAllText(file, code, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false); // WF-001 adds `sealed` → file rewritten
+            var bytes = File.ReadAllBytes(file);
+            Assert.True(bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF,
+                "UTF-8 BOM must be preserved across the rewrite");
+            Assert.Contains("sealed partial", File.ReadAllText(file));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void MafAutoFixAll_UndecodableFile_SkippedWithError_NotCorrupted()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-wm20-invalid-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            // A WF-001-matching Executor with an invalid byte in a comment — so if the
+            // strict decode were reverted, WF-001 would add `sealed` and the file WOULD
+            // be rewritten (0x80 → EF BF BD), making the byte-identical check fail.
+            var file = Path.Combine(dir, "MyExec.cs");
+            var badBytes = ExecutorSourceWithInvalidByte(utf8Bom: false);
+            File.WriteAllBytes(file, badBytes);
+            var json = new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var doc = JsonSerializer.Deserialize<JsonDocument>(json)!;
+            Assert.True(doc.RootElement.GetProperty("errors").GetArrayLength() >= 1,
+                "an undecodable file must be reported, not silently swallowed: " + json);
+            Assert.Equal(badBytes, File.ReadAllBytes(file)); // skipped whole — not U+FFFD-rewritten
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    // -------------------------------------------------------------------------
+    // WM-23: single per-file pass — dry-run composes rewriters exactly as apply,
+    // both rules land in one pass, and a second apply is a no-op (idempotent).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MafAutoFixAll_DryRunComposesLikeApply_AndIsIdempotent()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-wm23-compose-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "Multi.cs");
+            File.WriteAllText(file, """
+                using System.Threading.Tasks;
+                public class Executor { }
+                public sealed class MessageHandlerAttribute : System.Attribute { }
+                public partial class MyExec : Executor {
+                  [MessageHandler]
+                  public async Task<int> Handle(string s) { return FetchAsync().Result; }
+                  static Task<int> FetchAsync() => Task.FromResult(0);
+                }
+                """);
+            var tool = new AutoFixTool();
+
+            var preview = JsonSerializer.Deserialize<JsonDocument>(tool.MafAutoFixAll(dir, dryRun: true))!;
+            var previewTotal = preview.RootElement.GetProperty("totalDistinctFilesChanged").GetInt32();
+
+            var apply = JsonSerializer.Deserialize<JsonDocument>(tool.MafAutoFixAll(dir, dryRun: false))!;
+            var applyTotal = apply.RootElement.GetProperty("totalDistinctFilesChanged").GetInt32();
+
+            Assert.Equal(previewTotal, applyTotal); // dry-run reported exactly what apply did
+            Assert.Equal(1, applyTotal);
+
+            var after = File.ReadAllText(file);
+            Assert.Contains("sealed partial", after);        // WF-001 applied
+            Assert.Contains("(await FetchAsync())", after);  // CONC-002 applied in the SAME pass
+
+            var again = JsonSerializer.Deserialize<JsonDocument>(tool.MafAutoFixAll(dir, dryRun: false))!;
+            Assert.Equal(0, again.RootElement.GetProperty("totalDistinctFilesChanged").GetInt32());
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    // -------------------------------------------------------------------------
+    // WM-24: dry-run preview carries a reviewable per-file diff, not just names.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MafAutoFixAll_DryRun_IncludesReviewableDiff()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-wm24-diff-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "Exec.cs");
+            var original = """
+                using System.Threading.Tasks;
+                public class Executor { }
+                public sealed class MessageHandlerAttribute : System.Attribute { }
+                public partial class MyExec : Executor {
+                  [MessageHandler]
+                  public Task<int> Handle(string s) => Task.FromResult(0);
+                }
+                """;
+            File.WriteAllText(file, original);
+            var json = new AutoFixTool().MafAutoFixAll(dir, dryRun: true);
+            var doc = JsonSerializer.Deserialize<JsonDocument>(json)!;
+            var diffs = doc.RootElement.GetProperty("diffs");
+            Assert.Equal(1, diffs.GetArrayLength());
+            var diffText = diffs[0].GetProperty("diff").GetString()!;
+            Assert.Contains("+", diffText);                    // a real added line, not just a file name
+            Assert.Contains("sealed partial class MyExec", diffText); // the rewrite is shown
+            Assert.Equal(original, File.ReadAllText(file));    // dry-run wrote nothing
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    // -------------------------------------------------------------------------
+    // WM-22 / WM-42 / WM-43: rewriter-correctness regressions.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void EnableSensitiveDataRewriter_PreservesSurvivingEntryCommentsAndLines()
+    {
+        var input = """
+            class C {
+                void M() {
+                    var o = new Options {
+                        Name = "x", // keep me
+                        EnableSensitiveData = true,
+                        Count = 3,
+                    };
+                }
+            }
+            """;
+        var output = ApplyRewriter(new EnableSensitiveDataRewriter(), input).Replace("\r\n", "\n");
+        Assert.DoesNotContain("EnableSensitiveData", output);
+        Assert.Contains("// keep me", output);   // inline comment survives (was deleted before WM-22)
+        Assert.Contains("Name = \"x\"", output);
+        Assert.Contains("Count = 3", output);
+        // Surviving entries are NOT collapsed onto one line: a newline separates them.
+        var idxComment = output.IndexOf("// keep me", StringComparison.Ordinal);
+        var idxCount = output.IndexOf("Count = 3", StringComparison.Ordinal);
+        Assert.True(idxComment >= 0 && idxCount > idxComment);
+        Assert.Contains('\n', output[idxComment..idxCount]);
+    }
+
+    [Fact]
+    public void SyncOverAsyncRewriter_SkipTodo_UsesFileNewline_Crlf()
+    {
+        // `.Result` in a NON-async method → skip-with-TODO. CRLF source: the
+        // inserted comment line must end CRLF, not splice in a lone LF (WM-42).
+        var src = "class C {\r\n    int M() {\r\n        return Foo().Result;\r\n    }\r\n    System.Threading.Tasks.Task<int> Foo() => null!;\r\n}\r\n";
+        var output = ApplyRewriter(new SyncOverAsyncRewriter(), src);
+        var idx = output.IndexOf("// MAF-AP-CONC-002", StringComparison.Ordinal);
+        Assert.True(idx >= 0, "expected a skip-with-TODO comment");
+        var firstNl = output.IndexOf('\n', idx);
+        Assert.True(firstNl > 0 && output[firstNl - 1] == '\r',
+            "the inserted TODO line must end with CRLF in a CRLF file, not a lone LF");
+    }
+
+    [Fact]
+    public void FanInArgOrderRewriter_DoesNotSwap_TypeMerelyContainingList()
+    {
+        // `ListenerNode` merely CONTAINS "List" but is not a collection — must not
+        // be mistaken for a sources array and trigger a wrong swap (WM-43).
+        var input = """
+            class ListenerNode {}
+            class B { void AddFanInBarrierEdge(object target, object sources) {} }
+            class C { void M() { var b = new B(); object t = null; b.AddFanInBarrierEdge(t, new ListenerNode()); } }
+            """;
+        var output = ApplyRewriter(new FanInArgOrderRewriter(), input);
+        Assert.Contains("AddFanInBarrierEdge(t, new ListenerNode())", output); // unchanged
+    }
+
+    [Fact]
+    public void FanInArgOrderRewriter_StillSwaps_GenericListSource()
+    {
+        var input = """
+            using System.Collections.Generic;
+            class B {
+              void AddFanInBarrierEdge(object target, List<object> sources) {}
+              void AddFanInBarrierEdge(List<object> sources, object target) {}
+            }
+            class C { void M() { var b = new B(); object t = null; b.AddFanInBarrierEdge(t, new List<object>()); } }
+            """;
+        var output = ApplyRewriter(new FanInArgOrderRewriter(), input);
+        Assert.Contains("AddFanInBarrierEdge(new List<object>(), t)", output); // genuine List still swaps
+    }
+
+    // -------------------------------------------------------------------------
+    // WM-44: concurrent applies on one repo are serialised by an exclusive lock.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MafAutoFixAll_Apply_WhenLockHeld_ReturnsError_ButDryRunIsNeverBlocked()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-wm44-lock-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var lockPath = AutoFixTool.ApplyLockPath(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "C.cs"), "public class C {}");
+
+            using (new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+            {
+                // A concurrent APPLY is refused while the lock is held...
+                var applyJson = new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+                var applyDoc = JsonSerializer.Deserialize<JsonDocument>(applyJson)!;
+                Assert.True(applyDoc.RootElement.TryGetProperty("error", out var err), applyJson);
+                Assert.Contains("already applying", err.GetString(), StringComparison.OrdinalIgnoreCase);
+
+                // ...but a DRY-RUN writes nothing, so it must never be blocked.
+                var dryDoc = JsonSerializer.Deserialize<JsonDocument>(
+                    new AutoFixTool().MafAutoFixAll(dir, dryRun: true))!;
+                Assert.False(dryDoc.RootElement.TryGetProperty("error", out _));
+            }
+
+            // Lock released → apply succeeds.
+            var okDoc = JsonSerializer.Deserialize<JsonDocument>(
+                new AutoFixTool().MafAutoFixAll(dir, dryRun: false))!;
+            Assert.False(okDoc.RootElement.TryGetProperty("error", out _));
+        }
+        finally
+        {
+            try { File.Delete(lockPath); } catch { /* best-effort */ }
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Adversarial-review follow-ups (Phase 1 verification pass).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void ExecutorSealedRewriter_ZeroModifierClass_KeepsIndentAndDocAttached()
+    {
+        // A bare (internal-by-default) Executor with a leading XML doc: `sealed`
+        // must carry the declaration's leading trivia, else the doc is stranded
+        // between `partial` and `class` (de-indent + CS1587 doc detachment).
+        var input = """
+            namespace N
+            {
+                /// <summary>Doc.</summary>
+                class MyExec : Executor
+                {
+                    [MessageHandler]
+                    public System.Threading.Tasks.Task<int> Handle(string s) => null!;
+                }
+            }
+            """;
+        var output = ApplyRewriter(new ExecutorSealedRewriter(), input).Replace("\r\n", "\n");
+        Assert.Contains("sealed partial class MyExec", output); // modifiers contiguous, class not stranded
+        var docIdx = output.IndexOf("/// <summary>Doc", StringComparison.Ordinal);
+        var sealedIdx = output.IndexOf("sealed partial class MyExec", StringComparison.Ordinal);
+        Assert.True(docIdx >= 0 && docIdx < sealedIdx, "doc comment must stay attached above the declaration");
+    }
+
+    [Fact]
+    public void EnableSensitiveDataRewriter_RemovesNestedFlagInSurvivingSibling()
+    {
+        // The outer entry is removed AND the nested flag inside a surviving sibling
+        // is cleaned in the same single pass (no fixpoint) — WM-22 review follow-up.
+        var input = """
+            class C {
+                void M() {
+                    var o = new AgentConfig {
+                        EnableSensitiveData = true,
+                        Telemetry = new TelemetryOptions { EnableSensitiveData = true },
+                    };
+                }
+            }
+            """;
+        var output = ApplyRewriter(new EnableSensitiveDataRewriter(), input);
+        Assert.DoesNotContain("EnableSensitiveData", output);          // BOTH flags gone
+        Assert.Contains("Telemetry = new TelemetryOptions", output);   // the sibling itself survives
+    }
+
+    [Fact]
+    public void MafAutoFixAll_Utf8BomWithInvalidBytes_SkippedWithError_NotCorrupted()
+    {
+        // A UTF-8-BOM file with an invalid byte must still be rejected (not U+FFFD'd)
+        // — the strict decode must hold for BOM'd files too, not only BOM-less ones.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-bomstrict-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            // UTF-8-BOM + a WF-001 target + an invalid byte: proves the strict decode
+            // holds for BOM'd files too (StreamReader's BOM path would otherwise swap in
+            // a replacement-fallback decoder, U+FFFD the byte, then rewrite the file).
+            var file = Path.Combine(dir, "MyExec.cs");
+            var bytes = ExecutorSourceWithInvalidByte(utf8Bom: true);
+            File.WriteAllBytes(file, bytes);
+            var json = new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var doc = JsonSerializer.Deserialize<JsonDocument>(json)!;
+            Assert.True(doc.RootElement.GetProperty("errors").GetArrayLength() >= 1, json);
+            Assert.Equal(bytes, File.ReadAllBytes(file)); // byte-identical, no corruption
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void MafAutoFixAll_UnreadableFile_RecordedAsError_PassContinues()
+    {
+        // An unreadable .cs (locked / permission-denied) must be a per-file error, not
+        // a whole-pass abort — and every OTHER file must still be fixed. Forced via a
+        // Windows exclusive-share lock or a POSIX chmod-000 so it runs on Linux CI too.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-unreadable-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "Good.cs"), """
+                using System.Threading.Tasks;
+                public class Executor { }
+                public sealed class MessageHandlerAttribute : System.Attribute { }
+                public partial class MyExec : Executor {
+                  [MessageHandler]
+                  public Task<int> Handle(string s) => Task.FromResult(0);
+                }
+                """);
+            var bad = Path.Combine(dir, "Bad.cs");
+            File.WriteAllText(bad, "public class Bad {}");
+
+            FileStream? winLock = null;
+            if (OperatingSystem.IsWindows())
+            {
+                winLock = new FileStream(bad, FileMode.Open, FileAccess.Read, FileShare.None); // exclusive
+            }
+            else
+            {
+                File.SetUnixFileMode(bad, UnixFileMode.None); // chmod 000
+                // Running as root (common in CI containers) ignores the mode; then the
+                // failure can't be forced, so skip rather than assert a false negative.
+                try { using var probe = File.OpenRead(bad); File.SetUnixFileMode(bad, UnixFileMode.UserRead | UnixFileMode.UserWrite); return; }
+                catch { /* good — genuinely unreadable */ }
+            }
+
+            try
+            {
+                var json = new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+                var doc = JsonSerializer.Deserialize<JsonDocument>(json)!;
+                Assert.True(doc.RootElement.GetProperty("errors").GetArrayLength() >= 1, json); // unreadable file reported
+                Assert.Contains("sealed partial", File.ReadAllText(Path.Combine(dir, "Good.cs"))); // other file STILL fixed
+            }
+            finally
+            {
+                winLock?.Dispose();
+                if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(bad, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Theory]
+    [InlineData(false)] // UTF-16 LE
+    [InlineData(true)]  // UTF-16 BE
+    public void MafAutoFixAll_PreservesUtf16Bom_OnApply(bool bigEndian)
+    {
+        // The UTF-16 detect+preserve branches must round-trip byte-faithfully: the BOM
+        // (and endianness) survive and the file is NOT normalised to UTF-8.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-utf16-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "U16.cs");
+            var enc = new System.Text.UnicodeEncoding(bigEndian, byteOrderMark: true);
+            File.WriteAllText(file, """
+                using System.Threading.Tasks;
+                public class Executor { }
+                public sealed class MessageHandlerAttribute : System.Attribute { }
+                public partial class MyExec : Executor {
+                  [MessageHandler]
+                  public Task<int> Handle(string s) => Task.FromResult(0);
+                }
+                """, enc);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false); // WF-001 adds `sealed`
+            var bytes = File.ReadAllBytes(file);
+            if (bigEndian) Assert.True(bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF, "UTF-16 BE BOM preserved");
+            else Assert.True(bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE, "UTF-16 LE BOM preserved");
+            Assert.Contains("sealed partial", File.ReadAllText(file, enc)); // rewrite applied, still UTF-16
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Theory]
+    [InlineData(false)] // UTF-32 LE (FF FE 00 00) — must NOT be misread as UTF-16 LE
+    [InlineData(true)]  // UTF-32 BE (00 00 FE FF)
+    public void MafAutoFixAll_PreservesUtf32Bom_OnApply(bool bigEndian)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-utf32-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "U32.cs");
+            var enc = new System.Text.UTF32Encoding(bigEndian, byteOrderMark: true);
+            File.WriteAllText(file, """
+                using System.Threading.Tasks;
+                public class Executor { }
+                public sealed class MessageHandlerAttribute : System.Attribute { }
+                public partial class MyExec : Executor {
+                  [MessageHandler]
+                  public Task<int> Handle(string s) => Task.FromResult(0);
+                }
+                """, enc);
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var bytes = File.ReadAllBytes(file);
+            if (bigEndian) Assert.True(bytes.Length >= 4 && bytes[0] == 0x00 && bytes[1] == 0x00 && bytes[2] == 0xFE && bytes[3] == 0xFF, "UTF-32 BE BOM preserved");
+            else Assert.True(bytes.Length >= 4 && bytes[0] == 0xFF && bytes[1] == 0xFE && bytes[2] == 0x00 && bytes[3] == 0x00, "UTF-32 LE BOM preserved");
+            Assert.Contains("sealed partial", File.ReadAllText(file, enc)); // decoded as UTF-32, rewrite applied
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void ApplyLockPath_TrailingSeparator_MapsToSameLock()
+    {
+        // `C:\repo` and `C:\repo\` must resolve to ONE lock key, else two callers
+        // spelling the path differently fail to serialise (WM-44).
+        var dir = Path.Combine(Path.GetTempPath(), "maf-locktrim-" + Guid.NewGuid().ToString("N"));
+        Assert.Equal(AutoFixTool.ApplyLockPath(dir), AutoFixTool.ApplyLockPath(dir + Path.DirectorySeparatorChar));
+    }
+
+    [Fact]
+    public void ExecutorSealedRewriter_AttributedZeroModifierClass_StaysIndented()
+    {
+        // A zero-modifier Executor WITH an attribute: `sealed partial` must inherit the
+        // declaration's indentation, not de-indent to column 0.
+        var input = """
+            namespace N
+            {
+                [System.Obsolete]
+                class Worker : Executor
+                {
+                    [MessageHandler]
+                    public System.Threading.Tasks.Task<int> Handle(string s) => null!;
+                }
+            }
+            """;
+        var output = ApplyRewriter(new ExecutorSealedRewriter(), input).Replace("\r\n", "\n");
+        Assert.Contains("    sealed partial class Worker", output); // indented, not column 0
+        Assert.DoesNotContain("\nsealed partial", output);          // never at column 0
+        Assert.Contains("[System.Obsolete]", output);               // attribute untouched
     }
 }
