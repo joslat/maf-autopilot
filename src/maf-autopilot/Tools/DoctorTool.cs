@@ -195,7 +195,7 @@ public sealed class DoctorTool
                 File: h.File,
                 Line: h.Line,
                 Issue: $"`{h.MethodName}` returns `{h.ReturnType}` — fan-out handler must return Task<T>",
-                FixDescription: "Return Task<T> / ValueTask<T> / IAsyncEnumerable<T> (the value is sent automatically), OR emit explicitly with `await context.SendMessageAsync(...)`. NOTE: an `AddFanOutEdge` source must use the return-value form — SendMessageAsync doesn't broadcast on that edge.",
+                FixDescription: Maf001Fix,
                 AutoFixable: false,
                 Why: "This handler produces no downstream message — it neither returns a value (Task<T> / ValueTask<T> / IAsyncEnumerable<T>) nor emits via context.SendMessageAsync/YieldOutputAsync. The fan-in barrier then starves: aggregation silently runs on partial data with no exception. (Handlers that DO emit via the context are not flagged.)"))
             .Concat(antiPatterns
@@ -389,6 +389,14 @@ public sealed class DoctorTool
     };
 
     /// <summary>One-line actionable fix description per anti-pattern rule ID.</summary>
+    /// <summary>
+    /// REP-40: the canonical MAF001 (fan-out / silent-starvation) fix guidance — one
+    /// source of truth shared by the doctor, the PR-audit comment, and the SARIF help
+    /// pane so the three surfaces cannot drift into three different fix strings.
+    /// </summary>
+    internal const string Maf001Fix =
+        "Return Task<T> / ValueTask<T> / IAsyncEnumerable<T> (the value is sent automatically), OR emit explicitly with `await context.SendMessageAsync(...)`. NOTE: an `AddFanOutEdge` source must use the return-value form — SendMessageAsync doesn't broadcast on that edge.";
+
     internal static string GetAntiPatternFix(string ruleId) => ruleId switch // internal: shared with SARIF help (REP-11)
     {
         "MAF-AP-SEC-001" => "Replace `DefaultAzureCredential` with `ManagedIdentityCredential` in production code.",

@@ -105,6 +105,7 @@ internal static class SarifExportTool
             FullDescription: full,
             HelpUri: "https://github.com/joslat/maf-doctor/blob/main/.github/skills/maf-fan-out-validator/SKILL.md",
             // REP-11: MAF001 already had a good fullDescription but no help pane content.
-            HelpMarkdown: $"**Why:** {full}\n\n**Fix:** Return `Task<T>` / `ValueTask<T>` / `IAsyncEnumerable<T>` (the value is sent automatically), OR emit explicitly with `await context.SendMessageAsync(...)`.");
+            // REP-40: reuse the doctor's canonical fix so doctor / SARIF / PR-audit agree.
+            HelpMarkdown: $"**Why:** {full}\n\n**Fix:** {DoctorTool.Maf001Fix}");
     }
 }

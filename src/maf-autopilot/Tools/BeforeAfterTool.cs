@@ -90,7 +90,7 @@ public sealed class BeforeAfterTool
 
                 changedInThisRule++;
                 totalFiles++;
-                sb.AppendLine($"### File: `{SourceFileWalker.MakeRelative(repoPath, file)}`");
+                sb.AppendLine($"### File: `{LlmFencing.MdInline(SourceFileWalker.MakeRelative(repoPath, file))}`"); // SEC-02
                 sb.AppendLine();
                 sb.AppendLine("```diff");
                 sb.Append(RenderUnifiedDiff(orig, rewritten, contextLines: 2));
@@ -151,7 +151,16 @@ public sealed class BeforeAfterTool
         // so the rendered diff doesn't echo a hard-coded key sitting near a change.
         static string Safe(string line)
         {
-            try { return AntiPatternScannerTool.LooksLikeSecret(line) ? "(redacted — may contain a secret)" : line; }
+            // SEC-05: a source line of ``` (or context lines with a leading space) is a
+            // valid CommonMark closing fence that would break out of the enclosing ```diff
+            // block. NeutralizeFences inserts a zero-width space so it can't close the fence
+            // (invisible to humans). Secret check runs first (redact-on-doubt).
+            try
+            {
+                return AntiPatternScannerTool.LooksLikeSecret(line)
+                    ? "(redacted — may contain a secret)"
+                    : MafDoctor.Data.RegistryService.NeutralizeFences(line);
+            }
             catch { return "(redacted — may contain a secret)"; }
         }
 

@@ -30,7 +30,8 @@ public sealed class PullRequestAuditTool
           - baseBranch: the branch to diff against (default: `main`).
 
         Returns a markdown report grouped by changed file, with anti-pattern,
-        fan-out, and prompt-lint findings. Files with zero findings are omitted.
+        fan-out (silent-starvation), prompt-lint, and cost findings. Files with
+        zero findings are omitted.
         """)]
     public string MafAuditPullRequest(
         [Description("Absolute path to the repository root.")] string repoPath,
@@ -135,6 +136,7 @@ public sealed class PullRequestAuditTool
 
         long aggregateBytes = 0;
         var actuallyScanned = 0;
+        var deleted = 0; // REP-14: deletion-only PRs must not read as "0 of N + Ship it"
         foreach (var relPath in filesToScan)
         {
             // F-07 — previously combined repoPath + relPath with plain Path.Combine
@@ -149,17 +151,17 @@ public sealed class PullRequestAuditTool
             catch (ArgumentException ex)
             {
                 scanComplete = false;
-                skipped.Add($"`{relPath}` — refused: {ex.Message}");
+                skipped.Add($"`{LlmFencing.MdInline(relPath)}` — refused: {ex.Message}"); // SEC-02: fork-supplied path
                 continue;
             }
 
-            if (!File.Exists(absPath)) continue;     // file deleted in the diff
+            if (!File.Exists(absPath)) { deleted++; continue; }  // REP-14: file deleted in the diff
 
             var length = new FileInfo(absPath).Length;
             if (length > MaxFileBytes)
             {
                 scanComplete = false;
-                skipped.Add($"`{relPath}` — {length / (1024 * 1024)} MB exceeds the {MaxFileBytes / (1024 * 1024)} MB per-file cap, skipped.");
+                skipped.Add($"`{LlmFencing.MdInline(relPath)}` — {length / (1024 * 1024)} MB exceeds the {MaxFileBytes / (1024 * 1024)} MB per-file cap, skipped.");
                 continue;
             }
             if (aggregateBytes + length > MaxAggregateBytes)
@@ -178,26 +180,37 @@ public sealed class PullRequestAuditTool
                 .Where(f => f.Verdict is FanOutVerdict.SilentStarvationRisk or FanOutVerdict.LikelyInvalid)
                 .ToList();
             var prompt = PromptLintTool.LintSource(source, relPath);
+            // REP-23: include the cost scanner — the tool description claims "every MAF
+            // scanner", but COST-001 (surfaced on every other surface) was missing here.
+            var cost = EstimateCostTool.AnalyzeSource(source, relPath).Where(c => c.HasCapWarning).ToList();
 
-            if (anti.Count == 0 && fanOut.Count == 0 && prompt.Count == 0) continue;
+            if (anti.Count == 0 && fanOut.Count == 0 && prompt.Count == 0 && cost.Count == 0) continue;
 
             var lines = new List<string>();
             foreach (var f in anti)
             {
-                lines.Add($"- **{Severity(f.Severity)}** `{f.RuleId}` line {f.Line}: {f.RuleName}");
+                lines.Add($"- **{Severity(f.Severity)}** `{f.RuleId}` line {f.Line}: {LlmFencing.MdInline(f.RuleName)}");
                 Bump(totals, f.Severity);
             }
             foreach (var f in fanOut)
             {
-                lines.Add($"- **❌ Error** `MAF001` line {f.Line}: `{f.MethodName}` returns `{f.ReturnType}` — fan-out handler must return `Task<T>`");
-                totals.Errors++;
+                // REP-40: silent-starvation gets its OWN severity bucket (not folded into
+                // Errors) and the doctor's canonical MAF001 fix — one source of truth so the
+                // three surfaces (doctor / SARIF / PR comment) can't drift.
+                lines.Add($"- **🔴 Starvation risk** `MAF001` line {f.Line}: `{f.MethodName}` returns `{f.ReturnType}` — {DoctorTool.Maf001Fix}");
+                totals.Starvation++;
             }
             foreach (var f in prompt)
             {
                 var sev = f.Severity == PromptSeverity.Error ? "❌ Error" : "⚠️ Warning";
-                lines.Add($"- **{sev}** `{f.RuleId}` line {f.Line}: {f.Message}");
+                lines.Add($"- **{sev}** `{f.RuleId}` line {f.Line}: {LlmFencing.MdInline(f.Message)}");
                 if (f.Severity == PromptSeverity.Error) totals.Errors++;
                 else totals.Warnings++;
+            }
+            foreach (var f in cost)
+            {
+                lines.Add($"- **🟠 Cost** `COST-001` line {f.Line}: Unbounded `{f.CallSite}` — set MaxOutputTokens on the nearest ChatOptions");
+                totals.Costs++;
             }
 
             perFileFindings.Add((relPath, lines));
@@ -214,6 +227,9 @@ public sealed class PullRequestAuditTool
         sb.AppendLine(actuallyScanned == changedFiles.Count
             ? $"**Files scanned:** {actuallyScanned} changed `.cs` file(s)."
             : $"**Files scanned:** {actuallyScanned} of {changedFiles.Count} changed `.cs` file(s).");
+        // REP-14: always explain the N-of-M gap for deletions so the count reads honestly.
+        if (deleted > 0)
+            sb.AppendLine($"_({deleted} changed file(s) were deleted in this diff — nothing to scan for them.)_");
         if (!scanComplete)
         {
             sb.AppendLine();
@@ -221,16 +237,22 @@ public sealed class PullRequestAuditTool
             foreach (var reason in skipped) sb.AppendLine($"- {reason}");
         }
         sb.AppendLine();
-        sb.AppendLine($"| ❌ Errors | ⚠️ Warnings | ℹ️ Info |");
-        sb.AppendLine($"|---:|---:|---:|");
-        sb.AppendLine($"| {totals.Errors} | {totals.Warnings} | {totals.Infos} |");
+        sb.AppendLine($"| ❌ Errors | 🔴 Starvation | ⚠️ Warnings | 🟠 Cost | ℹ️ Info |");
+        sb.AppendLine($"|---:|---:|---:|---:|---:|");
+        sb.AppendLine($"| {totals.Errors} | {totals.Starvation} | {totals.Warnings} | {totals.Costs} | {totals.Infos} |");
         sb.AppendLine();
 
         if (perFileFindings.Count == 0)
         {
-            sb.AppendLine(scanComplete
-                ? "✅ All changed files are clean against the configured scanner rules. Ship it."
-                : "⚠️ No findings in the file(s) that were scanned — but the scan above was incomplete. This is NOT a clean bill of health.");
+            string verdict;
+            if (!scanComplete)
+                verdict = "⚠️ No findings in the file(s) that were scanned — but the scan above was incomplete. This is NOT a clean bill of health.";
+            else if (actuallyScanned == 0 && deleted == changedFiles.Count && changedFiles.Count > 0)
+                // REP-14: a deletion-only PR gets an accurate verdict, not "Ship it" over "0 scanned".
+                verdict = "✅ This branch only deletes `.cs` files — nothing to scan.";
+            else
+                verdict = "✅ All changed files are clean against the configured scanner rules. Ship it.";
+            sb.AppendLine(verdict);
             return sb.ToString();
         }
 
@@ -238,7 +260,9 @@ public sealed class PullRequestAuditTool
         sb.AppendLine();
         foreach (var (file, lines) in perFileFindings.OrderByDescending(f => f.Lines.Count))
         {
-            sb.AppendLine($"#### `{file}`");
+            // SEC-02: the changed-file path is fork-supplied — neutralize it so a crafted
+            // filename can't escape the code span / inject markdown into the PR comment.
+            sb.AppendLine($"#### `{LlmFencing.MdInline(file)}`");
             foreach (var line in lines) sb.AppendLine(line);
             sb.AppendLine();
         }
@@ -290,5 +314,7 @@ public sealed class PullRequestAuditTool
         public int Errors;
         public int Warnings;
         public int Infos;
+        public int Starvation; // REP-40: own bucket, no longer folded into Errors
+        public int Costs;      // REP-23: cost scanner now included
     }
 }
