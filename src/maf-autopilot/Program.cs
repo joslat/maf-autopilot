@@ -28,7 +28,9 @@ System.Globalization.CultureInfo.DefaultThreadCurrentUICulture = System.Globaliz
 // MCP stdio mode (no args) is left untouched — the MCP SDK owns its stream encoding.
 if (args.Length > 0)
 {
-    try { Console.OutputEncoding = System.Text.Encoding.UTF8; }
+    // UTF8Encoding(false): NO BOM — `Encoding.UTF8` emits a BOM that some Windows
+    // consoles prepend to redirected stdout, which would corrupt `--json` output.
+    try { Console.OutputEncoding = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false); }
     catch (IOException) { /* output redirected / no console — ignore */ }
     catch (System.Security.SecurityException) { /* restricted host — ignore */ }
 }

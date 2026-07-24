@@ -365,7 +365,9 @@ internal static class InitCommand
         }
         else
         {
-            var stored = env[rootsKey]?.GetValue<string>() ?? string.Empty;
+            // Defensive: a hand-edited config could store a non-string here — extract
+            // safely (a bare GetValue<string>() would throw on a number/array/object).
+            var stored = env[rootsKey] is JsonValue jv && jv.TryGetValue<string>(out var sv) ? sv : string.Empty;
             var covered = stored
                 .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Any(root => PathCovers(root, targetDir));
