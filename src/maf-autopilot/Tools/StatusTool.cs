@@ -19,18 +19,25 @@ public sealed class StatusTool
         they only need to rerun `maf-doctor init` for this workspace.
 
         Input:
-          - repoPath: repository/workspace root to inspect. Defaults to the MCP
-            server current directory.
+          - repoPath: repository/workspace root to inspect. Defaults to the
+            configured workspace root (falling back to the server current directory).
 
         Returns markdown with exact update/init commands when action is needed.
         """)]
     public async Task<string> MafDoctorStatus(
-        [Description("Repository/workspace root to inspect. Defaults to the MCP server current directory.")]
+        [Description("Repository/workspace root to inspect. Defaults to the configured workspace root (falling back to the server current directory).")]
         string? repoPath = null)
     {
-        var rawPath = string.IsNullOrWhiteSpace(repoPath)
-            ? Directory.GetCurrentDirectory()
-            : repoPath;
+        // WM-08: the documented default was the server cwd — but in MCP mode the host
+        // spawns with cwd = the user's HOME, which the workspace policy rejects, so the
+        // no-arg call always errored. Prefer cwd ONLY when it passes policy; otherwise
+        // fall back to the first configured workspace root that exists on disk.
+        var cwd = Directory.GetCurrentDirectory();
+        var rawPath = !string.IsNullOrWhiteSpace(repoPath)
+            ? repoPath
+            : WorkspacePolicy.Validate(cwd) is null
+                ? cwd
+                : WorkspacePolicy.ConfiguredRoots.FirstOrDefault(Directory.Exists) ?? cwd;
 
         if (PathGuard.ValidateRepoPath(rawPath) is { } error)
             return error;

@@ -51,7 +51,7 @@ public sealed class DoctorTool
         string format = "markdown",
         [Description("When true, list EVERY finding (grouped by rule, ordered by impact) instead of only the top 3 fixes. Use for full triage / CI.")]
         bool full = false)
-        => RunCore(repoPath, format, excludes: null, full: full);
+        => RunCore(repoPath, format, excludes: null, full: full, out _);
 
     /// <summary>
     /// CLI entry point. Identical to <see cref="MafDoctor"/> but accepts
@@ -62,10 +62,21 @@ public sealed class DoctorTool
     /// preserves the stable MafDoctor schema for clients.
     /// </summary>
     internal string Run(string repoPath, string format, IReadOnlyList<string>? excludes, bool full = false)
-        => RunCore(repoPath, format, excludes, full);
+        => RunCore(repoPath, format, excludes, full, out _);
 
-    private string RunCore(string repoPath, string format, IReadOnlyList<string>? excludes, bool full = false)
+    /// <summary>
+    /// Run and also expose the graded <see cref="DoctorSummary"/> (grade + scan
+    /// completeness) so a CLI gate (<c>doctor --fail-on</c>, REP-09) can act on the
+    /// real grade without re-scanning or scraping the headline. <paramref name="summary"/>
+    /// is <see langword="null"/> when the path was invalid (no scan ran).
+    /// </summary>
+    internal string Run(string repoPath, string format, IReadOnlyList<string>? excludes, bool full, out DoctorSummary? summary)
+        => RunCore(repoPath, format, excludes, full, out summary);
+
+    private string RunCore(string repoPath, string format, IReadOnlyList<string>? excludes, bool full, out DoctorSummary? summary)
     {
+        summary = null;
+
         // Render a validation failure in the REQUESTED format — a machine consumer
         // asking for --json must get JSON back, not a plain-text string that
         // breaks their parser.
@@ -81,11 +92,12 @@ public sealed class DoctorTool
             return err;
         }
 
-        var summary = AnalyzeRepo(repoPath, excludes);
+        var s = AnalyzeRepo(repoPath, excludes);
+        summary = s;
 
         if (format.Equals("json", StringComparison.OrdinalIgnoreCase))
         {
-            var result = BuildJsonResult(repoPath, summary, full);
+            var result = BuildJsonResult(repoPath, s, full);
             return JsonSerializer.Serialize(result, DoctorJsonContext.Default.DoctorJsonResult);
         }
 
@@ -94,12 +106,12 @@ public sealed class DoctorTool
         // iterate it with per-finding confidence instead of parsing markdown.
         if (format.Equals("plan-json", StringComparison.OrdinalIgnoreCase))
             return JsonSerializer.Serialize(
-                BuildPlanJson(repoPath, summary), DoctorJsonContext.Default.DoctorPlanJson);
+                BuildPlanJson(repoPath, s), DoctorJsonContext.Default.DoctorPlanJson);
 
         if (format.Equals("plan", StringComparison.OrdinalIgnoreCase))
-            return FormatPlan(repoPath, summary); // always covers every finding
+            return FormatPlan(repoPath, s); // always covers every finding
 
-        return FormatReport(repoPath, summary, full);
+        return FormatReport(repoPath, s, full);
     }
 
     // -------------------------------------------------------------------------

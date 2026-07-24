@@ -17,6 +17,24 @@ using ModelContextProtocol.Server;
 // --version / --help — short-circuit before anything else (and before the
 // no-subcommand fall-through to MCP-server mode, which would otherwise hang
 // waiting on stdio when a user runs `maf-doctor --version`).
+// WM-26: pin invariant culture for BOTH CLI and MCP modes (and every tool/thread,
+// including the update-notice Task.Run) so dates use the Gregorian calendar and
+// numbers use '.'-decimals regardless of the host locale — matching the docs/examples.
+System.Globalization.CultureInfo.DefaultThreadCurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
+System.Globalization.CultureInfo.DefaultThreadCurrentUICulture = System.Globalization.CultureInfo.InvariantCulture;
+
+// REP-06: emoji + typographic punctuation mojibake to '?' on cmd / Windows PowerShell
+// 5.1 and in redirected files unless the console is UTF-8. CLI mode only (args present);
+// MCP stdio mode (no args) is left untouched — the MCP SDK owns its stream encoding.
+if (args.Length > 0)
+{
+    // UTF8Encoding(false): NO BOM — `Encoding.UTF8` emits a BOM that some Windows
+    // consoles prepend to redirected stdout, which would corrupt `--json` output.
+    try { Console.OutputEncoding = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false); }
+    catch (IOException) { /* output redirected / no console — ignore */ }
+    catch (System.Security.SecurityException) { /* restricted host — ignore */ }
+}
+
 if (args.Length > 0 && (args[0] is "--version" or "-v" or "version"))
 {
     var raw = Assembly.GetExecutingAssembly()
@@ -42,11 +60,12 @@ if (args.Length > 0 && (args[0] is "--help" or "-h" or "help"))
         Commands:
           init [--with-cursor]              Wire the MCP server + steering into the current repo
                                             (.vscode/mcp.json, .mcp.json, instructions, agents).
-          doctor [path] [--exclude <s>] [--all|--full] [--json] [--plan]
+          doctor [path] [--exclude <s>] [--all|--full] [--json] [--plan] [--fail-on A|B|C|F]
                                             A/B/C/F health report. --all = every finding (grouped),
                                             not just the top 3; --json = machine-readable findings;
                                             --plan = ordered, checkboxed remediation plan;
-                                            --plan --json = structured remediation manifest (for an automated fix loop).
+                                            --plan --json = structured remediation manifest (for an automated fix loop);
+                                            --fail-on = exit 3 if the grade is at/below the given letter (CI gate).
           autofix-all [path] [--apply] [--json]
                                             Deterministic Roslyn fixes. Preview only by default
                                             (no writes); --apply = actually write the changes;
@@ -61,6 +80,9 @@ if (args.Length > 0 && (args[0] is "--help" or "-h" or "help"))
           registry-extract                  Extract registry entries (CI helper).
           --version, -v                     Print the installed version.
           --help, -h                        Show this help.
+
+        Exit codes: 0 success · 1 invalid path / failed run · 2 usage error (bad flag or value)
+                    · 3 doctor --fail-on gate not met (grade too low or scan incomplete).
 
         Docs: https://github.com/joslat/maf-doctor
         """);
@@ -93,6 +115,15 @@ if (args.Length >= 1 && args[0] == "new")
 static string ResolveCliPath(string? parsedPath)
     => Path.GetFullPath(parsedPath ?? Directory.GetCurrentDirectory());
 
+// REP-09: `doctor --fail-on <grade>` — fail (exit 3) when the graded result is at or
+// below the threshold, or when the scan was incomplete. Grade ranking A(best) → F(worst).
+static bool GradeFailsGate(char grade, bool scanIncomplete, string failOn)
+{
+    if (scanIncomplete) return true; // a partial scan cannot be trusted to pass a gate
+    static int Rank(char g) => char.ToUpperInvariant(g) switch { 'A' => 0, 'B' => 1, 'C' => 2, _ => 3 };
+    return Rank(grade) >= Rank(failOn[0]);
+}
+
 if (args.Length >= 1 && args[0] == "doctor")
 {
     // Usage: maf-doctor doctor [path] [--exclude <substr>]... [--all|--full] [--json]
@@ -100,17 +131,32 @@ if (args.Length >= 1 && args[0] == "doctor")
     // process spawn). `--exclude` skips files by repo-relative substring (drift
     // detector scopes to product code); `--all`/`--full` lists every finding
     // (grouped); `--json` emits machine-readable output.
-    var (parsedPath, format, excludes, full) = MafDoctor.Commands.DoctorCli.Parse(args);
+    var (parsedPath, format, excludes, full, failOn, parseError) = MafDoctor.Commands.DoctorCli.Parse(args);
+    if (parseError is { } dpe)
+    {
+        // WM-04 / REP-05: unknown flag, extra positional, or a bad --exclude/--fail-on value.
+        Console.Error.WriteLine($"doctor: {dpe}");
+        Console.Error.WriteLine("Run 'maf-doctor --help' for usage.");
+        Environment.Exit(2);
+        return;
+    }
     var path = ResolveCliPath(parsedPath);
-    var report = new MafDoctor.Tools.DoctorTool().Run(path, format, excludes, full);
-    Console.WriteLine(report);
-    // Round-4 review fixup — confirmed via real execution: this unconditionally
-    // exited 0 even when `report` was DoctorTool's own "Error: ..." text (e.g.
-    // a nonexistent path), so a CI/script exit-code check couldn't tell success
-    // from failure. DoctorTool.Run's sole failure source is PathGuard.ValidateRepoPath
-    // (checked internally); re-checking it here doesn't change what's printed,
-    // only which exit code is chosen.
-    Environment.Exit(PathGuard.ValidateRepoPath(path) is null ? 0 : 1);
+    var report = new MafDoctor.Tools.DoctorTool().Run(path, format, excludes, full, out var summary);
+    // `summary` is null ONLY when PathGuard rejected the path (no scan ran).
+    var pathValid = summary is not null;
+    if (pathValid || format is "json" or "plan-json")
+        Console.WriteLine(report);        // success, or JSON error → stdout (machine channel)
+    else
+        Console.Error.WriteLine(report);  // REP-08: human-format error → stderr
+    // REP-09: opt-in CI gate — exit 3 when the grade is at-or-below the threshold, or
+    // when the scan was incomplete (a partial scan must not silently pass a gate).
+    if (pathValid && failOn is not null && GradeFailsGate(summary!.Grade, summary.ScanIncomplete, failOn))
+    {
+        Console.Error.WriteLine($"doctor: grade {summary.Grade}{(summary.ScanIncomplete ? " (scan incomplete)" : "")} does not pass --fail-on {failOn}");
+        Environment.Exit(3);
+        return;
+    }
+    Environment.Exit(pathValid ? 0 : 1);
     return;
 }
 if (args.Length >= 1 && args[0] == "badge")
@@ -153,12 +199,11 @@ if (args.Length >= 1 && args[0] == "autofix-all")
     var report = tool.RunAll(path, specificFile: null, dryRun: dryRun, out var error);
     if (report is null)
     {
-        // On the error path RunAll returned null fast (bad path/specificFile);
-        // re-running MafAutoFixAll here just re-fails the same way and yields the
-        // structured { "error": ... } JSON — cheap, and only on this branch.
-        Console.WriteLine(json
-            ? tool.MafAutoFixAll(path, dryRun: dryRun)
-            : $"❌ {error}");
+        // REP-08: JSON error → stdout (parsers read the machine channel); human error
+        // → stderr. On the error path RunAll returned null fast (bad path/specificFile);
+        // re-running MafAutoFixAll for --json re-fails the same way, cheaply.
+        if (json) Console.WriteLine(tool.MafAutoFixAll(path, dryRun: dryRun));
+        else Console.Error.WriteLine($"❌ {error}");
         Environment.Exit(1);
         return;
     }
@@ -189,10 +234,13 @@ if (args.Length >= 1 && args[0] == "migrate-scan")
         return;
     }
     var fmt = json ? "json" : "markdown";
-    Console.WriteLine(new MafDoctor.Tools.SemanticKernelDetectorTool().MafDetectSourceFramework(path, fmt));
-    // Round-4 review fixup — same exit-code gap as `doctor`/`badge` above.
-    // MafDetectSourceFramework's sole failure source is the same PathGuard check.
-    Environment.Exit(PathGuard.ValidateRepoPath(path) is null ? 0 : 1);
+    var mReport = new MafDoctor.Tools.SemanticKernelDetectorTool().MafDetectSourceFramework(path, fmt);
+    var mValid = PathGuard.ValidateRepoPath(path) is null;
+    // REP-08: markdown (human) errors → stderr, matching doctor/autofix-all; the JSON
+    // shape stays on stdout for parsers. (Its sole failure source is the same PathGuard check.)
+    if (mValid || fmt == "json") Console.WriteLine(mReport);
+    else Console.Error.WriteLine(mReport);
+    Environment.Exit(mValid ? 0 : 1);
     return;
 }
 if (args.Length >= 1 && args[0] == "verify-registry")

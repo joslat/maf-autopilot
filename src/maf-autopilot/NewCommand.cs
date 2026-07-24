@@ -59,19 +59,26 @@ internal static class NewCommand
         var instructions = ExtractFlag(args, "--instructions");
         var ns = NewAgentTool.DetectNamespace(path, fallback: "MyApp.Agents");
         var files = AgentScaffolder.ScaffoldAgent(name, ns, instructions);
-        WriteFiles(path, files);
-        PrintNextStepsForAgent();
+        var created = WriteFiles(path, files);
+        if (created < 0) return 3; // WM-06: whole scaffold refused — do NOT print "Next steps".
+        if (created > 0) PrintNextStepsForAgent();
+        else Console.Error.WriteLine("  (all target files already existed — nothing scaffolded)");
         return 0;
     }
 
     private static int GenerateExecutor(string path, string name, string[] args)
     {
-        var inputType = ExtractFlag(args, "--input") ?? "string";
-        var outputType = ExtractFlag(args, "--output") ?? "string";
+        // WM-05: the help advertises `new executor <Name> [In] [Out]` positionals —
+        // honor them as a fallback to the --input/--output flags (flags win when both given).
+        var positional = PositionalsAfter(args, startIndex: 3, "--path", "--input", "--output", "--instructions");
+        var inputType = ExtractFlag(args, "--input") ?? positional.ElementAtOrDefault(0) ?? "string";
+        var outputType = ExtractFlag(args, "--output") ?? positional.ElementAtOrDefault(1) ?? "string";
         var ns = NewAgentTool.DetectNamespace(path, fallback: "MyApp.Workflows");
         var files = AgentScaffolder.ScaffoldExecutor(name, ns, inputType, outputType);
-        WriteFiles(path, files);
-        PrintNextStepsForExecutor();
+        var created = WriteFiles(path, files);
+        if (created < 0) return 3; // WM-06
+        if (created > 0) PrintNextStepsForExecutor();
+        else Console.Error.WriteLine("  (all target files already existed — nothing scaffolded)");
         return 0;
     }
 
@@ -105,7 +112,14 @@ internal static class NewCommand
         Console.WriteLine("  3. Optional: run `maf-doctor doctor .` to confirm fan-out-safe.");
     }
 
-    private static void WriteFiles(string baseDir, IReadOnlyList<AgentScaffolder.ScaffoldedFile> files)
+    /// <summary>
+    /// Writes the scaffold. Returns the number of files actually created, or
+    /// <c>-1</c> if the WHOLE scaffold was refused by the pre-flight containment
+    /// check. WM-06: the caller uses this to avoid printing "Next steps" (and to
+    /// exit non-zero) when nothing was scaffolded. Refusal/skip warnings go to
+    /// stderr so stdout carries only the created-file list.
+    /// </summary>
+    private static int WriteFiles(string baseDir, IReadOnlyList<AgentScaffolder.ScaffoldedFile> files)
     {
         // F-03 — this CLI path bypasses NewAgentTool entirely, so it needs its own
         // containment + symlink guard (SafeWorkspaceWriter.TryCreateNew rejects a
@@ -128,34 +142,60 @@ internal static class NewCommand
             }
             catch (ArgumentException ex)
             {
-                Console.WriteLine($"  ⚠ {file.RelativePath} — refused: {ex.Message}");
-                Console.WriteLine("  No files were written — refusing the whole scaffold rather than leaving a partially-generated result.");
-                return;
+                Console.Error.WriteLine($"  ⚠ {file.RelativePath} — refused: {ex.Message}");
+                Console.Error.WriteLine("  No files were written — refusing the whole scaffold rather than leaving a partially-generated result.");
+                return -1;
             }
         }
 
+        var created = 0;
         foreach (var file in files)
         {
             var absolute = Path.Combine(root, file.RelativePath);
-            bool created;
+            bool ok;
             try
             {
-                created = SafeWorkspaceWriter.TryCreateNew(root, absolute, file.Content);
+                ok = SafeWorkspaceWriter.TryCreateNew(root, absolute, file.Content);
             }
             catch (ArgumentException ex)
             {
-                Console.WriteLine($"  ⚠ {file.RelativePath} — refused: {ex.Message}");
+                Console.Error.WriteLine($"  ⚠ {file.RelativePath} — refused: {ex.Message}");
                 continue;
             }
 
-            if (!created)
+            if (!ok)
             {
-                Console.WriteLine($"  ⚠ {file.RelativePath} exists — skipped");
+                Console.Error.WriteLine($"  ⚠ {file.RelativePath} exists — skipped");
                 continue;
             }
             var lineCount = file.Content.Split('\n').Length;
             Console.WriteLine($"  ✓ {file.RelativePath} ({lineCount} lines)");
+            created++;
         }
+        return created;
+    }
+
+    /// <summary>
+    /// Collects the non-flag positional tokens at or after <paramref name="startIndex"/>,
+    /// skipping any value-taking flag together with its consumed value. Used by WM-05 to
+    /// read the advertised `new executor &lt;Name&gt; [In] [Out]` positionals.
+    /// </summary>
+    internal static List<string> PositionalsAfter(string[] args, int startIndex, params string[] valueFlags)
+    {
+        var result = new List<string>();
+        var valueFlagSet = new HashSet<string>(valueFlags, StringComparer.OrdinalIgnoreCase);
+        for (var i = startIndex; i < args.Length; i++)
+        {
+            var a = args[i];
+            if (a.StartsWith("--", StringComparison.Ordinal))
+            {
+                if (valueFlagSet.Contains(a) && i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
+                    i++; // skip the flag's value too
+                continue;
+            }
+            result.Add(a);
+        }
+        return result;
     }
 
     private static int UnknownKind(string kind)
@@ -168,10 +208,12 @@ internal static class NewCommand
     private static string Usage() => """
         Usage:
           maf-doctor new agent <Name> [--path <dir>] [--instructions "<prompt>"]
-          maf-doctor new executor <Name> [--path <dir>] [--input <type>] [--output <type>]
+          maf-doctor new executor <Name> [In] [Out] [--path <dir>] [--input <type>] [--output <type>]
+            (In/Out may be given positionally OR via --input/--output; flags win when both are present.)
 
         Examples:
           maf-doctor new agent ChatBot
+          maf-doctor new executor FraudReviewer FraudCheck FraudReport
           maf-doctor new executor FraudReviewer --input FraudCheck --output FraudReport
         """;
 
