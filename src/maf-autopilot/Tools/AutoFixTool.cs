@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text;
 using System.Text.Json;
 using MafDoctor.Tools.Rewriters;
 using Microsoft.CodeAnalysis;
@@ -86,19 +87,27 @@ public sealed class AutoFixTool
 
     /// <summary>Structured result of an <see cref="RunAll"/> pass. Rendered to
     /// JSON by <see cref="MafAutoFixAll"/> (MCP) and to human-readable text by
-    /// the CLI — one computation, two presentations.</summary>
+    /// the CLI — one computation, two presentations.
+    /// <para><see cref="Errors"/> is additive (defaults to empty): per-file
+    /// read/parse/write failures that previously vanished. A non-empty list
+    /// means the pass did NOT fully succeed.</para></summary>
     internal sealed record AutoFixAllReport(
         bool DryRun,
         IReadOnlyList<string> OrderOfExecution,
         int TotalDistinctFilesChanged,
         IReadOnlyList<string> AffectedFiles,
-        IReadOnlyList<AutoFixRuleReport> PerRule);
+        IReadOnlyList<AutoFixRuleReport> PerRule,
+        IReadOnlyList<AutoFixError>? Errors = null);
 
     /// <summary>Per-rule slice of an <see cref="AutoFixAllReport"/>.</summary>
     internal sealed record AutoFixRuleReport(
         string RuleId,
         int FilesChanged,
         IReadOnlyList<string> ChangedFiles);
+
+    /// <summary>A single per-file failure. <see cref="File"/> is repo-relative
+    /// and <see cref="Message"/> is scrubbed of absolute host paths.</summary>
+    internal sealed record AutoFixError(string File, string Message);
 
     /// <summary>
     /// Internal helper for sibling tools (e.g. <see cref="BeforeAfterTool"/>)
@@ -128,19 +137,20 @@ public sealed class AutoFixTool
           - repoPath: absolute path to the repo or project to fix.
           - ruleId: which rule's auto-fixer to run.
           - specificFile: optional. Limit fixes to a single file (path relative to repoPath).
+            Must exist and be a .cs file, else an error JSON is returned.
           - dryRun: if true, no files are written — just returns the JSON summary
             of what WOULD change. Default true (preview-only) — pass dryRun: false
             to actually write.
 
         Returns a JSON document with `ruleId`, `dryRun`, `filesChanged` count,
-        `changedFiles` list, and any per-file `error` strings.
+        `changedFiles` list, and any per-file `errors` (each `{file, error}`).
 
-        Bad ruleId or empty repoPath returns an error JSON.
+        Bad ruleId, empty repoPath, or a missing/non-.cs specificFile returns an error JSON.
         """)]
     public string MafAutoFix(
         [Description("Absolute path to the repo or project to fix.")] string repoPath,
         [Description("Rule ID, e.g. 'MAF-AP-SEC-001' or 'MAF130-FAN-IN-001'.")] string ruleId,
-        [Description("Optional: relative path to limit fixes to a single file.")] string? specificFile = null,
+        [Description("Optional: relative path to limit fixes to a single existing .cs file.")] string? specificFile = null,
         [Description("If true (the default), no files written — preview only. Pass false to write.")] bool dryRun = true)
     {
         if (PathGuard.ValidateRepoPath(repoPath) is { } err)
@@ -158,6 +168,10 @@ public sealed class AutoFixTool
             {
                 return JsonSerializer.Serialize(new { error = $"Error: {ex.Message}" });
             }
+            // WM-41: a missing or non-.cs specificFile previously yielded a silent
+            // "0 changes" success. Surface it as an error instead.
+            if (ValidateSpecificFile(repoPath, specificFile) is { } fileErr)
+                return JsonSerializer.Serialize(new { error = fileErr });
         }
 
         if (!_factories.TryGetValue(ruleId, out var factory))
@@ -166,14 +180,17 @@ public sealed class AutoFixTool
                 error = $"Unknown ruleId '{ruleId}'. Supported: {string.Join(", ", SupportedRuleIds)}",
             });
 
-        var result = ApplyRewriterToRepo(factory(), repoPath, specificFile, dryRun);
+        var outcomes = RunPipeline(new[] { (ruleId, factory()) }, repoPath, specificFile, dryRun);
+        var changedFiles = outcomes.Where(o => o.ChangedByRules.Count > 0).Select(o => o.Relative).ToList();
+        var errors = outcomes.Where(o => o.Error is not null).Select(o => o.Error!).ToList();
+
         return JsonSerializer.Serialize(new
         {
             ruleId,
             dryRun,
-            filesChanged = result.ChangedFiles.Count,
-            changedFiles = result.ChangedFiles,
-            errors = result.Errors,
+            filesChanged = changedFiles.Count,
+            changedFiles,
+            errors = errors.Select(e => new { file = e.File, error = e.Message }).ToList(),
         }, new JsonSerializerOptions { WriteIndented = true });
     }
 
@@ -192,26 +209,37 @@ public sealed class AutoFixTool
 
         Input:
           - repoPath: absolute path to the repo or project to fix.
-          - specificFile: optional, relative path to limit fixes to a single file.
+          - specificFile: optional, relative path to limit fixes to a single existing .cs file.
           - dryRun: if true, no files are written — just returns the JSON
             summary of what WOULD change. Default true (preview-only) — pass
             dryRun: false to actually write.
 
         Returns aggregate JSON with the ordered rule list + total distinct files
-        changed (union across all rules) + per-rule breakdown.
+        changed (union across all rules) + per-rule breakdown + any per-file
+        `errors` (each `{file, error}`).
         """)]
     public string MafAutoFixAll(
         [Description("Absolute path to the repo or project to fix.")] string repoPath,
-        [Description("Optional: relative path to limit fixes to a single file.")] string? specificFile = null,
+        [Description("Optional: relative path to limit fixes to a single existing .cs file.")] string? specificFile = null,
         [Description("If true (the default), no files written — preview only. Pass false to write.")] bool dryRun = true)
     {
         var report = RunAll(repoPath, specificFile, dryRun, out var error);
-        if (report is null)
-            return JsonSerializer.Serialize(new { error });
+        return report is null
+            ? JsonSerializer.Serialize(new { error })
+            : SerializeReport(report);
+    }
 
-        // Project the structured report back onto the EXACT anonymous shape the
-        // MCP contract (and the tests) depend on. The dictionary preserves
-        // insertion order, so `perRule`'s key order matches OrderOfExecution.
+    /// <summary>
+    /// Projects an <see cref="AutoFixAllReport"/> onto the EXACT anonymous JSON
+    /// shape the MCP contract (and the tests) depend on. Shared by
+    /// <see cref="MafAutoFixAll"/> and the CLI so the machine output — and the
+    /// exit-code decision derived from <see cref="AutoFixAllReport.Errors"/> —
+    /// come from one computed report, never a re-run.
+    /// </summary>
+    internal static string SerializeReport(AutoFixAllReport report)
+    {
+        // The dictionary preserves insertion order, so `perRule`'s key order
+        // matches OrderOfExecution.
         var perRule = new Dictionary<string, object>();
         foreach (var r in report.PerRule)
             perRule[r.RuleId] = new { filesChanged = r.FilesChanged, changedFiles = r.ChangedFiles };
@@ -223,18 +251,26 @@ public sealed class AutoFixTool
             totalDistinctFilesChanged = report.TotalDistinctFilesChanged,
             affectedFiles = report.AffectedFiles,
             perRule,
+            // Additive: previously-swallowed per-file failures.
+            errors = (report.Errors ?? Array.Empty<AutoFixError>())
+                .Select(e => new { file = e.File, error = e.Message }).ToList(),
         }, new JsonSerializerOptions { WriteIndented = true });
     }
 
     /// <summary>
     /// Computation core shared by the MCP JSON path (<see cref="MafAutoFixAll"/>)
     /// and the CLI's human-readable path. Runs every supported rewriter in
-    /// <see cref="OrderedRuleIds"/> order and returns a structured report —
-    /// presentation (JSON vs. human text) is the caller's concern.
+    /// <see cref="OrderedRuleIds"/> order — as a SINGLE per-file pass (each file
+    /// is enumerated, read, and parsed exactly once; the rewriters are folded
+    /// over the one syntax tree in order) — and returns a structured report.
+    /// Presentation (JSON vs. human text) is the caller's concern.
+    /// <para>Because the fold composes rewriters in memory, <c>dryRun</c> now
+    /// reports exactly what an apply would produce (previously dry-run ran each
+    /// rule against the ORIGINAL file, so preview could diverge from apply).</para>
     /// </summary>
-    /// <param name="error">On failure (invalid repo path / path-escape), the
-    /// error message; <see langword="null"/> on success. When non-null the
-    /// return value is <see langword="null"/>.</param>
+    /// <param name="error">On failure (invalid repo path / path-escape / bad
+    /// specificFile), the error message; <see langword="null"/> on success. When
+    /// non-null the return value is <see langword="null"/>.</param>
     internal AutoFixAllReport? RunAll(string repoPath, string? specificFile, bool dryRun, out string? error)
     {
         error = null;
@@ -256,83 +292,174 @@ public sealed class AutoFixTool
                 error = $"Error: {ex.Message}";
                 return null;
             }
+            if (ValidateSpecificFile(repoPath, specificFile) is { } fileErr) // WM-41
+            {
+                error = fileErr;
+                return null;
+            }
         }
 
-        var perRule = new List<AutoFixRuleReport>(OrderedRuleIds.Count);
-        var allChangedFiles = new SortedSet<string>(StringComparer.Ordinal);
+        var rewriters = OrderedRuleIds
+            .Where(_factories.ContainsKey)
+            .Select(id => (RuleId: id, Rewriter: _factories[id]()))
+            .ToList();
 
-        foreach (var ruleId in OrderedRuleIds)
-        {
-            if (!_factories.TryGetValue(ruleId, out var factory)) continue;
-            var result = ApplyRewriterToRepo(factory(), repoPath, specificFile, dryRun);
-            perRule.Add(new AutoFixRuleReport(ruleId, result.ChangedFiles.Count, result.ChangedFiles));
-            foreach (var f in result.ChangedFiles) allChangedFiles.Add(f);
-        }
+        var outcomes = RunPipeline(rewriters, repoPath, specificFile, dryRun);
+
+        var perRule = rewriters
+            .Select(r =>
+            {
+                var files = outcomes.Where(o => o.ChangedByRules.Contains(r.RuleId))
+                                    .Select(o => o.Relative).ToList();
+                return new AutoFixRuleReport(r.RuleId, files.Count, files);
+            })
+            .ToList();
+
+        var allChanged = new SortedSet<string>(
+            outcomes.Where(o => o.ChangedByRules.Count > 0).Select(o => o.Relative),
+            StringComparer.Ordinal);
+
+        var errors = outcomes.Where(o => o.Error is not null).Select(o => o.Error!).ToList();
 
         return new AutoFixAllReport(
             DryRun: dryRun,
             OrderOfExecution: OrderedRuleIds,
-            TotalDistinctFilesChanged: allChangedFiles.Count,
-            AffectedFiles: allChangedFiles.ToList(),
-            PerRule: perRule);
+            TotalDistinctFilesChanged: allChanged.Count,
+            AffectedFiles: allChanged.ToList(),
+            PerRule: perRule,
+            Errors: errors);
     }
 
-    /// <summary>
-    /// Per-rule run result. Returned by <see cref="ApplyRewriterToRepo"/> and
-    /// shared between <see cref="MafAutoFix"/> and <see cref="MafAutoFixAll"/>.
-    /// </summary>
-    private sealed record RewriterRunResult(IReadOnlyList<string> ChangedFiles, IReadOnlyList<object> Errors);
+    /// <summary>Per-file result of one pipeline pass.</summary>
+    private sealed record FileOutcome(
+        string Relative,
+        IReadOnlyList<string> ChangedByRules,
+        AutoFixError? Error);
 
     /// <summary>
-    /// Walks every .cs file (or just one), applies the rewriter, and writes
-    /// changed files atomically. Pure helper — no JSON, no PathGuard (caller
-    /// has already validated).
+    /// The single per-file engine shared by <see cref="MafAutoFix"/> (one rewriter)
+    /// and <see cref="RunAll"/> (all rewriters). Enumerates every candidate file
+    /// ONCE, reads + parses it ONCE, folds the <paramref name="rewriters"/> over the
+    /// one tree in order (attributing each change to its rule via a reference check),
+    /// and writes ONCE at the end preserving the file's original encoding. Per-file
+    /// failures are recorded, never thrown — so one unreadable/locked file can no
+    /// longer abort the whole pass.
     /// </summary>
-    private static RewriterRunResult ApplyRewriterToRepo(
-        IRuleRewriter rewriter, string repoPath, string? specificFile, bool dryRun)
+    private static IReadOnlyList<FileOutcome> RunPipeline(
+        IReadOnlyList<(string RuleId, IRuleRewriter Rewriter)> rewriters,
+        string repoPath, string? specificFile, bool dryRun)
     {
-        var changedFiles = new List<string>();
-        var errors = new List<object>();
+        var outcomes = new List<FileOutcome>();
 
         foreach (var file in EnumerateFiles(repoPath, specificFile))
         {
-            // Compute the relative path ONCE up-front. Post-Phase-5.4,
-            // `MakeRelative` throws when the file is out-of-root rather than
-            // silently leaking the absolute path. Computing here (with the
-            // happy-path file from `EnumerateFiles`) keeps the catch handler
-            // free of any call that itself might throw — without this, an
-            // OS-level symlink race between enumeration and catch would
-            // double-fault out of `ApplyRewriterToRepo`. Falls back to the
-            // raw file path (acceptable for error reporting) if MakeRelative
-            // does throw.
+            // Compute the relative path up-front so the failure path never calls
+            // MakeRelative again (an OS symlink race between enumeration and the
+            // catch could otherwise double-fault). Falls back to the raw path.
             string relative;
             try { relative = SourceFileWalker.MakeRelative(repoPath, file); }
             catch (InvalidOperationException) { relative = file; }
 
+            // WM-20: read with a strict UTF-8 decoder + BOM detection so an
+            // undecodable file is SKIPPED-with-error rather than corrupted to
+            // U+FFFD, and the detected encoding is preserved on write-back.
+            if (!TryReadSourcePreservingEncoding(file, out var src, out var encoding, out var readError))
+            {
+                outcomes.Add(new FileOutcome(relative, Array.Empty<string>(),
+                    new AutoFixError(relative, readError!)));
+                continue;
+            }
+
             try
             {
-                var src = File.ReadAllText(file);
-                var tree = CSharpSyntaxTree.ParseText(src);
-                var oldRoot = tree.GetRoot();
-                var newRoot = rewriter.Visit(oldRoot);
+                var root = CSharpSyntaxTree.ParseText(src).GetRoot();
+                var changedBy = new List<string>();
+                foreach (var (ruleId, rewriter) in rewriters)
+                {
+                    var next = rewriter.Visit(root);
+                    if (!ReferenceEquals(next, root))
+                    {
+                        changedBy.Add(ruleId);
+                        root = next;
+                    }
+                }
 
-                if (ReferenceEquals(newRoot, oldRoot)) continue;
+                if (changedBy.Count == 0)
+                {
+                    outcomes.Add(new FileOutcome(relative, changedBy, null));
+                    continue;
+                }
 
                 if (!dryRun)
-                    SafeWorkspaceWriter.WriteAtomic(repoPath, file, newRoot.ToFullString());
+                    SafeWorkspaceWriter.WriteAtomic(repoPath, file, root.ToFullString(), encoding);
 
-                changedFiles.Add(relative);
+                outcomes.Add(new FileOutcome(relative, changedBy, null));
             }
             catch (Exception ex)
             {
-                errors.Add(new
-                {
-                    file = relative,
-                    error = ex.Message,
-                });
+                outcomes.Add(new FileOutcome(relative, Array.Empty<string>(),
+                    new AutoFixError(relative, Scrub(repoPath, file, relative, ex.Message))));
             }
         }
-        return new RewriterRunResult(changedFiles, errors);
+
+        return outcomes;
+    }
+
+    /// <summary>
+    /// Reads <paramref name="file"/> as text while (a) detecting a BOM and
+    /// preserving the resulting encoding for a faithful write-back, and (b)
+    /// rejecting invalid UTF-8 rather than silently substituting U+FFFD. Returns
+    /// <see langword="false"/> with a message on an undecodable file.
+    /// </summary>
+    private static bool TryReadSourcePreservingEncoding(
+        string file, out string text, out Encoding encoding, out string? error)
+    {
+        text = string.Empty;
+        encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+        error = null;
+        try
+        {
+            // Strict UTF-8 as the fallback decoder (throws on invalid bytes);
+            // detectEncodingFromByteOrderMarks lets a UTF-8/UTF-16 BOM override it.
+            using var reader = new StreamReader(
+                File.OpenRead(file),
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true),
+                detectEncodingFromByteOrderMarks: true);
+            text = reader.ReadToEnd();
+            encoding = reader.CurrentEncoding; // UTF-8(+BOM) / UTF-16 / … as detected
+            return true;
+        }
+        catch (DecoderFallbackException)
+        {
+            error = "not valid UTF-8; skipped to avoid corruption";
+            return false;
+        }
+    }
+
+    /// <summary>Best-effort removal of absolute host paths from an exception
+    /// message before it is surfaced to the caller (IOException messages embed
+    /// the full path). Keeps the repo-relative form the rest of the output uses.</summary>
+    private static string Scrub(string repoPath, string file, string relative, string message) =>
+        message.Replace(file, relative, StringComparison.OrdinalIgnoreCase)
+               .Replace(repoPath, "<repo>", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// WM-41 guard: a <paramref name="specificFile"/> that does not exist, or is
+    /// not a .cs file, must be an explicit error — not a silent 0-change success.
+    /// Returns the error message, or <see langword="null"/> when the file is valid.
+    /// Callers MUST have already run <see cref="PathGuard.ValidateContainment"/>.
+    /// </summary>
+    private static string? ValidateSpecificFile(string repoPath, string specificFile)
+    {
+        var resolved = Path.IsPathRooted(specificFile)
+            ? specificFile
+            : Path.Combine(repoPath, specificFile);
+
+        if (!File.Exists(resolved))
+            return $"Error: specificFile not found under repoPath: {specificFile}";
+        if (!resolved.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+            return $"Error: specificFile must be a .cs file: {specificFile}";
+        return null;
     }
 
     /// <summary>

@@ -971,4 +971,134 @@ public class AutoFixToolTests
             Directory.Delete(tempRoot, recursive: true);
         }
     }
+
+    // -------------------------------------------------------------------------
+    // WM-41: a missing / non-.cs specificFile is an ERROR, not a silent 0-change.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MafAutoFix_MissingSpecificFile_ReturnsError()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-wm41-missing-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var json = new AutoFixTool().MafAutoFix(dir, "MAF-AP-CONC-002", specificFile: "nope.cs", dryRun: true);
+            var doc = JsonSerializer.Deserialize<JsonDocument>(json)!;
+            Assert.True(doc.RootElement.TryGetProperty("error", out var err), json);
+            Assert.Contains("not found", err.GetString(), StringComparison.OrdinalIgnoreCase);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void MafAutoFix_NonCsSpecificFile_ReturnsError()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-wm41-noncs-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "readme.txt"), "not code");
+            var json = new AutoFixTool().MafAutoFix(dir, "MAF-AP-CONC-002", specificFile: "readme.txt", dryRun: true);
+            var doc = JsonSerializer.Deserialize<JsonDocument>(json)!;
+            Assert.True(doc.RootElement.TryGetProperty("error", out var err), json);
+            Assert.Contains(".cs file", err.GetString(), StringComparison.OrdinalIgnoreCase);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    // -------------------------------------------------------------------------
+    // WM-20: encoding/BOM preservation + undecodable-file safety on apply.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MafAutoFixAll_PreservesUtf8Bom_OnApply()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-wm20-bom-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "Bom.cs");
+            var code = """
+                using System.Threading.Tasks;
+                public class Executor { }
+                public sealed class MessageHandlerAttribute : System.Attribute { }
+                public partial class MyExec : Executor {
+                  [MessageHandler]
+                  public Task<int> Handle(string s) => Task.FromResult(0);
+                }
+                """;
+            File.WriteAllText(file, code, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+            new AutoFixTool().MafAutoFixAll(dir, dryRun: false); // WF-001 adds `sealed` → file rewritten
+            var bytes = File.ReadAllBytes(file);
+            Assert.True(bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF,
+                "UTF-8 BOM must be preserved across the rewrite");
+            Assert.Contains("sealed partial", File.ReadAllText(file));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void MafAutoFixAll_UndecodableFile_SkippedWithError_NotCorrupted()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-wm20-invalid-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "Bad.cs");
+            // "class \x80C {}" — 0x80 is a lone UTF-8 continuation byte (invalid).
+            var badBytes = new byte[] { 0x63, 0x6C, 0x61, 0x73, 0x73, 0x20, 0x80, 0x43, 0x20, 0x7B, 0x7D };
+            File.WriteAllBytes(file, badBytes);
+            var json = new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var doc = JsonSerializer.Deserialize<JsonDocument>(json)!;
+            Assert.True(doc.RootElement.GetProperty("errors").GetArrayLength() >= 1,
+                "an undecodable file must be reported, not silently swallowed: " + json);
+            Assert.Equal(badBytes, File.ReadAllBytes(file)); // left byte-identical, no U+FFFD corruption
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    // -------------------------------------------------------------------------
+    // WM-23: single per-file pass — dry-run composes rewriters exactly as apply,
+    // both rules land in one pass, and a second apply is a no-op (idempotent).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MafAutoFixAll_DryRunComposesLikeApply_AndIsIdempotent()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-wm23-compose-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "Multi.cs");
+            File.WriteAllText(file, """
+                using System.Threading.Tasks;
+                public class Executor { }
+                public sealed class MessageHandlerAttribute : System.Attribute { }
+                public partial class MyExec : Executor {
+                  [MessageHandler]
+                  public async Task<int> Handle(string s) { return FetchAsync().Result; }
+                  static Task<int> FetchAsync() => Task.FromResult(0);
+                }
+                """);
+            var tool = new AutoFixTool();
+
+            var preview = JsonSerializer.Deserialize<JsonDocument>(tool.MafAutoFixAll(dir, dryRun: true))!;
+            var previewTotal = preview.RootElement.GetProperty("totalDistinctFilesChanged").GetInt32();
+
+            var apply = JsonSerializer.Deserialize<JsonDocument>(tool.MafAutoFixAll(dir, dryRun: false))!;
+            var applyTotal = apply.RootElement.GetProperty("totalDistinctFilesChanged").GetInt32();
+
+            Assert.Equal(previewTotal, applyTotal); // dry-run reported exactly what apply did
+            Assert.Equal(1, applyTotal);
+
+            var after = File.ReadAllText(file);
+            Assert.Contains("sealed partial", after);        // WF-001 applied
+            Assert.Contains("(await FetchAsync())", after);  // CONC-002 applied in the SAME pass
+
+            var again = JsonSerializer.Deserialize<JsonDocument>(tool.MafAutoFixAll(dir, dryRun: false))!;
+            Assert.Equal(0, again.RootElement.GetProperty("totalDistinctFilesChanged").GetInt32());
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
 }

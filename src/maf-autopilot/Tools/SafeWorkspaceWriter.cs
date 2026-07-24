@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace MafDoctor.Tools;
 
 /// <summary>
@@ -45,6 +47,19 @@ internal static class SafeWorkspaceWriter
     /// itself a symlink/reparse point.
     /// </exception>
     public static void WriteAtomic(string workspaceRoot, string destinationPath, string contents)
+        // Default encoding: UTF-8 without a BOM — the historical behaviour of the
+        // bare `new StreamWriter(fs)` this overload replaces. New-file writers
+        // (scaffolders, init) rely on it.
+        => WriteAtomic(workspaceRoot, destinationPath, contents, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+    /// <summary>
+    /// Encoding-preserving variant of <see cref="WriteAtomic(string,string,string)"/>.
+    /// Writes <paramref name="contents"/> using <paramref name="encoding"/> so a
+    /// rewriter that read a file's original encoding (UTF-8-with-BOM, UTF-16, …)
+    /// can round-trip it byte-faithfully instead of silently normalising to
+    /// UTF-8-no-BOM. Same atomic-replace + symlink-containment guarantees.
+    /// </summary>
+    public static void WriteAtomic(string workspaceRoot, string destinationPath, string contents, Encoding encoding)
     {
         var resolved = PathGuard.ValidateContainment(workspaceRoot, destinationPath, nameof(destinationPath));
 
@@ -61,7 +76,7 @@ internal static class SafeWorkspaceWriter
         try
         {
             using (var fs = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            using (var writer = new StreamWriter(fs))
+            using (var writer = new StreamWriter(fs, encoding))
             {
                 writer.Write(contents);
                 writer.Flush();

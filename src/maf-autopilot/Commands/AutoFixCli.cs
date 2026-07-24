@@ -69,6 +69,18 @@ internal static class AutoFixCli
             : "🔧 maf-doctor autofix-all — deterministic Roslyn fixes (mechanical only)");
         sb.AppendLine();
 
+        // WM-21: surface per-file failures that previously vanished. A non-empty
+        // list means the pass did NOT fully succeed — some files were skipped —
+        // and (in Program.cs) drives a non-zero exit code.
+        var errors = report.Errors ?? Array.Empty<AutoFixTool.AutoFixError>();
+        if (errors.Count > 0)
+        {
+            sb.AppendLine($"  ⚠ {Count(errors.Count, "file")} could not be processed and {(errors.Count == 1 ? "was" : "were")} skipped:");
+            foreach (var e in errors)
+                sb.AppendLine($"      - {e.File}: {e.Message}");
+            sb.AppendLine();
+        }
+
         var total = report.TotalDistinctFilesChanged;
 
         if (total == 0)
@@ -76,7 +88,7 @@ internal static class AutoFixCli
             sb.AppendLine($"  ✓ 0 files {verb} — nothing mechanical to fix here.");
             sb.AppendLine();
             sb.AppendLine("  This is normal, and does NOT mean your code is clean. autofix-all only");
-            sb.AppendLine("  applies these 5 deterministic rewriters, and found none of them:");
+            sb.AppendLine($"  applies these {report.PerRule.Count} deterministic rewriters, and found none of them:");
             sb.AppendLine();
             foreach (var r in report.PerRule)
                 sb.AppendLine($"      • {r.RuleId,-18} {Describe(r.RuleId)}");
