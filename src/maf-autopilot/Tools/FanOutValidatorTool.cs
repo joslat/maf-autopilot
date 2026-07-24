@@ -61,6 +61,17 @@ public sealed class FanOutValidatorTool
         if (path.Replace('\\', '/').Split('/').Any(s => s == ".."))
             return "Error: path must not contain '..' segments (path traversal).";
 
+        // SEC-03: confine to the configured workspace. The other scanners route through
+        // PathGuard.ValidateRepoPath (directories only); FanOut also accepts a single file,
+        // so validate the CONTAINING directory (the path itself if it is a dir, else the
+        // file's parent). With no MAF_WORKSPACE_ROOTS set this is a no-op except for
+        // filesystem-root / home rejection — it only bites in a scoped MCP deployment.
+        var fullPath = Path.GetFullPath(path);
+        var isDir = Directory.Exists(fullPath);
+        var root = isDir ? fullPath : (Path.GetDirectoryName(fullPath) ?? fullPath);
+        if (WorkspacePolicy.Validate(root) is { } policyErr)
+            return policyErr;
+
         var budget = new SourceFileWalker.ScanBudget();
         var files = ResolveFiles(path, budget);
         if (files.Count == 0)
@@ -70,20 +81,33 @@ public sealed class FanOutValidatorTool
         var skippedUnreadable = 0;
         foreach (var file in files)
         {
-            string source;
+            string source, rel;
             try
             {
+                // SEC-03: bound the read to the same 10 MB per-file ceiling as the walk
+                // (the directory branch is already size-filtered; this covers the single
+                // -file branch, which ResolveFiles returns unbounded).
+                if (new FileInfo(file).Length > budget.MaxFileBytes)
+                {
+                    budget.RecordOversizedSkip();
+                    continue;
+                }
                 // WM-18: a locked/raced/unreadable file must not abort the whole scan.
                 source = File.ReadAllText(file);
+                // REP-03: emit repo-relative paths like every other surface (SARIF resolves
+                // in GitHub code-scanning; markdown tables are shorter; host layout isn't
+                // leaked). For a single-file target this yields just the file name.
+                rel = SourceFileWalker.MakeRelative(root, file);
             }
             catch (Exception ex) when (ex is IOException
                                         or UnauthorizedAccessException
-                                        or System.Security.SecurityException)
+                                        or System.Security.SecurityException
+                                        or InvalidOperationException)
             {
                 skippedUnreadable++;
                 continue;
             }
-            allFindings.AddRange(AnalyzeSource(source, file));
+            allFindings.AddRange(AnalyzeSource(source, rel));
         }
 
         return format.Equals("sarif", StringComparison.OrdinalIgnoreCase)

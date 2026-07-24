@@ -61,8 +61,41 @@ public sealed class DiffPackageTool
             return $"Error: oldVersion and newVersion must be valid SemVer-ish strings; got '{oldVersion}', '{newVersion}'.";
 
         var (exitCode, output) = ProcessRunner.RunDotnetInspectDiff(packageId, oldVersion, newVersion);
+
+        // REP-02: a non-zero exit (missing dotnet-inspect, timeout, or a real failure)
+        // was previously parsed as if it were diff output — yielding a misleading
+        // "0 breaking changes" clean report. Surface the failure as a visible error.
+        if (exitCode != 0)
+            return DescribeInspectFailure(exitCode, output);
+
         var parsed = ParseDiffOutput(output);
+
+        // REP-02: guard the success path too — if the parser found nothing AND the tool
+        // didn't explicitly report "no changes", the output format drifted; fail loud
+        // instead of rendering empty tables that read as a clean diff.
+        if (parsed.Breaking.Count == 0 && parsed.Additive.Count == 0 && !parsed.NoChangesDetected)
+            return DescribeInspectFailure(exitCode, output, unrecognized: true);
+
         return FormatReport(packageId, oldVersion, newVersion, exitCode, parsed, _registry);
+    }
+
+    /// <summary>
+    /// REP-02: render a dotnet-inspect failure (or unrecognized output) as a visible error
+    /// with the underlying output. A MISSING dotnet-inspect renders the tool's own install
+    /// instructions — safe to surface verbatim; any other output is real process stdout
+    /// (attacker-influenceable via package metadata), so it is data-fenced. Shared with
+    /// <see cref="PreUpgradeDryRunTool"/>.
+    /// </summary>
+    internal static string DescribeInspectFailure(int exitCode, string output, bool unrecognized = false)
+    {
+        var header = unrecognized
+            ? "Error: dotnet-inspect diff output was unrecognized (format drift or partial output) — refusing to report a possibly-incomplete diff as a clean result."
+            : $"Error: dotnet-inspect failed (exit {exitCode}).";
+        var isNotInstalled = output.Contains("dotnet tool install --global dotnet-inspect", StringComparison.OrdinalIgnoreCase);
+        var body = isNotInstalled
+            ? output
+            : LlmFencing.Fence("dotnet-inspect-output", output, maxBytes: 16 * 1024);
+        return $"{header}\n\n{body}";
     }
 
     // -------------------------------------------------------------------------

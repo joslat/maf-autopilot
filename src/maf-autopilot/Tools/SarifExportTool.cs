@@ -11,7 +11,9 @@ namespace MafDoctor.Tools;
 /// </summary>
 internal static class SarifExportTool
 {
-    private const string ToolVersion = "1.3.0-alpha-3";
+    // REP-20: SARIF provenance now tracks the real installed version (was frozen at the
+    // retired "1.3.0-alpha-3", a per-release manual-update trap). Single source: ToolVersionInfo.
+    private static string ToolVersion => ToolVersionInfo.Current;
 
     /// <summary>
     /// Builds a SARIF v2.1.0 document from a list of anti-pattern findings.
@@ -25,7 +27,10 @@ internal static class SarifExportTool
             // SARIF surface matches the markdown surface's no-secret-leak posture.
             Message: f.RuleName + " — " + (AntiPatternScannerTool.LooksLikeSecret(f.Match) ? "(redacted)" : f.Match),
             File: f.File,
-            Line: f.Line));
+            Line: f.Line,
+            // REP-12: fingerprint basis. Uses the raw match (one-way hash, never emitted)
+            // so the identity is drift-stable across line moves.
+            LineText: f.Match));
 
         return SarifEmitter.Emit(ToolVersion, sarifFindings, BuildAntiPatternRuleCatalog());
     }
@@ -76,22 +81,30 @@ internal static class SarifExportTool
         const string skillUri = "https://github.com/joslat/maf-doctor/blob/main/.github/skills/maf-anti-pattern-scanner/SKILL.md";
         foreach (var rule in AntiPatternScannerTool.AllRules)
         {
+            // REP-11: surface the same Why/Fix guidance the CLI prints. fullDescription
+            // carries the Why (was a duplicate of the name); help.markdown carries both.
+            var why = DoctorTool.GetWhy(rule.Id);
+            var whyText = string.IsNullOrEmpty(why) ? rule.Name : why;
             yield return new SarifRule(
                 Id: rule.Id,
                 Name: rule.Name,
                 Severity: MapSeverity(rule.Severity),
-                FullDescription: rule.Name,
-                HelpUri: skillUri);
+                FullDescription: whyText,
+                HelpUri: skillUri,
+                HelpMarkdown: $"**Why:** {whyText}\n\n**Fix:** {DoctorTool.GetAntiPatternFix(rule.Id)}");
         }
     }
 
     private static IEnumerable<SarifRule> BuildFanOutRuleCatalog()
     {
+        const string full = "A [MessageHandler] method that returns void, Task, or ValueTask (non-generic) produces no downstream message and silently starves the fan-in barrier.";
         yield return new SarifRule(
             Id: "MAF001",
             Name: "Fan-out handler must return Task<T> or ValueTask<T>",
             Severity: SarifSeverity.Error,
-            FullDescription: "A [MessageHandler] method that returns void, Task, or ValueTask (non-generic) produces no downstream message and silently starves the fan-in barrier.",
-            HelpUri: "https://github.com/joslat/maf-doctor/blob/main/.github/skills/maf-fan-out-validator/SKILL.md");
+            FullDescription: full,
+            HelpUri: "https://github.com/joslat/maf-doctor/blob/main/.github/skills/maf-fan-out-validator/SKILL.md",
+            // REP-11: MAF001 already had a good fullDescription but no help pane content.
+            HelpMarkdown: $"**Why:** {full}\n\n**Fix:** Return `Task<T>` / `ValueTask<T>` / `IAsyncEnumerable<T>` (the value is sent automatically), OR emit explicitly with `await context.SendMessageAsync(...)`.");
     }
 }

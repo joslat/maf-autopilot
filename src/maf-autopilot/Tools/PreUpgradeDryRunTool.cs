@@ -68,7 +68,15 @@ public sealed class PreUpgradeDryRunTool
             return "Error: currentVersion and targetVersion must be valid SemVer-ish strings.";
 
         var (exitCode, output) = ProcessRunner.RunDotnetInspectDiff(packageId, currentVersion, targetVersion);
+
+        // REP-02: surface a dotnet-inspect failure (or drifted/partial output) as a visible
+        // error instead of assessing empty diff output as "nothing breaks". Shared helper.
+        if (exitCode != 0)
+            return DiffPackageTool.DescribeInspectFailure(exitCode, output);
+
         var parsed = DiffPackageTool.ParseDiffOutput(output);
+        if (parsed.Breaking.Count == 0 && parsed.Additive.Count == 0 && !parsed.NoChangesDetected)
+            return DiffPackageTool.DescribeInspectFailure(exitCode, output, unrecognized: true);
 
         var sources = LoadSources(repoPath);
         var assessment = AssessImpact(parsed, sources, _registry);

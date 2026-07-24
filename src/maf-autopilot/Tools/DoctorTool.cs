@@ -389,7 +389,7 @@ public sealed class DoctorTool
     };
 
     /// <summary>One-line actionable fix description per anti-pattern rule ID.</summary>
-    private static string GetAntiPatternFix(string ruleId) => ruleId switch
+    internal static string GetAntiPatternFix(string ruleId) => ruleId switch // internal: shared with SARIF help (REP-11)
     {
         "MAF-AP-SEC-001" => "Replace `DefaultAzureCredential` with `ManagedIdentityCredential` in production code.",
         "MAF-AP-SEC-002" => "Remove the hard-coded key; load it from configuration / Key Vault and rotate the leaked value.",
