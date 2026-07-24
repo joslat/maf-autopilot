@@ -37,13 +37,8 @@ if (args.Length > 0)
 
 if (args.Length > 0 && (args[0] is "--version" or "-v" or "version"))
 {
-    var raw = Assembly.GetExecutingAssembly()
-        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-        ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
-        ?? "unknown";
-    // InformationalVersion can carry build metadata (e.g. "1.2.7+abc123") — trim it.
-    var plus = raw.IndexOf('+');
-    Console.WriteLine($"maf-doctor {(plus >= 0 ? raw[..plus] : raw)}");
+    // REP-20: single source of truth for the version (build metadata already trimmed).
+    Console.WriteLine($"maf-doctor {MafDoctor.ToolVersionInfo.Current}");
     Environment.Exit(0);
     return;
 }
@@ -302,15 +297,11 @@ builder.Services
         // Advertise the server's identity + icon (MCP 2025-11 `icons` on the
         // Implementation). Clients that support it render the icon; older clients
         // ignore it. Source points at the asset on `main` so it tracks the brand.
-        var v = Assembly.GetExecutingAssembly()
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "1.0.0";
-        var plus = v.IndexOf('+');
-        if (plus >= 0) v = v[..plus];
         options.ServerInfo = new Implementation
         {
             Name = "maf-doctor",
             Title = "MAF Doctor",
-            Version = v,
+            Version = MafDoctor.ToolVersionInfo.Current, // REP-20: single source of truth
             WebsiteUrl = "https://github.com/joslat/maf-doctor",
             Icons =
             [

@@ -880,7 +880,11 @@ public sealed class AntiPatternScannerTool
             // The Match column echoes the matched source — redact it if it looks
             // like a secret (e.g. the SEC-002 key literal), and neutralize backticks
             // so the value can't break the markdown code span / table cell.
-            var match = LooksLikeSecret(f.Match) ? "(redacted)" : f.Match.Replace('`', '\'').Replace('|', '\\');
+            // SEC-21: flatten newlines FIRST — a multi-line match (e.g. SEC-003's
+            // `assign.ToString()`) would otherwise break the table row and inject the
+            // remaining source lines as raw markdown. Secret check runs on the original.
+            var flat = f.Match.Replace("\r", string.Empty).Replace('\n', ' ');
+            var match = LooksLikeSecret(f.Match) ? "(redacted)" : flat.Replace('`', '\'').Replace('|', '\\');
             sb.AppendLine($"| `{f.RuleId}` — {f.RuleName} | `{f.File.Replace('`', '\'')}` | {f.Line} | `{match}` |");
         }
         sb.AppendLine();

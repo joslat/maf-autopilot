@@ -73,18 +73,8 @@ internal static class InitCommand
             $"Check that the directory is writable.");
     }
 
-    internal static string CurrentVersion
-    {
-        get
-        {
-            var raw = Assembly.GetExecutingAssembly()
-                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-                ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
-                ?? "unknown";
-            var plus = raw.IndexOf('+');
-            return plus >= 0 ? raw[..plus] : raw;
-        }
-    }
+    // REP-20: single source of truth for the version (see ToolVersionInfo).
+    internal static string CurrentVersion => ToolVersionInfo.Current;
 
     public static async Task<int> RunAsync(string[]? args = null)
     {

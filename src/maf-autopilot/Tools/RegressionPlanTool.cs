@@ -26,16 +26,18 @@ namespace MafDoctor.Tools;
 public sealed class RegressionPlanTool
 {
     /// <summary>
-    /// Hard-coded version ladder. Source of truth is
-    /// `docs/compatibility-matrix.md` — when a new MAF version ships,
-    /// add it here AND to <see cref="CompatibilityTool.Matrix"/>.
-    /// (The drift-test in CompatibilityToolTests pins the matrix doc;
-    /// this list cross-references it.)
+    /// The version ladder, derived from the single maintained source
+    /// (<see cref="CompatibilityTool.Matrix"/>) instead of a second hard-coded list.
+    /// REP-01: the old frozen list stopped at 1.5.0 while MAF is at 1.13.0, so roadmaps
+    /// silently omitted every released version above 1.5.0 (including the 1.6.1 / 1.11.1
+    /// patch steps). The Matrix keys are exactly the released versions the release-watcher
+    /// keeps current; a drift test pins the two together. Sorted by real version order.
     /// </summary>
-    internal static readonly string[] KnownVersions =
-    {
-        "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"
-    };
+    internal static string[] KnownVersions =>
+        CompatibilityTool.Matrix.Keys.OrderBy(v => Version.Parse(v)).ToArray();
+
+    /// <summary>Per-step migration guides exist from this version on; below it, no guide file ships.</summary>
+    private static readonly Version FirstGuidedVersion = new(1, 3, 0);
 
     private readonly RegistryService _registry;
 
@@ -126,7 +128,11 @@ public sealed class RegressionPlanTool
             var ids = entriesAtStep.Count > 0
                 ? string.Join(", ", entriesAtStep.Select(e => $"`{e.Id}`"))
                 : "_(none — minor release or polish)_";
-            sb.AppendLine($"| {steps.IndexOf(step) + 1} | **{step}** | {ids} | [maf-{step}-migration-guide.md](../guides/maf-{step}-migration-guide.md) |");
+            // REP-01: guides ship only from 1.3.0 on; below that, emit no dead link.
+            var guide = Version.TryParse(step, out var sv) && sv >= FirstGuidedVersion
+                ? $"[maf-{step}-migration-guide.md](../guides/maf-{step}-migration-guide.md)"
+                : "_(no per-step guide)_";
+            sb.AppendLine($"| {steps.IndexOf(step) + 1} | **{step}** | {ids} | {guide} |");
         }
         sb.AppendLine();
 

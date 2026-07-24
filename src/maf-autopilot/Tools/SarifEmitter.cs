@@ -91,6 +91,14 @@ internal static class SarifEmitter
             };
             if (!string.IsNullOrWhiteSpace(r.HelpUri))
                 node["helpUri"] = r.HelpUri;
+            // REP-11: GitHub renders help.markdown in the alert detail pane (help.text
+            // is the plain-text fallback). Carries the same Why/Fix guidance the CLI prints.
+            if (!string.IsNullOrWhiteSpace(r.HelpMarkdown))
+                node["help"] = new JsonObject
+                {
+                    ["text"] = r.HelpMarkdown,
+                    ["markdown"] = r.HelpMarkdown,
+                };
             arr.Add(node);
         }
         return arr;
@@ -120,9 +128,28 @@ internal static class SarifEmitter
                         },
                     },
                 }),
+                // REP-12: a stable per-result identity so code-scanning alerts don't churn
+                // when line numbers shift. Keyed by a custom versioned name (non-GitHub SARIF
+                // consumers can dedup on it too); the hash covers ruleId + file + the trimmed
+                // match/line text, so a line MOVE keeps the fingerprint while a content edit
+                // changes it. Falls back to the line number when no text is available.
+                ["partialFingerprints"] = new JsonObject
+                {
+                    ["mafDoctorFingerprint/v1"] = Fingerprint(f),
+                },
             });
         }
         return arr;
+    }
+
+    private static string Fingerprint(SarifFinding f)
+    {
+        var tail = string.IsNullOrWhiteSpace(f.LineText)
+            ? f.Line.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : string.Join(' ', f.LineText.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes($"{f.RuleId}|{NormaliseUri(f.File)}|{tail}"));
+        return Convert.ToHexString(hash, 0, 8).ToLowerInvariant(); // 16 hex chars
     }
 
     private static string LevelFromSeverity(SarifSeverity severity) => severity switch
@@ -147,11 +174,16 @@ internal sealed record SarifFinding(
     SarifSeverity Severity,
     string Message,
     string File,
-    int Line);
+    int Line,
+    // REP-12: the offending source/match text, used to compute a drift-stable
+    // partialFingerprint. Null → the fingerprint falls back to ruleId+file+line.
+    string? LineText = null);
 
 internal sealed record SarifRule(
     string Id,
     string Name,
     SarifSeverity Severity,
     string? FullDescription = null,
-    string? HelpUri = null);
+    string? HelpUri = null,
+    // REP-11: markdown Why/Fix guidance rendered in the code-scanning alert detail pane.
+    string? HelpMarkdown = null);
