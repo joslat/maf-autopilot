@@ -297,6 +297,22 @@ internal sealed class SyncOverAsyncRewriter : CSharpSyntaxRewriter, IRuleRewrite
         return node.WithLeadingTrivia(
             node.GetLeadingTrivia()
                 .Add(SyntaxFactory.Comment(commentText))
-                .Add(SyntaxFactory.EndOfLine("\n")));
+                .Add(SyntaxFactory.EndOfLine(DetectNewLine(node))));
+    }
+
+    /// <summary>
+    /// WM-42: the skip-with-TODO comment must use the FILE's newline, not a
+    /// hard-coded LF — otherwise a CRLF file gets a lone LF spliced in, producing
+    /// mixed line endings. Detect the convention from the first end-of-line trivia
+    /// in the tree; default to LF for a single-line source with none.
+    /// </summary>
+    private static string DetectNewLine(SyntaxNode node)
+    {
+        var root = node.SyntaxTree?.GetRoot();
+        if (root is not null)
+            foreach (var trivia in root.DescendantTrivia())
+                if (trivia.IsKind(SyntaxKind.EndOfLineTrivia))
+                    return trivia.ToString();
+        return "\n";
     }
 }

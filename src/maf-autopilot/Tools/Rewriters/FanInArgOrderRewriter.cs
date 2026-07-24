@@ -84,8 +84,30 @@ internal sealed class FanInArgOrderRewriter : CSharpSyntaxRewriter, IRuleRewrite
         CollectionExpressionSyntax => true,               // [a, b, c] (C# 12)
         InitializerExpressionSyntax => true,              // { ... }
         ObjectCreationExpressionSyntax oce when oce.Type is ArrayTypeSyntax => true,
-        ObjectCreationExpressionSyntax oce when oce.Type.ToString().Contains("List") => true,
+        // WM-42/WM-43: match KNOWN collection types by their rightmost simple name,
+        // not a `Contains("List")` substring — the latter also matched non-collection
+        // types like `ListenerNode` / `Playlist` / `Blacklist`, which could trigger a
+        // WRONG argument swap on a correctly-ordered call.
+        ObjectCreationExpressionSyntax oce when IsKnownCollectionType(oce.Type) => true,
         _ => false,
+    };
+
+    private static readonly HashSet<string> CollectionTypeNames = new(StringComparer.Ordinal)
+    {
+        "List", "IList", "IReadOnlyList", "IEnumerable", "ICollection",
+        "IReadOnlyCollection", "Collection", "HashSet", "ISet",
+    };
+
+    private static bool IsKnownCollectionType(TypeSyntax type) =>
+        RightmostName(type) is { } n && CollectionTypeNames.Contains(n);
+
+    // `List<T>` → "List", `System.Collections.Generic.List<T>` → "List", `List` → "List".
+    private static string? RightmostName(TypeSyntax type) => type switch
+    {
+        GenericNameSyntax g => g.Identifier.ValueText,
+        IdentifierNameSyntax i => i.Identifier.ValueText,
+        QualifiedNameSyntax q => RightmostName(q.Right),
+        _ => null,
     };
 
     private static ArgumentSyntax StripNamedLabel(ArgumentSyntax arg) =>

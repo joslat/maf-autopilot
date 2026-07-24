@@ -1135,4 +1135,117 @@ public class AutoFixToolTests
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
+
+    // -------------------------------------------------------------------------
+    // WM-22 / WM-42 / WM-43: rewriter-correctness regressions.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void EnableSensitiveDataRewriter_PreservesSurvivingEntryCommentsAndLines()
+    {
+        var input = """
+            class C {
+                void M() {
+                    var o = new Options {
+                        Name = "x", // keep me
+                        EnableSensitiveData = true,
+                        Count = 3,
+                    };
+                }
+            }
+            """;
+        var output = ApplyRewriter(new EnableSensitiveDataRewriter(), input).Replace("\r\n", "\n");
+        Assert.DoesNotContain("EnableSensitiveData", output);
+        Assert.Contains("// keep me", output);   // inline comment survives (was deleted before WM-22)
+        Assert.Contains("Name = \"x\"", output);
+        Assert.Contains("Count = 3", output);
+        // Surviving entries are NOT collapsed onto one line: a newline separates them.
+        var idxComment = output.IndexOf("// keep me", StringComparison.Ordinal);
+        var idxCount = output.IndexOf("Count = 3", StringComparison.Ordinal);
+        Assert.True(idxComment >= 0 && idxCount > idxComment);
+        Assert.Contains('\n', output[idxComment..idxCount]);
+    }
+
+    [Fact]
+    public void SyncOverAsyncRewriter_SkipTodo_UsesFileNewline_Crlf()
+    {
+        // `.Result` in a NON-async method → skip-with-TODO. CRLF source: the
+        // inserted comment line must end CRLF, not splice in a lone LF (WM-42).
+        var src = "class C {\r\n    int M() {\r\n        return Foo().Result;\r\n    }\r\n    System.Threading.Tasks.Task<int> Foo() => null!;\r\n}\r\n";
+        var output = ApplyRewriter(new SyncOverAsyncRewriter(), src);
+        var idx = output.IndexOf("// MAF-AP-CONC-002", StringComparison.Ordinal);
+        Assert.True(idx >= 0, "expected a skip-with-TODO comment");
+        var firstNl = output.IndexOf('\n', idx);
+        Assert.True(firstNl > 0 && output[firstNl - 1] == '\r',
+            "the inserted TODO line must end with CRLF in a CRLF file, not a lone LF");
+    }
+
+    [Fact]
+    public void FanInArgOrderRewriter_DoesNotSwap_TypeMerelyContainingList()
+    {
+        // `ListenerNode` merely CONTAINS "List" but is not a collection — must not
+        // be mistaken for a sources array and trigger a wrong swap (WM-43).
+        var input = """
+            class ListenerNode {}
+            class B { void AddFanInBarrierEdge(object target, object sources) {} }
+            class C { void M() { var b = new B(); object t = null; b.AddFanInBarrierEdge(t, new ListenerNode()); } }
+            """;
+        var output = ApplyRewriter(new FanInArgOrderRewriter(), input);
+        Assert.Contains("AddFanInBarrierEdge(t, new ListenerNode())", output); // unchanged
+    }
+
+    [Fact]
+    public void FanInArgOrderRewriter_StillSwaps_GenericListSource()
+    {
+        var input = """
+            using System.Collections.Generic;
+            class B {
+              void AddFanInBarrierEdge(object target, List<object> sources) {}
+              void AddFanInBarrierEdge(List<object> sources, object target) {}
+            }
+            class C { void M() { var b = new B(); object t = null; b.AddFanInBarrierEdge(t, new List<object>()); } }
+            """;
+        var output = ApplyRewriter(new FanInArgOrderRewriter(), input);
+        Assert.Contains("AddFanInBarrierEdge(new List<object>(), t)", output); // genuine List still swaps
+    }
+
+    // -------------------------------------------------------------------------
+    // WM-44: concurrent applies on one repo are serialised by an exclusive lock.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MafAutoFixAll_Apply_WhenLockHeld_ReturnsError_ButDryRunIsNeverBlocked()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-wm44-lock-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var lockPath = AutoFixTool.ApplyLockPath(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "C.cs"), "public class C {}");
+
+            using (new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+            {
+                // A concurrent APPLY is refused while the lock is held...
+                var applyJson = new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+                var applyDoc = JsonSerializer.Deserialize<JsonDocument>(applyJson)!;
+                Assert.True(applyDoc.RootElement.TryGetProperty("error", out var err), applyJson);
+                Assert.Contains("already applying", err.GetString(), StringComparison.OrdinalIgnoreCase);
+
+                // ...but a DRY-RUN writes nothing, so it must never be blocked.
+                var dryDoc = JsonSerializer.Deserialize<JsonDocument>(
+                    new AutoFixTool().MafAutoFixAll(dir, dryRun: true))!;
+                Assert.False(dryDoc.RootElement.TryGetProperty("error", out _));
+            }
+
+            // Lock released → apply succeeds.
+            var okDoc = JsonSerializer.Deserialize<JsonDocument>(
+                new AutoFixTool().MafAutoFixAll(dir, dryRun: false))!;
+            Assert.False(okDoc.RootElement.TryGetProperty("error", out _));
+        }
+        finally
+        {
+            try { File.Delete(lockPath); } catch { /* best-effort */ }
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

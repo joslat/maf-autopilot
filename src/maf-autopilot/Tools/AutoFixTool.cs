@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using MafDoctor.Tools.Rewriters;
@@ -187,6 +188,15 @@ public sealed class AutoFixTool
                 error = $"Unknown ruleId '{ruleId}'. Supported: {string.Join(", ", SupportedRuleIds)}",
             });
 
+        // WM-44: serialise concurrent applies on the same repo (apply mode only).
+        IDisposable? applyLock = null;
+        if (!dryRun)
+        {
+            applyLock = TryAcquireApplyLock(repoPath, out var lockErr);
+            if (applyLock is null) return JsonSerializer.Serialize(new { error = lockErr });
+        }
+        using var _lock = applyLock;
+
         var outcomes = RunPipeline(new[] { (ruleId, factory()) }, repoPath, specificFile, dryRun);
         var changedFiles = outcomes.Where(o => o.ChangedByRules.Count > 0).Select(o => o.Relative).ToList();
         var errors = outcomes.Where(o => o.Error is not null).Select(o => o.Error!).ToList();
@@ -313,6 +323,16 @@ public sealed class AutoFixTool
             .Where(_factories.ContainsKey)
             .Select(id => (RuleId: id, Rewriter: _factories[id]()))
             .ToList();
+
+        // WM-44: serialise concurrent applies on the same repo (apply mode only —
+        // a dry-run writes nothing and needs no lock).
+        IDisposable? applyLock = null;
+        if (!dryRun)
+        {
+            applyLock = TryAcquireApplyLock(repoPath, out var lockErr);
+            if (applyLock is null) { error = lockErr; return null; }
+        }
+        using var _lock = applyLock;
 
         var outcomes = RunPipeline(rewriters, repoPath, specificFile, dryRun);
 
@@ -496,6 +516,39 @@ public sealed class AutoFixTool
         if (!resolved.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
             return $"Error: specificFile must be a .cs file: {specificFile}";
         return null;
+    }
+
+    /// <summary>
+    /// WM-44: cross-process apply lock. Two concurrent apply runs on the same repo
+    /// could interleave their read → rewrite → write cycles and silently revert
+    /// each other's fixes. An exclusive OS file lock (keyed by the repo's canonical
+    /// path, kept in the temp dir so the repo itself is never polluted) serialises
+    /// applies; a second concurrent apply fails fast. Returns the held lock —
+    /// dispose to release — or <see langword="null"/> with an error message.
+    /// </summary>
+    private static IDisposable? TryAcquireApplyLock(string repoPath, out string? error)
+    {
+        error = null;
+        try
+        {
+            return new FileStream(ApplyLockPath(repoPath), FileMode.OpenOrCreate,
+                FileAccess.ReadWrite, FileShare.None, bufferSize: 1, FileOptions.DeleteOnClose);
+        }
+        catch (IOException)
+        {
+            error = "Error: another maf-doctor autofix is already applying changes to this repository. Re-run once it finishes.";
+            return null;
+        }
+    }
+
+    /// <summary>Deterministic per-repo apply-lock path (temp dir; canonical-path hash,
+    /// case-folded on Windows). Internal for test coordination.</summary>
+    internal static string ApplyLockPath(string repoPath)
+    {
+        var canonical = Path.GetFullPath(repoPath);
+        if (OperatingSystem.IsWindows()) canonical = canonical.ToLowerInvariant();
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)), 0, 8);
+        return Path.Combine(Path.GetTempPath(), $"maf-doctor-autofix-{hash}.lock");
     }
 
     /// <summary>
