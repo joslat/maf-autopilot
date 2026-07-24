@@ -66,7 +66,7 @@ internal static class BoundedInput
     public const int ShortTextBytes    =         16 * 1024;
     public const int SnippetBytes      =        256 * 1024;
     public const int InstructionsBytes =         64 * 1024;
-    public const int AggregateBytes    = 100 * 1024 * 1024;
+    public const long AggregateBytes   = 500L * 1024 * 1024;
 
     public static string? Validate(string? value, int maxBytes, string paramName)
     {

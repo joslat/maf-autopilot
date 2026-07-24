@@ -42,15 +42,32 @@ public sealed class AntiPatternScannerTool
         if (PathGuard.ValidateRepoPath(repoPath) is { } err) return err;
 
         var findings = new List<AntiPatternFinding>();
-        foreach (var file in EnumerateScannableFiles(repoPath))
+        var budget = new SourceFileWalker.ScanBudget();
+        var skippedUnreadable = 0;
+        foreach (var file in EnumerateScannableFiles(repoPath, budget))
         {
-            var source = File.ReadAllText(file);
-            findings.AddRange(ScanFile(source, SourceFileWalker.MakeRelative(repoPath, file)));
+            string source, rel;
+            try
+            {
+                // WM-18: one locked/raced/unreadable file must not abort the whole scan
+                // (DoctorTool already guards this; the standalone tools did not).
+                source = File.ReadAllText(file);
+                rel = SourceFileWalker.MakeRelative(repoPath, file);
+            }
+            catch (Exception ex) when (ex is IOException
+                                        or UnauthorizedAccessException
+                                        or System.Security.SecurityException
+                                        or InvalidOperationException)
+            {
+                skippedUnreadable++;
+                continue;
+            }
+            findings.AddRange(ScanFile(source, rel));
         }
 
         return format.Equals("sarif", StringComparison.OrdinalIgnoreCase)
             ? SarifExportTool.EmitAntiPatternsSarif(findings)
-            : FormatReport(repoPath, findings);
+            : FormatReport(repoPath, findings, budget, skippedUnreadable);
     }
 
     // -------------------------------------------------------------------------
@@ -61,10 +78,19 @@ public sealed class AntiPatternScannerTool
     /// Runs all anti-pattern rules against a single source string. Pure: no I/O.
     /// </summary>
     public static IReadOnlyList<AntiPatternFinding> ScanFile(string source, string fileName = "<inline>")
+        => ScanFile(source, CSharpSyntaxTree.ParseText(source).GetRoot(), fileName);
+
+    /// <summary>
+    /// WM-16 overload: accepts an already-parsed <paramref name="root"/> so a caller
+    /// scanning the same file with several tools (e.g. <c>DoctorTool</c>) parses ONCE
+    /// and shares the tree across all of them instead of re-parsing per sub-scanner.
+    /// The RegexRules still need the raw <paramref name="source"/> for line/offset math,
+    /// so both are passed. The string overload above is a thin parse-and-delegate wrapper.
+    /// </summary>
+    public static IReadOnlyList<AntiPatternFinding> ScanFile(
+        string source, Microsoft.CodeAnalysis.SyntaxNode root, string fileName = "<inline>")
     {
         var isTestFile = IsTestFile(fileName);
-        var tree = CSharpSyntaxTree.ParseText(source);
-        var root = tree.GetRoot();
         var findings = new List<AntiPatternFinding>();
 
         foreach (var rule in AllRules)
@@ -96,8 +122,8 @@ public sealed class AntiPatternScannerTool
             || normalized.EndsWith("fixtures.cs", StringComparison.Ordinal);
     }
 
-    private static IEnumerable<string> EnumerateScannableFiles(string repoRoot)
-        => SourceFileWalker.EnumerateCsFiles(repoRoot);
+    private static IEnumerable<string> EnumerateScannableFiles(string repoRoot, SourceFileWalker.ScanBudget budget)
+        => SourceFileWalker.EnumerateCsFiles(repoRoot, excludes: null, budget);
 
     // -------------------------------------------------------------------------
     // Rules
@@ -796,7 +822,11 @@ public sealed class AntiPatternScannerTool
     // Report formatting
     // -------------------------------------------------------------------------
 
-    private static string FormatReport(string repoPath, IReadOnlyList<AntiPatternFinding> findings)
+    private static string FormatReport(
+        string repoPath,
+        IReadOnlyList<AntiPatternFinding> findings,
+        SourceFileWalker.ScanBudget? budget = null,
+        int skippedUnreadable = 0)
     {
         var byLevel = findings.GroupBy(f => f.Severity).ToDictionary(g => g.Key, g => g.ToList());
         var errors = byLevel.GetValueOrDefault(AntiPatternSeverity.Error, []);
@@ -806,6 +836,13 @@ public sealed class AntiPatternScannerTool
         var sb = new StringBuilder();
         sb.AppendLine($"## MAF anti-pattern scan — `{repoPath}`");
         sb.AppendLine();
+
+        // SEC-04: never present a capped / partial walk as a complete scan.
+        if (budget?.IncompleteNote(skippedUnreadable) is { } note)
+        {
+            sb.AppendLine($"> ⚠️ **Scan incomplete** — {note}. Findings below reflect a partial scan, not the whole repo.");
+            sb.AppendLine();
+        }
         sb.AppendLine($"| Severity | Count |");
         sb.AppendLine($"|---|---:|");
         sb.AppendLine($"| ❌ Error | {errors.Count} |");

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json;
+using Microsoft.CodeAnalysis.CSharp;
 using ModelContextProtocol.Server;
 
 namespace MafDoctor.Tools;
@@ -73,31 +74,53 @@ public sealed class MigrationRiskScoreTool
         if (PathGuard.ValidateRepoPath(repoPath) is { } err)
             return JsonSerializer.Serialize(new { error = err });
 
-        // Run the existing scanners over every .cs file — same composition
-        // pattern DoctorTool uses (per-file ScanFile / AnalyzeSource).
+        // WM-17: ONE walk, ONE read + parse per file. This method previously
+        // enumerated the repo 4× (once here + 3× inside CountSourceMatches) and read +
+        // scanned every file's text 4 times. Now the anti-pattern / fan-out scan AND the
+        // CS-needle proxy counts share a single pass over each file. WM-16: parse once
+        // and share the tree across both scanners. SEC-04: track truncation / skips so
+        // the score is never silently computed on a partial repo.
         var antiPatternFindings = new List<AntiPatternFinding>();
         var handlers = new List<MessageHandlerFinding>();
-        foreach (var file in SourceFileWalker.EnumerateCsFiles(repoPath))
+        var cs0246Count = 0;
+        var cs0618Count = 0;
+        var cs0117Count = 0;
+        var skippedUnreadable = 0;
+
+        var budget = new SourceFileWalker.ScanBudget();
+        foreach (var file in SourceFileWalker.EnumerateCsFiles(repoPath, excludes: null, budget))
         {
-            var source = File.ReadAllText(file);
-            var rel = SourceFileWalker.MakeRelative(repoPath, file);
-            antiPatternFindings.AddRange(AntiPatternScannerTool.ScanFile(source, rel));
-            handlers.AddRange(FanOutValidatorTool.AnalyzeSource(source, rel));
+            string source, rel;
+            try
+            {
+                source = File.ReadAllText(file);
+                rel = SourceFileWalker.MakeRelative(repoPath, file);
+            }
+            catch (Exception ex) when (ex is IOException
+                                        or UnauthorizedAccessException
+                                        or System.Security.SecurityException
+                                        or InvalidOperationException)
+            {
+                skippedUnreadable++; // WM-18: one locked/raced file must not abort the whole score
+                continue;
+            }
+
+            var root = CSharpSyntaxTree.ParseText(source).GetRoot();
+            antiPatternFindings.AddRange(AntiPatternScannerTool.ScanFile(source, root, rel));
+            handlers.AddRange(FanOutValidatorTool.AnalyzeSource(root, rel));
+
+            // CS warning counts as a source-text proxy — not a build-perfect signal,
+            // but a reasonable "how many obsolete-API touches" measure without paying
+            // for a full dotnet build. Counted against the already-in-memory source.
+            cs0246Count += CountMatches(source, "AgentThread", "MapA2A", "InProcessExecution", "AgentRunUpdateEvent");
+            cs0618Count += CountMatches(source, "AddFanInBarrierEdge(", "SerializeSession(");
+            cs0117Count += CountMatches(source, ".Instructions");
         }
 
         var antiPatternErrors = antiPatternFindings.Count(f => f.Severity == AntiPatternSeverity.Error);
         var silentStarvation = handlers.Count(h =>
             h.Verdict == FanOutVerdict.SilentStarvationRisk
             || h.Verdict == FanOutVerdict.LikelyInvalid);
-
-        // CS warning counts via the registry. SearchByApiName ⇒ string match
-        // on the source text isn't a build-perfect signal, but it's a
-        // reasonable proxy for "how many obsolete-API touches does the
-        // codebase have" without paying for a full dotnet build.
-        var cs0246Count = CountSourceMatches(repoPath, "AgentThread", "MapA2A", "InProcessExecution", "AgentRunUpdateEvent");
-        var cs0618Count = CountSourceMatches(repoPath, "AddFanInBarrierEdge(",  /* one of the known [Obsolete] surfaces */
-                                              "SerializeSession(");
-        var cs0117Count = CountSourceMatches(repoPath, ".Instructions");
 
         var score = (silentStarvation * 3)
                   + (cs0246Count * 2)
@@ -139,6 +162,11 @@ public sealed class MigrationRiskScoreTool
                 cs0618Count,
                 cs0618Weight = 1,
             },
+            // SEC-04: make an incomplete scan machine-visible so a consumer never treats
+            // a partial score as authoritative. Mirrors DoctorTool's truncation surfacing.
+            scan_truncated = budget.Truncated,
+            files_skipped_oversized = budget.FilesSkippedOversized,
+            files_skipped_unreadable = skippedUnreadable,
             recommendation,
         }, new JsonSerializerOptions { WriteIndented = true });
     }
@@ -151,13 +179,26 @@ public sealed class MigrationRiskScoreTool
     /// </summary>
     internal static int CountSourceMatches(string repoPath, params string[] needles)
     {
+        // Thin wrapper over the pure per-source CountMatches so there is ONE counting
+        // implementation. The production scorer no longer calls this (it counts against
+        // the already-in-memory source inside its single walk — WM-17); it remains for
+        // direct unit-testing of the counting semantics against real files.
         var count = 0;
         foreach (var file in SourceFileWalker.EnumerateCsFiles(repoPath))
-        {
-            var src = File.ReadAllText(file);
-            foreach (var needle in needles)
-                count += CountOccurrences(src, needle);
-        }
+            count += CountMatches(File.ReadAllText(file), needles);
+        return count;
+    }
+
+    /// <summary>
+    /// Pure: total occurrences of any of <paramref name="needles"/> in a single
+    /// in-memory source string. A needle appearing N times counts N (matching how the
+    /// compiler emits one warning per touch).
+    /// </summary>
+    internal static int CountMatches(string src, params string[] needles)
+    {
+        var count = 0;
+        foreach (var needle in needles)
+            count += CountOccurrences(src, needle);
         return count;
     }
 

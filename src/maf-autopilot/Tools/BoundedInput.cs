@@ -24,7 +24,9 @@ namespace MafDoctor.Tools;
 ///         code fragment a user would paste.</item>
 ///   <item><see cref="InstructionsBytes"/> = 64 KB — system-prompt-class text
 ///         (agent <c>instructions</c>).</item>
-///   <item><see cref="AggregateBytes"/> = 100 MB — multi-file repo-scan ceiling.</item>
+///   <item><see cref="AggregateBytes"/> = 500 MB — authoritative multi-file
+///         repo-scan aggregate ceiling; <c>SourceFileWalker.ScanBudget.MaxTotalBytes</c>
+///         defaults to this constant so the cap has a single source of truth.</item>
 /// </list>
 ///
 /// <para>Usage: call <see cref="Validate"/> at the top of every MCP tool
@@ -52,7 +54,10 @@ internal static class BoundedInput
     public const int ShortTextBytes    =         16 * 1024;
     public const int SnippetBytes      =        256 * 1024;
     public const int InstructionsBytes =         64 * 1024;
-    public const int AggregateBytes    = 100 * 1024 * 1024;
+    // WM-40: was 100 MB and referenced by nothing but a value-assert test — the
+    // real repo-scan aggregate cap lived in ScanBudget.MaxTotalBytes (500 MB) with a
+    // different value. Now this is the one authoritative constant that ScanBudget reads.
+    public const long AggregateBytes   = 500L * 1024 * 1024;
 
     /// <summary>
     /// Validate that <paramref name="value"/> is at most <paramref name="maxBytes"/>

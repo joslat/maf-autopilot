@@ -88,7 +88,7 @@ internal static class SourceFileWalker
         // file count — a caller that retains every source body in memory at
         // once (e.g. SemanticKernelDetectorTool.Scan) is bounded by this even
         // though it never touches MaxFiles.
-        public long MaxTotalBytes { get; init; } = 500 * 1024 * 1024; // 500 MB
+        public long MaxTotalBytes { get; init; } = BoundedInput.AggregateBytes; // 500 MB — single source of truth (WM-40)
 
         public int FilesSeen { get; private set; }
         public long BytesAccepted { get; private set; }
@@ -113,6 +113,25 @@ internal static class SourceFileWalker
         }
 
         internal void RecordOversizedSkip() => FilesSkippedOversized++;
+
+        /// <summary>
+        /// SEC-04 — a one-line "scan incomplete" clause when the walk hit a cap or files
+        /// were skipped, or <c>null</c> when the scan covered everything. Standalone scan
+        /// tools append this to their report so a truncated / partial result is never
+        /// presented as complete. <paramref name="skippedUnreadable"/> is the count of
+        /// files the caller could not read (locked / raced / out-of-root — WM-18).
+        /// </summary>
+        public string? IncompleteNote(int skippedUnreadable = 0)
+        {
+            var clauses = new List<string>();
+            if (Truncated)
+                clauses.Add($"stopped after {FilesSeen:N0} files (repo-size cap reached)");
+            if (FilesSkippedOversized > 0)
+                clauses.Add($"skipped {FilesSkippedOversized:N0} oversized file(s) (over the per-file size cap)");
+            if (skippedUnreadable > 0)
+                clauses.Add($"skipped {skippedUnreadable:N0} unreadable file(s)");
+            return clauses.Count == 0 ? null : string.Join("; ", clauses);
+        }
     }
 
     /// <summary>
@@ -192,9 +211,15 @@ internal static class SourceFileWalker
     /// the raw <c>Directory.EnumerateFiles</c> / <c>GetFiles</c> calls that
     /// followed symlinks by default.
     /// </summary>
-    public static IEnumerable<string> EnumerateCsprojFiles(string repoRoot)
+    public static IEnumerable<string> EnumerateCsprojFiles(string repoRoot, ScanBudget? budget = null)
     {
-        return Directory.EnumerateFiles(repoRoot, "*.csproj", RecursiveCsOptions);
+        // SEC-17: the csproj walk had NO count/aggregate cap and — unlike the .cs and
+        // generic walks — did not even skip /bin/ + /obj/, so a restored monorepo's
+        // thousands of generated project files under obj/ were all enumerated unbounded.
+        return ApplyBudget(
+            Directory.EnumerateFiles(repoRoot, "*.csproj", RecursiveCsOptions),
+            budget ?? new ScanBudget(),
+            skipBinObj: true);
     }
 
     /// <summary>
@@ -205,13 +230,48 @@ internal static class SourceFileWalker
     /// project metadata such as <c>Directory.Packages.props</c>, so those walks don't
     /// reintroduce the raw <c>Directory.EnumerateFiles</c> symlink-following risk.
     /// </summary>
-    public static IEnumerable<string> EnumerateFiles(string repoRoot, string searchPattern)
+    public static IEnumerable<string> EnumerateFiles(string repoRoot, string searchPattern, ScanBudget? budget = null)
     {
-        foreach (var path in Directory.EnumerateFiles(repoRoot, searchPattern, RecursiveCsOptions))
+        // SEC-17: bounded by the same count/aggregate budget as the .cs and csproj walks.
+        return ApplyBudget(
+            Directory.EnumerateFiles(repoRoot, searchPattern, RecursiveCsOptions),
+            budget ?? new ScanBudget(),
+            skipBinObj: true);
+    }
+
+    /// <summary>
+    /// Shared tail for the csproj / generic walks (SEC-17): skips <c>/bin/</c> +
+    /// <c>/obj/</c> artefact paths, skips files above <see cref="ScanBudget.MaxFileBytes"/>,
+    /// and stops the walk once <paramref name="budget"/>'s count / aggregate-byte
+    /// ceiling is reached — mirroring <see cref="EnumerateCsFiles(string, IReadOnlyList{string}?, ScanBudget)"/>.
+    /// (EnumerateCsFiles keeps its own inline copy because it also applies the
+    /// caller-supplied exclude list before the budget.)
+    /// </summary>
+    private static IEnumerable<string> ApplyBudget(IEnumerable<string> paths, ScanBudget budget, bool skipBinObj)
+    {
+        foreach (var path in paths)
         {
-            var n = path.Replace('\\', '/');
-            if (n.Contains("/bin/", StringComparison.Ordinal)) continue;
-            if (n.Contains("/obj/", StringComparison.Ordinal)) continue;
+            if (skipBinObj)
+            {
+                var n = path.Replace('\\', '/');
+                if (n.Contains("/bin/", StringComparison.Ordinal)) continue;
+                if (n.Contains("/obj/", StringComparison.Ordinal)) continue;
+            }
+
+            long length;
+            try { length = new FileInfo(path).Length; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                continue; // raced/unreadable between enumeration and stat
+            }
+            if (length > budget.MaxFileBytes)
+            {
+                budget.RecordOversizedSkip();
+                continue;
+            }
+
+            if (!budget.TryAccept(length))
+                yield break;
             yield return path;
         }
     }

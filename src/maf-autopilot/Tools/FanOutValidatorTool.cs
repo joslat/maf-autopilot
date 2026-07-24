@@ -61,20 +61,34 @@ public sealed class FanOutValidatorTool
         if (path.Replace('\\', '/').Split('/').Any(s => s == ".."))
             return "Error: path must not contain '..' segments (path traversal).";
 
-        var files = ResolveFiles(path);
+        var budget = new SourceFileWalker.ScanBudget();
+        var files = ResolveFiles(path, budget);
         if (files.Count == 0)
             return $"Error: no .cs files found at '{path}'.";
 
         var allFindings = new List<MessageHandlerFinding>();
+        var skippedUnreadable = 0;
         foreach (var file in files)
         {
-            var source = File.ReadAllText(file);
+            string source;
+            try
+            {
+                // WM-18: a locked/raced/unreadable file must not abort the whole scan.
+                source = File.ReadAllText(file);
+            }
+            catch (Exception ex) when (ex is IOException
+                                        or UnauthorizedAccessException
+                                        or System.Security.SecurityException)
+            {
+                skippedUnreadable++;
+                continue;
+            }
             allFindings.AddRange(AnalyzeSource(source, file));
         }
 
         return format.Equals("sarif", StringComparison.OrdinalIgnoreCase)
             ? SarifExportTool.EmitFanOutSarif(allFindings)
-            : FormatReport(allFindings);
+            : FormatReport(allFindings, budget, skippedUnreadable);
     }
 
     // -------------------------------------------------------------------------
@@ -87,9 +101,16 @@ public sealed class FanOutValidatorTool
     /// into each finding for grouping.
     /// </summary>
     public static IReadOnlyList<MessageHandlerFinding> AnalyzeSource(string source, string fileName = "<inline>")
+        => AnalyzeSource(CSharpSyntaxTree.ParseText(source).GetRoot(), fileName);
+
+    /// <summary>
+    /// WM-16 overload: analyze an already-parsed <paramref name="root"/> so
+    /// <c>DoctorTool</c> can parse each file once and share the tree across all four
+    /// per-file scanners. The string overload above parses and delegates here.
+    /// </summary>
+    public static IReadOnlyList<MessageHandlerFinding> AnalyzeSource(
+        Microsoft.CodeAnalysis.SyntaxNode root, string fileName = "<inline>")
     {
-        var tree = CSharpSyntaxTree.ParseText(source);
-        var root = tree.GetRoot();
         var findings = new List<MessageHandlerFinding>();
 
         foreach (var method in root.DescendantNodes().OfType<MethodDeclarationSyntax>())
@@ -219,7 +240,7 @@ public sealed class FanOutValidatorTool
         _ => null,
     };
 
-    private static IReadOnlyList<string> ResolveFiles(string path)
+    private static IReadOnlyList<string> ResolveFiles(string path, SourceFileWalker.ScanBudget budget)
     {
         if (File.Exists(path) && path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
             return new[] { path };
@@ -228,15 +249,25 @@ public sealed class FanOutValidatorTool
             // Phase 5.G fixup — migrated from Directory.GetFiles(..., SearchOption.AllDirectories)
             // (default options follow symlinks) to SourceFileWalker.EnumerateCsFiles which sets
             // AttributesToSkip = ReparsePoint and also filters /bin/ + /obj/ noise paths.
-            return SourceFileWalker.EnumerateCsFiles(path).ToList();
+            // SEC-04: thread the caller's budget so a truncated walk is surfaced.
+            return SourceFileWalker.EnumerateCsFiles(path, excludes: null, budget).ToList();
         }
         return Array.Empty<string>();
     }
 
-    private static string FormatReport(IReadOnlyList<MessageHandlerFinding> findings)
+    private static string FormatReport(
+        IReadOnlyList<MessageHandlerFinding> findings,
+        SourceFileWalker.ScanBudget? budget = null,
+        int skippedUnreadable = 0)
     {
+        // SEC-04: never present a capped / partial walk as a complete scan.
+        var incomplete = budget?.IncompleteNote(skippedUnreadable);
+
         if (findings.Count == 0)
-            return "✅ No `[MessageHandler]` methods found at the given path.";
+        {
+            const string none = "✅ No `[MessageHandler]` methods found at the given path.";
+            return incomplete is null ? none : $"> ⚠️ **Scan incomplete** — {incomplete}.\n\n{none}";
+        }
 
         var risks = findings.Where(f => f.Verdict == FanOutVerdict.SilentStarvationRisk).ToList();
         var invalid = findings.Where(f => f.Verdict == FanOutVerdict.LikelyInvalid).ToList();
@@ -245,6 +276,11 @@ public sealed class FanOutValidatorTool
         var sb = new StringBuilder();
         sb.AppendLine($"## Fan-out validator — {findings.Count} `[MessageHandler]` method(s) inspected");
         sb.AppendLine();
+        if (incomplete is not null)
+        {
+            sb.AppendLine($"> ⚠️ **Scan incomplete** — {incomplete}. Findings below reflect a partial scan, not the whole repo.");
+            sb.AppendLine();
+        }
 
         if (risks.Count > 0)
         {

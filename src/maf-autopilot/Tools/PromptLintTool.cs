@@ -50,12 +50,28 @@ public sealed class PromptLintTool
         if (PathGuard.ValidateRepoPath(repoPath) is { } err) return err;
 
         var findings = new List<PromptFinding>();
-        foreach (var path in EnumerateScannableFiles(repoPath))
+        var budget = new SourceFileWalker.ScanBudget();
+        var skippedUnreadable = 0;
+        foreach (var path in EnumerateScannableFiles(repoPath, budget))
         {
-            var source = File.ReadAllText(path);
-            findings.AddRange(LintSource(source, MakeRelative(repoPath, path)));
+            string source, rel;
+            try
+            {
+                // WM-18: a locked/raced/unreadable file must not abort the whole scan.
+                source = File.ReadAllText(path);
+                rel = MakeRelative(repoPath, path);
+            }
+            catch (Exception ex) when (ex is IOException
+                                        or UnauthorizedAccessException
+                                        or System.Security.SecurityException
+                                        or InvalidOperationException)
+            {
+                skippedUnreadable++;
+                continue;
+            }
+            findings.AddRange(LintSource(source, rel));
         }
-        return FormatReport(findings);
+        return FormatReport(findings, budget, skippedUnreadable);
     }
 
     // -------------------------------------------------------------------------
@@ -66,9 +82,16 @@ public sealed class PromptLintTool
     /// Runs every prompt-lint rule against the given source string. Pure: no I/O.
     /// </summary>
     public static IReadOnlyList<PromptFinding> LintSource(string source, string fileName = "<inline>")
+        => LintSource(CSharpSyntaxTree.ParseText(source).GetRoot(), fileName);
+
+    /// <summary>
+    /// WM-16 overload: lint an already-parsed <paramref name="root"/> so
+    /// <c>DoctorTool</c> can parse each file once and share the tree across all four
+    /// per-file scanners. The string overload above parses and delegates here.
+    /// </summary>
+    public static IReadOnlyList<PromptFinding> LintSource(
+        Microsoft.CodeAnalysis.SyntaxNode root, string fileName = "<inline>")
     {
-        var tree = CSharpSyntaxTree.ParseText(source);
-        var root = tree.GetRoot();
         var findings = new List<PromptFinding>();
 
         // Find every assignment to a member or property named `Instructions`,
@@ -238,8 +261,8 @@ public sealed class PromptLintTool
         }
     }
 
-    private static IEnumerable<string> EnumerateScannableFiles(string repoRoot)
-        => SourceFileWalker.EnumerateCsFiles(repoRoot);
+    private static IEnumerable<string> EnumerateScannableFiles(string repoRoot, SourceFileWalker.ScanBudget budget)
+        => SourceFileWalker.EnumerateCsFiles(repoRoot, excludes: null, budget);
 
     private static string MakeRelative(string root, string file)
         => SourceFileWalker.MakeRelative(root, file);
@@ -248,11 +271,21 @@ public sealed class PromptLintTool
     // Report formatting
     // -------------------------------------------------------------------------
 
-    private static string FormatReport(IReadOnlyList<PromptFinding> findings)
+    private static string FormatReport(
+        IReadOnlyList<PromptFinding> findings,
+        SourceFileWalker.ScanBudget? budget = null,
+        int skippedUnreadable = 0)
     {
         var sb = new StringBuilder();
         sb.AppendLine("## 🪶 MAF prompt-lint report");
         sb.AppendLine();
+
+        // SEC-04: never present a capped / partial walk as a complete scan.
+        if (budget?.IncompleteNote(skippedUnreadable) is { } note)
+        {
+            sb.AppendLine($"> ⚠️ **Scan incomplete** — {note}. Findings below reflect a partial scan, not the whole repo.");
+            sb.AppendLine();
+        }
 
         if (findings.Count == 0)
         {

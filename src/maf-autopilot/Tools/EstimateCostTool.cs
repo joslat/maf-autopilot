@@ -45,13 +45,29 @@ public sealed class EstimateCostTool
         if (PathGuard.ValidateRepoPath(repoPath) is { } err) return err;
 
         var findings = new List<CostFinding>();
-        foreach (var path in EnumerateScannableFiles(repoPath))
+        var budget = new SourceFileWalker.ScanBudget();
+        var skippedUnreadable = 0;
+        foreach (var path in EnumerateScannableFiles(repoPath, budget))
         {
-            var source = File.ReadAllText(path);
-            findings.AddRange(AnalyzeSource(source, MakeRelative(repoPath, path)));
+            string source, rel;
+            try
+            {
+                // WM-18: a locked/raced/unreadable file must not abort the whole scan.
+                source = File.ReadAllText(path);
+                rel = MakeRelative(repoPath, path);
+            }
+            catch (Exception ex) when (ex is IOException
+                                        or UnauthorizedAccessException
+                                        or System.Security.SecurityException
+                                        or InvalidOperationException)
+            {
+                skippedUnreadable++;
+                continue;
+            }
+            findings.AddRange(AnalyzeSource(source, rel));
         }
 
-        return FormatReport(repoPath, findings);
+        return FormatReport(repoPath, findings, budget, skippedUnreadable);
     }
 
     // -------------------------------------------------------------------------
@@ -64,9 +80,16 @@ public sealed class EstimateCostTool
     /// in the same compilation unit. Returns per-call-site findings. Pure: no I/O.
     /// </summary>
     public static IReadOnlyList<CostFinding> AnalyzeSource(string source, string fileName = "<inline>")
+        => AnalyzeSource(CSharpSyntaxTree.ParseText(source).GetRoot(), fileName);
+
+    /// <summary>
+    /// WM-16 overload: analyze an already-parsed <paramref name="root"/> so
+    /// <c>DoctorTool</c> can parse each file once and share the tree across all four
+    /// per-file scanners. The string overload above parses and delegates here.
+    /// </summary>
+    public static IReadOnlyList<CostFinding> AnalyzeSource(
+        Microsoft.CodeAnalysis.SyntaxNode root, string fileName = "<inline>")
     {
-        var tree = CSharpSyntaxTree.ParseText(source);
-        var root = tree.GetRoot();
         var findings = new List<CostFinding>();
 
         // Build a global view of ChatOptions initializers in this file — each
@@ -226,8 +249,8 @@ public sealed class EstimateCostTool
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static IEnumerable<string> EnumerateScannableFiles(string repoRoot)
-        => SourceFileWalker.EnumerateCsFiles(repoRoot);
+    private static IEnumerable<string> EnumerateScannableFiles(string repoRoot, SourceFileWalker.ScanBudget budget)
+        => SourceFileWalker.EnumerateCsFiles(repoRoot, excludes: null, budget);
 
     private static string MakeRelative(string root, string file)
         => SourceFileWalker.MakeRelative(root, file);
@@ -236,13 +259,24 @@ public sealed class EstimateCostTool
     // Report
     // -------------------------------------------------------------------------
 
-    private static string FormatReport(string repoPath, IReadOnlyList<CostFinding> findings)
+    private static string FormatReport(
+        string repoPath,
+        IReadOnlyList<CostFinding> findings,
+        SourceFileWalker.ScanBudget? budget = null,
+        int skippedUnreadable = 0)
     {
         var sb = new StringBuilder();
         sb.AppendLine("## 💰 MAF token-cost audit");
         sb.AppendLine();
         sb.AppendLine($"**Repo:** `{repoPath}`");
         sb.AppendLine();
+
+        // SEC-04: never present a capped / partial walk as a complete scan.
+        if (budget?.IncompleteNote(skippedUnreadable) is { } note)
+        {
+            sb.AppendLine($"> ⚠️ **Scan incomplete** — {note}. Findings below reflect a partial scan, not the whole repo.");
+            sb.AppendLine();
+        }
 
         if (findings.Count == 0)
         {
