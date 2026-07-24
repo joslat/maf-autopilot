@@ -1248,4 +1248,106 @@ public class AutoFixToolTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Adversarial-review follow-ups (Phase 1 verification pass).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void ExecutorSealedRewriter_ZeroModifierClass_KeepsIndentAndDocAttached()
+    {
+        // A bare (internal-by-default) Executor with a leading XML doc: `sealed`
+        // must carry the declaration's leading trivia, else the doc is stranded
+        // between `partial` and `class` (de-indent + CS1587 doc detachment).
+        var input = """
+            namespace N
+            {
+                /// <summary>Doc.</summary>
+                class MyExec : Executor
+                {
+                    [MessageHandler]
+                    public System.Threading.Tasks.Task<int> Handle(string s) => null!;
+                }
+            }
+            """;
+        var output = ApplyRewriter(new ExecutorSealedRewriter(), input).Replace("\r\n", "\n");
+        Assert.Contains("sealed partial class MyExec", output); // modifiers contiguous, class not stranded
+        var docIdx = output.IndexOf("/// <summary>Doc", StringComparison.Ordinal);
+        var sealedIdx = output.IndexOf("sealed partial class MyExec", StringComparison.Ordinal);
+        Assert.True(docIdx >= 0 && docIdx < sealedIdx, "doc comment must stay attached above the declaration");
+    }
+
+    [Fact]
+    public void EnableSensitiveDataRewriter_RemovesNestedFlagInSurvivingSibling()
+    {
+        // The outer entry is removed AND the nested flag inside a surviving sibling
+        // is cleaned in the same single pass (no fixpoint) — WM-22 review follow-up.
+        var input = """
+            class C {
+                void M() {
+                    var o = new AgentConfig {
+                        EnableSensitiveData = true,
+                        Telemetry = new TelemetryOptions { EnableSensitiveData = true },
+                    };
+                }
+            }
+            """;
+        var output = ApplyRewriter(new EnableSensitiveDataRewriter(), input);
+        Assert.DoesNotContain("EnableSensitiveData", output);          // BOTH flags gone
+        Assert.Contains("Telemetry = new TelemetryOptions", output);   // the sibling itself survives
+    }
+
+    [Fact]
+    public void MafAutoFixAll_Utf8BomWithInvalidBytes_SkippedWithError_NotCorrupted()
+    {
+        // A UTF-8-BOM file with an invalid byte must still be rejected (not U+FFFD'd)
+        // — the strict decode must hold for BOM'd files too, not only BOM-less ones.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-bomstrict-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "BomBad.cs");
+            // BOM + "class C \x80{}" (0x80 is a lone continuation byte — invalid UTF-8).
+            var bytes = new byte[] { 0xEF, 0xBB, 0xBF, 0x63, 0x6C, 0x61, 0x73, 0x73, 0x20, 0x43, 0x20, 0x80, 0x7B, 0x7D };
+            File.WriteAllBytes(file, bytes);
+            var json = new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+            var doc = JsonSerializer.Deserialize<JsonDocument>(json)!;
+            Assert.True(doc.RootElement.GetProperty("errors").GetArrayLength() >= 1, json);
+            Assert.Equal(bytes, File.ReadAllBytes(file)); // byte-identical, no corruption
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void MafAutoFixAll_LockedFile_RecordedAsError_PassContinues()
+    {
+        // A file locked by another process must be a per-file error, not a whole-pass
+        // abort — and every OTHER file must still be fixed. (Exclusive-share read
+        // blocking is a Windows behavior; the assertion runs there.)
+        if (!OperatingSystem.IsWindows()) return;
+        var dir = Path.Combine(Path.GetTempPath(), "maf-lockedfile-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "Good.cs"), """
+                using System.Threading.Tasks;
+                public class Executor { }
+                public sealed class MessageHandlerAttribute : System.Attribute { }
+                public partial class MyExec : Executor {
+                  [MessageHandler]
+                  public Task<int> Handle(string s) => Task.FromResult(0);
+                }
+                """);
+            var bad = Path.Combine(dir, "Bad.cs");
+            File.WriteAllText(bad, "public class Bad {}");
+            using (new FileStream(bad, FileMode.Open, FileAccess.Read, FileShare.None)) // exclusive lock
+            {
+                var json = new AutoFixTool().MafAutoFixAll(dir, dryRun: false);
+                var doc = JsonSerializer.Deserialize<JsonDocument>(json)!;
+                Assert.True(doc.RootElement.GetProperty("errors").GetArrayLength() >= 1, json); // locked file reported
+                Assert.Contains("sealed partial", File.ReadAllText(Path.Combine(dir, "Good.cs"))); // other file still fixed
+            }
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
 }

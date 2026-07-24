@@ -473,21 +473,48 @@ public sealed class AutoFixTool
         text = string.Empty;
         encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         error = null;
+
+        byte[] bytes;
         try
         {
-            // Strict UTF-8 as the fallback decoder (throws on invalid bytes);
-            // detectEncodingFromByteOrderMarks lets a UTF-8/UTF-16 BOM override it.
-            using var reader = new StreamReader(
-                File.OpenRead(file),
-                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true),
-                detectEncodingFromByteOrderMarks: true);
-            text = reader.ReadToEnd();
-            encoding = reader.CurrentEncoding; // UTF-8(+BOM) / UTF-16 / … as detected
+            bytes = File.ReadAllBytes(file);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            // A locked / permission-denied / vanished file must be a per-file error,
+            // NOT a whole-pass abort — the strict-decode catch below only covers
+            // invalid bytes. Message carries no absolute path (the caller adds the
+            // repo-relative name); FileNotFound/DirectoryNotFound are IOExceptions.
+            error = $"could not be read ({ex.GetType().Name})";
+            return false;
+        }
+
+        // Detect a BOM BY HAND and pick the encoding to PRESERVE on write-back.
+        // Doing it manually (rather than via StreamReader's
+        // detectEncodingFromByteOrderMarks) is what keeps the strict, throw-on-
+        // invalid-bytes decode in force even for a BOM'd file: StreamReader silently
+        // swaps in the detected encoding's REPLACEMENT-fallback decoder, so invalid
+        // bytes after a BOM would become U+FFFD instead of being rejected.
+        Encoding detected;
+        int bomLength;
+        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+        { detected = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true, throwOnInvalidBytes: true); bomLength = 3; }
+        else if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+        { detected = new UnicodeEncoding(bigEndian: false, byteOrderMark: true, throwOnInvalidBytes: true); bomLength = 2; }
+        else if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+        { detected = new UnicodeEncoding(bigEndian: true, byteOrderMark: true, throwOnInvalidBytes: true); bomLength = 2; }
+        else
+        { detected = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true); bomLength = 0; }
+
+        try
+        {
+            text = detected.GetString(bytes, bomLength, bytes.Length - bomLength);
+            encoding = detected;
             return true;
         }
         catch (DecoderFallbackException)
         {
-            error = "not valid UTF-8; skipped to avoid corruption";
+            error = "not valid text (invalid byte sequence); skipped to avoid corruption";
             return false;
         }
     }
@@ -534,9 +561,13 @@ public sealed class AutoFixTool
             return new FileStream(ApplyLockPath(repoPath), FileMode.OpenOrCreate,
                 FileAccess.ReadWrite, FileShare.None, bufferSize: 1, FileOptions.DeleteOnClose);
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            error = "Error: another maf-doctor autofix is already applying changes to this repository. Re-run once it finishes.";
+            // A held lock surfaces as a sharing violation (IOException) OR, on the
+            // Windows delete-pending race when a peer is releasing its DeleteOnClose
+            // lock, as UnauthorizedAccessException. An unwritable temp dir also lands
+            // here. Either way, fail gracefully instead of throwing out of the tool.
+            error = "Error: another maf-doctor autofix is already applying changes to this repository (or the temp directory is not writable). Re-run once it finishes.";
             return null;
         }
     }
@@ -545,7 +576,11 @@ public sealed class AutoFixTool
     /// case-folded on Windows). Internal for test coordination.</summary>
     internal static string ApplyLockPath(string repoPath)
     {
-        var canonical = Path.GetFullPath(repoPath);
+        // TrimEndingDirectorySeparator so `C:\repo` and `C:\repo\` (which
+        // Path.GetFullPath keeps distinct) collapse to ONE lock key — else two
+        // callers spelling the path differently would take different locks and
+        // fail to serialise, defeating the point of WM-44.
+        var canonical = Path.TrimEndingDirectorySeparator(Path.GetFullPath(repoPath));
         if (OperatingSystem.IsWindows()) canonical = canonical.ToLowerInvariant();
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)), 0, 8);
         return Path.Combine(Path.GetTempPath(), $"maf-doctor-autofix-{hash}.lock");

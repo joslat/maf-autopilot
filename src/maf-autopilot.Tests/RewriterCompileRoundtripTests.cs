@@ -429,6 +429,19 @@ public class RewriterCompileRoundtripTests
             }
             """);
 
+        // WM-02 review follow-up: ZERO-modifier Executor (no access modifier, no
+        // `partial`) — `sealed` becomes the declaration's first token; it must carry
+        // the class keyword's leading trivia rather than strand it.
+        yield return F("wf001-rewrite-zero-modifier-executor", """
+            using System.Threading.Tasks;
+            public class Executor { }
+            public sealed class MessageHandlerAttribute : System.Attribute { }
+            class MyExec : Executor {
+              [MessageHandler]
+              public Task<int> Handle(string s) => Task.FromResult(0);
+            }
+            """);
+
         yield return F("wf001-noop-abstract-executor", """
             using System.Threading.Tasks;
             public class Executor { }

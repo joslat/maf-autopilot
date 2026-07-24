@@ -64,13 +64,22 @@ internal sealed class ExecutorSealedRewriter : CSharpSyntaxRewriter, IRuleRewrit
             // `partial sealed class X`.
             var partialIdx = list.FindIndex(t => t.IsKind(SyntaxKind.PartialKeyword));
             var insertAt = partialIdx >= 0 ? partialIdx : Math.Min(1, list.Count);
-            // When `sealed` becomes the new first modifier, carry the leading trivia
-            // (indentation / xmldoc) from the token that is currently first so the
-            // declaration stays laid out correctly.
             if (insertAt == 0 && list.Count > 0)
             {
+                // `sealed` becomes the new first MODIFIER — carry the old first
+                // modifier's leading trivia (indentation / xmldoc) onto it.
                 sealedToken = sealedToken.WithLeadingTrivia(list[0].LeadingTrivia);
                 list[0] = list[0].WithLeadingTrivia();
+            }
+            else if (insertAt == 0 && node.AttributeLists.Count == 0)
+            {
+                // No modifiers AND no attributes: `sealed` becomes the first token of
+                // the whole declaration. Carry the `class` keyword's leading trivia
+                // (indentation + any `///` doc) onto `sealed`, else it strands between
+                // the modifiers and `class` — de-indenting the line and DETACHING the
+                // XML doc from the type (CS1587, documentation lost).
+                sealedToken = sealedToken.WithLeadingTrivia(node.Keyword.LeadingTrivia);
+                node = node.WithKeyword(node.Keyword.WithLeadingTrivia());
             }
             list.Insert(insertAt, sealedToken);
         }
