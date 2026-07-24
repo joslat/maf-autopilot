@@ -28,15 +28,18 @@ public sealed class RegistryService
     {
         _registry = Load();
         _haystacks = _registry.Entries.ToDictionary(e => e, BuildHaystack);
+        // WM-39: compute ONCE (get-only) instead of re-sorting + re-materializing on
+        // every access. StringComparer.Ordinal matches RegistryServiceTests' assertion
+        // (the previous culture-sensitive OrderBy coincidentally agreed only for ASCII IDs).
+        AllIds = _registry.Entries.Select(e => e.Id).OrderBy(id => id, StringComparer.Ordinal).ToList();
     }
 
     // -------------------------------------------------------------------------
     // Public API
     // -------------------------------------------------------------------------
 
-    /// <summary>All entry IDs in the registry, sorted.</summary>
-    public IReadOnlyList<string> AllIds =>
-        _registry.Entries.Select(e => e.Id).OrderBy(id => id).ToList();
+    /// <summary>All entry IDs in the registry, ordinal-sorted. Computed once in the ctor.</summary>
+    public IReadOnlyList<string> AllIds { get; }
 
     /// <summary>Every entry in the registry (in YAML declaration order). Read-only.</summary>
     public IReadOnlyList<RegistryEntry> AllEntries => _registry.Entries;

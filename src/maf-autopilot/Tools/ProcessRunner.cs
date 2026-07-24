@@ -128,7 +128,20 @@ internal static class ProcessRunner
                 RedirectStandardError = true,
                 UseShellExecute = false,
             };
-            return Run(fallback);
+            // SEC-23: `dnx` may itself be absent (opt-in set but no SDK that provides
+            // it) — Run would throw Win32Exception and crash the CLI / surface an
+            // ungraceful error in the MCP tool. Return a graceful message instead.
+            try
+            {
+                return Run(fallback);
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                return (1,
+                    "Neither dotnet-inspect nor dnx is available. Install dotnet-inspect with " +
+                    "`dotnet tool install --global dotnet-inspect --version 0.7.8`, " +
+                    "or install a .NET SDK that provides the `dnx` launcher.");
+            }
         }
     }
 
@@ -147,6 +160,16 @@ internal static class ProcessRunner
             RedirectStandardError = true,
             UseShellExecute = false,
         };
+        // SEC-22 (defense-in-depth): neutralize repo-controlled command-config so a
+        // malicious `.git/config` in an untrusted repo can't execute commands via
+        // fsmonitor / hooks / pager / the ext transport. Command-line `-c` overrides
+        // `.git/config`; these must precede the subcommand. Output is unchanged.
+        psi.ArgumentList.Add("-c"); psi.ArgumentList.Add("core.fsmonitor=false");
+        psi.ArgumentList.Add("-c"); psi.ArgumentList.Add("core.hooksPath=");
+        psi.ArgumentList.Add("-c"); psi.ArgumentList.Add("core.pager=cat");
+        psi.ArgumentList.Add("-c"); psi.ArgumentList.Add("protocol.ext.allow=never");
+        psi.Environment["GIT_CONFIG_NOSYSTEM"] = "1";
+        psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
         psi.ArgumentList.Add("-C");
         psi.ArgumentList.Add(repoPath);
         foreach (var arg in args)
@@ -158,6 +181,11 @@ internal static class ProcessRunner
 
     private static (int ExitCode, string Output) Run(ProcessStartInfo psi, TimeSpan timeout)
     {
+        // SEC-09: strip credential-like env vars so an untrusted child (dotnet build /
+        // dotnet-inspect / git in a repo we don't yet trust) can't read the MCP
+        // server's secrets. Done centrally so all four call paths are covered.
+        ScrubSensitiveEnvironment(psi);
+
         using var p = Process.Start(psi)
             ?? throw new InvalidOperationException($"Failed to start process: {psi.FileName}");
 
@@ -175,9 +203,22 @@ internal static class ProcessRunner
         if (!p.WaitForExit((int)timeout.TotalMilliseconds))
         {
             try { p.Kill(entireProcessTree: true); } catch { /* best effort */ }
-            return (
-                ExitCode: -1,
-                Output: $"⚠️ Process timed out after {timeout.TotalMinutes:0.#} minutes and was killed.");
+
+            // SEC-24: give the drains up to 2s to flush what they captured before the
+            // process handle is disposed, and surface it — instead of discarding all
+            // output and leaving the drain tasks to fault unobserved on a dead pipe.
+            var partial = string.Empty;
+            try
+            {
+                if (Task.WhenAll(stdoutTask, stderrTask).Wait(TimeSpan.FromSeconds(2)))
+                    partial = (stdoutTask.Result.Text + Environment.NewLine + stderrTask.Result.Text).Trim();
+            }
+            catch { /* drains faulted on the disposed pipe — report what we already have */ }
+
+            var timeoutMsg = $"⚠️ Process timed out after {timeout.TotalMinutes:0.#} minutes and was killed.";
+            if (!string.IsNullOrWhiteSpace(partial))
+                timeoutMsg += Environment.NewLine + "Partial output captured before the kill:" + Environment.NewLine + partial;
+            return (ExitCode: -1, Output: timeoutMsg);
         }
 
         // Ensure the drains finished after process exit (they may still be flushing
@@ -200,16 +241,48 @@ internal static class ProcessRunner
         var sb = new StringBuilder();
         var truncated = false;
         var buffer = new char[8192];
-        int read;
-        while ((read = await reader.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
+        try
         {
-            var allowed = budget.TryConsume(read);
-            if (allowed > 0)
-                sb.Append(buffer, 0, allowed);
-            if (allowed < read)
-                truncated = true;
+            int read;
+            while ((read = await reader.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
+            {
+                var allowed = budget.TryConsume(read);
+                if (allowed > 0)
+                    sb.Append(buffer, 0, allowed);
+                if (allowed < read)
+                    truncated = true;
+            }
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or IOException)
+        {
+            // SEC-24: the process was killed on timeout and its pipe disposed —
+            // return whatever we captured rather than faulting the drain task.
         }
         return (sb.ToString(), truncated);
+    }
+
+    /// <summary>
+    /// SEC-09: removes credential-like variables from a child process's environment
+    /// so an untrusted build/inspect/git child cannot read the MCP server's secrets.
+    /// Uses a pattern denylist (not an allowlist) so a build/restore never loses a
+    /// variable it needs — PATH / DOTNET_* / NUGET_* / HOME / USERPROFILE / TEMP /
+    /// APPDATA and the like are all kept.
+    /// </summary>
+    private static void ScrubSensitiveEnvironment(ProcessStartInfo psi)
+    {
+        foreach (var key in psi.Environment.Keys.ToList())
+            if (IsSensitiveEnvKey(key))
+                psi.Environment.Remove(key);
+    }
+
+    internal static bool IsSensitiveEnvKey(string key)
+    {
+        var k = key.ToUpperInvariant();
+        return k.Contains("TOKEN") || k.Contains("SECRET") || k.Contains("KEY")
+            || k.Contains("PASSWORD") || k.Contains("PASSWD")
+            || k.EndsWith("PAT")
+            || k.StartsWith("AWS_") || k.StartsWith("AZURE_")
+            || k.StartsWith("GITHUB_") || k.StartsWith("GH_");
     }
 
     /// <summary>

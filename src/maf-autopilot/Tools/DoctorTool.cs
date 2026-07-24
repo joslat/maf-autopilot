@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.CodeAnalysis.CSharp;
 using ModelContextProtocol.Server;
 
 namespace MafDoctor.Tools;
@@ -460,32 +461,64 @@ public sealed class DoctorTool
         var costFindings = new List<CostFinding>();
 
         budget ??= new SourceFileWalker.ScanBudget();
-        foreach (var path in EnumerateScannableFiles(repoPath, excludes, budget))
-        {
-            string source, rel;
-            try
+
+        // WM-19: keep the walk + budget accounting SEQUENTIAL (ScanBudget is not
+        // thread-safe, and its FilesSeen / FilesSkippedOversized / Truncated state must
+        // stay authoritative), then analyze the accepted files in PARALLEL — every
+        // per-file scanner core is pure and reads only its own immutable syntax tree.
+        // Output determinism is unaffected: Grade sorts every emitted fix by
+        // (priority, file, line) and all counts are order-independent, so the
+        // nondeterministic merge order never leaks into the DoctorSummary.
+        var files = EnumerateScannableFiles(repoPath, excludes, budget).ToList();
+
+        var gate = new object();
+        Parallel.ForEach(
+            files,
+            () => (Anti: new List<AntiPatternFinding>(),
+                   Handlers: new List<MessageHandlerFinding>(),
+                   Prompts: new List<PromptFinding>(),
+                   Costs: new List<CostFinding>()),
+            (path, _, acc) =>
             {
-                // Guard ONLY the read + relative-path resolve: a file can be
-                // deleted/locked/raced between enumeration and read. Narrow catch
-                // so analyzer/parse bugs still propagate (the grade must never be
-                // silently degraded by swallowing a logic error). The oversized-file
-                // skip itself now lives in SourceFileWalker.ScanBudget, shared by
-                // every caller of EnumerateCsFiles, not just this one.
-                source = File.ReadAllText(path);
-                rel = MakeRelative(repoPath, path);
-            }
-            catch (Exception ex) when (ex is IOException
-                                        or UnauthorizedAccessException
-                                        or System.Security.SecurityException
-                                        or InvalidOperationException)
+                string source, rel;
+                try
+                {
+                    // Guard ONLY the read + relative-path resolve: a file can be
+                    // deleted/locked/raced between enumeration and read. Narrow catch
+                    // so analyzer/parse bugs still propagate (the grade must never be
+                    // silently degraded by swallowing a logic error). The oversized-file
+                    // skip itself lives in SourceFileWalker.ScanBudget, shared by every
+                    // caller of EnumerateCsFiles, not just this one.
+                    source = File.ReadAllText(path);
+                    rel = MakeRelative(repoPath, path);
+                }
+                catch (Exception ex) when (ex is IOException
+                                            or UnauthorizedAccessException
+                                            or System.Security.SecurityException
+                                            or InvalidOperationException)
+                {
+                    return acc; // skip the unreadable/out-of-root file, don't crash the run
+                }
+
+                // WM-16: parse ONCE per file and share the tree across all four
+                // per-file scanners (was 4× redundant CSharpSyntaxTree.ParseText).
+                var root = CSharpSyntaxTree.ParseText(source).GetRoot();
+                acc.Anti.AddRange(AntiPatternScannerTool.ScanFile(source, root, rel));
+                acc.Handlers.AddRange(FanOutValidatorTool.AnalyzeSource(root, rel));
+                acc.Prompts.AddRange(PromptLintTool.LintSource(root, rel));
+                acc.Costs.AddRange(EstimateCostTool.AnalyzeSource(root, rel));
+                return acc;
+            },
+            acc =>
             {
-                continue; // skip the unreadable/out-of-root file, don't crash the run
-            }
-            antiPatterns.AddRange(AntiPatternScannerTool.ScanFile(source, rel));
-            handlers.AddRange(FanOutValidatorTool.AnalyzeSource(source, rel));
-            promptFindings.AddRange(PromptLintTool.LintSource(source, rel));
-            costFindings.AddRange(EstimateCostTool.AnalyzeSource(source, rel));
-        }
+                lock (gate)
+                {
+                    antiPatterns.AddRange(acc.Anti);
+                    handlers.AddRange(acc.Handlers);
+                    promptFindings.AddRange(acc.Prompts);
+                    costFindings.AddRange(acc.Costs);
+                }
+            });
 
         var summary = Grade(antiPatterns, handlers, promptFindings, costFindings);
         return summary with

@@ -88,6 +88,6 @@ public sealed class BoundedInputTests
         Assert.Equal( 16 * 1024,        BoundedInput.ShortTextBytes);
         Assert.Equal(256 * 1024,        BoundedInput.SnippetBytes);
         Assert.Equal( 64 * 1024,        BoundedInput.InstructionsBytes);
-        Assert.Equal(100 * 1024 * 1024, BoundedInput.AggregateBytes);
+        Assert.Equal(500L * 1024 * 1024, BoundedInput.AggregateBytes);
     }
 }

@@ -118,7 +118,10 @@ public sealed class Cs0618HuntTool
                 continue;
 
             var file = m.Groups["file"].Value.Trim();
-            var line = int.Parse(m.Groups["line"].Value);
+            // WM-38: a pathological/oversized line number must not overflow int.Parse and
+            // crash the hunt after paying the full build cost — skip the malformed line.
+            if (!int.TryParse(m.Groups["line"].Value, out var line))
+                continue;
             var severity = m.Groups["severity"].Value;
             var msg = m.Groups["msg"].Value.Trim();
 
