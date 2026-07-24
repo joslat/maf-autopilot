@@ -191,4 +191,37 @@ public class AutoFixCliTests
         Assert.Contains("1 file changed", output);
         Assert.DoesNotContain("1 files changed", output);
     }
+
+    // -------------------------------------------------------------------------
+    // Format — WM-24 preview diffs
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Format_DryRun_WithDiffs_InlinesUnifiedDiff()
+    {
+        var report = new AutoFixTool.AutoFixAllReport(
+            DryRun: true,
+            OrderOfExecution: AutoFixTool.OrderedRuleIds,
+            TotalDistinctFilesChanged: 1,
+            AffectedFiles: new[] { "A.cs" },
+            PerRule: new[]
+            {
+                new AutoFixTool.AutoFixRuleReport("MAF-AP-WF-001", 1, new[] { "A.cs" }),
+                new AutoFixTool.AutoFixRuleReport("MAF-AP-SEC-003", 0, Array.Empty<string>()),
+                new AutoFixTool.AutoFixRuleReport("MAF-AP-SEC-001", 0, Array.Empty<string>()),
+                new AutoFixTool.AutoFixRuleReport("MAF130-FAN-IN-001", 0, Array.Empty<string>()),
+                new AutoFixTool.AutoFixRuleReport("MAF-AP-CONC-002", 0, Array.Empty<string>()),
+            },
+            Diffs: new[]
+            {
+                new AutoFixTool.AutoFixFileDiff("A.cs", new[] { "MAF-AP-WF-001" },
+                    "@@ -1,1 +1,1 @@\n-public class A {}\n+public sealed class A {}\n"),
+            });
+
+        var output = AutoFixCli.Format(report);
+
+        Assert.Contains("Preview (unified diff", output);
+        Assert.Contains("+public sealed class A {}", output);
+        Assert.Contains("A.cs", output);
+    }
 }

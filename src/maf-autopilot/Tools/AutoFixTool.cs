@@ -97,7 +97,8 @@ public sealed class AutoFixTool
         int TotalDistinctFilesChanged,
         IReadOnlyList<string> AffectedFiles,
         IReadOnlyList<AutoFixRuleReport> PerRule,
-        IReadOnlyList<AutoFixError>? Errors = null);
+        IReadOnlyList<AutoFixError>? Errors = null,
+        IReadOnlyList<AutoFixFileDiff>? Diffs = null);
 
     /// <summary>Per-rule slice of an <see cref="AutoFixAllReport"/>.</summary>
     internal sealed record AutoFixRuleReport(
@@ -108,6 +109,12 @@ public sealed class AutoFixTool
     /// <summary>A single per-file failure. <see cref="File"/> is repo-relative
     /// and <see cref="Message"/> is scrubbed of absolute host paths.</summary>
     internal sealed record AutoFixError(string File, string Message);
+
+    /// <summary>A per-file unified diff for the preview (dry-run) surface — so a
+    /// human (or an MCP agent) can review the actual change before applying it,
+    /// not just a bare file name. <see cref="Diff"/> is secret-redacted and
+    /// line-capped. WM-24.</summary>
+    internal sealed record AutoFixFileDiff(string File, IReadOnlyList<string> RuleIds, string Diff);
 
     /// <summary>
     /// Internal helper for sibling tools (e.g. <see cref="BeforeAfterTool"/>)
@@ -254,6 +261,9 @@ public sealed class AutoFixTool
             // Additive: previously-swallowed per-file failures.
             errors = (report.Errors ?? Array.Empty<AutoFixError>())
                 .Select(e => new { file = e.File, error = e.Message }).ToList(),
+            // Additive (WM-24): per-file preview diffs for agent review.
+            diffs = (report.Diffs ?? Array.Empty<AutoFixFileDiff>())
+                .Select(d => new { file = d.File, ruleIds = d.RuleIds, diff = d.Diff }).ToList(),
         }, new JsonSerializerOptions { WriteIndented = true });
     }
 
@@ -321,20 +331,45 @@ public sealed class AutoFixTool
 
         var errors = outcomes.Where(o => o.Error is not null).Select(o => o.Error!).ToList();
 
+        // WM-24: a per-file unified diff so the preview is actually reviewable.
+        // Reuses BeforeAfterTool's secret-redacting renderer; each diff is line-capped.
+        var diffs = outcomes
+            .Where(o => o.ChangedByRules.Count > 0 && o.OldText is not null && o.NewText is not null)
+            .Select(o => new AutoFixFileDiff(
+                o.Relative,
+                o.ChangedByRules,
+                CapLines(BeforeAfterTool.RenderUnifiedDiff(o.OldText!, o.NewText!, contextLines: 2), maxLines: 200)))
+            .ToList();
+
         return new AutoFixAllReport(
             DryRun: dryRun,
             OrderOfExecution: OrderedRuleIds,
             TotalDistinctFilesChanged: allChanged.Count,
             AffectedFiles: allChanged.ToList(),
             PerRule: perRule,
-            Errors: errors);
+            Errors: errors,
+            Diffs: diffs);
     }
 
-    /// <summary>Per-file result of one pipeline pass.</summary>
+    /// <summary>Truncates a rendered diff to <paramref name="maxLines"/> lines with
+    /// a pointer to the full form, so one huge file cannot flood the terminal.</summary>
+    private static string CapLines(string text, int maxLines)
+    {
+        var lines = text.Split('\n');
+        if (lines.Length <= maxLines) return text;
+        return string.Join('\n', lines.Take(maxLines))
+            + $"\n… (+{lines.Length - maxLines} more diff lines — re-run with --json for the full diff)";
+    }
+
+    /// <summary>Per-file result of one pipeline pass. <see cref="OldText"/> /
+    /// <see cref="NewText"/> are captured only for changed files, for the
+    /// preview diff (WM-24).</summary>
     private sealed record FileOutcome(
         string Relative,
         IReadOnlyList<string> ChangedByRules,
-        AutoFixError? Error);
+        AutoFixError? Error,
+        string? OldText = null,
+        string? NewText = null);
 
     /// <summary>
     /// The single per-file engine shared by <see cref="MafAutoFix"/> (one rewriter)
@@ -390,10 +425,11 @@ public sealed class AutoFixTool
                     continue;
                 }
 
+                var newText = root.ToFullString();
                 if (!dryRun)
-                    SafeWorkspaceWriter.WriteAtomic(repoPath, file, root.ToFullString(), encoding);
+                    SafeWorkspaceWriter.WriteAtomic(repoPath, file, newText, encoding);
 
-                outcomes.Add(new FileOutcome(relative, changedBy, null));
+                outcomes.Add(new FileOutcome(relative, changedBy, null, OldText: src, NewText: newText));
             }
             catch (Exception ex)
             {

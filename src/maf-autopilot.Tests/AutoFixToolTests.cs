@@ -1101,4 +1101,38 @@ public class AutoFixToolTests
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
+
+    // -------------------------------------------------------------------------
+    // WM-24: dry-run preview carries a reviewable per-file diff, not just names.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MafAutoFixAll_DryRun_IncludesReviewableDiff()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "maf-wm24-diff-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var file = Path.Combine(dir, "Exec.cs");
+            var original = """
+                using System.Threading.Tasks;
+                public class Executor { }
+                public sealed class MessageHandlerAttribute : System.Attribute { }
+                public partial class MyExec : Executor {
+                  [MessageHandler]
+                  public Task<int> Handle(string s) => Task.FromResult(0);
+                }
+                """;
+            File.WriteAllText(file, original);
+            var json = new AutoFixTool().MafAutoFixAll(dir, dryRun: true);
+            var doc = JsonSerializer.Deserialize<JsonDocument>(json)!;
+            var diffs = doc.RootElement.GetProperty("diffs");
+            Assert.Equal(1, diffs.GetArrayLength());
+            var diffText = diffs[0].GetProperty("diff").GetString()!;
+            Assert.Contains("+", diffText);                    // a real added line, not just a file name
+            Assert.Contains("sealed partial class MyExec", diffText); // the rewrite is shown
+            Assert.Equal(original, File.ReadAllText(file));    // dry-run wrote nothing
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
 }
