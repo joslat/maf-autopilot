@@ -156,7 +156,7 @@ Optional gates (recommended):
 - `MafLintAgentPrompt(repoPath)` with no PROMPT-004 errors (prompt injection).
 - `MafEstimateCost(repoPath)` with zero unbounded sites.
 
-The PR-comment integration via `MafAuditPullRequest` posts a sticky summary to the PR — no greenfield work should land without that summary being clean.
+The CI sticky PR comment is the **product-scoped `doctor`** report (whole-repo, `samples/`/`.Tests/`/`find-the-bug/` excluded) run by `maf-pr-audit.yml` — no greenfield work should land without that summary being clean. (`MafAuditPullRequest` remains the on-demand MCP tool for a **diff-scoped** audit of just the changed files.)
 
 ## Anti-patterns we've already paid for
 

@@ -15,8 +15,15 @@ name: MAF PR Audit Comment
 # that still has to process fork-supplied content.
 
 on:
+  # SEC-11: the single sticky-comment poster for every PR-time producer whose scan
+  # job runs untrusted PR code and therefore can't safely hold `pull-requests: write`.
+  # Each producer uploads its comment body + pr-number.txt as an artifact; this
+  # base-repo-context companion posts it without ever touching fork code.
   workflow_run:
-    workflows: ["MAF PR Audit"]
+    workflows:
+      - "MAF PR Audit"
+      - "MCP server security scan (Cisco mcp-scanner)"
+      - "MAF AI-Fill PR Verify"
     types: [completed]
 
 # `actions: read` is required for actions/download-artifact to fetch an
@@ -46,17 +53,59 @@ jobs:
     if: (github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure') && github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      # maf-pr-audit.yml now ALWAYS uploads this artifact on a successful run
+      # SEC-11: map the upstream workflow name → its uploaded artifact name, comment
+      # body file, and sticky-comment header. One companion, several producers.
+      - name: Resolve producer
+        id: producer
+        env:
+          WF_NAME: ${{ github.event.workflow_run.name }}
+        run: |
+          case "$WF_NAME" in
+            "MAF PR Audit")
+              echo "artifact=pr-audit-result" >> "$GITHUB_OUTPUT"
+              echo "body_file=pr-audit-full.md" >> "$GITHUB_OUTPUT"
+              echo "header=maf-autopilot-audit" >> "$GITHUB_OUTPUT" ;;
+            "MCP server security scan (Cisco mcp-scanner)")
+              echo "artifact=mcp-scanner-result" >> "$GITHUB_OUTPUT"
+              echo "body_file=pr-comment.md" >> "$GITHUB_OUTPUT"
+              echo "header=mcp-scanner-result" >> "$GITHUB_OUTPUT" ;;
+            "MAF AI-Fill PR Verify")
+              echo "artifact=maf-ai-fill-verify-result" >> "$GITHUB_OUTPUT"
+              echo "body_file=ai-fill-verify-comment.md" >> "$GITHUB_OUTPUT"
+              echo "header=maf-ai-fill-verify" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "::error::Unrecognized upstream workflow: $WF_NAME"; exit 1 ;;
+          esac
+
+      # The producer ALWAYS uploads this artifact on a completed run
       # (a placeholder message when the audit was intentionally skipped, the
       # real report otherwise) — so reaching this step with the artifact
       # missing is a genuine problem, not an expected case to swallow. No
       # continue-on-error: a failure here should be visible.
-      - name: Download audit result
+      - name: Download producer result
+        id: download
+        # continue-on-error: a producer that ran but was OUT OF SCOPE legitimately
+        # uploads no artifact (e.g. MAF AI-Fill PR Verify on a PR that doesn't touch
+        # registry.yaml). The next step turns a missing body into a clean no-op; the
+        # always-uploading producers (audit / mcp-scanner) still always have one.
+        continue-on-error: true
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
         with:
-          name: pr-audit-result
+          name: ${{ steps.producer.outputs.artifact }}
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check comment body present
+        id: check
+        env:
+          BODY_FILE: ${{ steps.producer.outputs.body_file }}
+        run: |
+          if [ -f "$BODY_FILE" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "No comment body from '${{ github.event.workflow_run.name }}' (producer out of scope / no artifact) — nothing to post."
+          fi
 
       # F-14 — pr-number.txt is attacker-influenced (it's written inside
       # maf-pr-audit.yml, which runs Roslyn analysis over fork-supplied source
@@ -73,6 +122,7 @@ jobs:
       # chosen markdown to an arbitrary one.
       - name: Resolve and verify PR number
         id: pr
+        if: steps.check.outputs.present == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -93,6 +143,7 @@ jobs:
           echo "number=$RESOLVED" >> "$GITHUB_OUTPUT"
 
       - name: Cap comment size and stamp audited SHA
+        if: steps.check.outputs.present == 'true'
         # Defense in depth alongside PathGuard-style caps elsewhere in the
         # project — pr-audit-full.md's content ultimately derives from the
         # PR's own (possibly adversarial) source tree via `doctor`'s findings.
@@ -104,21 +155,30 @@ jobs:
         # PR's current head.
         env:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          BODY_FILE: ${{ steps.producer.outputs.body_file }}
         run: |
           MAX_BYTES=60000
-          if [ "$(wc -c < pr-audit-full.md)" -gt "$MAX_BYTES" ]; then
-            head -c "$MAX_BYTES" pr-audit-full.md > pr-audit-full.trunc.md
-            printf '\n\n> ⚠️ **Report truncated** — exceeded %s bytes. See the full log in the workflow run.\n' "$MAX_BYTES" >> pr-audit-full.trunc.md
-            mv pr-audit-full.trunc.md pr-audit-full.md
+          if [ "$(wc -c < "$BODY_FILE")" -gt "$MAX_BYTES" ]; then
+            # REP-30: truncate at a LINE boundary (drop the possibly-split last line),
+            # strip any partial trailing UTF-8 byte, then RE-BALANCE code fences so the
+            # truncation notice can never land inside an unclosed ``` block. A raw
+            # byte cut previously split a UTF-8 char or an open fence.
+            head -c "$MAX_BYTES" "$BODY_FILE" | sed '$ d' | iconv -f utf-8 -t utf-8 -c > body.trunc
+            if [ $(( $(grep -c '^[[:space:]]*```' body.trunc) % 2 )) -eq 1 ]; then
+              printf '```\n' >> body.trunc
+            fi
+            printf '\n\n> ⚠️ **Report truncated** — exceeded %s bytes. See the full log in the workflow run.\n' "$MAX_BYTES" >> body.trunc
+            mv body.trunc "$BODY_FILE"
           fi
-          printf '\n\n_Audited commit: `%s`_\n' "$HEAD_SHA" >> pr-audit-full.md
+          printf '\n\n_Audited commit: `%s`_\n' "$HEAD_SHA" >> "$BODY_FILE"
 
       - name: Comment on PR
+        if: steps.check.outputs.present == 'true'
         # SHA-pinned per supply-chain hardening. Verify against tag with:
         #   gh api repos/marocchino/sticky-pull-request-comment/git/refs/tags/v2.9.2 --jq .object.sha
         # Update via Dependabot (.github/dependabot.yml).
         uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0  # v2.9.2
         with:
-          header: maf-autopilot-audit
-          path: pr-audit-full.md
+          header: ${{ steps.producer.outputs.header }}
+          path: ${{ steps.producer.outputs.body_file }}
           number: ${{ steps.pr.outputs.number }}
