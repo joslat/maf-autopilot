@@ -719,7 +719,7 @@ Beyond the external scanner, every code-side invariant from §2 should be enforc
 | `process-start-discipline` | Block the unsafe `Arguments` string property; allowlist `Process.Start` call sites. New spawn site → add to allowlist in same PR. |
 | `regex-hygiene` | Every `new Regex(` (classical OR target-typed `Regex X = new(...)`) carries `NonBacktracking + MatchTimeout` (raw tokens or shared constant names). |
 | `enumeration-options` | Every recursive `Directory.EnumerateFiles/GetFiles(..., SearchOption.AllDirectories)` passes `EnumerationOptions` (so `AttributesToSkip = ReparsePoint` can be enforced). |
-| `workflow-input-redirect` | No `${{ inputs.* \| github.event.inputs.* \| needs.*.outputs.* \| steps.*.outputs.* }}` inside `run:` blocks. |
+| `workflow-input-redirect` | No attacker-influenced `${{ … }}` context interpolated directly inside a `run:` block — redirect through `env:` instead. Covers `inputs.* \| github.event.inputs.* \| needs.*.outputs.* \| steps.*.outputs.*` and (widened, WM-14) the free-text **event fields** that fork PRs / issues / comments control: `github.event.pull_request.title/body`, issue/comment/review titles + bodies, commit-message fields. Allowlist the safe structured fields (`pull_request.number`, `.base.sha`, `.head.sha`) so they stay usable. Catches both block-scalar (`run: \|`) and single-line `run:` forms. |
 | `permissions-required` | Every workflow declares an explicit `permissions:` scope (top-level or per-job). |
 | `lint-workflows-and-scripts` | Every workflow YAML parses cleanly (no duplicate mapping keys — GitHub's parser rejects those as a `startup_failure`); `actionlint`; the repo's Python helper scripts compile and their unit tests pass. |
 
