@@ -77,13 +77,31 @@ _DIFF_PARSED_MARKERS = (
 )
 
 
+# Change-bullet markers (a subset of _DIFF_PARSED_MARKERS). When ANY of these is
+# present, a COMPLETE dotnet-inspect report also ends with a `**Summary:**` line —
+# so a change-bearing diff MISSING that line was truncated mid-report and must not
+# be trusted (WM-11). The "No API changes detected" banner is a complete report
+# with no change bullets and needs no Summary.
+_CHANGE_BULLET_MARKERS = ('was added', 'was removed', 'signature changed')
+
+
 def diff_is_trustworthy(diff_text: str) -> bool:
     """An ADDITIVE verdict may only rest on a diff we can read. Empty text, a
     NuGet error, or a stack trace shows none of the dotnet-inspect markers and is
-    NOT trustworthy → the caller must treat the release as breaking/unverifiable."""
+    NOT trustworthy → the caller must treat the release as breaking/unverifiable.
+
+    WM-11: a diff that carries change bullets (`was added`/`was removed`/`signature
+    changed`) but LACKS the closing `**Summary:**` line was truncated on a clean exit
+    (the Summary is the last thing dotnet-inspect prints) — treat it as untrustworthy
+    so a clean-exit-but-truncated report also fails closed to breaking."""
     if not diff_text or not diff_text.strip():
         return False
-    return any(m in diff_text for m in _DIFF_PARSED_MARKERS)
+    if not any(m in diff_text for m in _DIFF_PARSED_MARKERS):
+        return False
+    has_change_bullets = any(m in diff_text for m in _CHANGE_BULLET_MARKERS)
+    if has_change_bullets and 'Summary:' not in diff_text:
+        return False
+    return True
 
 
 def dotnet_breaking_lines(release_notes: str) -> list[str]:

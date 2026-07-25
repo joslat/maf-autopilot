@@ -13,12 +13,7 @@ and covered by the compile-check CI gate.
 from __future__ import annotations
 
 import json
-import re
 import sys
-
-# Prerelease suffixes we never auto-process. A manual workflow_dispatch with an
-# explicit `maf_version` is the path for prereleases.
-_PRERELEASE = re.compile(r"-(alpha|beta|rc|preview)", re.IGNORECASE)
 
 
 def latest_stable(raw: str) -> str:
@@ -27,12 +22,18 @@ def latest_stable(raw: str) -> str:
     NuGet's flatcontainer index lists versions in ascending order, so the last
     stable entry is the newest. Empty/whitespace input or only-prereleases both
     yield ''.
+
+    SEC-28: a version is prerelease iff its SemVer core (the part before any '+'
+    build-metadata) contains a hyphen. The old denylist only knew -alpha/-beta/-rc/
+    -preview, so any other label (-dev, -nightly, -daily, -ci, …) was auto-processed
+    as stable. A manual workflow_dispatch with an explicit `maf_version` remains the
+    path for prereleases.
     """
     raw = (raw or "").strip()
     if not raw:
         return ""
     data = json.loads(raw)
-    stable = [v for v in data.get("versions", []) if not _PRERELEASE.search(v)]
+    stable = [v for v in data.get("versions", []) if "-" not in v.split("+", 1)[0]]
     return stable[-1] if stable else ""
 
 

@@ -186,8 +186,23 @@ internal static class ProcessRunner
         // server's secrets. Done centrally so all four call paths are covered.
         ScrubSensitiveEnvironment(psi);
 
-        using var p = Process.Start(psi)
-            ?? throw new InvalidOperationException($"Failed to start process: {psi.FileName}");
+        Process p;
+        try
+        {
+            p = Process.Start(psi)
+                ?? throw new InvalidOperationException($"Failed to start process: {psi.FileName}");
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // SEC-10: the binary isn't on PATH — most commonly inside the slim container
+            // image, which ships only the runtime (no SDK / git / dnx / dotnet-inspect).
+            // Return a clear, actionable message instead of an opaque Win32Exception crash.
+            return (127,
+                $"`{psi.FileName}` is not available in this environment. The slim container image " +
+                "ships only the runtime — the build / git / package-diff tools need the .NET SDK, " +
+                "so run maf-doctor as the global tool instead: `dotnet tool install -g maf-doctor`.");
+        }
+        using var _proc = p;
 
         // F-08 — bound memory WHILE reading instead of truncating a fully-buffered
         // string after the fact. A pathological build log could otherwise allocate

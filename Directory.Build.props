@@ -19,5 +19,19 @@
       solution with NuGet's lock file force-evaluate option.
     -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!--
+      SEC-15: give the NuGet vulnerability audit teeth. NuGetAuditMode=all audits
+      the full TRANSITIVE graph the lock files freeze (not just direct deps).
+      Restore HARD-FAILS on HIGH/CRITICAL advisories (NU1903/NU1904) so a
+      known-vulnerable dependency version can never ship — in every CI lane
+      including release. NU1901/NU1902 (low/moderate) stay warnings to avoid
+      churn from advisories with no fixed version available; suppress a specific
+      NU1903/NU1904 per-project (with a justification comment) only when no
+      patched version exists. TreatWarningsAsErrors stays false, so ordinary
+      compiler warnings are unaffected and clean graphs build identically.
+    -->
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <WarningsAsErrors>$(WarningsAsErrors);NU1903;NU1904</WarningsAsErrors>
   </PropertyGroup>
 </Project>

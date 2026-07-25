@@ -45,6 +45,7 @@ DIFF_ADDITIVE = """
 - Member 'RunSkillScriptToolName' was added
 ### AgentSkillsProviderBuilder
 - Member 'UseSource' was added
+**Summary:** 0 breaking, 3 additive
 """
 
 DIFF_WITH_REMOVAL = """
@@ -118,8 +119,19 @@ def test_usage_token_and_header_alone_are_not_trustworthy():
     # The report HEADER alone is the FIRST line — a truncated diff carries it with
     # no content bullets, so it must NOT count as a completed diff (fail-closed).
     assert diff_is_trustworthy("# API Diff: Microsoft.Agents.AI\n") is False
-    # A completed diff carries at least one content marker.
-    assert diff_is_trustworthy("# API Diff: X\n- Member 'A' was added\n") is True
+    # WM-11: a completed diff carries change bullets AND the closing **Summary:** line.
+    assert diff_is_trustworthy("# API Diff: X\n- Member 'A' was added\n**Summary:** 0 breaking, 1 additive\n") is True
+
+
+def test_change_bullets_without_summary_are_truncated_not_trustworthy():
+    # WM-11: dotnet-inspect exited cleanly but the report was truncated right after an
+    # additive bullet (the closing **Summary:** never arrived). A clean-exit-but-
+    # truncated diff must fail closed to breaking, not slip through as additive.
+    truncated = "# API Diff: X\n- Member 'A' was added\n"   # no Summary line
+    assert diff_is_trustworthy(truncated) is False
+    assert is_additive("## Changes:\n* .NET: x\n", truncated) is False
+    # The "No API changes detected" banner is a complete report with no change bullets.
+    assert diff_is_trustworthy("No API changes detected.\n") is True
 
 
 def test_new_obsolete_member_is_not_additive():

@@ -33,9 +33,23 @@ def test_ascending_order_returns_last_stable():
     assert latest_stable(raw) == "1.2.0"
 
 
-@pytest.mark.parametrize("suffix", ["-alpha", "-beta", "-rc1", "-preview.2", "-RC2"])
+# SEC-28: ANY hyphen is a SemVer prerelease label — not just the four the old
+# denylist knew. -dev / -nightly / -daily / -ci must all be filtered.
+@pytest.mark.parametrize(
+    "suffix",
+    ["-alpha", "-beta", "-rc1", "-preview.2", "-RC2",
+     "-dev", "-nightly", "-daily.20260801", "-ci", "-canary"],
+)
 def test_prerelease_suffixes_are_filtered(suffix: str):
     assert latest_stable(_index("1.4.0", f"1.5.0{suffix}")) == "1.4.0"
+
+
+def test_any_hyphen_label_is_prerelease():
+    # A mixed index whose only "newer" entry is a non-standard prerelease label
+    # must fall back to the stable version below it.
+    assert latest_stable(_index("1.4.0", "1.5.0-daily.1")) == "1.4.0"
+    # Build metadata ('+') is stable — the core version has no hyphen.
+    assert latest_stable(_index("1.4.0", "1.5.0+build.7")) == "1.5.0+build.7"
 
 
 def test_prerelease_only_returns_empty():

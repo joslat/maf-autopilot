@@ -43,9 +43,17 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # SEC-13: OIDC token + attestation write so the build produces a signed
+      # provenance attestation over the published .nupkg files.
+      id-token: write
+      attestations: write
 
     steps:
+      # SEC-13: full history so the tag-on-main guard's `merge-base --is-ancestor`
+      # can see whether the tagged commit is actually on the reviewed main branch.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET (all three runtimes — nupkg multi-targets net8/9/10)
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1  # v5.4.0
@@ -104,6 +112,20 @@ jobs:
           echo "override=$OVERRIDE" >> $GITHUB_OUTPUT
           echo "is_tag=$IS_TAG" >> $GITHUB_OUTPUT
           echo "Releasing version: $VERSION"
+
+      - name: Guard — tag commit must be on main (SEC-13)
+        # A tag can point at ANY commit (incl. one never reviewed/merged). Publishing
+        # from it would attach the release notes + NUGET_API_KEY to unreviewed code.
+        # Only enforced on the tag-push path; workflow_dispatch is a manual maintainer
+        # action with no tag ref. Requires fetch-depth: 0 on checkout above.
+        if: steps.version.outputs.is_tag == 'true'
+        run: |
+          git fetch --no-tags --depth=2147483647 origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag commit $GITHUB_SHA is not an ancestor of origin/main — refusing to publish a package from a commit that isn't on the reviewed main branch."
+            exit 1
+          fi
+          echo "✅ Tag commit is on main."
 
       - name: Override version in csproj
         if: steps.version.outputs.override == 'true'
@@ -183,10 +205,26 @@ jobs:
           echo "::error::Analyzer nupkg was not produced (pack exit code was $PACK_EXIT)"
           exit "$PACK_EXIT"
 
+      - name: Attest build provenance (SEC-13)
+        # Signed provenance over the exact packages this run produced — makes a
+        # published package attributable to this workflow run + commit. Runs before
+        # publish so a package can't be pushed without its attestation. SHA-pinned
+        # (v4.1.1) per the repo-wide supply-chain hardening.
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
+        with:
+          subject-path: 'src/dist/*.nupkg'
+
       - name: Publish to NuGet
+        # SEC-13: the API key is read from env: (not ${{ }}-templated into the run
+        # block) for template-injection safety + log hygiene. NOTE: `--api-key
+        # "$NUGET_API_KEY"` still expands into the dotnet argv (visible via /proc on
+        # the runner). Fully removing that requires NuGet.org Trusted Publishing
+        # (OIDC) — enable it on the account and drop this secret entirely.
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: |
           dotnet nuget push src/dist/*.nupkg \
-            --api-key ${{ secrets.NUGET_API_KEY }} \
+            --api-key "$NUGET_API_KEY" \
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate
 

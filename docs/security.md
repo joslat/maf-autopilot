@@ -40,6 +40,27 @@
 
 ---
 
+## Container capability boundary (SEC-10)
+
+The published image (`ghcr.io/joslat/maf-doctor`) is built on the **.NET runtime** base
+(~150 MB), not the SDK (~900 MB). That keeps the image small but means the tools that
+shell out to the .NET SDK are **not available inside the container**:
+
+| Tool | Needs | In the container |
+|---|---|---|
+| `MafRunCs0618Hunt` | `dotnet build` (SDK) | ❌ not available |
+| `MafDiffPackage` | `dotnet-inspect` / `dnx` (SDK) | ❌ not available |
+| `MafPreUpgradeDryRun` | `dotnet-inspect` / `dnx` (SDK) | ❌ not available |
+| `MafAuditPullRequest` | `git` | ✅ works (`git` is installed) |
+| everything else (scan / lint / cost / scaffold / registry / doctor) | Roslyn only | ✅ works |
+
+The unavailable tools **detect the missing binary and return a clear message**
+(`"… not available in this environment … dotnet tool install -g maf-doctor"`) rather
+than crashing. To use the SDK-dependent tools, install the .NET **global tool** on a
+host that has the SDK: `dotnet tool install -g maf-doctor`.
+
+---
+
 ## Known MCP attack classes — coverage status
 
 This section names public, well-documented MCP attack classes and shows — with file/line citations — the mitigation in place for each and, honestly, how strong a guarantee it actually is. Some of these are structural (a compiler/CI-enforced invariant that cannot silently regress); others are behavioral mitigations against a probabilistic model, which reduce risk but are not a hard guarantee no LLM will ever be talked into ignoring them — those are labeled **Mitigated, not eliminated** rather than a flat "not vulnerable." If a class isn't listed here, see [`docs/security/threat-model.md`](security/threat-model.md) for the full attack-surface map. The classes below are anchored against the canonical sources listed in the [Canonical references](#canonical-references) section at the end of this document.
