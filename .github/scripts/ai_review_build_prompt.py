@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import textwrap
@@ -25,6 +26,17 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+
+# SEC-01: a registry entry id is PR-contributor-controlled. It is used as a fence
+# LABEL (outside the data fence) and echoed into the entries list + logs, so a crafted
+# id could inject text into the model's trusted region. Allowlist plain ids; anything
+# else becomes "unknown-entry". Real ids (e.g. MAF140-THREAD-001) pass unchanged.
+_SAFE_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
+def safe_id(entry: dict) -> str:
+    raw = entry.get("id")
+    return raw if isinstance(raw, str) and _SAFE_ID.fullmatch(raw) else "unknown-entry"
 
 # Phase 2.7 — fence PR-controlled registry entries before embedding in the
 # model prompt. A malicious PR contributor can put prompt-injection payloads
@@ -123,11 +135,11 @@ def main() -> int:
 
     entries = find_changed(base, head)
     ENTRIES_OUT.write_text(
-        json.dumps([e["id"] for e in entries]),
+        json.dumps([safe_id(e) for e in entries]),
         encoding="utf-8",
     )
     print(f"# Found {len(entries)} changed entries: "
-          f"{[e['id'] for e in entries]}", file=sys.stderr)
+          f"{[safe_id(e) for e in entries]}", file=sys.stderr)
 
     if not entries:
         # Emit an empty prompt — workflow step will skip the AI call.
@@ -140,7 +152,7 @@ def main() -> int:
         # content, not its own instructions. 16 KB cap per entry is generous
         # (real entries are ~1-2 KB) but bounded enough that 50 hostile
         # entries can't flood the context window.
-        entry_id = e.get("id", "unknown-entry")
+        entry_id = safe_id(e)  # SEC-01: sanitized before use as a fence label
         yaml_dump = yaml.safe_dump(e, sort_keys=False, allow_unicode=True).rstrip()
         parts.append(fence(f"registry-entry-{entry_id}", yaml_dump, max_bytes=16 * 1024))
         parts.append("")

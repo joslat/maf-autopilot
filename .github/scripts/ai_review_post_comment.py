@@ -15,13 +15,35 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
 
 COMMENT_ONLY_MODE = True
 ENTRIES_FILE = Path(".ai-review-entries.json")
+
+# REP-10: hidden marker so the review is a single UPDATED sticky comment per PR,
+# not a fresh review on every push.
+MARKER = "<!-- maf-ai-semantic-review -->"
+
+# SEC-19: the model response is untrusted output. Strip HTML comments and neutralize
+# triple-backtick runs before embedding it in the comment so a crafted response can't
+# smuggle markdown / escape a fence.
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+_SAFE_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
+def md_safe(s: Any) -> str:
+    s = _HTML_COMMENT_RE.sub("", str(s))
+    return s.replace("```", "`​`​`")
+
+
+def safe_id_str(s: Any) -> str:
+    s = str(s)
+    return s if _SAFE_ID.fullmatch(s) else "unknown-entry"
 
 
 def parse_response(raw: str) -> dict[str, Any] | None:
@@ -58,7 +80,7 @@ def render_body(parsed: dict[str, Any] | None, raw: str, ids: list[str]) -> tupl
             "_This is comment-only mode; the human still makes the merge call._\n\n"
             "---\n\n"
             "```\n"
-            + raw[:3500]
+            + md_safe(raw[:3500])
             + ("\n... (truncated)" if len(raw) > 3500 else "")
             + "\n```"
         )
@@ -103,17 +125,19 @@ def render_body(parsed: dict[str, Any] | None, raw: str, ids: list[str]) -> tupl
     by_id = {e.get("id"): e for e in entries}
     for eid in ids:
         e = by_id.get(eid)
+        eid_safe = safe_id_str(eid)  # SEC-19: eid heading comes from attacker-influenced source
         if not e:
-            lines.append(f"### :grey_question: `{eid}` — not reviewed (missing from model output)")
+            lines.append(f"### :grey_question: `{eid_safe}` — not reviewed (missing from model output)")
             lines.append("")
             continue
         v = e.get("verdict", "?")
         ve = {"PASS": ":white_check_mark:", "WARN": ":warning:", "FAIL": ":x:"}.get(v, ":grey_question:")
-        lines.append(f"### {ve} `{eid}` — {v}")
+        lines.append(f"### {ve} `{eid_safe}` — {v}")
         findings = e.get("findings", [])
         if findings:
             for f in findings:
-                lines.append(f"- {f}")
+                # SEC-19: neutralize per-finding model text and collapse newlines.
+                lines.append(f"- {md_safe(f).replace(chr(10), ' ').replace(chr(13), ' ')}")
         else:
             lines.append("- _No issues found._")
         lines.append("")
@@ -121,22 +145,48 @@ def render_body(parsed: dict[str, Any] | None, raw: str, ids: list[str]) -> tupl
     return "\n".join(lines), overall
 
 
-def post_review(owner: str, repo: str, pr: int, body: str, token: str) -> None:
-    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr}/reviews"
+def _api(url: str, token: str, method: str = "GET", data: dict | None = None) -> Any:
+    payload = json.dumps(data).encode("utf-8") if data is not None else None
     req = urllib.request.Request(
         url,
-        data=json.dumps({"body": body, "event": "COMMENT"}).encode("utf-8"),
+        data=payload,
         headers={
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github+json",
             "Content-Type": "application/json",
             "X-GitHub-Api-Version": "2022-11-28",
         },
-        method="POST",
+        method=method,
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
-        if resp.status >= 300:
-            raise RuntimeError(f"Posting review failed: HTTP {resp.status}")
+        raw = resp.read()
+    return json.loads(raw) if raw else None
+
+
+def upsert_sticky_comment(owner: str, repo: str, pr: int, body: str, token: str) -> None:
+    """REP-10: post ONE live sticky comment per PR — find the existing marked comment
+    and PATCH it in place, else POST a new one. Replaces posting a brand-new PR review
+    on every push (which accumulated a stack of stale verdicts). Needs only issues:write."""
+    existing_id = None
+    page = 1
+    while True:
+        listing = _api(
+            f"https://api.github.com/repos/{owner}/{repo}/issues/{pr}/comments?per_page=100&page={page}",
+            token,
+        ) or []
+        for c in listing:
+            if MARKER in (c.get("body") or ""):
+                existing_id = c.get("id")  # take the latest match
+        if len(listing) < 100:
+            break
+        page += 1
+
+    if existing_id is not None:
+        _api(f"https://api.github.com/repos/{owner}/{repo}/issues/comments/{existing_id}",
+             token, method="PATCH", data={"body": body})
+    else:
+        _api(f"https://api.github.com/repos/{owner}/{repo}/issues/{pr}/comments",
+             token, method="POST", data={"body": body})
 
 
 def main() -> int:
@@ -163,8 +213,13 @@ def main() -> int:
         except Exception:
             ids = []
 
+    head_sha = os.environ.get("HEAD_SHA", "").strip() or os.environ.get("GITHUB_SHA", "").strip()
+
     parsed = parse_response(raw)
     body, overall = render_body(parsed, raw, ids)
+    # REP-10: prepend the hidden marker (so the upsert finds THIS comment) + the reviewed
+    # head SHA (so a reader knows which push the verdict covers).
+    body = f"{MARKER}\n_Reviewed head: `{safe_id_str(head_sha) if head_sha else 'unknown'}`_\n\n{body}"
 
     print("--- Review body (preview, first 800 chars) ---")
     print(body[:800])
@@ -172,8 +227,8 @@ def main() -> int:
     print(f"Overall verdict: {overall}")
 
     try:
-        post_review(owner, repo, int(pr), body, token)
-        print(f"Posted review to PR #{pr}.")
+        upsert_sticky_comment(owner, repo, int(pr), body, token)
+        print(f"Upserted sticky review comment on PR #{pr}.")
     except Exception as exc:
         print(f"ERROR posting review: {exc!r}", file=sys.stderr)
         return 0 if COMMENT_ONLY_MODE else 1

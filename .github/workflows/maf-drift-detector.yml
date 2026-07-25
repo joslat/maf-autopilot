@@ -7,7 +7,11 @@ name: MAF Drift Detector
 
 on:
   schedule:
-    - cron: '0 11 * * 1'  # Monday 11:00 UTC — 2h after the watcher (task 3.3) so the doctor grades a settled main
+    # WM-34: an INDEPENDENT weekly health grade of main. No coordination with the
+    # release-watcher is needed — it opens PRs now, it no longer pushes to main, so
+    # there is nothing to "settle after". Moved off 11:00 (which collided exactly with
+    # mcp-scanner's cron) to spread runner load.
+    - cron: '0 9 * * 1'   # Monday 09:00 UTC
   workflow_dispatch:        # Manual trigger anytime
 
 permissions:
@@ -78,6 +82,17 @@ jobs:
           name: maf-doctor-report
           path: maf-doctor-report.md
 
+      - name: Fail on unparseable grade (REP-13)
+        # A grade of UNKNOWN means the doctor JSON had no `verdict` — a broken doctor
+        # run or a contract change. That must be a LOUD tracked failure (which fires
+        # the notify-on-failure rolling issue below), NOT a fully-green drift run that
+        # silently disables monitoring. Runs after the artifact upload so the report is
+        # still inspectable.
+        if: steps.doctor.outputs.grade == 'UNKNOWN'
+        run: |
+          echo "::error title=Drift detector could not read the doctor grade::doctor --json had no 'verdict' — the doctor run failed or its JSON contract changed. Fix before trusting drift monitoring."
+          exit 1
+
       - name: Ensure drift labels exist
         if: steps.doctor.outputs.grade != 'A' && steps.doctor.outputs.grade != 'UNKNOWN'
         env:
@@ -96,7 +111,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GRADE: ${{ steps.doctor.outputs.grade }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          # REP-31: cap the report so gh issue create/edit never fails on an oversized
+          # body (the GitHub API rejects >65536 chars — the drift report would then never
+          # reach the maintainer). Truncate at a line boundary, strip a partial trailing
+          # UTF-8 byte; the full report is on the run artifact.
+          MAX_BYTES=60000
+          if [ "$(wc -c < maf-doctor-report.md)" -gt "$MAX_BYTES" ]; then
+            head -c "$MAX_BYTES" maf-doctor-report.md | sed '$ d' | iconv -f utf-8 -t utf-8 -c > report.trunc.md
+            printf '\n\n> ⚠️ **Report truncated** — full report attached as the maf-doctor-report artifact on this run: %s\n' "$RUN_URL" >> report.trunc.md
+            mv report.trunc.md maf-doctor-report.md
+          fi
           TITLE="🩺 MAF drift detected — current health grade: ${GRADE}"
           BODY=$(cat maf-doctor-report.md)
           BODY="${BODY}

@@ -25,7 +25,10 @@ name: MAF AI Auto-Fill TODOs
 #   Agent) enabled. Toggle at https://github.com/<owner>/<repo>/settings/copilot
 #   (one of "Allow Copilot/Claude/Codex coding agent" must be ON).
 # - Secret COPILOT_ASSIGN_PAT: fine-grained PAT owned by a Copilot-enabled user,
-#   with Issues R/W + Contents R/W + PRs R/W + Actions R/W on this repo only.
+#   with Issues R/W + Contents R/W + Pull requests R/W + Metadata R on this repo
+#   only. SEC-29: Actions R/W is NO LONGER required — the only Actions-API consumer
+#   (the cross-workflow dispatch) was removed in the 2026-06-28 "C" refactor. Rotate
+#   the PAT down to this union.
 #   This SAME secret is reused by maf-release-watcher.yml (Contents R/W, to push
 #   to main) — provision the full union here, not a narrower scope. [task 3.5]
 #   This is REQUIRED for auto-assignment — see the long comment block on the
@@ -44,6 +47,10 @@ on:
         description: 'Coding Agent to assign (copilot|claude|codex). Default: copilot — the claude integrator''s model was deprecated (2026-06: "model not available for integrator claude-code"), so copilot/gpt-4.1 is the proven-working path. Repoint the claude agent at claude-opus-4.8 to use claude again.'
         required: false
         default: 'copilot'
+      target_branch:
+        description: 'Scaffold branch that carries the TODO placeholders. Blank = release-watcher/maf-<target_version> (WM-28: the watcher PRs, no longer pushes to main).'
+        required: false
+        default: ''
   workflow_call:
     inputs:
       target_version:
@@ -53,6 +60,10 @@ on:
         type: string
         required: false
         default: 'copilot'
+      target_branch:
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -72,7 +83,8 @@ jobs:
       - name: Validate inputs
         env:
           TARGET: ${{ inputs.target_version }}
-          BOT: ${{ inputs.bot || 'claude' }}
+          BOT: ${{ inputs.bot || 'copilot' }}
+          BRANCH: ${{ inputs.target_branch }}
         run: |
           if ! echo "$TARGET" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$'; then
             echo "::error::Invalid target_version input shape: $TARGET (must be semver)"
@@ -82,6 +94,11 @@ jobs:
             claude|copilot|codex) ;;
             *) echo "::error::Invalid bot input: $BOT (must be claude|copilot|codex)" ; exit 1 ;;
           esac
+          # WM-28: same branch-name shape the watcher validates for push_target.
+          if [ -n "$BRANCH" ] && ! echo "$BRANCH" | grep -qE '^[A-Za-z0-9._/-]+$'; then
+            echo "::error::Invalid target_branch: $BRANCH (branch-name characters only)"
+            exit 1
+          fi
 
   open-issue-for-copilot:
     needs: validate-inputs
@@ -117,7 +134,7 @@ jobs:
 
       - name: Open issue assigned to chosen Coding Agent
         env:
-          BOT_NAME: ${{ inputs.bot || 'claude' }}
+          BOT_NAME: ${{ inputs.bot || 'copilot' }}
           # COPILOT_ASSIGN_PAT is a fine-grained PAT owned by a Copilot-enabled
           # user. It's REQUIRED for auto-assigning the Coding Agent bot:
           # `addAssigneesToAssignable` categorically rejects GITHUB_TOKEN and
@@ -132,6 +149,7 @@ jobs:
           GH_TOKEN_KIND: ${{ secrets.COPILOT_ASSIGN_PAT && 'pat' || 'github-token' }}
           TARGET: ${{ inputs.target_version }}
           DIGITS: ${{ steps.vars.outputs.version_digits }}
+          BRANCH: ${{ inputs.target_branch }}   # WM-28: blank → builder defaults to release-watcher/maf-<target>
         run: |
           # Render the issue body via a Python template helper. Previously
           # this was a ~180-line bash heredoc with every backtick escaped
@@ -139,6 +157,17 @@ jobs:
           # whole body. The helper reads ai_fill_issue_prompt.md.tpl and
           # substitutes {{TARGET}} / {{DIGITS}} with no shell parsing.
           ISSUE_BODY=$(python3 .github/scripts/build_ai_fill_issue_body.py)
+
+          # WM-30: idempotent. Re-dispatching for the same version must not spawn a
+          # duplicate issue + a duplicate paid Coding-Agent run. Dedupe on the version-
+          # stable title prefix (the "(assigned to: X)" suffix varies by bot).
+          EXISTING=$(gh issue list --label ai-fill --state open --json number,title \
+            --jq ".[] | select(.title | startswith(\"Fill TODOs for MAF ${TARGET} \")) | .number" | head -1)
+          if [ -n "$EXISTING" ]; then
+            echo "::notice::Open fill issue #$EXISTING already exists for MAF $TARGET — commenting instead of duplicating."
+            gh issue comment "$EXISTING" --body "Re-dispatch requested (bot: $BOT_NAME) — reusing this issue rather than opening a duplicate."
+            exit 0
+          fi
 
           # Two-step pattern: create the issue first, then assign the chosen
           # Coding Agent via GraphQL. The standard `gh issue edit
@@ -274,7 +303,7 @@ jobs:
               echo "         Resource owner: your user."
               echo "         Repository access: only this repo."
               echo "         Repo permissions: Contents R/W, Issues R/W, PRs R/W,"
-              echo "         Actions R/W, Metadata R."
+              echo "         Metadata R. (SEC-29: Actions R/W no longer needed.)"
               echo "      2. Save it as repo secret COPILOT_ASSIGN_PAT at"
               echo "         https://github.com/${GITHUB_REPOSITORY}/settings/secrets/actions"
               echo "      3. Re-run this workflow."
