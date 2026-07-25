@@ -8,6 +8,24 @@
 
 ---
 
+## Security documentation map
+
+Four documents, four audiences — read the one that matches your question:
+
+| Document | Read it when you want to… | Genre |
+| --- | --- | --- |
+| [`SECURITY.md`](../SECURITY.md) | **report a vulnerability** or see the scope/disclosure policy | GitHub Security-tab policy |
+| **`docs/security.md`** (this file) | **evaluate whether it's safe to install** — the plain-language posture and the latest scan result | User-facing overview |
+| [`docs/security/threat-model.md`](security/threat-model.md) | trace a **specific attack surface** to its mitigation, or see the acknowledged residual gaps | Formal threat model |
+| [`docs/mcp-security-hardening-best-practices.md`](mcp-security-hardening-best-practices.md) | **harden your own** MCP server using these patterns | Reusable playbook |
+
+Reporting policy and disclosure timelines live in `SECURITY.md`; this file does
+not restate them. The canonical **scanner-usage / latest-scan-result** home is
+this file's [§ Latest scan results](#latest-scan-results) — the threat model and
+the playbook link here rather than duplicating the numbers.
+
+---
+
 ## How we tackle security
 
 ### At the MCP-protocol level
@@ -216,7 +234,7 @@ Analyzer stats: yara_analyzer: 25/25 scanned, 0 findings
 
 - **Every PR against `main`** that touches `src/maf-autopilot/**`: [`.github/workflows/mcp-scanner.yml`](../.github/workflows/mcp-scanner.yml) runs the scanner, posts results as a sticky PR comment, and **fails the check on any finding** — promoted from advisory to a hard-fail gate on 2026-07-20 after 5 consecutive clean runs (F-16, 2026-07-19 security assessment). See that workflow's rollback playbook if a future false positive needs triage.
 - **Weekly cron** (Mondays 11:00 UTC): scheduled run as backstop for findings introduced by upstream regex / tooling drift even without code changes on our side.
-- **Every minor release** (1.0 → 1.1 → 1.2): full Cisco mcp-scanner pass; results recorded in [`docs/security/threat-model.md`](security/threat-model.md) §7.
+- **Every minor release** (1.0 → 1.1 → 1.2): full Cisco mcp-scanner pass; results recorded in [§ Latest scan results](#latest-scan-results) above (the canonical scan-result home — the threat model links here rather than restating the numbers).
 - **Pre-tag** during release prep: re-run if any tool was added or modified.
 
 ---
@@ -278,12 +296,10 @@ Neither profile needs network access unless you're calling a tool that reaches N
 
 ## Reporting a security issue
 
-If you find a vulnerability, please **do not open a public issue.** Email the maintainer (see GitHub profile contact) with:
-- A clear description of the issue
-- Steps to reproduce
-- Suggested mitigation if you have one
-
-We aim to acknowledge within 72 hours and ship a fix in the next patch release (or sooner if critical).
+Reporting and disclosure policy is canonical in **[`SECURITY.md`](../SECURITY.md)** —
+in short: **do not open a public issue**, email the maintainer, and expect
+acknowledgement within 72 hours with a fix in the next patch release (sooner if
+critical). See `SECURITY.md` for the full scope, what's in/out, and recognition.
 
 ---
 

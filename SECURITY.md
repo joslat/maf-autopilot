@@ -25,7 +25,7 @@ data, or poison the AI-fill loop — get an immediate point-release.
 
 In scope:
 
-- The MCP server (`src/maf-autopilot/`) — all 25 tools + the prompt/resource
+- The MCP server (`src/maf-autopilot/`) — all 28 tools + the prompt/resource
   surface.
 - The Roslyn analyzer NuGet (`src/maf-autopilot.Analyzers/`).
 - The GitHub Actions workflows under `.github/workflows/`.
@@ -54,9 +54,14 @@ named attack-class coverage:
 - Path-escape via secondary path parameters
 - Code injection via scaffold parameters
 - MCP annotation drift / tool poisoning
+- LLM data-fence label injection (a crafted registry id can't inject outside the fence)
+- Fork-PR comment safety (untrusted-code jobs never hold write scope)
+- Un-attested publishing (build-provenance attestation + tag-on-`main` publish gate)
+- Vacuous / garbled CI gates (fail-closed release classification, non-vacuous mcp-scanner)
 
-The MCP-server security scan is in
-[`docs/security.md` § "Latest scan results"](docs/security.md#latest-scan-results)
+The full attack-surface map with per-surface mitigations lives in
+[`docs/security/threat-model.md`](docs/security/threat-model.md); the MCP-server
+security scan is in [`docs/security.md` § "Latest scan results"](docs/security.md#latest-scan-results)
 (zero findings on the most recent Cisco mcp-scanner pass).
 
 ## Recognition

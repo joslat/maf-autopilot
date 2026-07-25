@@ -229,20 +229,55 @@ Several `docs/security.md` claims had drifted from the implementation they descr
 - ✅ **Digest-pinned container base images** — `Dockerfile` FROM lines pinned by `sha256`, tracked by the existing Dependabot Docker ecosystem entry. §3.18.
 - ✅ **Documentation-implementation consistency pass** — categorical prompt-injection-immunity claims relabeled honestly; false "writes nothing" container claim corrected; previously-undocumented `MAF_DOCTOR_UPDATE_CHECK` and container deployment profiles documented. §3.19.
 
+### Added in the Fable-5 residual remediation (2026-07)
+
+The residual review of v1.13.0 (115 findings → 9 phases, PRs #154–163) closed the
+remaining reporting / CI / automation gaps. Security-relevant additions:
+
+- ✅ **Subprocess environment scrubbing (SEC-09)** — `ProcessRunner` strips credential-like
+  env vars (`*TOKEN*`/`*SECRET*`/`*KEY*`/`*PASSWORD*`/`*PAT`/`AWS_*`/`AZURE_*`/`GITHUB_*`/`GH_*`)
+  from every child (`dotnet`/`dotnet-inspect`/`git`) before spawn — closes the §5 env-inheritance gap.
+- ✅ **Git config neutralization (SEC-22)** — every `git` invocation forces
+  `core.fsmonitor=false` / `core.hooksPath=` / `core.pager=cat` / `protocol.ext.allow=never`
+  + `GIT_CONFIG_NOSYSTEM`, so a hostile `.git/config` in an untrusted repo can't execute commands.
+- ✅ **Build-provenance attestation (SEC-13)** — `release.yml` runs SHA-pinned
+  `actions/attest-build-provenance` over the `.nupkg`s before push and gates publish on a
+  tag-must-be-on-`main` guard (`merge-base --is-ancestor`) — partially closes the §5 provenance gap.
+- ✅ **NuGet vulnerability-audit teeth (SEC-15)** — `Directory.Build.props` sets
+  `NuGetAuditMode=all` + `WarningsAsErrors NU1903;NU1904`, so a HIGH/CRITICAL transitive advisory
+  fails restore in every CI lane including release.
+- ✅ **Fence-label injection closed (SEC-01, High)** — the LLM data-fence *label* is sanitized to
+  `[A-Za-z0-9._-]` (cap 64) in BOTH `LlmFencing.cs` and `llm_fencing.py`, so an attacker-controlled
+  registry id can't inject text OUTSIDE the data fence.
+- ✅ **Fork-safe PR commenting (SEC-11)** — the scan/verify jobs that build PR-supplied (possibly
+  fork) code no longer hold `pull-requests: write`; they upload an artifact and one generalized
+  `workflow_run` companion posts the sticky comment from the base-repo context.
+- ✅ **Fail-closed release classification (WM-11)** — the release-watcher captures the
+  `dotnet-inspect` diff as stdout-only, empties it on any non-zero exit, and requires the closing
+  `**Summary:**` marker, so a garbled/truncated diff classifies as *breaking*, never additive.
+- ✅ **Non-vacuous scanner gate (SEC-12) + stream separation (WM-13)** — a `MIN_TOOLS` floor rejects
+  a "0 tools scanned" handshake, and the scanner's own stderr no longer merges into the allowlisted
+  results file where a benign line could forge the verdict.
+- ✅ **Widened CI templating-injection gate (WM-14)** — `ci-invariants` now also covers single-line
+  `run:` scalars and the `github.event.pull_request/issue/comment/review/commit` free-text lanes.
+- ✅ **Container capability boundary (SEC-10)** — SDK-only tools detect the missing binary and return
+  an explicit "use the global tool" message instead of an opaque crash. See
+  [`docs/security.md` § Container capability boundary](../security.md#container-capability-boundary-sec-10).
+
 ## 5. Acknowledged residual gaps
 
 - ❌ **Symlink-defense tests are silent no-ops on an unprivileged local Windows dev machine** — every symlink-based regression test (`PathGuardTests`, `SafeWorkspaceWriterTests`, `InitCommandTests`, `NewAgentToolMcpTests`, `NewCommandTests`, `PullRequestAuditToolTests`, `ValidateOverridePathTests`, and others) catches `File.CreateSymbolicLink`'s `UnauthorizedAccessException`/`IOException` and returns early when the OS denies symlink creation — which it does by default on Windows without admin rights or Developer Mode. xUnit 2.9.3 (this project's version) has no native dynamic-skip mechanism (`Assert.Skip` is xUnit v3-only), so these early returns report as **Passed**, not Skipped — a contributor running `dotnet test` on an unprivileged Windows machine gets a fully green symlink-defense suite that never actually exercised a single symlink. Round-3 review independently confirmed this twice with working proof: (1) instrumenting a test with markers showed the post-symlink-creation assertions are never reached here; (2) reverting `NewCommand.cs`'s F-03 containment preflight to its pre-fix state and re-running its symlink tests showed they **still pass** against the genuinely broken code. **Not a gap on CI** — `ubuntu-latest` runners have symlink privilege by default (confirmed: the full suite passes with real symlink creation under Docker's `mcr.microsoft.com/dotnet/sdk` image, which runs as root), so these tests provide real protection where it matters for merge-blocking. The gap is specifically local-dev false confidence. Properly fixing the *reporting* (not just the underlying protection, which is real) would mean adding a third-party package (`Xunit.SkippableFact` or equivalent) across every affected test file plus a `packages.lock.json` regeneration — judged out of scope for this remediation pass since it touches test files this branch didn't otherwise need to modify and adds a new dependency; flagged here for a dedicated follow-up given three independent findings of the same gap.
 - ❌ **No sandbox around `dotnet build` (F-05)** — `MafRunCs0618Hunt` now correctly annotated `ReadOnly=false, OpenWorld=true` so MCP-spec-compliant clients prompt before invoking. True OS sandboxing remains out of scope for an OSS .NET CLI. Users running maf-doctor on untrusted repos should sandbox externally (devcontainer, AppArmor, etc.).
 - ❌ **Rewriter pure-syntax matching** — `DefaultAzureCredentialRewriter`/`FanInArgOrderRewriter` semantic-model upgrade deferred to v1.2.x (significant refactor; bounded by `--dry-run` default + idempotence tests).
 - ✅ **`ProcessRunner` streaming output cap** — closed in the 2026-07-19 pass (§3.15); memory is now bounded during the read, not just the returned string.
-- ❌ **`ProcessRunner` env scrubbing** — still open. Subprocess environment inheritance from the MCP host is not filtered before spawning `dotnet`/`dotnet-inspect`/`git`.
+- ✅ **`ProcessRunner` env scrubbing** — closed in the Fable-5 remediation (SEC-09, §4). Credential-like env vars are stripped from every child before spawn.
 - ✅ **`PullRequestAuditTool` inline `Process.Start`** — closed in the 2026-07-19 pass (§3.15); now routed through `ProcessRunner.RunGit`'s concurrent-drain implementation, closing both the deadlock shape and the bounded-output gap.
 - ❌ **Roslyn-analyzer NuGet signing posture** — not yet documented; track for a future pass.
 - ❌ **Commit signing requirement** — maintainer's choice; not enforced today.
 - ❌ **Local TOCTOU between path validation and use** — `SafeWorkspaceWriter` (§3.13) narrows but does not eliminate the window between `PathGuard.ValidateContainment` and the actual file open; closing this fully needs directory-relative/open-at filesystem APIs. Requires local write access to the same workspace to exploit — not remotely triggerable via tool arguments.
 - ❌ **Full hash-pinning of Python dependencies** — the 2026-07-19 pass exact-pinned every floating pip/pipx install (§3.17), which closes "floating install, no review point," but stops short of `pip --require-hashes`, which needs a maintained hash manifest for every transitive dependency. Version pinning was judged the right scope for this pass; hash-pinning is a further hardening step.
-- ❌ **No SBOM, build provenance, or artifact signing** — the published NuGet packages and container image are not accompanied by a verifiable build-provenance attestation or signature. Digest-pinned base images (§3.18) and locked restores reduce *input* drift; they don't attest to what was actually produced.
-- ❌ **Bare-name subprocess resolution (F-25)** — `ProcessRunner` spawns `dotnet`, `dotnet-inspect`, `dnx`, and `git` by bare command name (`new ProcessStartInfo("dotnet")`, etc.), resolved via the OS's `PATH` at run time. There is no logging of the resolved absolute path, no pinning to a specific binary, and no version verification before invocation — a `PATH`-planting attack (a malicious `dotnet` earlier on `PATH` than the real one) would run silently. Not remotely exploitable via tool arguments; requires local control over the execution environment's `PATH`, at which point the local machine is already substantially compromised. Round-2 review flagged this specifically because it received zero code change and zero prior mention here, unlike every other deliberately-deferred item on this list — recorded now for that reason, not because the risk profile changed.
+- ⚠️ **SBOM and artifact signing** — *partially* closed. Build **provenance attestation** now ships (SEC-13, §4: `actions/attest-build-provenance` over the `.nupkg`s + tag-on-`main` guard), so a published package is attributable to an exact reviewed commit + workflow run. Still open: a full **SBOM** and NuGet package **signature** (the attestation attests provenance, not a signed SBOM). NuGet.org Trusted Publishing (OIDC) — which would also remove the API key from the `dotnet nuget push` argv — is noted in `release.yml` as the next step.
+- ❌ **Bare-name subprocess resolution (F-25)** — `ProcessRunner` spawns `dotnet`, `dotnet-inspect`, `dnx`, and `git` by bare command name (`new ProcessStartInfo("dotnet")`, etc.), resolved via the OS's `PATH` at run time. There is no logging of the resolved absolute path, no pinning to a specific binary, and no version verification before invocation — a `PATH`-planting attack (a malicious `dotnet` earlier on `PATH` than the real one) would run silently. Not remotely exploitable via tool arguments; requires local control over the execution environment's `PATH`, at which point the local machine is already substantially compromised. Round-2 review flagged this specifically because it received zero code change and zero prior mention here, unlike every other deliberately-deferred item on this list — recorded now for that reason, not because the risk profile changed. (The Fable-5 SEC-22 pass narrowed the `git`-specific surface — hostile `.git/config` command-execution via fsmonitor/hooks/pager/ext is now neutralized — but PATH-planting of the `dotnet`/`git`/`dnx` binaries themselves remains unpinned.)
 
 ## 6. AGT alignment
 
@@ -298,18 +333,12 @@ mcp-scanner --analyzers yara --format summary --hide-safe \
 
 ### Last scan results
 
-**2026-05-17 — Cisco mcp-scanner v4.6.0 (yara analyzer)** — a point-in-time manual record, not auto-updated; the authoritative current status is whatever CI's mcp-scanner check shows on the latest `main` run, now a required, hard-failing check (see cadence above). Tool count has grown since this snapshot (25 → 28 as of the 2026-07-19 assessment); re-run and update this block at the next tagged release.
-
-```
-=== Scan Statistics ===
-Total tools: 25
-Safe tools: 25
-Unsafe tools: 0
-Severity breakdown: HIGH: 0, UNKNOWN: 0, MEDIUM: 0, LOW: 0, SAFE: 25
-Analyzer stats: yara_analyzer: 25/25 scanned, 0 findings
-```
-
-**Triage notes:** zero findings. All 25 MCP tools (at the time) enumerated cleanly via stdio. No prompt injection / tool poisoning / credential harvesting patterns matched.
+The point-in-time scan snapshot is maintained in one place — **[`docs/security.md`
+§ Latest scan results](../security.md#latest-scan-results)** — so the numbers don't
+drift between two files. In short: the most recent Cisco mcp-scanner (yara) pass
+reported **zero findings**, all tools enumerating cleanly via stdio. The
+authoritative *current* status is whatever CI's now-required, hard-failing
+mcp-scanner check shows on the latest `main` run (see cadence above).
 
 ### Tools we deliberately do NOT use
 
