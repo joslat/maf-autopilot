@@ -690,17 +690,33 @@ public sealed class DoctorTool
         var i = 1;
         foreach (var fix in s.TopFixes)
         {
+            // Readability: space each finding out and rule it off from the previous one
+            // so the list is scannable (report-readability follow-up). Two markdown traps
+            // dictate the exact shape:
+            //   1. The header is bold *literal* text ("**N. [Source]** …"), not a real
+            //      "N." ordered-list item, so the `---` rule between findings can't reset
+            //      or terminate list numbering the way an <hr> does inside an <ol>.
+            //   2. A `---` on the line directly under text is a setext-heading underline
+            //      (it would promote that line to an <h2>). The blank line before every
+            //      `---` keeps it an <hr>.
+            if (i > 1)
+            {
+                sb.AppendLine();
+                sb.AppendLine("---");
+                sb.AppendLine();
+            }
             // SEC-02: the untrusted file path inside Description is neutralized at its
             // construction in Grade() (so tool-authored markdown here — backticks around
             // method/type names — is preserved). The code-span echo below is neutralized too.
-            sb.AppendLine($"{i}. **[{fix.Source}]** {fix.Description} · _{FixTag(fix)}_");
-            if (!string.IsNullOrEmpty(fix.Why)) sb.AppendLine($"   - **Why:** {fix.Why}");
-            if (!string.IsNullOrEmpty(fix.FixDescription)) sb.AppendLine($"   - **Fix:** {fix.FixDescription}");
+            sb.AppendLine($"**{i}. [{fix.Source}]** {fix.Description} · _{FixTag(fix)}_");
+            sb.AppendLine();
+            if (!string.IsNullOrEmpty(fix.Why)) sb.AppendLine($"- **Why:** {fix.Why}");
+            if (!string.IsNullOrEmpty(fix.FixDescription)) sb.AppendLine($"- **Fix:** {fix.FixDescription}");
             var (src, redacted) = TryReadSourceLine(repoPath, fix.File, fix.Line, lineCache);
             if (redacted)
-                sb.AppendLine($"   - `{LlmFencing.MdInline(fix.File)}:{fix.Line}` → _(source line redacted — may contain a secret)_");
+                sb.AppendLine($"- `{LlmFencing.MdInline(fix.File)}:{fix.Line}` → _(source line redacted — may contain a secret)_");
             else if (src is not null)
-                sb.AppendLine($"   - `{LlmFencing.MdInline(fix.File)}:{fix.Line}` → `{src}`");
+                sb.AppendLine($"- `{LlmFencing.MdInline(fix.File)}:{fix.Line}` → `{src}`");
             i++;
         }
         sb.AppendLine();
@@ -722,11 +738,21 @@ public sealed class DoctorTool
         sb.AppendLine($"### All findings ({fixes.Count} across {groups.Count} rule(s), grouped + ordered by impact)");
         sb.AppendLine();
 
+        var firstGroup = true;
         foreach (var g in groups)
         {
             var rep = g.Rep;
             var tag = FixTag(rep);
             var count = g.Items.Count > 1 ? $" ×{g.Items.Count}" : "";
+            // Rule each group off from the previous one, matching the default report's
+            // rhythm. Each group already ends with a blank line, so the `---` here is
+            // always preceded by one (no setext-heading promotion of the line above).
+            if (!firstGroup)
+            {
+                sb.AppendLine("---");
+                sb.AppendLine();
+            }
+            firstGroup = false;
             // Use a rule-generic title (not the representative's per-instance Issue),
             // so a group of distinct fan-out methods / cost sites isn't mislabeled
             // with one member's specifics under a ×N count.

@@ -363,6 +363,43 @@ public class DoctorToolTests
         finally { Directory.Delete(tempDir, recursive: true); }
     }
 
+    // -------------------------------------------------------------------------
+    // Report readability — the default "Top fixes" list must space findings out
+    // and rule them off from one another so the report is scannable. Locks the
+    // shape against a silent regression to the old back-to-back rendering.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void DefaultReport_SeparatesFindings_WithBlankLineAndRule()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "maf-doctor-readability-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            // Two findings (same rule, two files) → two entries in the default top-fixes list.
+            foreach (var name in new[] { "A.cs", "B.cs" })
+                File.WriteAllText(Path.Combine(tempDir, name), $$"""
+                    using Azure.Identity;
+                    public class {{name[..1]}}x
+                    {
+                        public {{name[..1]}}x() { var c = new DefaultAzureCredential(); }
+                    }
+                    """);
+
+            var output = new DoctorTool().MafDoctor(tempDir); // default (top-fixes) markdown
+            var norm = output.Replace("\r\n", "\n");
+
+            // Bold-number headers (literal text, NOT a `1.`/`2.` ordered-list item, so the
+            // rule between findings can't break list numbering).
+            Assert.Contains("**1. [", norm, StringComparison.Ordinal);
+            Assert.Contains("**2. [", norm, StringComparison.Ordinal);
+            // A horizontal rule sits between the two findings, blank-line padded on both
+            // sides (the leading blank line is what keeps `---` an <hr>, not a setext <h2>).
+            Assert.Contains("\n\n---\n\n", norm, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(tempDir, recursive: true); }
+    }
+
     [Fact]
     public void Json_Finding_CarriesWhy()
     {
