@@ -86,6 +86,22 @@ LABEL org.opencontainers.image.description="MCP server + Roslyn analyzers for Mi
 LABEL org.opencontainers.image.source="https://github.com/joslat/maf-doctor"
 LABEL org.opencontainers.image.licenses="MIT"
 
+# ---------------------------------------------------------------------------
+# SEC-10 — container capability boundary.
+# This is the RUNTIME image (no .NET SDK, by design — ~150 MB vs ~900 MB). Tools
+# that shell out to the SDK are NOT available here; they detect the missing binary
+# and return a clear "use the global tool" message at runtime rather than crashing:
+#   * MafRunCs0618Hunt    — needs `dotnet build`      (SDK only)
+#   * MafDiffPackage      — needs dotnet-inspect / dnx (SDK only)
+#   * MafPreUpgradeDryRun — needs dotnet-inspect / dnx (SDK only)
+# `git` IS installed below so MafAuditPullRequest works. For the SDK-dependent
+# tools, install the .NET global tool instead: `dotnet tool install -g maf-doctor`.
+# See docs/security.md -> "Container capability boundary".
+# ---------------------------------------------------------------------------
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 # Security: drop root regardless. The MCP server speaks stdio only, and most
 # tools are read-only, but auto-fix/scaffold/init tools DO write to a mounted
 # workspace when invoked with dryRun: false — "writes nothing" was never
@@ -95,11 +111,13 @@ LABEL org.opencontainers.image.licenses="MIT"
 # read-only tools, mount the workspace `:ro` — see docs/security.md for the
 # read-only vs. write-enabled run profiles.
 #
-# Mounted user workspaces (e.g. `docker run -v $PWD:/workspace`) need read
-# access at minimum; grant 1001:0 so the server can still read
-# default-permissioned workspace mounts on POSIX hosts.
-RUN groupadd -r maf && useradd -r -u 1001 -g maf -d /nonexistent -s /usr/sbin/nologin maf \
-    && chown -R maf:maf /app
+# SEC-25: OpenShift "arbitrary uid, gid 0" convention — the user's PRIMARY group
+# is 0 (uid 1001, gid 0), and `chmod -R g=u /app` grants group 0 the same access
+# as the owner, so an arbitrary-uid host (which still runs with gid 0) can read
+# default/group-0-permissioned workspace mounts without granting root.
+RUN useradd -r -u 1001 -g 0 -G 0 -d /nonexistent -s /usr/sbin/nologin maf \
+    && chown -R 1001:0 /app \
+    && chmod -R g=u /app
 USER maf
 
 ENTRYPOINT ["dotnet", "/app/maf-doctor.dll"]

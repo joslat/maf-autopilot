@@ -42,7 +42,7 @@ def ws():
 
 def test_additive_release_fills_sections(ws):
     notes = "## Changes:\n* a1 .NET: Add CreateMcpTool overload (#6703)\n* a2 Python: [BREAKING] py-only\n"
-    diff = "- Member 'NewThing' was added\n- Member 'OtherThing' was added\n"
+    diff = "- Member 'NewThing' was added\n- Member 'OtherThing' was added\n**Summary:** 0 breaking, 2 additive\n"
     guide = _run(ws, "1.11.1", "1.12.0", notes, diff)
 
     assert "this is an **additive** release" in guide
@@ -73,7 +73,7 @@ def test_malicious_member_name_is_dropped_from_patterns(ws):
     # A crafted "member name" with an HTML comment must not reach the unfenced
     # New Patterns bullets; the safe one still appears.
     notes = "## Changes:\n* d1 .NET: additive only\n"
-    diff = "- Member 'GoodName' was added\n- Member '<!--evil-->payload' was added\n"
+    diff = "- Member 'GoodName' was added\n- Member '<!--evil-->payload' was added\n**Summary:** 0 breaking, 2 additive\n"
     guide = _run(ws, "1.12.0", "1.13.0", notes, diff)
 
     assert "- `GoodName`" in guide

@@ -58,7 +58,7 @@ NOTES_ADDITIVE = """## Changes:
 * a1 .NET: Add CreateMcpTool projectConnectionId overload (#6703)
 * a2 Python: [BREAKING] python-only change (#1)
 """
-DIFF_ADDITIVE = "- Member 'NewThing' was added\n- Member 'OtherThing' was added\n"
+DIFF_ADDITIVE = "- Member 'NewThing' was added\n- Member 'OtherThing' was added\n**Summary:** 0 breaking, 2 additive\n"
 
 NOTES_BREAKING = """## Changes:
 * b1 .NET: [BREAKING] Make all AgentSkillsProvider tools require approval by default (#6729)
@@ -162,7 +162,7 @@ def test_end_to_end_additive_pipeline_is_green(tmp_path):
     skills.mkdir(parents=True)
     (skills / "registry.yaml").write_text("entries: []\n", encoding="utf-8")
     (w / "release-notes.txt").write_text("## Changes:\n* .NET: Add CreateMcpTool overload\n", encoding="utf-8")
-    (w / "diff-core.txt").write_text("- Member 'NewThing' was added\n", encoding="utf-8")
+    (w / "diff-core.txt").write_text("- Member 'NewThing' was added\n**Summary:** 0 breaking, 1 additive\n", encoding="utf-8")
 
     _run("update_compat_matrix.py", w, "1.11.0", "1.12.0")
     _run("sync_compat_tool.py", w, "1.11.0", "1.12.0")
@@ -180,7 +180,7 @@ def test_untrusted_member_name_with_quotes_is_dropped(ws):
     # A crafted "member name" carrying a C# raw-string breakout must never reach
     # the matrix note OR the generated CompatibilityTool.cs source.
     notes = "## Changes:\n* x .NET: additive only\n"
-    diff = "- Member 'GoodName' was added\n- Member 'Evil\"\"\"; class Pwn {}' was added\n"
+    diff = "- Member 'GoodName' was added\n- Member 'Evil\"\"\"; class Pwn {}' was added\n**Summary:** 0 breaking, 2 additive\n"
     _seed_inputs(ws, notes, diff)
     _run("update_compat_matrix.py", ws, "1.11.0", "1.12.0")
     _run("sync_compat_tool.py", ws, "1.11.0", "1.12.0")

@@ -21,6 +21,12 @@ concurrency:
   group: maf-self-update-watcher
   cancel-in-progress: false
 
+# SEC-26: default-deny at the workflow level. Jobs that only read the repo inherit
+# this least-privilege grant; the privileged analyze-and-update / notify jobs
+# override it with their own broader blocks below.
+permissions:
+  contents: read
+
 jobs:
   # Phase 3.1 — validate workflow_dispatch input BEFORE any privileged step
   # runs. The watcher has COPILOT_ASSIGN_PAT in scope on the main job; a
@@ -59,6 +65,11 @@ jobs:
   check-for-new-maf-release:
     needs: validate-inputs
     runs-on: ubuntu-latest
+    # SEC-26: explicit least-privilege. contents:read to read .maf-version;
+    # pull-requests:read for the WM-12 already-open-PR short-circuit below.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       new_version: ${{ steps.version-check.outputs.new_version }}
       old_version: ${{ steps.version-check.outputs.old_version }}
@@ -73,6 +84,7 @@ jobs:
         # a shell variable. Eliminates template-injection surface in the script.
         env:
           INPUT_VERSION: ${{ inputs.maf_version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # WM-12: gh pr list short-circuit
         run: |
           # Use explicit version if provided, otherwise query NuGet (latest STABLE)
           if [ -n "$INPUT_VERSION" ]; then
@@ -105,6 +117,21 @@ jobs:
               exit 0
             fi
             echo "Latest STABLE version on NuGet: $LATEST"
+          fi
+
+          # WM-12: if a scaffold PR for this version is already open, a re-detection
+          # run would only redo the analyze-and-update work and — worse — collide with
+          # the in-flight fill commits on that PR branch (the old --force-with-lease
+          # rerun then failed the whole job and spammed the failure issue). Skip the
+          # entire analyze job as a clean no-op; regenerate by closing the PR / deleting
+          # the branch, or dispatch with push_target.
+          if [ -n "$(gh pr list --head "release-watcher/maf-${LATEST}" --state open --json number --jq '.[].number' 2>/dev/null)" ]; then
+            echo "ℹ️ A scaffold PR for release-watcher/maf-${LATEST} is already open — clean no-op this run."
+            echo "old_version=$(cat .maf-version | tr -d '[:space:]')" >> $GITHUB_OUTPUT
+            echo "new_version=$LATEST" >> $GITHUB_OUTPUT
+            echo "has_update=false" >> $GITHUB_OUTPUT
+            echo "is_major=false" >> $GITHUB_OUTPUT
+            exit 0
           fi
 
           CURRENT=$(cat .maf-version | tr -d '[:space:]')
@@ -222,12 +249,23 @@ jobs:
           OLD: ${{ needs.check-for-new-maf-release.outputs.old_version }}
           NEW: ${{ needs.check-for-new-maf-release.outputs.new_version }}
         run: |
+          # WM-11: capture stdout ONLY into the file the classifier parses; route
+          # stderr to a separate file; propagate the exit code; and on any non-zero
+          # exit empty the stdout file so release_classification fails CLOSED (breaking)
+          # instead of parsing a truncated/garbled diff as additive. (`2>&1` previously
+          # let stderr split a marker line, mislabeling a breaking release as additive.)
+          rc=0
           dotnet-inspect diff \
             --package "Microsoft.Agents.AI@${OLD}..${NEW}" \
             --source https://api.nuget.org/v3/index.json \
-            > diff-core.txt 2>&1 || true
-          echo "Core diff output:"
-          cat diff-core.txt
+            > diff-core.txt 2> diff-core.stderr.txt || rc=$?
+          echo "--- dotnet-inspect stderr ---"; cat diff-core.stderr.txt
+          if [ "$rc" -ne 0 ]; then
+            echo "::warning title=diff-core failed (exit $rc)::Discarding partial stdout so release_classification fails closed (breaking)."
+            : > diff-core.txt
+            exit "$rc"   # step shows failed; continue-on-error keeps the job alive
+          fi
+          echo "Core diff output:"; cat diff-core.txt
 
       - name: Run diff — Microsoft.Agents.AI.Workflows
         id: diff-workflows
@@ -237,12 +275,19 @@ jobs:
           OLD: ${{ needs.check-for-new-maf-release.outputs.old_version }}
           NEW: ${{ needs.check-for-new-maf-release.outputs.new_version }}
         run: |
+          # WM-11: stdout-only capture + fail-closed (see the diff-core step above).
+          rc=0
           dotnet-inspect diff \
             --package "Microsoft.Agents.AI.Workflows@${OLD}..${NEW}" \
             --source https://api.nuget.org/v3/index.json \
-            > diff-workflows.txt 2>&1 || true
-          echo "Workflows diff output:"
-          cat diff-workflows.txt
+            > diff-workflows.txt 2> diff-workflows.stderr.txt || rc=$?
+          echo "--- dotnet-inspect stderr ---"; cat diff-workflows.stderr.txt
+          if [ "$rc" -ne 0 ]; then
+            echo "::warning title=diff-workflows failed (exit $rc)::Discarding partial stdout so release_classification fails closed (breaking)."
+            : > diff-workflows.txt
+            exit "$rc"
+          fi
+          echo "Workflows diff output:"; cat diff-workflows.txt
 
       - name: Fetch release notes
         id: release-notes
@@ -400,7 +445,9 @@ jobs:
           name: maf-diff-${{ needs.check-for-new-maf-release.outputs.new_version }}
           path: |
             diff-core.txt
+            diff-core.stderr.txt
             diff-workflows.txt
+            diff-workflows.stderr.txt
             release-notes.txt
           retention-days: 30
           if-no-files-found: warn
@@ -432,6 +479,7 @@ jobs:
           VERDICT: ${{ steps.classify.outputs.verdict }}
           GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT || secrets.GITHUB_TOKEN }}
           PUSH_TARGET: ${{ inputs.push_target }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}  # REP-34
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -465,33 +513,64 @@ jobs:
             echo "::error::push_target must not be a protected branch (got '$BRANCH'). The watcher opens a PR; it never pushes the scaffold to main."
             exit 1
           fi
+          # WM-12 (defense-in-depth for the check-for-new-maf-release short-circuit):
+          # if the scaffold branch already exists on the remote, a PR is in flight —
+          # leave it and its in-flight fill commits untouched instead of force-clobbering
+          # them (which the old --force-with-lease then failed on in a fresh clone, red-ing
+          # the whole job). Public repo → unauthenticated ls-remote works.
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "ℹ️ Branch $BRANCH already exists on the remote — scaffold PR in flight; leaving it (and any fill commits) untouched. Delete the branch or dispatch with push_target to regenerate."
+            echo "committed=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
           git checkout -b "$BRANCH"
           git commit -F "$RUNNER_TEMP/commit-msg.txt"
-          # F-06 — persist-credentials: false on checkout means the remote has no
-          # embedded auth; wire it up here, immediately before the one command
-          # that needs it, using the same GH_TOKEN already in this step's env:.
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          # --force-with-lease (not -f): a rerun updates its own branch idempotently without
-          # blindly clobbering remote updates pushed in between.
-          git push --force-with-lease origin "HEAD:${BRANCH}"
+          # SEC-27: push with an EPHEMERAL auth header so the token never touches
+          # .git/config or the process argv — no more partially undoing the F-06
+          # persist-credentials:false hardening with a set-url. --force-with-lease
+          # (not -f): a legitimate regenerate updates its own branch without clobbering.
+          git -c http.extraheader="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" \
+            push --force-with-lease origin "HEAD:${BRANCH}"
           echo "branch=$BRANCH" >> $GITHUB_OUTPUT
           echo "committed=true" >> $GITHUB_OUTPUT
 
-          # Open a PR to main (idempotent). NOTE: no backticks in the --body (double-quoted
-          # bash would treat them as command substitution — see the 2026-05-17 incident).
+          # Open a PR to main (idempotent).
           if gh pr view "$BRANCH" --json number >/dev/null 2>&1; then
             echo "✅ Updated existing PR for branch $BRANCH."
           else
-            # Green-on-arrival: an ADDITIVE release is auto-filled and should be green;
-            # a BREAKING release leaves draft TODOs the keep-breaking-red gate rejects.
+            # REP-34: build the body with printf + SINGLE-quoted lines (no command
+            # substitution, so backticks + markdown bullets are safe — this is what
+            # closed the 2026-05-17 backtick incident) and pass --body-file. printf
+            # keeps every line a normal, properly-indented YAML block line (no heredoc
+            # de-indent trap), restoring markdown formatting + the run-evidence link.
             if [ "$VERDICT" = "additive" ]; then
-              BODY="Auto-generated by the release watcher for MAF ${OLD_VERSION} -> ${NEW_VERSION}. Classified ADDITIVE (no .NET [BREAKING] notes and no removed members): the compatibility matrix, the code matrix (CompatibilityTool.cs), and the migration guide were filled deterministically, so this PR should be GREEN on arrival. Review the carried-forward pins + the new-member list, then merge. Raw API diffs are attached to the watcher run as artifacts."
+              printf '%s\n' \
+                'Auto-generated by the release watcher for MAF `__OLD__` -> `__NEW__`. Classified **ADDITIVE** (no .NET `[BREAKING]` notes and no removed members): the compatibility matrix, the code matrix (`CompatibilityTool.cs`), and the migration guide were filled deterministically, so this PR should be **green on arrival**.' \
+                '' \
+                '**Review checklist**' \
+                '- [ ] Carried-forward package pins are correct' \
+                '- [ ] The new-member list matches the upstream diff' \
+                '- [ ] CI is green' \
+                '' \
+                'Raw API diffs + release notes (Artifacts section): __RUN_URL__' \
+                > "$RUNNER_TEMP/pr-body.md"
             else
-              BODY="Auto-generated by the release watcher for MAF ${OLD_VERSION} -> ${NEW_VERSION}. Classified BREAKING: the registry has draft entries whose migration text a human must write. The keep-breaking-red gate keeps this PR RED until the current-version drafts are filled — by design, so an unfilled scaffold can never reach main. To complete: fill the registry/guide TODOs (assign GitHub Copilot to the PR, or edit directly), confirm CI is green, then merge. Raw API diffs are attached to the watcher run as artifacts."
+              printf '%s\n' \
+                'Auto-generated by the release watcher for MAF `__OLD__` -> `__NEW__`. Classified **BREAKING**: the registry has draft entries whose migration text a human must write. The keep-breaking-red gate keeps this PR **red** until the current-version drafts are filled — by design, so an unfilled scaffold can never reach main.' \
+                '' \
+                '**To complete**' \
+                '- [ ] Fill the registry/guide TODOs (assign GitHub Copilot to the PR, or edit directly)' \
+                '- [ ] Confirm CI is green, then merge' \
+                '' \
+                'Raw API diffs + release notes (Artifacts section): __RUN_URL__' \
+                > "$RUNNER_TEMP/pr-body.md"
             fi
+            # The single-quoted printf lines kept these literal (no shell expansion risk);
+            # substitute the trusted, semver-validated values in now.
+            sed -i "s|__OLD__|${OLD_VERSION}|g; s|__NEW__|${NEW_VERSION}|g; s|__RUN_URL__|${RUN_URL}|g" "$RUNNER_TEMP/pr-body.md"
             gh pr create --base main --head "$BRANCH" \
               --title "chore: MAF ${NEW_VERSION} registry/matrix/guide update (${VERDICT})" \
-              --body "$BODY"
+              --body-file "$RUNNER_TEMP/pr-body.md"
             echo "✅ Opened PR for branch $BRANCH (${VERDICT})."
             # Label additive PRs so the auto-merge graduation (after a few proven
             # releases) can target them. Label ops are best-effort — never block.

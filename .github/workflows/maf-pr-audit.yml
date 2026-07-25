@@ -206,7 +206,7 @@ jobs:
             # phrasing deliberately does NOT say "clean" or imply pass/fail:
             # the mechanical audit did not run at all for this PR.
             cat > pr-audit-full.md <<EOF
-          ⚠️ **MAF audit INCOMPLETE for this PR.** The Roslyn-heavy per-file audit was skipped: this PR changes $FILE_COUNT .cs files totaling $BYTES bytes, exceeding the 200-file / 5 MB compiler-bomb cap. CI-side scanners (mcp-scanner, dependency review) still ran. A maintainer should manually review this PR's size and content before merging — the automated mechanical audit has NOT evaluated it.
+          ⚠️ **MAF audit INCOMPLETE for this PR.** The Roslyn-heavy per-file audit was skipped: this PR changes $FILE_COUNT .cs files totaling $BYTES bytes, exceeding the 200-file / 5 MB compiler-bomb cap. The CI-side mcp-scanner still ran. A maintainer should manually review this PR's size and content before merging — the automated mechanical audit has NOT evaluated it.
           EOF
           else
             echo "ℹ️ **MAF audit skipped for this PR.** Only samples/ files changed — they're intentionally buggy demo corpora, not real code to audit." > pr-audit-full.md
