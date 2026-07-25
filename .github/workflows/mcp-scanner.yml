@@ -217,7 +217,9 @@ jobs:
             echo '### 🔍 Cisco mcp-scanner result'
             echo ''
             echo '```'
-            cat scan-results.txt 2>/dev/null || echo '(no output)'
+            # SEC-18: neutralize any ``` in the scanner output so a finding line can't
+            # close this fence and inject markdown into the PR comment.
+            { cat scan-results.txt 2>/dev/null || echo '(no output)'; } | python3 .github/scripts/neutralize_fences.py
             echo '```'
             # WM-13: surface any scanner stderr in the comment so a maintainer can
             # tell noise from findings without log-diving. Only when non-empty.
@@ -226,7 +228,7 @@ jobs:
               echo '<details><summary>Scanner stderr (noise, not findings)</summary>'
               echo ''
               echo '```'
-              cat scanner-stderr.log
+              cat scanner-stderr.log | python3 .github/scripts/neutralize_fences.py
               echo '```'
               echo ''
               echo '</details>'

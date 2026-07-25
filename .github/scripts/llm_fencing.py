@@ -37,8 +37,10 @@ def fence(label: str, content: str | None, max_bytes: int = DEFAULT_MAX_BYTES) -
 
     Args:
         label: Short human-readable tag (e.g. "upstream-maf-release-notes").
-               Uppercased and embedded in the BEGIN/END markers. NOT sanitized
-               — callers must use a static literal.
+               Uppercased and embedded in the BEGIN/END markers. SEC-01: the label
+               is sanitized to [A-Za-z0-9._-] (others → '_') and capped at 64 chars,
+               so a caller that passes attacker-influenced text (e.g. a registry id)
+               cannot inject content OUTSIDE the data fence via the label.
         content: User-controlled content. May be None or empty.
         max_bytes: Soft cap in UTF-8 bytes. Defaults to 32 KB.
 
@@ -52,6 +54,11 @@ def fence(label: str, content: str | None, max_bytes: int = DEFAULT_MAX_BYTES) -
         raise ValueError("label must not be empty.")
     if max_bytes < 1:
         raise ValueError("max_bytes must be positive.")
+
+    # SEC-01: enforce the label contract in code, not just the docstring — a crafted
+    # label (e.g. an attacker-supplied registry id) must not be able to inject text
+    # outside the data fence. Non-[A-Za-z0-9._-] → '_', capped at 64.
+    label = re.sub(r"[^A-Za-z0-9._-]", "_", label)[:64] or "data"
 
     stripped = _HTML_COMMENT_RE.sub("", content or "")
     clamped, truncated = _clamp(stripped, max_bytes)

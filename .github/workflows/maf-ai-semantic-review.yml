@@ -23,7 +23,11 @@ on:
     # and the trigger silently skips). Observed 2026-05-17 on PR #26.
     # Instead, the build_prompt step emits skip=true if no entries actually
     # changed, gating downstream AI inference + post-comment.
-    types: [ready_for_review, reopened, synchronize]
+    # WM-15: include `opened` — the watcher's non-draft additive-auto-green scaffold PRs
+    # are opened non-draft and were never reviewed without it. The `draft == false` job
+    # condition still suppresses draft opens; the build-prompt skip gate suppresses
+    # non-registry PRs before any model call.
+    types: [opened, ready_for_review, reopened, synchronize]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -185,4 +189,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
           AI_RESPONSE: ${{ steps.ai.outputs.response }}
+          HEAD_SHA: ${{ steps.pr.outputs.head }}   # REP-10: stamp which push the verdict covers
         run: python3 .github/scripts/ai_review_post_comment.py

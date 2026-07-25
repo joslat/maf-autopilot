@@ -64,8 +64,12 @@ jobs:
           # let a fill PR that forgot the label (or used an unexpected branch
           # prefix) silently report success while verifying NOTHING. Any edit to
           # these files deserves the structural verification.
-          git fetch origin "$BASE_REF":"refs/heads/$BASE_REF" --depth=50 || true
-          DIFF_FILES=$(git diff --name-only "origin/$BASE_REF" HEAD || true)
+          # WM-32: fetch the base into origin/<ref> (not a misdirected local-branch
+          # refspec), then diff with the THREE-dot form so scope reflects only THIS PR's
+          # own edits — HEAD vs merge-base(origin/BASE_REF, HEAD) — not base-branch churn
+          # pulled in after a watcher merge (which the two-dot form counted as "changed").
+          git fetch origin "$BASE_REF" --depth=50 || true
+          DIFF_FILES=$(git diff --name-only "origin/$BASE_REF...HEAD" || true)
           echo "Files changed in PR:"
           echo "$DIFF_FILES" | sed 's/^/  /'
 
@@ -238,7 +242,9 @@ jobs:
                 echo "### Registry entry checks (rung-1 mechanical)"
                 echo ""
                 echo '```'
-                echo "$VERIFY_OUTPUT"
+                # SEC-18: the output derives from the PR's own (possibly adversarial)
+                # registry.yaml — neutralize any ``` so it can't escape this fence.
+                printf '%s\n' "$VERIFY_OUTPUT" | python3 .github/scripts/neutralize_fences.py
                 echo '```'
                 echo ""
               fi
@@ -246,7 +252,7 @@ jobs:
                 echo "### Cross-file consistency checks"
                 echo ""
                 echo '```'
-                echo "$CROSSFILE_OUTPUT"
+                printf '%s\n' "$CROSSFILE_OUTPUT" | python3 .github/scripts/neutralize_fences.py
                 echo '```'
                 echo ""
               fi

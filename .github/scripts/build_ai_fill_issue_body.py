@@ -25,6 +25,10 @@ from pathlib import Path
 def main() -> int:
     target = os.environ.get("TARGET", "").strip()
     digits = os.environ.get("DIGITS", "").strip()
+    # WM-28: the scaffold branch that carries the TODO placeholders (post the 2026-06-28
+    # "C" refactor the watcher PRs instead of pushing to main). Defaults to the watcher's
+    # canonical branch name when the caller doesn't override it.
+    branch = os.environ.get("BRANCH", "").strip() or (f"release-watcher/maf-{target}" if target else "")
 
     if not target:
         print("ERROR: TARGET env var is required (e.g. 1.6.1)", file=sys.stderr)
@@ -39,7 +43,9 @@ def main() -> int:
         return 1
 
     body = template_path.read_text(encoding="utf-8")
-    body = body.replace("{{TARGET}}", target).replace("{{DIGITS}}", digits)
+    body = (body.replace("{{TARGET}}", target)
+                .replace("{{DIGITS}}", digits)
+                .replace("{{BRANCH}}", branch))
 
     if "{{" in body:
         idx = body.index("{{")
