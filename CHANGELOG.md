@@ -9,6 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_Nothing yet — new work is tracked here between releases._
+
+## [1.14.0] - 2026-07-25
+
+**The Fable-5 residual-review remediation — 113 of 115 findings across the autofix engine, CLI, scan core, reporting surfaces, and the entire CI / release / AI-automation pipeline — shipped as nine independently-reviewed phases (PRs #154–163), followed by a security-documentation refresh (#164) and a report-readability fix from user feedback (#165).** CI green across net8/9/10 and Linux.
+
+> 🙏 Thanks to **Jesse Liberty** for the feedback that prompted the report-readability improvement — scored reports are now much easier to scan.
+
+### Security
+- **Fence-label injection closed (SEC-01).** The LLM data-fence *label* is now sanitized to `[A-Za-z0-9._-]` (capped at 64 chars) in both the C# (`LlmFencing`) and Python (`llm_fencing.py`) fencers, so an attacker-influenced registry id can no longer inject text outside the data fence a downstream model reads.
+- **Subprocess secrets no longer inherited (SEC-09).** Every `dotnet` / `dotnet-inspect` / `git` child is spawned with credential-like environment variables (`*TOKEN*`, `*SECRET*`, `*KEY*`, `*PASSWORD*`, `…PAT`, `AWS_*`, `AZURE_*`, `GITHUB_*`, `GH_*`) stripped — a build/inspect run on an untrusted repo can't read the MCP host's secrets.
+- **Hostile `.git/config` neutralized (SEC-22).** Every `git` invocation forces `core.fsmonitor=false`, `core.hooksPath=`, `core.pager=cat`, `protocol.ext.allow=never`, and `GIT_CONFIG_NOSYSTEM`, closing the command-execution vectors a malicious repo's git config could otherwise trigger.
+- **Verifiable release provenance (SEC-13).** `release.yml` now produces a signed build-provenance attestation over the published `.nupkg`s and refuses to publish from a tag that isn't an ancestor of the reviewed `main` branch.
+- **NuGet vulnerability audit has teeth (SEC-15).** `NuGetAuditMode=all` plus `NU1903`/`NU1904` as errors — a HIGH/CRITICAL transitive advisory now fails restore in every CI lane, release included.
+- **Fork-safe PR automation (SEC-11).** Jobs that build PR-supplied (possibly fork) code no longer hold `pull-requests: write`; they upload an artifact and a single trusted `workflow_run` companion posts the sticky comment from the base-repo context.
+- **Fail-closed release classification (WM-11).** The release-watcher captures the upstream `dotnet-inspect` diff as stdout only, empties it on any non-zero exit, and requires a closing `**Summary:**` marker — a garbled or truncated diff now classifies as *breaking*, never silently additive.
+- **Non-vacuous scanner gate (SEC-12 / WM-13).** The mcp-scanner check rejects a "0 tools scanned" handshake and no longer lets scanner stderr merge into the results file where a benign line could forge a clean verdict.
+- **Widened CI templating-injection gate (WM-14).** The `ci-invariants` guard now also blocks fork-controlled event free-text (PR / issue / comment / review titles + bodies) and single-line `run:` forms from being interpolated into shell.
+- **Container capability boundary (SEC-10).** SDK-only tools detect a missing binary in a minimal container and return an explicit "use the global tool" message instead of crashing opaquely.
+
+### Fixed
+- **Autofix engine hardening (Phase 1).** Source-corruption, pipeline, encoding, preview, and file-lock fixes across the Roslyn rewriters — rewriter output is now compile-verified.
+- **CLI & MCP lifecycle (Phase 2).** Strict argument handling, honest exit codes, and correct stdout/stderr stream separation.
+- **Scan-core correctness (Phase 3).** Parse-once + parallel scanning, honest scan caps, and the safe-child-process routing noted above.
+- **Reporting accuracy (Phases 4–6).** A single-source health grade, an additive-diff contract, full SARIF fidelity (help URIs + partial fingerprints), prose-to-data conversions, and tool-description / prompt / doc accuracy fixes — the numbers a report shows now reconcile across the markdown, `--all`, `--plan`, `--json`, and SARIF surfaces.
+- **PR-audit & drafted-issue quality (Phase 5).** More accurate PR-audit output and neutralization of untrusted fork text in generated issues.
+
+### Changed
+- **The scored report is now scannable (#165).** The default `maf-doctor doctor` report spaces each finding out and separates findings with a horizontal rule; the `--all` grouped view does the same between rule-groups. Machine surfaces (`--json`, `--plan`, `--plan-json`, SARIF) are byte-for-byte unchanged. _(Suggested by Jesse Liberty.)_
+
+### Documentation
+- **Security docs federated + refreshed (#164).** The four security documents were de-duplicated and given one job each — a navigation map, a single canonical scan-result home, and accuracy fixes reflecting the hardening above (env-scrubbing and provenance gaps closed, tool count corrected to 28, new attack classes documented).
+
+## [1.13.0] - 2026-07-20
+
 **2026-07-19 security assessment — all 30 findings closed, verified across four independent adversarial review rounds.** A full-repo security review (path-traversal/symlink defenses, subprocess-spawn safety, CI/CD supply-chain hardening, MCP tool-annotation accuracy) turned up 30 findings (F-01–F-30). All are addressed; residual, deliberately-deferred items are disclosed honestly in `docs/security/threat-model.md` §5 rather than hidden. **CI green across net8/9/10 and Linux.**
 
 ### Security
