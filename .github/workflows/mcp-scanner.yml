@@ -21,9 +21,14 @@ name: MCP server security scan (Cisco mcp-scanner)
 on:
   pull_request:
     branches: [main]
+    # SEC-30: dropped the nonexistent `src/maf-autopilot.csproj` and added the CPM /
+    # build inputs, so a server DEPENDENCY bump (Directory.Packages.props) is scanned
+    # pre-merge instead of only at the weekly cron.
     paths:
       - 'src/maf-autopilot/**'
-      - 'src/maf-autopilot.csproj'
+      - 'Directory.Packages.props'
+      - 'Directory.Build.props'
+      - 'global.json'
       - '.github/workflows/mcp-scanner.yml'
   # Weekly cron as a backstop for findings introduced by upstream regex /
   # tooling drift even without code changes on our side.
@@ -32,7 +37,19 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
+
+# SEC-12: the scan passes vacuously if the server enumerates no tools ("Total tools
+# scanned: 0" + "No results" both match the allowlist). Assert a floor so a partial
+# stdio handshake / enumeration regression fails the gate. The real count is 28
+# (docs/security.md); 26 leaves slack for a deliberately-removed tool.
+env:
+  MIN_TOOLS: 26
+
+# WM-35: cancel superseded PR runs (this scan is expensive: build + scan). Cron runs
+# never share a PR number, so github.ref keeps them uncancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   scan:
@@ -169,19 +186,32 @@ jobs:
             --stdio-arg=net10.0 \
             --stdio-arg=--no-build \
             --stderr-file=/tmp/maf-server.log \
-            > scan-results.txt 2>&1 || true
+            > scan-results.txt 2> scanner-stderr.log || true
           echo "Scanner output:"
           cat scan-results.txt
+          echo ""
+          # WM-13: keep the scanner's OWN stderr OUT of the allowlisted results file.
+          # A benign stderr line (urllib/Python warning) previously merged into
+          # scan-results.txt via 2>&1 and permanently red-ed the allowlist gate. It's
+          # visible here in the log but can no longer forge or break the verdict.
+          echo "--- Scanner stderr ---"
+          cat scanner-stderr.log 2>/dev/null || echo "(empty)"
           echo ""
           echo "--- Server bootstrap log ---"
           cat /tmp/maf-server.log 2>/dev/null || echo "(empty)"
 
+      # SEC-11: this job stdio-launches and scans PR-supplied (possibly fork,
+      # untrusted) code, so it must NOT hold `pull-requests: write`. Instead of
+      # posting the comment here (which 403s on fork PRs and would need write
+      # scope during untrusted execution), build the comment body + PR number and
+      # upload them as an artifact; the workflow_run companion
+      # (maf-pr-audit-comment.yml) posts the sticky comment from the base-repo
+      # context with a write token but WITHOUT ever touching fork code.
       - name: Build PR comment body
         if: github.event_name == 'pull_request' && !cancelled()
         # !cancelled() (not always(), not the implicit success()-only default)
         # — runs whether the scan step above passed or failed the gate below,
-        # so the comment explaining WHY still posts, but not if the job was
-        # cancelled outright.
+        # so the comment explaining WHY still gets produced, unless cancelled.
         run: |
           {
             echo '### 🔍 Cisco mcp-scanner result'
@@ -189,6 +219,18 @@ jobs:
             echo '```'
             cat scan-results.txt 2>/dev/null || echo '(no output)'
             echo '```'
+            # WM-13: surface any scanner stderr in the comment so a maintainer can
+            # tell noise from findings without log-diving. Only when non-empty.
+            if [ -s scanner-stderr.log ]; then
+              echo ''
+              echo '<details><summary>Scanner stderr (noise, not findings)</summary>'
+              echo ''
+              echo '```'
+              cat scanner-stderr.log
+              echo '```'
+              echo ''
+              echo '</details>'
+            fi
             echo ''
             echo '<sub>Scan covers prompt-injection, tool-poisoning, credential-harvesting,'
             echo 'code-execution, parameter-injection, cross-origin-escalation, and rug-pull'
@@ -197,12 +239,20 @@ jobs:
             echo 'exact pass/fail evaluation.</sub>'
           } > pr-comment.md
 
-      - name: Post scan results as PR comment
+      - name: Write PR number for the comment companion
         if: github.event_name == 'pull_request' && !cancelled()
-        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0  # v2.9.2
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}   # numeric; env-redirect per templating discipline
+        run: echo "$PR_NUMBER" > pr-number.txt
+
+      - name: Upload scan result for the comment companion (SEC-11)
+        if: github.event_name == 'pull_request' && !cancelled()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          header: mcp-scanner-result
-          path: pr-comment.md
+          name: mcp-scanner-result
+          path: |
+            pr-comment.md
+            pr-number.txt
 
       - name: Evaluate scan result (hard-fail gate)
         # F-16 — the actual pass/fail decision, deliberately separated from
@@ -258,4 +308,43 @@ jobs:
             echo "::error::mcp-scanner reported findings (or produced an unexpected output shape) — see the 'Run mcp-scanner' step output above (and the PR comment, if this is a pull_request run)."
             exit 1
           fi
-          echo "Clean scan confirmed — no findings."
+          # SEC-12: a server that enumerates ZERO/too few tools passes the allowlist
+          # vacuously ("Total tools scanned: 0" + "No results" both match). Assert a floor
+          # so an enumeration regression / partial handshake fails closed.
+          N=$(printf '%s\n' "$NONBLANK" | grep -oE '^Total tools scanned: [0-9]+$' | grep -oE '[0-9]+$')
+          if [ "${N:-0}" -lt "${MIN_TOOLS}" ]; then
+            echo "::error::Only ${N:-0} tools scanned (expected >= ${MIN_TOOLS} — enumeration regressed or the stdio handshake was partial). Failing closed."
+            exit 1
+          fi
+          echo "Clean scan confirmed — no findings (${N} tools scanned)."
+
+  # WM-29: scheduled-scan failures were a silent red X — the same silent-failure class
+  # Phase 2.1 fixed for the watcher / drift detector. Scoped to the cron so PR failures
+  # (already loud via the required check) don't double-report; dedupes onto its OWN
+  # rolling issue (the title carries this workflow's distinct name).
+  notify-on-failure:
+    needs: [scan]
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update a failure tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WORKFLOW: ${{ github.workflow }}
+        run: |
+          gh label create maf-release --color 0E8A16 \
+            --description "Auto-generated by maf-release-watcher / fill workflows" --force || true
+          TITLE="🔴 Self-update workflow failed: ${WORKFLOW}"
+          NUM=$(gh issue list --label maf-release --state open --json number,title \
+            --jq ".[] | select(.title == \"${TITLE}\") | .number" | head -1)
+          if [ -n "$NUM" ]; then
+            gh issue comment "$NUM" --body "Failed again: ${RUN_URL}"
+            echo "Commented on existing failure issue #${NUM}"
+          else
+            gh issue create --title "${TITLE}" --label maf-release \
+              --body "The scheduled **${WORKFLOW}** workflow failed. Most recent failed run: ${RUN_URL}. Updated (not duplicated) on subsequent failures; close once fixed."
+            echo "Opened new failure issue"
+          fi

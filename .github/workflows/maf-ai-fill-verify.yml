@@ -28,9 +28,17 @@ on:
     # get blocked by "missing required check"). The job filters internally:
     # if registry.yaml isn't in the diff, it reports success trivially.
 
+# SEC-11: this job checks out + builds PR-supplied (possibly fork) code, so it must
+# NOT hold write scope. It uploads its comment body + PR number as an artifact; the
+# workflow_run companion (maf-pr-audit-comment.yml) posts the sticky comment from the
+# base-repo context without ever touching fork code.
 permissions:
   contents: read
-  pull-requests: write
+
+# WM-35: cancel superseded PR runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
@@ -207,66 +215,65 @@ jobs:
           } >> $GITHUB_OUTPUT
           exit $EXIT
 
-      - name: Build failure comment
-        if: |
-          steps.scope.outputs.in_scope == 'true' &&
-          (steps.verify.outputs.exit_code != '0' ||
-           steps.crossfile.outputs.exit_code != '0')
+      # SEC-11: build the sticky-comment body (failure detail OR a passed message) and
+      # upload it as an artifact instead of posting it here — this job checks out + built
+      # PR-supplied code, so it must not hold write scope. The workflow_run companion
+      # (maf-pr-audit-comment.yml) posts it from the base-repo context. Task 4.8: still a
+      # single sticky comment (header maf-ai-fill-verify), updated per PR.
+      - name: Build verify comment body
+        if: steps.scope.outputs.in_scope == 'true'
         env:
           VERIFY_OUTPUT: ${{ steps.verify.outputs.output }}
           CROSSFILE_OUTPUT: ${{ steps.crossfile.outputs.output }}
           VERIFY_EXIT: ${{ steps.verify.outputs.exit_code }}
           CROSSFILE_EXIT: ${{ steps.crossfile.outputs.exit_code }}
         run: |
-          {
-            echo "## ❌ AI-fill verification failed"
-            echo ""
-            if [ "$VERIFY_EXIT" != "0" ]; then
-              echo "### Registry entry checks (rung-1 mechanical)"
+          if [ "$VERIFY_EXIT" = "0" ] && [ "$CROSSFILE_EXIT" = "0" ]; then
+            echo "✅ AI-fill verification passed (registry + cross-file checks)." > ai-fill-verify-comment.md
+          else
+            {
+              echo "## ❌ AI-fill verification failed"
               echo ""
-              echo '```'
-              echo "$VERIFY_OUTPUT"
-              echo '```'
-              echo ""
-            fi
-            if [ "$CROSSFILE_EXIT" != "0" ]; then
-              echo "### Cross-file consistency checks"
-              echo ""
-              echo '```'
-              echo "$CROSSFILE_OUTPUT"
-              echo '```'
-              echo ""
-            fi
-            echo "**Common fixes:**"
-            echo "- example_before == example_after -> these must differ."
-            echo "- fix_description too short -> write a real sentence, no TODO/TBD."
-            echo "- unbalanced braces -> bot truncated a code block."
-            echo "- guide_section placeholder -> use 'N/A' literal."
-            echo "- duplicate version row -> UPDATE the watcher placeholder, do NOT add a row."
-            echo "- Version Tracking section stale -> bump 'Current tracked version' to match .maf-version."
-          } > /tmp/comment.md
+              if [ "$VERIFY_EXIT" != "0" ]; then
+                echo "### Registry entry checks (rung-1 mechanical)"
+                echo ""
+                echo '```'
+                echo "$VERIFY_OUTPUT"
+                echo '```'
+                echo ""
+              fi
+              if [ "$CROSSFILE_EXIT" != "0" ]; then
+                echo "### Cross-file consistency checks"
+                echo ""
+                echo '```'
+                echo "$CROSSFILE_OUTPUT"
+                echo '```'
+                echo ""
+              fi
+              echo "**Common fixes:**"
+              echo "- example_before == example_after -> these must differ."
+              echo "- fix_description too short -> write a real sentence, no TODO/TBD."
+              echo "- unbalanced braces -> bot truncated a code block."
+              echo "- guide_section placeholder -> use 'N/A' literal."
+              echo "- duplicate version row -> UPDATE the watcher placeholder, do NOT add a row."
+              echo "- Version Tracking section stale -> bump 'Current tracked version' to match .maf-version."
+            } > ai-fill-verify-comment.md
+          fi
 
-      # Task 4.8 — sticky comment (one comment updated by header) instead of
-      # `gh pr comment`, which stacked a NEW duplicate on every push/label event.
-      - name: Post sticky failure comment
-        if: |
-          steps.scope.outputs.in_scope == 'true' &&
-          (steps.verify.outputs.exit_code != '0' ||
-           steps.crossfile.outputs.exit_code != '0')
-        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0  # v2.9.2
-        with:
-          header: maf-ai-fill-verify
-          path: /tmp/comment.md
+      - name: Write PR number for the comment companion
+        if: steps.scope.outputs.in_scope == 'true'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: echo "$PR_NUMBER" > pr-number.txt
 
-      - name: Clear sticky comment on success
-        if: |
-          steps.scope.outputs.in_scope == 'true' &&
-          steps.verify.outputs.exit_code == '0' &&
-          steps.crossfile.outputs.exit_code == '0'
-        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0  # v2.9.2
+      - name: Upload verify result for the comment companion (SEC-11)
+        if: steps.scope.outputs.in_scope == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          header: maf-ai-fill-verify
-          message: "✅ AI-fill verification passed (registry + cross-file checks)."
+          name: maf-ai-fill-verify-result
+          path: |
+            ai-fill-verify-comment.md
+            pr-number.txt
 
       - name: Final status (fail if any check failed)
         if: |

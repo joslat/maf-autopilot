@@ -253,6 +253,12 @@ jobs:
               r'|github\.event\.inputs\.'
               r'|needs\.[^.]+\.outputs\.'
               r'|steps\.[^.]+\.outputs\.'
+              # WM-14: the classic free-text event-field injection lanes (PR/issue/
+              # comment/review titles + bodies, commit messages). Allowlist the
+              # structurally-safe numeric/sha leaves via a negative lookahead so
+              # `pull_request.number` / `.base.sha` / `.head.sha` stay usable in run: blocks.
+              r'|github\.event\.pull_request\.(?!number\b|base\.sha\b|head\.sha\b)'
+              r'|github\.event\.(?:issue|comment|review|head_commit|commits)\b'
               r')'
           )
           # Self-exclude ci-invariants.yml — this meta-workflow names the
@@ -276,6 +282,12 @@ jobs:
                           if m:
                               in_run = True
                               run_indent = len(m.group(1))
+                              continue
+                          # WM-14: a SINGLE-LINE `run: <cmd>` (no |/> block scalar) — the
+                          # command is on the same line, so check its remainder directly.
+                          m1 = re.match(r'^\s*run\s*:\s*(?![|>])(\S.*)$', stripped)
+                          if m1 and tpl.search(m1.group(1)):
+                              violations.append(f"{path}:{i}: {stripped.strip()}")
                               continue
                           # End of run: block when indentation drops to or below run_indent and line isn't blank
                           if in_run and stripped.strip() != '':

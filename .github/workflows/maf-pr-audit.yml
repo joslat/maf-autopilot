@@ -7,10 +7,12 @@ name: MAF PR Audit
 # The CI integration vector for plan #52. [task 4.10]
 
 on:
-  pull_request:
-    paths:
-      - '**.cs'
-      - '**.csproj'
+  # SEC-16: NO paths: filter. A required check with a paths filter deadlocks docs-only
+  # PRs (the check is "expected" but never runs) — or, if not required, the compiler-bomb
+  # red gate can't actually block a merge. Instead the check runs on EVERY PR and the
+  # in-job "Decide whether to audit" step below skips (green) when nothing product-code
+  # changed, so it reports success on every PR and is safely requireable.
+  pull_request: {}
 
 # #148 finding 3 — this job runs Roslyn analysis over the PR's own (possibly
 # untrusted, fork-supplied) source, so it must never hold write-scoped
@@ -24,6 +26,11 @@ on:
 # job produces below.
 permissions:
   contents: read
+
+# WM-35: cancel superseded PR runs (this audit is one of the heavier PR jobs).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   audit:
@@ -54,8 +61,15 @@ jobs:
           echo "$CHANGED_CODE" | sed 's/^/  /'
           if [ -z "$NON_SAMPLE" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
-            echo "skip_reason=samples-only" >> $GITHUB_OUTPUT
-            echo "::notice title=MAF audit skipped::Only samples/ files changed — they're intentionally buggy demo corpora, not real code to audit."
+            # SEC-16: distinguish "no product code changed at all" (docs-only PR — now
+            # reachable since the paths filter was removed) from "only samples/ changed".
+            if [ -z "$CHANGED_CODE" ]; then
+              echo "skip_reason=no-code" >> $GITHUB_OUTPUT
+              echo "::notice title=MAF audit skipped::No .cs/.csproj files changed — nothing to audit."
+            else
+              echo "skip_reason=samples-only" >> $GITHUB_OUTPUT
+              echo "::notice title=MAF audit skipped::Only samples/ files changed — they're intentionally buggy demo corpora, not real code to audit."
+            fi
             exit 0
           fi
 
@@ -149,7 +163,10 @@ jobs:
         if: steps.scope.outputs.skip != 'true'
         run: dotnet build src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0 --no-restore
 
-      - name: Run MCP server and call MafAuditPullRequest
+      - name: Run maf-doctor doctor (whole-repo, product-scoped)
+        # REP-41: this is the whole-repo, product-scoped `doctor` report (not the
+        # diff-scoped MafAuditPullRequest MCP tool) — the step name + steering docs
+        # now say so.
         if: steps.scope.outputs.skip != 'true'
         id: audit
         env:
@@ -170,12 +187,30 @@ jobs:
           else
             # Product-scoped (task 4.10 / 3.1): exclude samples/ + test fixtures so
             # the audit reflects product code, matching the drift detector.
-            # `|| true` keeps the job alive on any error so we still post a sticky
-            # comment with diagnostic content.
+            # REP-29: capture stdout (the markdown report) and stderr SEPARATELY so a
+            # stray runtime warning can't corrupt the sticky comment. `|| true` keeps
+            # the job alive so we still post diagnostic content.
+            rc=0
             dotnet "$MAF_DOCTOR" doctor "$GITHUB_WORKSPACE" \
               --exclude samples/ --exclude .Tests/ --exclude find-the-bug/ \
-              > pr-audit-full.md 2>&1 || true
+              > pr-audit-full.md 2> doctor-stderr.txt || rc=$?
+            # On failure / empty report, append the stderr as a COLLAPSED diagnostics
+            # block (delimited, not interleaved). On success it's only in the job log below.
+            if [ "$rc" -ne 0 ] || [ ! -s pr-audit-full.md ]; then
+              {
+                echo ''
+                echo '<details><summary>doctor diagnostics (stderr)</summary>'
+                echo ''
+                echo '```'
+                cat doctor-stderr.txt 2>/dev/null || echo '(none)'
+                echo '```'
+                echo ''
+                echo '</details>'
+              } >> pr-audit-full.md
+            fi
           fi
+
+          echo "--- doctor stderr ---"; cat doctor-stderr.txt 2>/dev/null || echo "(none)"
 
           # Defensive fallback: if the doctor invocation produced nothing
           # (empty file), write an explanatory message rather than letting the
@@ -208,6 +243,8 @@ jobs:
             cat > pr-audit-full.md <<EOF
           ⚠️ **MAF audit INCOMPLETE for this PR.** The Roslyn-heavy per-file audit was skipped: this PR changes $FILE_COUNT .cs files totaling $BYTES bytes, exceeding the 200-file / 5 MB compiler-bomb cap. The CI-side mcp-scanner still ran. A maintainer should manually review this PR's size and content before merging — the automated mechanical audit has NOT evaluated it.
           EOF
+          elif [ "$SKIP_REASON" = "no-code" ]; then
+            echo "ℹ️ **MAF audit skipped for this PR.** No .cs/.csproj files changed — nothing to audit." > pr-audit-full.md
           else
             echo "ℹ️ **MAF audit skipped for this PR.** Only samples/ files changed — they're intentionally buggy demo corpora, not real code to audit." > pr-audit-full.md
           fi
