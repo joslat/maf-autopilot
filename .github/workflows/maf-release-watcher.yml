@@ -10,7 +10,7 @@ on:
         required: false
         default: ''
       push_target:
-        description: 'Override branch for watcher commits (dry-run). Leave blank for the default release-watcher/maf-<version> PR branch (the scaffold is opened as a PR, never pushed to main).'
+        description: 'Override branch for watcher commits (dry-run). Leave blank for the default release-watcher/maf-<version> PR branch; a retained historical branch gets a collision-safe run suffix (the scaffold is opened as a PR, never pushed to main).'
         required: false
         default: ''
 
@@ -75,6 +75,7 @@ jobs:
       old_version: ${{ steps.version-check.outputs.old_version }}
       has_update: ${{ steps.version-check.outputs.has_update }}
       is_major: ${{ steps.version-check.outputs.is_major }}
+      target_branch: ${{ steps.version-check.outputs.target_branch }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
@@ -85,6 +86,8 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.maf_version }}
           PUSH_TARGET: ${{ inputs.push_target }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # WM-12: gh pr list short-circuit
         run: |
           CURRENT=$(cat .maf-version | tr -d '[:space:]')
@@ -149,6 +152,22 @@ jobs:
             echo "is_major=false" >> $GITHUB_OUTPUT
             exit 0
           fi
+
+          # Resolve the target branch exactly once. Closed watcher PR branches are
+          # retained for audit history, so branch existence alone is not evidence
+          # that a PR is still open. Preserve an occupied canonical branch and use
+          # a run-unique successor; every downstream contract/push consumes this
+          # one output instead of independently recomputing a branch name.
+          TARGET_BRANCH="${PUSH_TARGET:-release-watcher/maf-${LATEST}}"
+          if [ -z "$PUSH_TARGET" ] && git ls-remote --exit-code --heads origin "$TARGET_BRANCH" >/dev/null 2>&1; then
+            TARGET_BRANCH="${TARGET_BRANCH}-run-${RUN_ID}-${RUN_ATTEMPT}"
+            if git ls-remote --exit-code --heads origin "$TARGET_BRANCH" >/dev/null 2>&1; then
+              echo "::error::Collision-safe watcher branch $TARGET_BRANCH already exists; refusing to overwrite retained history."
+              exit 1
+            fi
+            echo "ℹ️ Canonical watcher branch is retained history; using $TARGET_BRANCH."
+          fi
+          echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
 
           echo "old_version=$CURRENT" >> $GITHUB_OUTPUT
           echo "new_version=$LATEST" >> $GITHUB_OUTPUT
@@ -493,6 +512,15 @@ jobs:
           echo "$NEW" > .maf-version
           echo "Updated .maf-version to $NEW"
 
+      - name: Update registry release metadata
+        env:
+          NEW_VERSION: ${{ needs.check-for-new-maf-release.outputs.new_version }}
+        run: |
+          LAST_UPDATED=$(date -u +%F)
+          python3 .github/scripts/update_registry_metadata.py \
+            --target-version "$NEW_VERSION" \
+            --last-updated "$LAST_UPDATED"
+
       - name: Record immutable scaffold obligations
         # This data contract is generated only after every watcher-owned file is
         # final.  AI-fill verification recovers this exact blob from the first
@@ -501,14 +529,13 @@ jobs:
           OLD_VERSION: ${{ needs.check-for-new-maf-release.outputs.old_version }}
           NEW_VERSION: ${{ needs.check-for-new-maf-release.outputs.new_version }}
           BASE_COMMIT: ${{ github.sha }}
-          PUSH_TARGET: ${{ inputs.push_target }}
+          TARGET_BRANCH: ${{ needs.check-for-new-maf-release.outputs.target_branch }}
         run: |
-          BRANCH="${PUSH_TARGET:-release-watcher/maf-${NEW_VERSION}}"
           python3 .github/scripts/build_scaffold_obligations.py \
             --old-version "$OLD_VERSION" \
             --target-version "$NEW_VERSION" \
             --base-commit "$BASE_COMMIT" \
-            --target-branch "$BRANCH" \
+            --target-branch "$TARGET_BRANCH" \
             --output ".github/maf-scaffold-obligations/maf-${NEW_VERSION}.json"
 
       - name: Commit to a release-watcher branch and open a PR
@@ -531,7 +558,7 @@ jobs:
           # workflow events for branches/PRs created with GITHUB_TOKEN. Never
           # fall back silently, or the scaffold PR opens without its CI checks.
           GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
-          PUSH_TARGET: ${{ inputs.push_target }}
+          BRANCH: ${{ needs.check-for-new-maf-release.outputs.target_branch }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}  # REP-34
         run: |
           git config user.name  "github-actions[bot]"
@@ -558,43 +585,40 @@ jobs:
           python3 .github/scripts/build_watcher_commit_message.py \
             > "$RUNNER_TEMP/commit-msg.txt"
 
-          # Push to a per-version branch (NOT main) so an unfilled scaffold can never red
-          # main. A manual dispatch may override the branch via push_target (dry-run).
-          BRANCH="${PUSH_TARGET:-release-watcher/maf-${NEW_VERSION}}"
+          # Push to the branch resolved by the read-only version-check job. Reusing
+          # that exact value keeps the immutable obligations topology truthful.
           # Hard guard: never operate on the default/protected branch. The whole point of C
           # is that the scaffold goes through a PR — a stray push_target=main must NOT push.
           if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then
             echo "::error::push_target must not be a protected branch (got '$BRANCH'). The watcher opens a PR; it never pushes the scaffold to main."
             exit 1
           fi
-          # WM-12 (defense-in-depth for the check-for-new-maf-release short-circuit):
-          # if the scaffold branch already exists on the remote, a PR is in flight —
-          # leave it and its in-flight fill commits untouched instead of force-clobbering
-          # them (which the old --force-with-lease then failed on in a fresh clone, red-ing
-          # the whole job). Public repo → unauthenticated ls-remote works.
+          # Defense-in-depth against a branch appearing after target selection.
+          # Never overwrite it: it may be retained history or another actor's work.
           if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
-            echo "ℹ️ Branch $BRANCH already exists on the remote — scaffold PR in flight; leaving it (and any fill commits) untouched. Delete the branch or dispatch with push_target to regenerate."
-            echo "committed=false" >> $GITHUB_OUTPUT
-            exit 0
+            echo "::error::Resolved branch $BRANCH appeared after selection; refusing to overwrite it. Rerun to select a fresh collision-safe branch."
+            exit 1
           fi
           git checkout -b "$BRANCH"
           git commit -F "$RUNNER_TEMP/commit-msg.txt"
           # SEC-27: pass the ephemeral auth header through Git's one-command
           # environment config, not `.git/config`, the remote URL, or argv.
-          # --force-with-lease (not -f) lets a deliberate regenerate update its
-          # own branch without clobbering someone else's work.
+          # The resolved branch is required to be new, so an ordinary push is
+          # sufficient and cannot rewrite a retained historical branch.
           AUTH_VALUE="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
           GIT_CONFIG_COUNT=1 \
           GIT_CONFIG_KEY_0=http.extraheader \
           GIT_CONFIG_VALUE_0="$AUTH_VALUE" \
-            git push --force-with-lease origin "HEAD:${BRANCH}"
+            git push origin "HEAD:${BRANCH}"
           unset AUTH_VALUE
           echo "branch=$BRANCH" >> $GITHUB_OUTPUT
           echo "committed=true" >> $GITHUB_OUTPUT
 
-          # Open a PR to main (idempotent).
-          if gh pr view "$BRANCH" --json number >/dev/null 2>&1; then
-            echo "✅ Updated existing PR for branch $BRANCH."
+          # Only an OPEN PR with this exact head is current. A closed PR is
+          # historical evidence and must never suppress creation of a successor.
+          OPEN_PR=$(gh pr list --state open --head "$BRANCH" --json number --jq '.[0].number // empty')
+          if [ -n "$OPEN_PR" ]; then
+            echo "✅ Open PR #$OPEN_PR already targets branch $BRANCH."
           else
             # REP-34: build the body with printf + SINGLE-quoted lines (no command
             # substitution, so backticks + markdown bullets are safe — this is what

@@ -28,6 +28,8 @@ def _write(root: Path, relative: str, text: str) -> None:
 def _registry() -> dict:
     return {
         "schema_version": 1,
+        "target_maf_version": "1.14.0",
+        "last_updated": "2026-08-17",
         "entries": [
             {
                 "id": "MAF113-HISTORY-001",
@@ -201,6 +203,36 @@ def test_additive_scaffold_can_record_zero_generated_registry_entries(tmp_path: 
     contract.write_bytes(raw)
     assert doc["registry"]["generated_target_entries"] == []
     assert verify_obligations(doc, tmp_path, raw) == []
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("target_maf_version", "1.13.0", "target_maf_version must match"),
+        ("last_updated", "2026-02-31", "valid ISO calendar date"),
+        ("last_updated", "2026-8-17", "valid ISO calendar date"),
+    ],
+)
+def test_scaffold_rejects_incorrect_registry_metadata(
+    tmp_path: Path,
+    field: str,
+    value: str,
+    message: str,
+):
+    _scaffold(tmp_path)
+    registry_path = tmp_path / ".github/skills/maf-obsolete-api-registry/registry.yaml"
+    registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
+    registry[field] = value
+    registry_path.write_text(yaml.safe_dump(registry, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        build_obligations(
+            tmp_path,
+            old_version="1.13.0",
+            target_version="1.14.0",
+            base_commit="a" * 40,
+            target_branch="release-watcher/maf-1.14.0",
+        )
 
 
 def test_scaffold_ignores_guide_headings_inside_fenced_package_evidence(tmp_path: Path):
