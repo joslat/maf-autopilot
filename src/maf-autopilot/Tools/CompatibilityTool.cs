@@ -63,6 +63,20 @@ public sealed class CompatibilityTool
     internal static readonly IReadOnlyDictionary<string, string> Matrix =
         new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
+            ["1.14.0"] = """
+                ## MAF 1.14.0 Compatibility
+                
+                | Dependency                                | Version          | Notes |
+                |-------------------------------------------|------------------|-------|
+                | .NET runtime                              | `≥ 8.0` | net8.0, net9.0, net10.0 TFMs all supported |
+                | Microsoft.Extensions.AI                   | `≥ 10.6.0` | Carried from 1.13.0 |
+                | Azure.AI.OpenAI                           | _(not pinned by MAF — BYO via IChatClient)_ | |
+                | Microsoft.Agents.AI.Workflows.Generators  | `1.14.0` | Source-gen package |
+                | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
+                
+                **Breaking** — migration required. The ten validated release-critical surfaces contain 30 API breaks: agent-mode terminology and async session APIs; approval-rule context changes; default-on approval-not-required bypassing and approval-response binding; async message injection; non-null todo sessions; opt-in Harness file access and explicit shell composition; `AddAGUIServer` / `MapAGUIServer`; Copilot function-declaration collections; and a binary-breaking `ShellPolicy` constructor with deny-first semantics. The legacy `Microsoft.Agents.AI.AGUI` package split into `AGUI.Client`, `AGUI.Server`, `AGUI.Abstractions`, `AGUI.Protobuf`, and `AGUI.Formatting`. See `guides/maf-1.14.0-migration-guide.md` and the 1.14 registry entries. Transitive pins are carried from 1.13.0.
+                """,
+
             ["1.13.0"] = """
                 ## MAF 1.13.0 Compatibility
                 
