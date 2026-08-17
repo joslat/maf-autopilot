@@ -14,8 +14,8 @@ on:
         required: false
         default: ''
 
-# Phase 3.3 — a run can never overlap itself (analyze-and-update pushes to main;
-# an overlap could double-apply registry edits). cancel-in-progress is false so
+# Phase 3.3 — a run can never overlap itself. An overlap could create competing
+# release branches from the same tracked version. cancel-in-progress is false so
 # an in-flight real update is allowed to finish.
 concurrency:
   group: maf-self-update-watcher
@@ -84,9 +84,17 @@ jobs:
         # a shell variable. Eliminates template-injection surface in the script.
         env:
           INPUT_VERSION: ${{ inputs.maf_version }}
+          PUSH_TARGET: ${{ inputs.push_target }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # WM-12: gh pr list short-circuit
         run: |
-          # Use explicit version if provided, otherwise query NuGet (latest STABLE)
+          CURRENT=$(cat .maf-version | tr -d '[:space:]')
+          echo "Current tracked version: $CURRENT"
+
+          # Use an explicit version if provided. Otherwise select the OLDEST
+          # pending stable release, not merely the newest one. Microsoft can ship
+          # more than once between weekly runs (1.14/1.15 and 1.16/1.17 did), and
+          # jumping straight to the latest silently drops intermediate per-version
+          # guides and compatibility rows from the additive chain.
           if [ -n "$INPUT_VERSION" ]; then
             LATEST="$INPUT_VERSION"
             echo "Using manually specified version: $LATEST"
@@ -110,32 +118,45 @@ jobs:
             # shell block's indentation, so Python raised "IndentationError:
             # unexpected indent" on EVERY scheduled run (the explicit-version
             # dispatch path skips this branch, which is why manual runs worked).
-            LATEST=$(echo "$RAW" | python3 .github/scripts/get_latest_stable.py)
-            if [ -z "$LATEST" ]; then
+            NEWEST=$(echo "$RAW" | python3 .github/scripts/get_latest_stable.py)
+            LATEST=$(echo "$RAW" | python3 .github/scripts/get_latest_stable.py --after "$CURRENT")
+            if [ -z "$NEWEST" ]; then
               echo "ℹ️ No stable version found on NuGet — only prereleases. Skipping."
               echo "has_update=false" >> $GITHUB_OUTPUT
               exit 0
             fi
-            echo "Latest STABLE version on NuGet: $LATEST"
+            echo "Latest STABLE version on NuGet: $NEWEST"
+            if [ -z "$LATEST" ]; then
+              echo "old_version=$CURRENT" >> $GITHUB_OUTPUT
+              echo "new_version=$CURRENT" >> $GITHUB_OUTPUT
+              echo "has_update=false" >> $GITHUB_OUTPUT
+              echo "is_major=false" >> $GITHUB_OUTPUT
+              echo "ℹ️ No pending stable release. $CURRENT is current."
+              exit 0
+            fi
+            if [ "$LATEST" != "$NEWEST" ]; then
+              echo "ℹ️ Release backlog detected — processing oldest pending stable $LATEST first (newest is $NEWEST)."
+            fi
           fi
 
-          # WM-12: if a scaffold PR for this version is already open, a re-detection
-          # run would only redo the analyze-and-update work and — worse — collide with
-          # the in-flight fill commits on that PR branch (the old --force-with-lease
-          # rerun then failed the whole job and spammed the failure issue). Skip the
-          # entire analyze job as a clean no-op; regenerate by closing the PR / deleting
-          # the branch, or dispatch with push_target.
-          if [ -n "$(gh pr list --head "release-watcher/maf-${LATEST}" --state open --json number --jq '.[].number' 2>/dev/null)" ]; then
-            echo "ℹ️ A scaffold PR for release-watcher/maf-${LATEST} is already open — clean no-op this run."
-            echo "old_version=$(cat .maf-version | tr -d '[:space:]')" >> $GITHUB_OUTPUT
+          # WM-12: serialize the backlog. ANY open watcher PR means main still has
+          # the old .maf-version, so generating another release from it would create
+          # parallel cumulative deltas and skip the per-release chain. A non-empty
+          # push_target remains the explicit maintainer dry-run escape hatch.
+          if [ -z "$PUSH_TARGET" ]; then
+            OPEN_WATCHER=$(gh pr list --state open --json number,headRefName \
+              --jq '[.[] | select(.headRefName | startswith("release-watcher/maf-"))][0] | if . then "#\(.number) (\(.headRefName))" else "" end' 2>/dev/null)
+          else
+            OPEN_WATCHER=""
+          fi
+          if [ -n "$OPEN_WATCHER" ]; then
+            echo "ℹ️ Watcher scaffold PR $OPEN_WATCHER is already open — clean no-op until it is merged or closed."
+            echo "old_version=$CURRENT" >> $GITHUB_OUTPUT
             echo "new_version=$LATEST" >> $GITHUB_OUTPUT
             echo "has_update=false" >> $GITHUB_OUTPUT
             echo "is_major=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-
-          CURRENT=$(cat .maf-version | tr -d '[:space:]')
-          echo "Current tracked version: $CURRENT"
 
           echo "old_version=$CURRENT" >> $GITHUB_OUTPUT
           echo "new_version=$LATEST" >> $GITHUB_OUTPUT

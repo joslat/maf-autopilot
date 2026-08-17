@@ -30,7 +30,8 @@ name: MAF AI Auto-Fill TODOs
 #   (the cross-workflow dispatch) was removed in the 2026-06-28 "C" refactor. Rotate
 #   the PAT down to this union.
 #   This SAME secret is reused by maf-release-watcher.yml (Contents R/W, to push
-#   to main) — provision the full union here, not a narrower scope. [task 3.5]
+#   the per-version scaffold branch) — provision the full union here, not a
+#   narrower scope. [task 3.5]
 #   This is REQUIRED for auto-assignment — see the long comment block on the
 #   "Open issue assigned to Copilot Coding Agent" step below for why
 #   GITHUB_TOKEN is unusable here. If the secret is missing the workflow still

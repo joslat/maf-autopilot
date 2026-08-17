@@ -13,7 +13,7 @@ migrate, and keep registry fresh.
 | Tests | `src/maf-autopilot.Tests/`, `src/maf-autopilot.Analyzers.Tests/` |
 | Skills (procedural) | `.github/skills/` (load into GitHub Copilot Coding Agent) |
 | Specialist agents | `.github/agents/` (`.agent.md` files for Copilot Coding Agent) |
-| CI / maintenance workflows | `.github/workflows/` (7 workflows incl. AI-fill loop) |
+| CI / maintenance workflows | `.github/workflows/` (12 workflows incl. AI-fill loop) |
 | Obsolete-API registry | `.github/skills/maf-obsolete-api-registry/registry.yaml` |
 | MAF migration guide | embedded in NuGet (`guide.md`) |
 | Multi-version samples | `samples/maf-1.0-sample/`, `maf-1.2-sample/`, `maf-1.3-sample/` |

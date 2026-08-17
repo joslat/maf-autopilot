@@ -55,11 +55,12 @@ Findings you can act on, with the false positives flagged before you touch code:
 
 Migration tooling is only useful if it knows about the MAF version you're on. MAF Doctor keeps its own knowledge base current instead of asking you to wait for a maintainer release:
 
-**How** — a GitHub Actions watcher checks NuGet for a new Microsoft.Agents.AI release, diffs the API surface against the last known version, and updates the per-version migration guide, the compatibility matrix, and the obsolete-API registry:
+**How** — a GitHub Actions watcher checks NuGet for new Microsoft.Agents.AI releases, drains the backlog **oldest stable release first**, diffs each adjacent API surface, and updates the per-version migration guide, compatibility matrix, and obsolete-API registry:
 
-- **Minor / patch bumps** are committed straight to the main branch — the guide, matrix, and tracked version move forward on their own.
-- **Major bumps** don't auto-merge; they open a human-gated issue so a breaking release gets eyes before anything lands.
-- New registry entries are drafted by an AI-fill loop and **PR-verified** — a registry-verification check runs on the fill PR (and can gate the merge when required-status-checks is enabled), so the deterministic fix data stays trustworthy.
+- **Minor / patch bumps** always go to a per-version `release-watcher/maf-X.Y.Z` PR — the watcher never pushes an unreviewed scaffold to `main`. Additive releases should arrive green; breaking releases deliberately stay red while registry TODOs remain.
+- **Major bumps** don't produce an automatic update PR; they open a human-gated issue with the raw diffs attached so the migration is reviewed before anything lands.
+- Breaking registry entries can be filled on the scaffold branch by a maintainer or by manually dispatching the AI-fill workflow. The mechanical registry gate and semantic review then validate the filled result before the scaffold PR is merged.
+- Only one watcher PR is allowed in flight. Once it merges and advances `.maf-version`, the next run processes the next pending stable release, preserving every row and guide in the migration chain.
 
 **When** — every **Thursday 06:00 UTC** (~08:00 Europe/Zurich), aligned with MAF's .NET Thursday-morning ship cadence. Off-cadence releases are covered by a manual dispatch trigger.
 

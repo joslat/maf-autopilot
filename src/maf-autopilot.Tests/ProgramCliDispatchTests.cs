@@ -80,10 +80,19 @@ public sealed class ProgramCliDispatchTests
     [Fact]
     public void Doctor_ValidPath_ExitsZero()
     {
-        var (exitCode, stdout, _) = Run(TimeSpan.FromSeconds(30), "doctor", Path.GetTempPath());
+        // Never scan the shared temp ROOT: on a developer machine it may contain
+        // thousands of unrelated files, and the net8/9/10 test hosts run this test
+        // concurrently. Use an isolated empty repo-shaped directory instead.
+        var dir = Path.Combine(Path.GetTempPath(), "maf-doctor-valid-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var (exitCode, stdout, _) = Run(TimeSpan.FromSeconds(30), "doctor", dir);
 
-        Assert.Equal(0, exitCode);
-        Assert.False(string.IsNullOrWhiteSpace(stdout));
+            Assert.Equal(0, exitCode);
+            Assert.False(string.IsNullOrWhiteSpace(stdout));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
     }
 
     // ---- Phase 2 ----

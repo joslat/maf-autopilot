@@ -9,7 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet — new work is tracked here between releases._
+### Fixed
+
+- **Semantic review restored after GitHub Models retirement.** The workflow now
+  uses GitHub Copilot CLI with the short-lived `GITHUB_TOKEN`, an exact-pinned
+  CLI, and no enabled Copilot tools.
+- **Release backlogs no longer skip intermediate stable MAF versions.** The watcher selects the oldest untracked stable release and permits only one scaffold PR in flight, preserving per-version compatibility rows and migration guides when Microsoft ships more than once between weekly runs.
+- **Cost audit false positives removed.** CLI command entry points and the built MCP/host `RunAsync()` loop are no longer mistaken for uncapped agent inference calls.
+- **MCP scanner cache made runner-writable.** pipx now installs and caches under the workspace instead of `/opt`, eliminating tar permission failures and perpetual cache misses on hosted runners.
+- **CLI dispatch test made deterministic on Windows.** The valid-path smoke test now scans its own empty temporary directory instead of the entire shared temp root, avoiding parallel net8/9/10 timeouts on busy developer machines.
+
+### Documentation
+
+- Reconciled the watcher schedule, PR-only update flow, manual AI-fill handoff, workflow count, and cross-guide section rules with the live implementation.
 
 ## [1.14.0] - 2026-07-25
 

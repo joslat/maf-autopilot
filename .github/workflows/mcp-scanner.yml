@@ -44,6 +44,11 @@ permissions:
 # (docs/security.md); 26 leaves slack for a deliberately-removed tool.
 env:
   MIN_TOOLS: 26
+  # Keep pipx in runner-owned paths. Caching /opt/pipx restored root-owned mode
+  # metadata on hosted runners, producing thousands of tar permission warnings
+  # and a cache miss on every run even though the scan itself succeeded.
+  PIPX_HOME: ${{ github.workspace }}/.pipx
+  PIPX_BIN_DIR: ${{ github.workspace }}/.pipx/bin
 
 # WM-35: cancel superseded PR runs (this scan is expensive: build + scan). Cron runs
 # never share a PR number, so github.ref keeps them uncancelled.
@@ -90,25 +95,25 @@ jobs:
           python-version: '3.12'
 
       - name: Cache pipx install
-        # Post-merge fixup — the original cache paths (`~/.local/share/pipx` +
-        # `~/.local/bin/mcp-scanner`) were wrong on the GHA Ubuntu runner.
-        # Pipx on this runner installs venvs to `/opt/pipx` and links binaries
-        # into `/opt/pipx_bin/` (verified via workflow log on PR #59). The
-        # cache step is kept (saves ~20s on hits) but the paths are corrected.
+        # Explicit PIPX_HOME/PIPX_BIN_DIR above make the install runner-owned and
+        # portable across hosted images. Do not cache /opt: tar cannot restore
+        # its root-owned permission metadata as the runner user.
         # Key still invalidates on workflow-file edits so version-pin changes
         # force a fresh install instead of resurrecting a stale cache.
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          path: |
-            /opt/pipx
-            /opt/pipx_bin
+          # PIPX_BIN_DIR is a child of PIPX_HOME, so one cache root covers both
+          # without archiving the bin directory twice.
+          path: ${{ env.PIPX_HOME }}
           key: pipx-cisco-mcp-scanner-${{ hashFiles('.github/workflows/mcp-scanner.yml') }}
 
       - name: Install Cisco mcp-scanner via pipx
         run: |
           set -e
           python -m pip install --user pipx==1.16.0
-          python -m pipx ensurepath
+          mkdir -p "$PIPX_HOME" "$PIPX_BIN_DIR"
+          export PATH="$PIPX_BIN_DIR:$PATH"
+          echo "$PIPX_BIN_DIR" >> "$GITHUB_PATH"
           # F-13 (2026-07-19 security assessment) — exact-pinned rather than a
           # `>=4,<5` floating range: a security scanner's OWN supply chain is a
           # high-value target, and this workflow's job carries
