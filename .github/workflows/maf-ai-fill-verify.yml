@@ -59,18 +59,42 @@ jobs:
           persist-credentials: false
           path: pr
 
-      - name: Checkout trusted PR base verifier
+      # `pull_request.base.sha` is the base captured when the PR event was
+      # created and can remain stale while a long-running release PR is open.
+      # Resolve the current base branch tip from this separate trusted checkout
+      # and pin every later comparison/verifier invocation to that exact commit.
+      - name: Checkout current trusted PR base verifier
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.base_ref }}
           fetch-depth: 1
           persist-credentials: false
           path: trusted
 
+      - name: Resolve current trusted base SHA
+        id: trusted_base
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE_REF" ]; then
+            echo "::error::Pull request base ref is empty; refusing to select trusted verifier code."
+            exit 1
+          fi
+          BASE_SHA=$(git -C trusted rev-parse --verify "HEAD^{commit}")
+          if [[ ! "$BASE_SHA" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]]; then
+            echo "::error::Trusted base checkout did not resolve to one exact commit SHA."
+            exit 1
+          fi
+          git -C trusted cat-file -e "${BASE_SHA}^{commit}"
+          echo "sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+          echo "Resolved current trusted base $BASE_REF to $BASE_SHA"
+
       - name: Decide whether this PR is in scope
         id: scope
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ steps.trusted_base.outputs.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           # Task 4.6 — in scope iff the PR DIFF touches a watcher-managed file
@@ -80,8 +104,9 @@ jobs:
           # let a fill PR that forgot the label (or used an unexpected branch
           # prefix) silently report success while verifying NOTHING. Any edit to
           # these files deserves the structural verification.
-          # Scope discovery is fail-closed. Both event SHAs must be reachable and
-          # `git diff` must succeed; an empty list is trusted only after that proof.
+          # Scope discovery is fail-closed. The resolved current base commit and
+          # event HEAD must be reachable and `git diff` must succeed; an empty
+          # list is trusted only after that proof.
           # Full ancestry is required to prove where the immutable obligations
           # blob first appeared; a shallow base fetch makes merge-base ambiguous.
           git -C pr fetch --no-tags origin "$BASE_SHA"
@@ -238,7 +263,7 @@ jobs:
         if: steps.scope.outputs.in_scope == 'true'
         continue-on-error: true
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ steps.trusted_base.outputs.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           BASE_REF: ${{ github.base_ref }}
           HEAD_REF: ${{ github.head_ref }}
