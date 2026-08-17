@@ -1,170 +1,114 @@
 ---
 name: maf-migration-guide
-description: "Full MAF 1.3.0 migration reference guide, navigated by section. Load this skill when you need API signatures, before/after code patterns, or detailed explanations of MAF 1.3.0 changes. The guide lives at guides/maf-1.3.0-migration-guide.md — this skill is the smart index that tells you which section to read for a given question."
+description: "Version-aware navigator for Microsoft Agent Framework migrations. Load this skill for ordered upgrade paths, exact package versions, breaking API recipes, behavioral changes, or guide citations across every tracked MAF release."
 ---
 
-# MAF 1.3.0 Migration Guide — Navigator
+# MAF Migration Guide — Version-Aware Navigator
 
-The full guide is at **`guides/maf-1.3.0-migration-guide.md`**.
+MAF migrations are cumulative. Never jump directly to the newest guide and
+assume it contains earlier changes. Determine the source and target versions,
+then apply every intervening per-version guide in ascending order.
 
-This SKILL.md is the **index** — use it to find the right section for your question, then read only that section of the guide with `read_file`. This keeps context efficient.
+## Start Here
 
----
+1. Read `maf://constraints` before proposing code changes.
+2. Identify the exact installed MAF package versions from the project and its
+   resolved dependency graph. Do not infer them from a solution name or a bare
+   release-train number.
+3. Call `MafMigrationPath(currentVer, targetVer)`. Its ordered result is the
+   authoritative set of per-version guide sections for the migration.
+4. Read each returned `guides/maf-X.Y.Z-migration-guide.md` file in order. For a
+   single-step upgrade, read that target version's file directly.
+5. Use `MafRegistryLookup` or `MafRunCs0618Hunt` for an exact symbol recipe, then
+   restore, build, and run the relevant behavior tests.
 
-## Section Index
+The tracked target is recorded in `.maf-version`; do not hard-code the newest
+version into automation. `guides/maf-current-migration-guide.md` is the generated
+cumulative reading copy. Edit a per-version source guide, never the cumulative
+file, and regenerate it with:
 
-| Section | Title | Read when… |
-|---------|-------|-----------|
-| 1 | Introduction & scope | You need to understand what changed at a high level |
-| 2 | Package matrix | Looking up the correct version of any MAF/Extensions.AI package |
-| 3 | Agent creation — `.AsAIAgent()` | Migrating agent instantiation patterns |
-| 4 | `ChatClientAgentOptions` — Instructions placement | `Instructions` or `Tools` at wrong level |
-| 5 | A2A agent registration | Migrating `AIAgentExtensions` or `app.MapA2A` |
-| 6 | Sessions — `AgentSession` | Migrating `AgentThread`, `GetNewThread()`, session serialization |
-| 7 | Memory and context providers | `ChatHistoryProvider`, `AIContextProvider`, `ProviderSessionState<T>` |
-| 8 | Middleware | `.AsBuilder().Use().Build()` pattern |
-| 9 | Executors and workflows | `ReflectingExecutor` → `partial class : Executor` + `[MessageHandler]`, fan-out/fan-in |
-| 10 | Response processing | `AgentResponse.Text`, `.Messages`, streaming updates |
-| 11 | Structured output | `RunAsync<T>()` returning `AgentResponse<T>` |
-| 12 | Tool approval | `ApprovalRequiredAIFunction`, `FunctionApprovalRequestContent` |
-| 13 | Observability | `.UseOpenTelemetry(sourceName:)` |
-| 14 | DevUI and Hosting | `#if DEVUI_ENABLED` guard pattern |
-| 15 | Source generator setup | `Microsoft.Agents.AI.Workflows.Generators`, `EmitCompilerGeneratedFiles` |
-| 16 | `[StreamsMessage]` / `[YieldsMessage]` removal | These attributes are gone; what to do instead |
-| 17 | Streaming — `RunStreamingAsync()` | `InProcessExecution.StreamAsync()` → `RunStreamingAsync()` |
-| 18 | Event rename | `AgentRunUpdateEvent` → `AgentResponseUpdateEvent` |
-| 19 | Namespace changes | Old vs. new namespace mappings |
-| 20 | Migration checklist | End-to-end verification steps |
-| 21 | Obsolete API Registry (CS0618) | Known `[Obsolete]` APIs, why dotnet-inspect misses them |
-
----
-
-## Quick Lookup by Symptom
-
-| Symptom / Error | Read sections |
-|-----------------|---------------|
-| `CS0246: Type 'ReflectingExecutor' not found` | 9 |
-| `CS0246: [StreamsMessage] not found` | 9, 16 |
-| `CS0618: AddFanInBarrierEdge is obsolete` | 9, 21 |
-| Fan-in never reached, workflow exits silently | 9 |
-| `AgentThread` not found | 6 |
-| `GetNewThread()` not found | 6 |
-| `Deserialize<T>()` not found on `AgentResponse` | 11 |
-| `StreamAsync()` not found | 17 |
-| `AgentRunUpdateEvent` not found | 18 |
-| `AIAgentExtensions` not found | 5 |
-| `MapA2A` not found | 5 |
-| `Instructions =` compiles but has no effect | 4 |
-| Source generator not generating `ExecuteCoreAsync` | 15 |
-| IDE shows `CS0534` on executor class | 15 |
-| `DefaultAzureCredential` in production | Any — constraint violation, use `ManagedIdentityCredential` |
-
----
-
-## How to Read Sections
-
-```
-read_file(
-  filePath: "guides/maf-1.3.0-migration-guide.md",
-  startLine: <section start line>,
-  endLine: <section end line>
-)
+```text
+python .github/scripts/gen_guide_section.py --cumulative-only
 ```
 
-If you don't know the line numbers, read the guide's table of contents first (typically the first 50 lines) to find section headings, then read the specific section.
+## Guide Inventory
 
----
+| Target version | Source guide | Status / primary purpose |
+|---|---|---|
+| 1.3.0 | `guides/maf-1.3.0-migration-guide.md` | Complete foundational guide: agents, sessions, executors, workflows, streaming, hosting, and source generation. |
+| 1.4.0 | `guides/maf-1.4.0-migration-guide.md` | Draft evidence; verify unfilled human analysis before relying on it. |
+| 1.5.0 | `guides/maf-1.5.0-migration-guide.md` | Draft evidence; verify unfilled human analysis before relying on it. |
+| 1.6.1 | `guides/maf-1.6.1-migration-guide.md` | Reviewed 1.5-to-1.6.1 delta. |
+| 1.10.0 | `guides/maf-1.10.0-migration-guide.md` | Reviewed 1.6.1-to-1.10 delta. |
+| 1.11.0 | `guides/maf-1.11.0-migration-guide.md` | Reviewed 1.10-to-1.11 delta. |
+| 1.11.1 | `guides/maf-1.11.1-migration-guide.md` | Reviewed servicing delta. |
+| 1.12.0 | `guides/maf-1.12.0-migration-guide.md` | Reviewed 1.11.1-to-1.12 delta. |
+| 1.13.0 | `guides/maf-1.13.0-migration-guide.md` | Reviewed file-store and file-access migration. |
+| 1.14.0 | `guides/maf-1.14.0-migration-guide.md` | Reviewed agent/session, approval, Harness, AG-UI, Copilot, and Shell migration. |
+| 1.15.0 | `guides/maf-1.15.0-migration-guide.md` | Reviewed Hosting session-store and workflow behavior migration. |
+| 1.16.0 | `guides/maf-1.16.0-migration-guide.md` | Reviewed VectorData 10.7, Magentic, persistence, hosting, and security-boundary migration. |
+| 1.17.0 | `guides/maf-1.17.0-migration-guide.md` | Reviewed declarative failure/redaction and durable-extension lifecycle migration. |
 
-## Section 9 Subsections (Executors — Most Complex)
+If a requested path crosses 1.4 or 1.5, surface the draft status and verify those
+steps against the exact assemblies and official tag before applying them. Do
+not silently omit those versions.
 
-Section 9 is the largest. Key subsections:
+## How Each Per-Version Guide Is Organized
 
-| Subsection | Topic |
-|------------|-------|
-| 9.1 | `partial class : Executor` + `[MessageHandler]` pattern |
-| 9.2 | Source generator setup and `sealed partial` requirement |
-| 9.3 | Agent `.BindAsExecutor(emitEvents: true)` |
-| 9.4 | Fan-out executor — **must return `ValueTask<T>`** |
-| 9.5 | Fan-in barrier — `AddFanInBarrierEdge(sources, target)` correct argument order |
-| 9.6 | Complete working example — full workflow with fan-out and fan-in |
+Every watcher-generated guide has protected package/release evidence followed
+by four reviewed analysis sections:
 
-When diagnosing a fan-out/fan-in issue, read 9.4 and 9.5 first.
+- **Breaking Changes** — source, binary, dependency, and behavior compatibility
+  work required for that step.
+- **New Patterns** — exact package versions, lifecycle transitions, and current
+  usage recipes.
+- **Obsolete APIs Added** — new compiler-warning migrations for that release.
+- **Known Misalignments** — release-note, package, source, or documentation gaps
+  that an API diff alone cannot explain.
 
----
+Treat package maturity as part of the contract. Stable, preview, release
+candidate, and alpha packages in one MAF train can have different exact
+versions. A package split, externalization, or independent release cadence is
+not permission to invent a coordinated version or rename a package reference.
 
-## Key Patterns at a Glance
+## Route by Question
 
-### Executor (was: ReflectingExecutor)
-```csharp
-// BEFORE
-public class MyExecutor : ReflectingExecutor<MyInput>
-{
-    public async Task<MyOutput> HandleAsync(MyInput input) { ... }
-}
+| Question or symptom | Use |
+|---|---|
+| “What do I read from A to B?” | `MafMigrationPath(A, B)`, then the returned guides in order. |
+| CS0618, CS0246, CS1503, or a removed member | `MafRunCs0618Hunt`, then `MafRegistryLookup` for the matching entry. |
+| Exact package/framework compatibility | `MafCompatibility(targetVersion)` plus `docs/compatibility-matrix.md`. |
+| Public API change between two artifacts | `MafDiffPackage` with the exact published versions. |
+| Empty response, hung workflow, lost state, or changed failure behavior | The target guide's Breaking Changes, New Patterns, and Known Misalignments; add a runtime regression test. |
+| A security-sensitive fix | `maf://constraints`, `docs/security.md`, and the relevant guide's trust-boundary notes. |
+| A 1.2-to-1.3 executor/session migration | The full 1.3 guide's sections 6, 9, 15, 17, and 20. |
 
-// AFTER
-public sealed partial class MyExecutor : Executor
-{
-    [MessageHandler]
-    public async ValueTask<MyOutput> HandleAsync(MyInput input, ExecutorContext context) { ... }
-}
-```
+## Current High-Risk Checkpoints
 
-### Session (was: AgentThread)
-```csharp
-// BEFORE
-var thread = agent.GetNewThread();
-var response = await agent.RunAsync(input, thread);
+- **1.14:** agent/session lifecycle changes, approval semantics, explicit Harness
+  file/shell composition, AG-UI package split, Copilot function declarations,
+  and the binary-breaking `ShellPolicy` constructor.
+- **1.15:** preview Hosting `conversationId:` named arguments become
+  `sessionStoreId:`, custom stores implement `DeleteSessionAsync`, and session
+  snapshots/checkpoints have stronger isolation and ordering contracts.
+- **1.16:** the VectorData floor moves from 9.7 to 10.7; first-party MAF API
+  diffs remain mostly additive, but transitive source/provider migrations and
+  several persistence/hosting behavior checks are required.
+- **1.17:** public APIs and dependency floors are clean, while declarative agent
+  errors become terminal and Foundry failure detail remains subject to host
+  redaction. Durable Task and Azure Functions retain their package IDs but move
+  to an independently versioned extension repository.
 
-// AFTER
-var session = await agent.CreateSessionAsync(cancellationToken);
-var response = await agent.RunAsync(input, session);
-```
+## Verification Contract
 
-### Fan-out handler (must return the message)
-```csharp
-// BEFORE (wrong — void return starves fan-in)
-[MessageHandler]
-public async ValueTask HandleAsync(ClaimData claim, ExecutorContext context)
-{
-    var result = await ProcessAsync(claim);
-    await context.SendMessageAsync(result);  // ← wrong in 1.3.0
-}
-
-// AFTER (correct — return value IS the fan-out message)
-[MessageHandler]
-public async ValueTask<ValidationResult> HandleAsync(ClaimData claim, ExecutorContext context)
-{
-    return await ProcessAsync(claim);
-}
-```
-
----
-
-## Version-Keyed Section Metadata
-
-Every section in `guides/maf-1.3.0-migration-guide.md` carries a machine-readable metadata comment:
-
-```html
-<!-- introduced: 1.3.0 | applies-to: 1.2.x → 1.3.x | deprecated-in: none -->
-## Section N — Title
-```
-
-**What the fields mean:**
-
-| Field | Values | Purpose |
-|-------|--------|---------|
-| `introduced` | MAF version | When this section's content first became relevant |
-| `applies-to` | Source → target range | Which migration paths need this section |
-| `deprecated-in` | MAF version or `none` | When this section's patterns became obsolete |
-
-**How to use these metadata tags:**
-
-When migrating from version A to version B, load only sections where:
-- `applies-to` includes the A → B path
-- `deprecated-in` is `none` OR is a version later than B
-
-Example: Migrating 1.2.0 → 1.3.0 → load sections with `applies-to: 1.2.x → 1.3.x` and `deprecated-in: none`.  
-Example: Migrating 1.3.0 → 1.4.0 → skip sections tagged `introduced: 1.3.0` (already applied) and load sections tagged `introduced: 1.4.0`.
-
-When the `maf-release-watcher` adds new sections for future MAF versions, they will carry updated `introduced` and `applies-to` tags so agents automatically load the right sections for the active migration path.
+- Pin repository-supported `dotnet-inspect` exactly as required by
+  `maf://constraints`; reject truncated or structurally invalid diff output.
+- Build the real solution with warnings visible. The compiler is authoritative
+  for overload resolution and project-local or transitive obsolete usage.
+- Run targeted runtime tests for session continuity, checkpoint restore,
+  streaming completion/error paths, tool approval, fan-out/fan-in, and hosting
+  boundaries touched by the selected guides.
+- Re-run MAF Doctor after edits and report `scan_truncated` or other incomplete
+  evidence rather than presenting a partial scan as clean.
+- Keep before/after recipes scoped to the exact release where they apply. A
+  correct 1.3 replacement can itself require migration in a later step.

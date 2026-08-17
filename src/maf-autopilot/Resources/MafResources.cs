@@ -12,10 +12,10 @@ namespace MafDoctor.Resources;
 /// Static resources (no parameters):
 ///   maf://constraints  — hard constraints, always read before any migration task
 ///   maf://registry     — CS0618 obsolete API registry (YAML)
-///   maf://guide        — full MAF migration guide
+///   maf://guide        — cumulative, version-keyed MAF migration guide
 ///
 /// Template resource (one per skill):
-///   maf://skills?name=&lt;skillName&gt;  — any of the 14 skill SKILL.md files
+///   maf://skills?name=&lt;skillName&gt;  — any of the 15 skill SKILL.md files
 ///</summary>
 [McpServerResourceType]
 public static class MafResources
@@ -43,8 +43,8 @@ public static class MafResources
     [McpServerResource(UriTemplate = "maf://guide",
         MimeType = "text/markdown",
         Name = "maf-guide",
-        Title = "MAF Migration Guide")]
-    [Description("Full MAF migration reference guide with API signatures, before/after code patterns, and section-by-section explanations.")]
+        Title = "MAF Cumulative Migration Guide")]
+    [Description("Cumulative, version-keyed MAF migration reference with API signatures, before/after code patterns, and every reviewed upgrade step through the current tracked release.")]
     public static string GetGuide() => ReadEmbedded("guide.md");
 
     [McpServerResource(UriTemplate = "maf://migrate-from{?source}",

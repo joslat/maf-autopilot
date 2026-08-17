@@ -91,13 +91,16 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
+          IS_TAG=false
           if [ -n "$INPUT_VERSION" ]; then
             VERSION="$INPUT_VERSION"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
+            IS_TAG=true
           elif [[ "$GITHUB_REF" == refs/tags/[0-9]* ]]; then
             # SEC-14: unprefixed numeric tag (mirrors release.yml + the trigger above).
             VERSION="${GITHUB_REF#refs/tags/}"
+            IS_TAG=true
           else
             # WM-33: blank-version manual dispatch — use the latest git tag, as the
             # input description promises (the old else-branch aborted here instead).
@@ -109,6 +112,7 @@ jobs:
             echo "Using latest git tag: $VERSION"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "is_tag=$IS_TAG" >> $GITHUB_OUTPUT
 
           # Mark prereleases — they don't get the `latest` tag. SEC-28-aligned: ANY
           # hyphen is a SemVer prerelease label (-dev/-nightly/… too), not just four.
@@ -118,6 +122,18 @@ jobs:
             echo "is_prerelease=false" >> $GITHUB_OUTPUT
           fi
           echo "Building image for version: $VERSION"
+
+      - name: Guard — tag commit must be on main (SEC-13)
+        # Keep tag-triggered GHCR publishing on reviewed history, matching release.yml.
+        # Manual dispatch remains an explicit maintainer action and is not tag-gated.
+        if: steps.version.outputs.is_tag == 'true'
+        run: |
+          git fetch --no-tags --depth=2147483647 origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag commit $GITHUB_SHA is not an ancestor of origin/main — refusing to publish an image from a commit that isn't on the reviewed main branch."
+            exit 1
+          fi
+          echo "✅ Tag commit is on main."
 
       - name: Log in to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4.2.0

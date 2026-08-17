@@ -1,4 +1,4 @@
-# MAF 1.6.1 Migration Guide (draft)
+# MAF 1.6.1 Migration Guide
 
 <!-- introduced: 1.6.1 | applies-to: 1.5.0.x → 1.6.1.x | deprecated-in: none -->
 

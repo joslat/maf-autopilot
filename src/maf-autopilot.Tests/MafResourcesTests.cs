@@ -33,13 +33,18 @@ public class MafResourcesTests
     }
 
     [Fact]
-    public void GetGuide_ReturnsNonEmptyMarkdown()
+    public void GetGuide_MatchesCheckedInCumulativeGuideAndCurrentTrackedVersion()
     {
-        var body = MafResources.GetGuide();
-        Assert.False(string.IsNullOrWhiteSpace(body));
-        // The guide opens with a top-level heading; assert a generic property
-        // rather than exact wording so cosmetic edits don't break the test.
-        Assert.Contains("MAF", body);
+        var root = ResolveRepoRoot();
+        var expected = File.ReadAllText(Path.Combine(root, "guides", "maf-current-migration-guide.md"));
+        var trackedVersion = File.ReadAllText(Path.Combine(root, ".maf-version")).Trim();
+        var actual = MafResources.GetGuide();
+
+        Assert.False(string.IsNullOrWhiteSpace(actual));
+        Assert.Equal(expected, actual);
+        Assert.Contains("# MAF Migration Guide — Cumulative", actual, StringComparison.Ordinal);
+        Assert.Contains($"## Migrating to MAF {trackedVersion}", actual, StringComparison.Ordinal);
+        Assert.Contains($"introduced: {trackedVersion}", actual, StringComparison.Ordinal);
     }
 
     // -------------------------------------------------------------------------
@@ -89,12 +94,17 @@ public class MafResourcesTests
     }
 
     private static string ResolveSkillsDir()
+        => Path.Combine(ResolveRepoRoot(), ".github", "skills");
+
+    private static string ResolveRepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".github", "skills")))
+        while (dir is not null
+            && (!File.Exists(Path.Combine(dir.FullName, ".maf-version"))
+                || !File.Exists(Path.Combine(dir.FullName, "guides", "maf-current-migration-guide.md"))))
             dir = dir.Parent;
         Assert.NotNull(dir);
-        return Path.Combine(dir!.FullName, ".github", "skills");
+        return dir!.FullName;
     }
 
     [Theory]

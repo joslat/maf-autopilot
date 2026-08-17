@@ -189,8 +189,13 @@ jobs:
         # an error on .NET SDK 10.0.300+ (Linux runner) but as a warning with exit 0
         # on 10.0.102 (Windows local). The nupkg IS produced correctly in both cases
         # (verified by `unzip -l` showing analyzers/dotnet/cs/*.dll present).
-        # Workaround: tolerate the pack exit code; verify success by nupkg presence.
+        # Workaround: tolerate the first pack's exit code and verify the main nupkg.
+        # A second no-build pack enables the SDK build-output path only in an isolated
+        # directory so NuGet can create the analyzer .snupkg. We copy only that symbol
+        # package; the canonical main nupkg retains its single analyzer DLL layout.
         shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set +e
           dotnet pack src/maf-autopilot.Analyzers/maf-autopilot.Analyzers.csproj \
@@ -198,12 +203,34 @@ jobs:
             --no-restore \
             --output src/dist/
           PACK_EXIT=$?
-          if ls src/dist/maf-doctor.Analyzers*.nupkg >/dev/null 2>&1; then
-            echo "Packed: $(ls src/dist/maf-doctor.Analyzers*.nupkg)"
-            exit 0
+          set -e
+          MAIN_PACKAGE="src/dist/maf-doctor.Analyzers.${VERSION}.nupkg"
+          if [ ! -f "$MAIN_PACKAGE" ]; then
+            echo "::error::Analyzer nupkg was not produced (pack exit code was $PACK_EXIT)"
+            exit 1
           fi
-          echo "::error::Analyzer nupkg was not produced (pack exit code was $PACK_EXIT)"
-          exit "$PACK_EXIT"
+
+          SYMBOL_DIR="$RUNNER_TEMP/maf-doctor-analyzer-symbols-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$SYMBOL_DIR"
+          dotnet pack src/maf-autopilot.Analyzers/maf-autopilot.Analyzers.csproj \
+            --configuration Release \
+            --no-build \
+            --no-restore \
+            --output "$SYMBOL_DIR" \
+            -p:IncludeBuildOutput=true \
+            -p:BuildOutputTargetFolder=analyzers/dotnet/cs
+          SYMBOL_PACKAGE="$SYMBOL_DIR/maf-doctor.Analyzers.${VERSION}.snupkg"
+          if [ ! -f "$SYMBOL_PACKAGE" ]; then
+            echo "::error::Analyzer symbol package was not produced"
+            exit 1
+          fi
+          cp "$SYMBOL_PACKAGE" src/dist/
+          echo "Packed: $MAIN_PACKAGE and src/dist/$(basename "$SYMBOL_PACKAGE")"
+
+      - name: Verify release package artifacts
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: python3 .github/scripts/verify_release_packages.py --dist src/dist --version "$VERSION"
 
       - name: Attest build provenance (SEC-13)
         # Signed provenance over the exact packages this run produced — makes a
@@ -212,7 +239,7 @@ jobs:
         # (v4.1.1) per the repo-wide supply-chain hardening.
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
         with:
-          subject-path: 'src/dist/*.nupkg'
+          subject-path: 'src/dist/*nupkg'
 
       - name: Publish to NuGet
         # SEC-13: the API key is read from env: (not ${{ }}-templated into the run
@@ -241,5 +268,5 @@ jobs:
         # arbitrary code into our release workflow with NUGET_API_KEY in scope.
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b  # v3.0.1
         with:
-          files: src/dist/*.nupkg
+          files: src/dist/*nupkg
           generate_release_notes: true
