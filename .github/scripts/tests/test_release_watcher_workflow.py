@@ -36,7 +36,32 @@ def test_watcher_commits_a_per_release_immutable_obligations_artifact():
     assert "build_scaffold_obligations.py" in text
     assert '.github/maf-scaffold-obligations/maf-${NEW_VERSION}.json' in text
     assert "--base-commit \"$BASE_COMMIT\"" in text
-    assert "--target-branch \"$BRANCH\"" in text
+    assert "--target-branch \"$TARGET_BRANCH\"" in text
+
+
+def test_retained_closed_branch_gets_a_fresh_target_reused_end_to_end():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "gh pr list --state open --json number,headRefName" in text
+    assert 'TARGET_BRANCH="${PUSH_TARGET:-release-watcher/maf-${LATEST}}"' in text
+    assert 'TARGET_BRANCH="${TARGET_BRANCH}-run-${RUN_ID}-${RUN_ATTEMPT}"' in text
+    assert "target_branch: ${{ steps.version-check.outputs.target_branch }}" in text
+    downstream = "${{ needs.check-for-new-maf-release.outputs.target_branch }}"
+    assert text.count(downstream) == 2
+    assert 'BRANCH="${PUSH_TARGET:-release-watcher/maf-${NEW_VERSION}}"' not in text
+    assert 'gh pr list --state open --head "$BRANCH"' in text
+    assert 'gh pr view "$BRANCH"' not in text
+    assert "git push --force-with-lease" not in text
+
+
+def test_registry_metadata_is_final_before_obligations_are_recorded():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    evidence_gate = text.index("release_classification.py --require-complete-evidence")
+    version_update = text.index("- name: Update .maf-version")
+    metadata_update = text.index("update_registry_metadata.py")
+    obligations = text.index("build_scaffold_obligations.py")
+    assert evidence_gate < version_update < metadata_update < obligations
+    assert '--target-version "$NEW_VERSION"' in text[metadata_update:obligations]
+    assert '--last-updated "$LAST_UPDATED"' in text[metadata_update:obligations]
 
 
 def test_dedupe_collision_invalidates_extraction_ledger():

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import datetime as dt
 import hashlib
 import json
 import re
@@ -222,6 +223,24 @@ def build_obligations(
     if version_raw.decode("utf-8").strip() != target:
         raise ValueError(".maf-version does not match target version")
     registry = _registry(_safe_file(root, REGISTRY_REL, "registry"), "scaffold")
+    registry_target = registry.get("target_maf_version")
+    if registry_target != target:
+        raise ValueError(
+            f"registry target_maf_version must match target {target}; got {registry_target!r}"
+        )
+    last_updated = registry.get("last_updated")
+    if not isinstance(last_updated, str):
+        raise ValueError("registry last_updated must be a canonical YYYY-MM-DD string")
+    try:
+        parsed_last_updated = dt.date.fromisoformat(last_updated)
+    except ValueError as exc:
+        raise ValueError(
+            f"registry last_updated is not a valid ISO calendar date: {last_updated!r}"
+        ) from exc
+    if parsed_last_updated.isoformat() != last_updated:
+        raise ValueError(
+            f"registry last_updated must use canonical YYYY-MM-DD form: {last_updated!r}"
+        )
     generated: list[dict[str, Any]] = []
     seen: set[str] = set()
     for entry in _target_entries(registry, target):
