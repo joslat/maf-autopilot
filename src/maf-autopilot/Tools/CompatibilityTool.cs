@@ -74,7 +74,7 @@ public sealed class CompatibilityTool
                 | Microsoft.Agents.AI.Workflows.Generators  | `1.17.0` | Source-gen package |
                 | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
                 
-                Additive release — no `.NET … [BREAKING]` changes and no breaking or potentially-breaking API rows (source-compatible). Lifecycle transitions: Informational: repository externalization: microsoft/agent-framework → microsoft/agent-framework-durable-extension; package IDs unchanged. Transitive pins carried from 1.16.0.
+                **Maintenance release: no public-API or dependency-floor break.** All eight validated in-repository surfaces have empty API diffs, and the tracked .NET/`Microsoft.Extensions.AI` floors remain unchanged from 1.16.0. Runtime behavior does change in the separately shipped Declarative packages: a top-level agent `ErrorContent` now fails the workflow before completion or downstream actions instead of looking like an empty success; hosted error detail remains governed by the host's exception-detail policy. `Microsoft.Agents.AI.DurableTask` and `Microsoft.Agents.AI.Hosting.AzureFunctions` moved to `microsoft/agent-framework-durable-extension` without changing package IDs and now follow that repository's independent release cadence, so the absence of a 1.17-aligned package is not a removal. See `guides/maf-1.17.0-migration-guide.md` and the 1.17 registry entries.
                 """,
 
             ["1.16.0"] = """

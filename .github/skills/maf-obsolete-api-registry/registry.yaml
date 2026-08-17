@@ -3999,3 +3999,118 @@ entries:
       provider is built on 10.7. This is a package/type-identity transition, so a
       MAF-only API diff cannot detect it; rebuild all consumers and registrations.
     applies_to_codebases: pre-1.16.0
+
+  - id: MAF117-WORKFLOWS-DECL-AGENT-FAILURE-001
+    package: Microsoft.Agents.AI.Workflows.Declarative
+    version_introduced: "1.17.0"
+    type: Microsoft.Agents.AI.Workflows.Declarative.ResponseAgentProvider
+    method: InvokeAgentAsync / ErrorContent
+    obsolete_signature: "A failed provider invocation returns a contentless or top-level ErrorContent response that the declarative workflow treats as successful and follows with downstream actions"
+    replacement_signature: "A top-level ErrorContent fails the declarative action before completion or conversation copy and produces an ExecutorFailedEvent"
+    argument_order_change: false
+    fix_description: "Have custom ResponseAgentProvider implementations represent failed operations with ErrorContent, and update workflow event handlers and tests to treat ExecutorFailedEvent as terminal instead of interpreting an empty response as success."
+    example_before: |
+      // A custom provider reports failure as an empty update.
+      yield return new AgentResponseUpdate(
+          ChatRole.Assistant,
+          []);
+    example_after: |
+      // ErrorContent lets the declarative engine terminate the action.
+      yield return new AgentResponseUpdate(
+          ChatRole.Assistant,
+          [new ErrorContent(message) { ErrorCode = code }]);
+    cs_warning: RUNTIME_SILENT
+    guide_section: "N/A"
+    dotnet_inspect_detectable: false
+    notes: >-
+      Verified against https://github.com/microsoft/agent-framework/pull/7497
+      and its dotnet-1.17.0 InvokeAgentFailureTest coverage. Version 1.17
+      aggregates the provider updates, withholds ErrorContent updates from the
+      auto-send path, and throws DeclarativeActionException before announcing an
+      AgentResponseEvent or copying messages into the workflow conversation. The
+      resulting ExecutorFailedEvent prevents downstream actions from running,
+      regardless of autoSend. Refusals represented by top-level ErrorContent are
+      failures too; an ordinary contentless update and an incomplete response with
+      partial content remain non-failure results. The last ErrorContent supplies
+      the failure detail.
+    applies_to_codebases: pre-1.17.0
+
+  - id: MAF117-WORKFLOWS-DECL-FOUNDRY-FAILURE-001
+    package: Microsoft.Agents.AI.Workflows.Declarative.Foundry
+    version_introduced: "1.17.0"
+    type: Microsoft.Agents.AI.Workflows.Declarative.AzureAgentProvider
+    method: InvokeAgentAsync / response.failed
+    obsolete_signature: "A Foundry Responses response.failed event becomes a contentless update and can appear to be an empty successful workflow response"
+    replacement_signature: "AzureAgentProvider replaces response.failed with ErrorContent so the declarative workflow fails under the host exception-detail policy"
+    argument_order_change: false
+    fix_description: "Remove empty-success retry workarounds, handle hosted ErrorContent or direct-workflow ExecutorFailedEvent as failure, and keep provider details redacted unless the host intentionally enables exception details for a trusted boundary."
+    example_before: |
+      AgentResponse response = await workflowAgent.RunAsync(input);
+      if (string.IsNullOrEmpty(response.Text))
+      {
+          await RetryAsEmptySuccessAsync();
+      }
+    example_after: |
+      AgentResponse response = await workflowAgent.RunAsync(input);
+      ErrorContent[] errors =
+          [.. response.Messages
+              .SelectMany(message => message.Contents)
+              .OfType<ErrorContent>()];
+      if (errors.Length > 0)
+      {
+          HandleFailure(errors);
+      }
+    cs_warning: RUNTIME_SILENT
+    guide_section: "N/A"
+    dotnet_inspect_detectable: false
+    notes: >-
+      Verified against https://github.com/microsoft/agent-framework/pull/7497
+      and the dotnet-1.17.0 AzureAgentProviderFailureTest and hosted-agent tests.
+      Microsoft.Agents.AI.Workflows.Declarative.Foundry
+      1.17.0-preview.260804.1 maps StreamingResponseFailedUpdate to an
+      AgentResponseUpdate containing ErrorContent. Missing provider detail uses
+      code "failed" and message "The agent run failed." The replacement update
+      preserves author, response id, and creation time but deliberately omits the
+      raw provider failure so streaming cannot bypass redaction. Workflow.AsAIAgent
+      redacts agent name, error code, and provider detail by default; setting
+      includeExceptionDetails: true exposes them and should be limited to trusted
+      diagnostic boundaries.
+    applies_to_codebases: pre-1.17.0
+
+  - id: MAF117-WORKFLOWS-HANDOFF-SAMPLE-001
+    package: Microsoft.Agents.AI.Workflows
+    version_introduced: "1.17.0"
+    type: Microsoft.Agents.AI.Workflows.StreamingRun / Microsoft.Agents.AI.Workflows.TurnToken
+    method: TrySendMessageAsync
+    obsolete_signature: "A handoff loop copied from the pre-1.17 official sample sends user input to an agent executor but never sends the TurnToken that starts the accumulated turn"
+    replacement_signature: "Send the user input and then send new TurnToken(emitEvents: true) before watching the workflow event stream"
+    argument_order_change: false
+    fix_description: "Immediately follow the user-input TrySendMessageAsync call with a TurnToken so the wrapped agent executor processes its cached messages and emits response events."
+    example_before: |
+      await run.TrySendMessageAsync(userInput);
+
+      await foreach (WorkflowEvent evt in run.WatchStreamAsync(cancellationToken))
+      {
+          Observe(evt);
+      }
+    example_after: |
+      await run.TrySendMessageAsync(userInput);
+      await run.TrySendMessageAsync(new TurnToken(emitEvents: true));
+
+      await foreach (WorkflowEvent evt in run.WatchStreamAsync(cancellationToken))
+      {
+          Observe(evt);
+      }
+    cs_warning: RUNTIME_SILENT
+    guide_section: "N/A"
+    dotnet_inspect_detectable: false
+    notes: >-
+      Verified against the exact official sample correction in
+      https://github.com/microsoft/agent-framework/pull/7442. AIAgent-based
+      workflow executors cache incoming messages and run only after receiving a
+      TurnToken; omitting it makes the Handoff sample accept input and then appear
+      to hang. This entry is intentionally limited to code copied from the old
+      sample. The framework TurnToken contract predates 1.17, and
+      version_introduced records when Microsoft published the corrected sample,
+      not a new runtime or public API contract.
+    applies_to_codebases: pre-1.17.0
