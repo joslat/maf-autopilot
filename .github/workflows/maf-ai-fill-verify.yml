@@ -1,8 +1,9 @@
 name: MAF AI-Fill PR Verify
 
 # #5 polish (2026-05-13) — runs the verification gate against AI-filled
-# registry PRs. Triggers on `pull_request` events that modify registry.yaml
-# AND carry the `ai-fill` label.
+# registry and watcher-managed PRs. It triggers for every pull request so the
+# required check always reports, then uses the proven base-to-head diff to
+# decide whether full verification is in scope; labels are not trusted gates.
 #
 # Why this exists: GitHub Copilot Coding Agent fills the TODO placeholders
 # left by `maf-release-watcher`. Quality is good but inconsistent. Common
@@ -243,14 +244,71 @@ jobs:
           HEAD_REF: ${{ github.head_ref }}
         run: |
           set +e
-          OUTPUT=$(python3 trusted/.github/scripts/verify_ai_fill_delta.py \
-            --repo pr \
-            --head-root pr \
-            --base-sha "$BASE_SHA" \
-            --head-sha "$HEAD_SHA" \
-            --base-ref "$BASE_REF" \
-            --head-ref "$HEAD_REF" 2>&1)
-          EXIT=$?
+          TRUSTED_DELTA=trusted/.github/scripts/verify_ai_fill_delta.py
+          TRUSTED_TREE=$(git -C pr ls-tree "$BASE_SHA" -- .github/scripts/verify_ai_fill_delta.py 2>&1)
+          TRUSTED_TREE_EXIT=$?
+          TRUSTED_MODE=${TRUSTED_TREE%% *}
+          if [ "$TRUSTED_TREE_EXIT" -ne 0 ]; then
+            OUTPUT="Could not inspect the trusted-base scaffold verifier. Refusing to continue."
+            EXIT=1
+          elif [ -n "$TRUSTED_TREE" ] && { [ "$TRUSTED_MODE" != "100644" ] || [ ! -f "$TRUSTED_DELTA" ] || [ -L "$TRUSTED_DELTA" ]; }; then
+            OUTPUT="Trusted-base scaffold verifier is not a regular Git file with mode 100644. Refusing to execute it."
+            EXIT=1
+          elif [ -n "$TRUSTED_TREE" ]; then
+            OUTPUT=$(python3 "$TRUSTED_DELTA" \
+              --repo pr \
+              --head-root pr \
+              --base-sha "$BASE_SHA" \
+              --head-sha "$HEAD_SHA" \
+              --base-ref "$BASE_REF" \
+              --head-ref "$HEAD_REF" 2>&1)
+            EXIT=$?
+          else
+            # One-time bootstrap for the infrastructure PR that first adds the
+            # trusted delta verifier. This path must never approve a release
+            # scaffold: the tracked version must be unchanged, HEAD must add the
+            # verifier as data, and no obligations contract may exist in HEAD.
+            # Once this PR lands, every later base contains TRUSTED_DELTA and the
+            # full immutable-contract verifier above is mandatory.
+            BASE_VERSION=$(git -C pr show "${BASE_SHA}:.maf-version" 2>&1)
+            BASE_VERSION_EXIT=$?
+            HEAD_VERSION=$(git -C pr show "${HEAD_SHA}:.maf-version" 2>&1)
+            HEAD_VERSION_EXIT=$?
+            git -C pr cat-file -e "${HEAD_SHA}:.github/scripts/verify_ai_fill_delta.py" 2>/dev/null
+            HEAD_VERIFIER_EXIT=$?
+            VERIFIER_CHANGE=$(git -C pr diff --name-status "$BASE_SHA" "$HEAD_SHA" -- .github/scripts/verify_ai_fill_delta.py 2>&1)
+            VERIFIER_CHANGE_EXIT=$?
+            VERIFIER_TREE=$(git -C pr ls-tree "$HEAD_SHA" -- .github/scripts/verify_ai_fill_delta.py 2>&1)
+            VERIFIER_TREE_EXIT=$?
+            VERIFIER_MODE=${VERIFIER_TREE%% *}
+            BASE_CONTRACT_FILES=$(git -C pr ls-tree -r --name-only "$BASE_SHA" -- .github/maf-scaffold-obligations/ 2>&1)
+            BASE_CONTRACT_LIST_EXIT=$?
+            HEAD_CONTRACT_FILES=$(git -C pr ls-tree -r --name-only "$HEAD_SHA" -- .github/maf-scaffold-obligations/ 2>&1)
+            HEAD_CONTRACT_LIST_EXIT=$?
+
+            if [ "$BASE_VERSION_EXIT" -ne 0 ] || [ "$HEAD_VERSION_EXIT" -ne 0 ] \
+               || [ "$HEAD_VERIFIER_EXIT" -ne 0 ] || [ "$VERIFIER_CHANGE_EXIT" -ne 0 ] \
+               || [ "$VERIFIER_TREE_EXIT" -ne 0 ] \
+               || [ "$BASE_CONTRACT_LIST_EXIT" -ne 0 ] || [ "$HEAD_CONTRACT_LIST_EXIT" -ne 0 ]; then
+              OUTPUT="Trusted scaffold verifier is absent and its bootstrap preconditions could not be proven. Refusing to continue."
+              EXIT=1
+            elif [ "$BASE_VERSION" != "$HEAD_VERSION" ]; then
+              OUTPUT="Trusted scaffold verifier is absent while .maf-version changes from ${BASE_VERSION} to ${HEAD_VERSION}. A release scaffold may not use the bootstrap path."
+              EXIT=1
+            elif [ "$VERIFIER_CHANGE" != $'A\t.github/scripts/verify_ai_fill_delta.py' ]; then
+              OUTPUT="Trusted scaffold verifier is absent, but HEAD does not add it as a new file. Refusing the bootstrap path."
+              EXIT=1
+            elif [ "$VERIFIER_MODE" != "100644" ]; then
+              OUTPUT="Trusted scaffold verifier bootstrap requires a regular non-executable Git file (mode 100644); refusing mode ${VERIFIER_MODE}."
+              EXIT=1
+            elif [ -n "$BASE_CONTRACT_FILES" ] || [ -n "$HEAD_CONTRACT_FILES" ]; then
+              OUTPUT="Trusted scaffold verifier is absent while scaffold-obligation files exist in BASE or HEAD. A release scaffold may not use the bootstrap path."
+              EXIT=1
+            else
+              OUTPUT="One-time trusted-verifier bootstrap accepted: .maf-version remains ${HEAD_VERSION}, HEAD introduces the verifier, and no release scaffold obligations exist."
+              EXIT=0
+            fi
+          fi
           echo "$OUTPUT"
           DELIM="EOF_${RANDOM}${RANDOM}${RANDOM}"
           ATTEMPT=0
@@ -287,7 +345,7 @@ jobs:
         run: |
           if [ "$VERIFY_EXIT" = "0" ] && [ "$CROSSFILE_EXIT" = "0" ] \
              && [ "$DELTA_EXIT" = "0" ]; then
-            echo "✅ AI-fill verification passed (registry + cross-file checks)." > ai-fill-verify-comment.md
+            echo "✅ AI-fill verification passed (registry + cross-file + scaffold-preservation checks)." > ai-fill-verify-comment.md
           else
             {
               echo "## ❌ AI-fill verification failed"

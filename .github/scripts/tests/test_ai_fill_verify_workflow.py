@@ -49,6 +49,32 @@ def test_scope_discovery_and_verifiers_fail_closed_from_trusted_base():
     assert '--head-sha "$HEAD_SHA"' in delta
 
 
+def test_first_verifier_bootstrap_cannot_approve_a_release_scaffold():
+    delta = next(step for step in _steps() if step.get("id") == "delta")["run"]
+    assert 'git -C pr ls-tree "$BASE_SHA" -- .github/scripts/verify_ai_fill_delta.py' in delta
+    assert '[ "$TRUSTED_TREE_EXIT" -ne 0 ]' in delta
+    assert '[ "$TRUSTED_MODE" != "100644" ]' in delta
+    assert '[ -L "$TRUSTED_DELTA" ]' in delta
+    assert delta.index('[ "$TRUSTED_MODE" != "100644" ]') < delta.index('python3 "$TRUSTED_DELTA"')
+    assert 'git -C pr show "${BASE_SHA}:.maf-version"' in delta
+    assert 'git -C pr show "${HEAD_SHA}:.maf-version"' in delta
+    assert 'git -C pr cat-file -e "${HEAD_SHA}:.github/scripts/verify_ai_fill_delta.py"' in delta
+    assert 'git -C pr diff --name-status "$BASE_SHA" "$HEAD_SHA"' in delta
+    assert "$'A\\t.github/scripts/verify_ai_fill_delta.py'" in delta
+    assert 'git -C pr ls-tree "$HEAD_SHA" -- .github/scripts/verify_ai_fill_delta.py' in delta
+    assert '[ "$VERIFIER_TREE_EXIT" -ne 0 ]' in delta
+    assert '[ "$VERIFIER_MODE" != "100644" ]' in delta
+    assert "git -C pr ls-tree -r --name-only" in delta
+    assert '.github/maf-scaffold-obligations/' in delta
+    assert '[ "$BASE_VERSION" != "$HEAD_VERSION" ]' in delta
+    assert '[ -n "$BASE_CONTRACT_FILES" ] || [ -n "$HEAD_CONTRACT_FILES" ]' in delta
+    assert '[ "$BASE_CONTRACT_LIST_EXIT" -ne 0 ]' in delta
+    assert '[ "$HEAD_CONTRACT_LIST_EXIT" -ne 0 ]' in delta
+    assert '[ "$HEAD_VERIFIER_EXIT" -ne 0 ]' in delta
+    assert "A release scaffold may not use the bootstrap path." in delta
+    assert "EXIT=1" in delta
+
+
 def test_obligations_are_branch_name_independent_and_recovered_from_history():
     steps = _steps()
     delta = next(step for step in steps if step.get("id") == "delta")
