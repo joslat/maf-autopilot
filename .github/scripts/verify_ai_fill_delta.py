@@ -32,6 +32,9 @@ AUTO_END = "<!-- AUTO-GENERATED END -->"
 BREAKING_RE = re.compile(
     r"^## Breaking Changes(?: \(requires human verification\))?\r?$", re.MULTILINE
 )
+FENCE_BEGIN_RE = re.compile(
+    r"^<<<BEGIN_(USER_DATA_[0-9a-f]{32}_[A-Z0-9._-]{1,64})>>>$"
+)
 
 
 def _contract_rel(version: str) -> str:
@@ -111,21 +114,42 @@ def _historical_registry_hash(doc: dict[str, Any], target: str) -> str:
     return _canonical_hash(historical)
 
 
+def _structural_markdown(text: str, label: str) -> str:
+    """Mask fenced upstream data while preserving source offsets and newlines."""
+    visible: list[str] = []
+    expected_end: str | None = None
+    for line in text.splitlines(keepends=True):
+        bare = line.rstrip("\r\n")
+        if expected_end is None:
+            begin = FENCE_BEGIN_RE.fullmatch(bare)
+            if begin is None:
+                visible.append(line)
+                continue
+            expected_end = f"<<<END_{begin.group(1)}>>>"
+        elif bare == expected_end:
+            expected_end = None
+        visible.append("".join(ch if ch in "\r\n" else " " for ch in line))
+    if expected_end is not None:
+        raise ValueError(f"{label} guide contains an unterminated upstream-data fence")
+    return "".join(visible)
+
+
 def _guide_regions(text: str, label: str) -> tuple[str, str, str]:
     if text.count(AUTO_START) != 1 or text.count(AUTO_END) != 1:
         raise ValueError(f"{label} guide must contain exactly one AUTO marker pair")
     auto_start, auto_end = text.index(AUTO_START), text.index(AUTO_END)
     if auto_start >= auto_end:
         raise ValueError(f"{label} guide AUTO markers are out of order")
-    breaks = [m for m in BREAKING_RE.finditer(text) if auto_start < m.start() < auto_end]
+    structural = _structural_markdown(text, label)
+    breaks = [m for m in BREAKING_RE.finditer(structural) if auto_start < m.start() < auto_end]
     packages = [
         m
-        for m in re.finditer(r"^## Package API Evidence\r?$", text, re.MULTILINE)
+        for m in re.finditer(r"^## Package API Evidence\r?$", structural, re.MULTILINE)
         if auto_start < m.start() < auto_end
     ]
     notes = [
         m
-        for m in re.finditer(r"^## Release Notes Extract\r?$", text, re.MULTILINE)
+        for m in re.finditer(r"^## Release Notes Extract\r?$", structural, re.MULTILINE)
         if auto_start < m.start() < auto_end
     ]
     if len(breaks) != 1 or len(packages) != 1 or len(notes) != 1:
