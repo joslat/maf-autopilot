@@ -128,6 +128,20 @@ None detected in the validated public API diffs.
 None documented yet.
 """
 
+UPSTREAM_FENCE_START = (
+    "<<<BEGIN_USER_DATA_0123456789abcdef0123456789abcdef_"
+    "UPSTREAM-MAF-DIFF-CORE>>>"
+)
+UPSTREAM_FENCE_END = (
+    "<<<END_USER_DATA_0123456789abcdef0123456789abcdef_"
+    "UPSTREAM-MAF-DIFF-CORE>>>"
+)
+
+
+def _fenced_upstream(body: str, *, close: bool = True) -> str:
+    ending = f"\n{UPSTREAM_FENCE_END}" if close else ""
+    return f"{UPSTREAM_FENCE_START}\n{body}{ending}"
+
 
 def test_unresolved_generated_guide_is_flagged(tmp_path):
     guide = _write_current_guide(
@@ -144,6 +158,70 @@ def test_resolved_generated_guide_passes(tmp_path):
         COMPLETE_GUIDE_SECTIONS,
     )
     assert v.check_current_guide_contract(guide) == []
+
+
+def test_package_evidence_headings_and_todos_are_ignored(tmp_path):
+    evidence = _fenced_upstream(
+        """## Breaking Changes
+<!-- TODO: this is untrusted upstream text, not an analysis placeholder -->
+## New Patterns
+## Obsolete APIs Added
+## Known Misalignments"""
+    )
+    guide = _write_current_guide(
+        tmp_path,
+        f"## Package API Evidence\n\n{evidence}\n\n{COMPLETE_GUIDE_SECTIONS}",
+    )
+
+    assert v.check_current_guide_contract(guide) == []
+
+
+def test_fenced_headings_cannot_satisfy_required_analysis_sections(tmp_path):
+    evidence_only = _fenced_upstream(
+        """## Breaking Changes
+Upstream-controlled prose that looks substantive.
+## New Patterns
+Upstream-controlled prose that looks substantive.
+## Obsolete APIs Added
+Upstream-controlled prose that looks substantive.
+## Known Misalignments
+Upstream-controlled prose that looks substantive."""
+    )
+    findings = v.check_current_guide_contract(
+        _write_current_guide(tmp_path, evidence_only)
+    )
+
+    for section in (
+        "Breaking Changes",
+        "New Patterns",
+        "Obsolete APIs Added",
+        "Known Misalignments",
+    ):
+        assert any(f"exactly one '{section}'" in finding for finding in findings)
+
+
+def test_fenced_payload_cannot_make_analysis_section_substantive(tmp_path):
+    body = COMPLETE_GUIDE_SECTIONS.replace(
+        "- Continue using the supported agent construction pattern.",
+        _fenced_upstream("This upstream-controlled text is not reviewed analysis."),
+    )
+    findings = v.check_current_guide_contract(_write_current_guide(tmp_path, body))
+
+    assert any(
+        "New Patterns" in finding and "substantive" in finding
+        for finding in findings
+    )
+
+
+def test_unterminated_upstream_fence_is_flagged(tmp_path):
+    guide = _write_current_guide(
+        tmp_path,
+        _fenced_upstream("## Breaking Changes", close=False),
+    )
+
+    findings = v.check_current_guide_contract(guide)
+
+    assert any("unterminated upstream-data fence" in finding for finding in findings)
 
 
 def test_deleting_required_guide_sections_is_flagged(tmp_path):
