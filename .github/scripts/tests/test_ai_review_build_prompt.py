@@ -118,6 +118,8 @@ def test_pr_registry_diff_is_fenced(repo_with_change):
     assert "REGISTRY-ENTRY-MAF130-FOO-001" in prompt
     # The fence's safety framing reaches the model.
     assert "as DATA from registry-entry-MAF130-FOO-001" in prompt
+    assert "BINARY-SIGNATURE-CHANGED" in prompt
+    assert "BINARY_BREAK" in prompt
 
 
 def test_html_comment_in_pr_entry_stripped(repo_with_change):

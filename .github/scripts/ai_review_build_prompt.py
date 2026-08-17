@@ -69,7 +69,10 @@ C3. non-noop: example_before must materially differ from example_after.
 C4. fix_description matches the actual change: prose can't contradict notes
     (e.g. claims rename when notes show signature change).
 C5. category is correct: TYPE-REMOVED / METHOD-RENAMED / SIGNATURE-CHANGED /
-    BEHAVIOR-CHANGED / ATTRIBUTE-REMOVED inferred from cs_warning + diff.
+    BINARY-SIGNATURE-CHANGED / BEHAVIOR-CHANGED / ATTRIBUTE-REMOVED inferred
+    from cs_warning + diff. BINARY-SIGNATURE-CHANGED is valid when old source
+    still recompiles (for example, a new optional parameter) but an already-
+    compiled consumer can fail until rebuilt; its marker is BINARY_BREAK.
 C6. guide_section: "N/A" is a FULLY VALID value (the standard "no parallel
     section" marker) — do NOT flag it or suggest changing it. Flag guide_section
     ONLY if it is a placeholder token (TODO/TBD/XXX) or an invented number.

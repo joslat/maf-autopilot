@@ -13,6 +13,128 @@ namespace MafDoctor.Tests;
 /// </summary>
 public sealed class ProcessRunnerTests : IDisposable
 {
+    [Fact]
+    public void DotnetInspectVersion_MatchesRepositoryPin()
+    {
+        Assert.Equal("0.9.1", ProcessRunner.DotnetInspectVersion);
+    }
+
+    [Theory]
+    [InlineData("0.9.1")]
+    [InlineData("  0.9.1\r\n")]
+    [InlineData("0.9.1+891e68b")]
+    [InlineData("0.9.1+build.42-linux-x64")]
+    public void IsSupportedDotnetInspectVersion_AcceptsExactAndBuildMetadata(string output)
+    {
+        Assert.True(ProcessRunner.IsSupportedDotnetInspectVersion(output));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("0.9.0")]
+    [InlineData("0.9.10")]
+    [InlineData("0.9.1-preview.1")]
+    [InlineData("v0.9.1")]
+    [InlineData("dotnet-inspect 0.9.1")]
+    [InlineData("0.9.1+")]
+    [InlineData("0.9.1+.metadata")]
+    [InlineData("0.9.1+metadata.")]
+    [InlineData("0.9.1+metadata..second")]
+    [InlineData("0.9.1+méta")]
+    public void IsSupportedDotnetInspectVersion_RejectsEverythingElse(string output)
+    {
+        Assert.False(ProcessRunner.IsSupportedDotnetInspectVersion(output));
+    }
+
+    [Fact]
+    public void ClassifyDotnetInspectProbe_DistinguishesSupportedMissingMismatchAndFailure()
+    {
+        Assert.Equal(
+            ProcessRunner.DotnetInspectProbeStatus.Supported,
+            ProcessRunner.ClassifyDotnetInspectProbe(0, "0.9.1+build.7"));
+        Assert.Equal(
+            ProcessRunner.DotnetInspectProbeStatus.Missing,
+            ProcessRunner.ClassifyDotnetInspectProbe(127, "not available"));
+        Assert.Equal(
+            ProcessRunner.DotnetInspectProbeStatus.Mismatched,
+            ProcessRunner.ClassifyDotnetInspectProbe(0, "0.7.8+891e68b"));
+        Assert.Equal(
+            ProcessRunner.DotnetInspectProbeStatus.Unverifiable,
+            ProcessRunner.ClassifyDotnetInspectProbe(2, "0.9.1"));
+        Assert.Equal(
+            ProcessRunner.DotnetInspectProbeStatus.Unverifiable,
+            ProcessRunner.ClassifyDotnetInspectProbe(0, "unexpected multiline\noutput"));
+    }
+
+    [Fact]
+    public void SelectDotnetInspectRoute_UsesGlobalOnlyForVerifiedExactVersion()
+    {
+        Assert.Equal(
+            ProcessRunner.DotnetInspectRoute.Global,
+            ProcessRunner.SelectDotnetInspectRoute(0, "0.9.1+commit.abc", allowExactFallback: false));
+        Assert.Equal(
+            ProcessRunner.DotnetInspectRoute.Global,
+            ProcessRunner.SelectDotnetInspectRoute(0, "0.9.1", allowExactFallback: true));
+    }
+
+    [Fact]
+    public void SelectDotnetInspectRoute_MissingExit127_ReachesExactFallbackOnlyWhenOptedIn()
+    {
+        Assert.Equal(
+            ProcessRunner.DotnetInspectRoute.FailClosed,
+            ProcessRunner.SelectDotnetInspectRoute(127, "not available", allowExactFallback: false));
+        Assert.Equal(
+            ProcessRunner.DotnetInspectRoute.ExactDnxFallback,
+            ProcessRunner.SelectDotnetInspectRoute(127, "not available", allowExactFallback: true));
+    }
+
+    [Fact]
+    public void SelectDotnetInspectRoute_MismatchAndUnverifiableResultsFailClosedOrFallback()
+    {
+        Assert.Equal(
+            ProcessRunner.DotnetInspectRoute.FailClosed,
+            ProcessRunner.SelectDotnetInspectRoute(0, "0.7.8+old", allowExactFallback: false));
+        Assert.Equal(
+            ProcessRunner.DotnetInspectRoute.ExactDnxFallback,
+            ProcessRunner.SelectDotnetInspectRoute(0, "0.7.8+old", allowExactFallback: true));
+        Assert.Equal(
+            ProcessRunner.DotnetInspectRoute.FailClosed,
+            ProcessRunner.SelectDotnetInspectRoute(1, "probe failed", allowExactFallback: false));
+        Assert.Equal(
+            ProcessRunner.DotnetInspectRoute.ExactDnxFallback,
+            ProcessRunner.SelectDotnetInspectRoute(1, "probe failed", allowExactFallback: true));
+    }
+
+    [Fact]
+    public void CreateDotnetInspectDiffStartInfo_ExactFallbackPinsVersionAndGlobalDoesNotUseDnx()
+    {
+        var fallback = ProcessRunner.CreateDotnetInspectDiffStartInfo(
+            "dnx", "Example.Package", "1.0.0", "2.0.0", throughDnx: true);
+        Assert.Equal("dnx", fallback.FileName);
+        Assert.Equal("dotnet-inspect@0.9.1", fallback.ArgumentList[0]);
+        Assert.Contains("Example.Package@1.0.0..2.0.0", fallback.ArgumentList);
+
+        var global = ProcessRunner.CreateDotnetInspectDiffStartInfo(
+            "dotnet-inspect", "Example.Package", "1.0.0", "2.0.0", throughDnx: false);
+        Assert.Equal("dotnet-inspect", global.FileName);
+        Assert.Equal("diff", global.ArgumentList[0]);
+        Assert.DoesNotContain(global.ArgumentList, arg => arg.StartsWith("dotnet-inspect@", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DescribeUnsupportedDotnetInspect_IsActionableAndDoesNotEchoUnverifiedOutput()
+    {
+        var mismatch = ProcessRunner.DescribeUnsupportedDotnetInspect(0, "0.7.8+old");
+        Assert.Contains("0.7.8+old", mismatch);
+        Assert.Contains("0.9.1", mismatch);
+        Assert.Contains(ProcessRunner.AllowToolDownloadEnvName, mismatch);
+
+        var unverified = ProcessRunner.DescribeUnsupportedDotnetInspect(
+            0, "hostile\nmultiline `output`");
+        Assert.Contains("could not be verified", unverified);
+        Assert.DoesNotContain("hostile", unverified);
+    }
+
     public void Dispose() =>
         Environment.SetEnvironmentVariable(ProcessRunner.AllowToolDownloadEnvName, null);
 

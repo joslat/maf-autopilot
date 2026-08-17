@@ -214,6 +214,86 @@ public class VerifyRegistryCommandTests
         Assert.Empty(issues);
     }
 
+    [Theory]
+    [InlineData("CS0618")]
+    [InlineData("CS0246")]
+    [InlineData("CS1234")]
+    [InlineData("RUNTIME_SILENT")]
+    [InlineData("BINARY_BREAK")]
+    public void CheckEntry_AllowedCsWarning_Passes(string warning)
+    {
+        var issues = new List<string>();
+        VerifyRegistryCommand.CheckEntry(MakeEntry(csWarning: warning), issues);
+        Assert.Empty(issues);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("TODO")]
+    [InlineData("CS618")]
+    [InlineData("CS06180")]
+    [InlineData("runtime_silent")]
+    [InlineData("binary_break")]
+    [InlineData("CS0618 / CS0246")]
+    public void CheckEntry_PlaceholderOrInvalidCsWarning_IsRejected(string warning)
+    {
+        var issues = new List<string>();
+        VerifyRegistryCommand.CheckEntry(MakeEntry(csWarning: warning), issues);
+        Assert.Single(issues);
+        Assert.Contains("cs_warning", issues[0]);
+    }
+
+    [Fact]
+    public void HistoricalSkip_AppliesOnlyToExactPre100Marker()
+    {
+        var historical = MakeEntry();
+        historical.AppliesToCodebases = "pre-1.0.0";
+        var currentMigration = MakeEntry();
+        currentMigration.AppliesToCodebases = "pre-1.14.0";
+
+        Assert.True(VerifyRegistryCommand.IsHistoricalDocumentationEntry(historical));
+        Assert.False(VerifyRegistryCommand.IsHistoricalDocumentationEntry(currentMigration));
+    }
+
+    [Fact]
+    public void FilledPre114Entry_ReceivesSubstantiveValidation()
+    {
+        var entry = MakeEntry(exampleBefore: "same();", exampleAfter: "same();");
+        entry.AppliesToCodebases = "pre-1.14.0";
+        var issues = new List<string>();
+
+        if (!VerifyRegistryCommand.IsHistoricalDocumentationEntry(entry))
+            VerifyRegistryCommand.CheckEntry(entry, issues);
+
+        Assert.Contains(issues, issue => issue.Contains("example_before == example_after"));
+    }
+
+    [Fact]
+    public void CheckDuplicateIds_CaseInsensitiveCollision_IsRejected()
+    {
+        var issues = new List<string>();
+
+        VerifyRegistryCommand.CheckDuplicateIds(
+            [MakeEntry(id: "MAF114-HARNESS-OPTIONS-001"), MakeEntry(id: "maf114-harness-options-001")],
+            issues);
+
+        Assert.Single(issues);
+        Assert.Contains("duplicate registry id", issues[0], StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("case-insensitive", issues[0], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void CheckDuplicateIds_DistinctIds_Pass()
+    {
+        var issues = new List<string>();
+
+        VerifyRegistryCommand.CheckDuplicateIds(
+            [MakeEntry(id: "MAF114-OPTIONS-001"), MakeEntry(id: "MAF114-HARNESS-OPTIONS-001")],
+            issues);
+
+        Assert.Empty(issues);
+    }
+
     // -------------------------------------------------------------------------
     // Integration: the LIVE embedded registry must pass verification
     // -------------------------------------------------------------------------
@@ -225,15 +305,19 @@ public class VerifyRegistryCommandTests
         // the existing registry causes this test to fail in CI BEFORE the
         // PR merges. Mirrors the same skip logic + order as
         // VerifyRegistryCommand.Run():
-        //   - historical (pre-*) entries
+        //   - historical (exact pre-1.0.0) entries
         //   - incomplete drafts (ANY core field still a placeholder — monotonic)
         var registry = new RegistryService();
         var issues = new List<string>();
+        VerifyRegistryCommand.CheckDuplicateIds(registry.AllEntries, issues);
         foreach (var entry in registry.AllEntries)
         {
-            var marker = entry.AppliesToCodebases?.Trim();
-            if (marker?.StartsWith("pre-", StringComparison.OrdinalIgnoreCase) == true) continue;
-            if (VerifyRegistryCommand.IsIncompleteDraft(entry)) continue;
+            if (VerifyRegistryCommand.IsHistoricalDocumentationEntry(entry)) continue;
+            if (VerifyRegistryCommand.IsIncompleteDraft(entry))
+            {
+                VerifyRegistryCommand.CheckCsWarning(entry, issues);
+                continue;
+            }
             VerifyRegistryCommand.CheckEntry(entry, issues);
         }
 
@@ -258,6 +342,7 @@ public class VerifyRegistryCommandTests
             FixDescription = "TODO — review the diff entry below and document the canonical fix",
             ExampleBefore = "// TODO — show a real call site that breaks\n",
             ExampleAfter = "// TODO — show the canonical 1.x replacement\n",
+            CsWarning = "TODO",
         };
         Assert.True(VerifyRegistryCommand.IsRawDraft(entry));
     }
@@ -275,6 +360,7 @@ public class VerifyRegistryCommandTests
             FixDescription = "TODO — pending",
             ExampleBefore = "// TODO",
             ExampleAfter = "// TODO",
+            CsWarning = "TODO",
         };
         Assert.False(VerifyRegistryCommand.IsRawDraft(entry));
     }
@@ -302,6 +388,7 @@ public class VerifyRegistryCommandTests
             FixDescription = "TODO",
             ExampleBefore = "var note = \"// TODO refactor\"; Foo();",
             ExampleAfter = "var note = \"// TODO refactor\"; Bar();",
+            CsWarning = "TODO",
         };
         Assert.False(VerifyRegistryCommand.IsRawDraft(entry));
     }
@@ -318,6 +405,7 @@ public class VerifyRegistryCommandTests
             FixDescription = "TODO",
             ExampleBefore = "   // TODO — show a real call site that breaks\n",
             ExampleAfter = "// TODO — show the canonical 1.x replacement\n",
+            CsWarning = "TODO",
         };
         Assert.True(VerifyRegistryCommand.IsRawDraft(entry));
     }
@@ -338,6 +426,7 @@ public class VerifyRegistryCommandTests
             FixDescription = "TODO — review the diff entry below",
             ExampleBefore = "// TODO — a call site that breaks\n",
             ExampleAfter = "// TODO — the replacement\n",
+            CsWarning = "TODO",
         };
         Assert.True(VerifyRegistryCommand.IsIncompleteDraft(entry));
     }
@@ -356,6 +445,7 @@ public class VerifyRegistryCommandTests
             FixDescription = "TODO — review the diff entry below", // still a placeholder
             ExampleBefore = "foo.Bar(1);",
             ExampleAfter = "foo.Bar(1, true);",
+            CsWarning = "TODO",
         };
         Assert.True(VerifyRegistryCommand.IsIncompleteDraft(entry));
         Assert.False(VerifyRegistryCommand.IsRawDraft(entry)); // NOT all-placeholder
@@ -372,6 +462,7 @@ public class VerifyRegistryCommandTests
             FixDescription = "Rename Old to New; the signature is unchanged.",
             ExampleBefore = "foo.Old();",
             ExampleAfter = "foo.New();",
+            CsWarning = "CS0618",
         };
         Assert.False(VerifyRegistryCommand.IsIncompleteDraft(entry));
     }
@@ -445,7 +536,8 @@ public class VerifyRegistryCommandTests
         string fixDescription = "Replace OldThing with NewThing in your code.",
         string exampleBefore = "var x = OldThing.Run();",
         string exampleAfter = "var x = NewThing.RunAsync();",
-        string guideSection = "5")
+        string guideSection = "5",
+        string csWarning = "CS0618")
         => new()
         {
             Id = id,
@@ -453,5 +545,6 @@ public class VerifyRegistryCommandTests
             ExampleBefore = exampleBefore,
             ExampleAfter = exampleAfter,
             GuideSection = guideSection,
+            CsWarning = csWarning,
         };
 }

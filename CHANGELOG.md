@@ -13,11 +13,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Semantic review restored after GitHub Models retirement.** The workflow now
   uses GitHub Copilot CLI with the short-lived `GITHUB_TOKEN`, an exact-pinned
-  CLI, and no enabled Copilot tools.
+  CLI, no enabled Copilot tools, and the seat's supported default model rather
+  than an account-dependent hard-coded model.
 - **Watcher credentials fail early and clearly.** Read-only checkout now uses
   `GITHUB_TOKEN`; the maintainer token is validated before analysis and reserved
   for the CI-triggering push. Failure notification now identifies the repository
   explicitly instead of requiring a nonexistent checkout.
+- **Watcher diff evidence is complete again.** The watcher now pins
+  `dotnet-inspect` 0.9.1, the first release built after the upstream Unix
+  seekable-stdout fix, verifies the installed version, and rejects any raw diff
+  whose package/version header or summary counts do not reconcile or whose body
+  contains unrecognized formatter output. This closes
+  the 0.7.8 Linux Native-AOT failure that exited 0 but left a 256-byte fragment.
+- **Interactive package diffs enforce the same inspector version.** The shared
+  process runner now verifies exact `dotnet-inspect` 0.9.1 before invoking it
+  (SemVer build metadata is accepted), fails closed on missing, mismatched, or
+  unverifiable executables, and reaches the exact-version `dnx` fallback only
+  after the existing explicit `MAF_DOCTOR_ALLOW_TOOL_DOWNLOAD` opt-in.
+- **Registry-aware compiler diagnostics no longer overcount generic errors.**
+  `MafRunCs0618Hunt` still retains every legacy CS0618/CS0246 finding, while
+  newer registry diagnostic codes such as CS1503 now require a matching
+  same-code registry type, member, or signature symbol before being reported as
+  a MAF migration finding.
+- **Watcher package coverage is release-aware and fail-closed.** A checked-in
+  manifest now plans ten targeted release-critical surfaces (including base
+  Hosting, Harness, GitHub Copilot, and Tools Shell) with independently resolved
+  package versions, bounded
+  per-surface diffs, lifecycle events, and a deterministic result ledger. Every
+  expected report must validate; breaking and potentially-breaking summary rows,
+  missing release notes, an empty later-package report, a package split, or
+  unverifiable evidence remain review-required. Registry
+  extraction consumes those same files with scoped IDs instead of repeating the
+  network diff, records a strict per-surface extraction ledger, and cannot let a
+  successful Core draft hide a failed or structurally uncovered later package.
+  Generated guides retain every breaking/potentially-breaking row while bounding
+  additive samples independently for each surface.
+- **Cumulative migration-guide repair no longer needs ephemeral artifacts.**
+  `gen_guide_section.py --cumulative-only` rebuilds the current cumulative guide
+  solely from checked-in per-version guides, making the AI-fill completion path
+  deterministic after human edits.
 - **Release backlogs no longer skip intermediate stable MAF versions.** The watcher selects the oldest untracked stable release and permits only one scaffold PR in flight, preserving per-version compatibility rows and migration guides when Microsoft ships more than once between weekly runs.
 - **Cost audit false positives removed.** CLI command entry points and the built MCP/host `RunAsync()` loop are no longer mistaken for uncapped agent inference calls.
 - **MCP scanner cache made runner-writable.** pipx now installs and caches under the workspace instead of `/opt`, eliminating tar permission failures and perpetual cache misses on hosted runners.
@@ -40,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Verifiable release provenance (SEC-13).** `release.yml` now produces a signed build-provenance attestation over the published `.nupkg`s and refuses to publish from a tag that isn't an ancestor of the reviewed `main` branch.
 - **NuGet vulnerability audit has teeth (SEC-15).** `NuGetAuditMode=all` plus `NU1903`/`NU1904` as errors — a HIGH/CRITICAL transitive advisory now fails restore in every CI lane, release included.
 - **Fork-safe PR automation (SEC-11).** Jobs that build PR-supplied (possibly fork) code no longer hold `pull-requests: write`; they upload an artifact and a single trusted `workflow_run` companion posts the sticky comment from the base-repo context.
-- **Fail-closed release classification (WM-11).** The release-watcher captures the upstream `dotnet-inspect` diff as stdout only, empties it on any non-zero exit, and requires a closing `**Summary:**` marker — a garbled or truncated diff now classifies as *breaking*, never silently additive.
+- **Fail-closed release classification (WM-11).** The release-watcher captures the upstream `dotnet-inspect` diff as stdout only, empties it on any non-zero exit, and requires a `**Summary:**` marker — a garbled or truncated diff now classifies as *breaking*, never silently additive.
 - **Non-vacuous scanner gate (SEC-12 / WM-13).** The mcp-scanner check rejects a "0 tools scanned" handshake and no longer lets scanner stderr merge into the results file where a benign line could forge a clean verdict.
 - **Widened CI templating-injection gate (WM-14).** The `ci-invariants` guard now also blocks fork-controlled event free-text (PR / issue / comment / review titles + bodies) and single-line `run:` forms from being interpolated into shell.
 - **Container capability boundary (SEC-10).** SDK-only tools detect a missing binary in a minimal container and return an explicit "use the global tool" message instead of crashing opaquely.

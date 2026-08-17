@@ -6,7 +6,7 @@ on:
   workflow_dispatch:        # Manual trigger anytime
     inputs:
       maf_version:
-        description: 'Specific MAF version to process (leave blank for latest from NuGet)'
+        description: 'Optional next pending stable MAF version. Must equal the oldest stable newer than .maf-version; leave blank to select it automatically.'
         required: false
         default: ''
       push_target:
@@ -41,11 +41,11 @@ jobs:
           INPUT: ${{ inputs.maf_version }}
         run: |
           if [ -z "$INPUT" ]; then
-            echo "No version input — will use latest stable from NuGet"
+            echo "No version input — will use the oldest pending stable from NuGet"
             exit 0
           fi
-          if ! echo "$INPUT" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$'; then
-            echo "::error::Invalid maf_version input shape: $INPUT (must be semver)"
+          if ! echo "$INPUT" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Invalid maf_version input shape: $INPUT (must be a stable X.Y.Z version)"
             exit 1
           fi
 
@@ -90,53 +90,45 @@ jobs:
           CURRENT=$(cat .maf-version | tr -d '[:space:]')
           echo "Current tracked version: $CURRENT"
 
-          # Use an explicit version if provided. Otherwise select the OLDEST
-          # pending stable release, not merely the newest one. Microsoft can ship
-          # more than once between weekly runs (1.14/1.15 and 1.16/1.17 did), and
-          # jumping straight to the latest silently drops intermediate per-version
-          # guides and compatibility rows from the additive chain.
+          # Always resolve the OLDEST pending stable release from NuGet, even
+          # for a manual dispatch. An explicit version is an assertion, not a
+          # bypass: it must equal that next release, so 1.13 -> 1.17 cannot skip
+          # the 1.14/1.15/1.16 migration guides and registry cycles.
+          for attempt in 1 2 3; do
+            RAW=$(curl -sS --max-time 30 "https://api.nuget.org/v3-flatcontainer/microsoft.agents.ai/index.json" || true)
+            if [ -n "$RAW" ]; then break; fi
+            echo "NuGet query attempt $attempt failed, retrying after $((attempt * 5))s..."
+            sleep $((attempt * 5))
+          done
+          if [ -z "$RAW" ]; then
+            echo "::error::NuGet API unreachable after 3 attempts — release state is unknown; failing closed."
+            exit 1
+          fi
+          NEWEST=$(echo "$RAW" | python3 .github/scripts/get_latest_stable.py)
+          NEXT=$(echo "$RAW" | python3 .github/scripts/get_latest_stable.py --after "$CURRENT")
+          if [ -z "$NEWEST" ]; then
+            echo "ℹ️ No stable version found on NuGet — only prereleases. Skipping."
+            echo "has_update=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "Latest STABLE version on NuGet: $NEWEST"
+          if [ -z "$NEXT" ]; then
+            echo "old_version=$CURRENT" >> $GITHUB_OUTPUT
+            echo "new_version=$CURRENT" >> $GITHUB_OUTPUT
+            echo "has_update=false" >> $GITHUB_OUTPUT
+            echo "is_major=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No pending stable release. $CURRENT is current."
+            exit 0
+          fi
+          if [ -n "$INPUT_VERSION" ] && [ "$INPUT_VERSION" != "$NEXT" ]; then
+            echo "::error::Requested $INPUT_VERSION, but the next pending stable release after $CURRENT is $NEXT. Process releases sequentially."
+            exit 1
+          fi
+          LATEST="$NEXT"
           if [ -n "$INPUT_VERSION" ]; then
-            LATEST="$INPUT_VERSION"
-            echo "Using manually specified version: $LATEST"
-          else
-            # Filter out prereleases (`-alpha`, `-beta`, `-rc`, `-preview`) — we only
-            # auto-process stable releases. Manual override above is the path for prereleases.
-            # Retry 3× with backoff to ride out transient NuGet rate-limiting.
-            for attempt in 1 2 3; do
-              RAW=$(curl -sS --max-time 30 "https://api.nuget.org/v3-flatcontainer/microsoft.agents.ai/index.json" || true)
-              if [ -n "$RAW" ]; then break; fi
-              echo "NuGet query attempt $attempt failed, retrying after $((attempt * 5))s..."
-              sleep $((attempt * 5))
-            done
-            if [ -z "$RAW" ]; then
-              echo "❌ NuGet API unreachable after 3 attempts — aborting cleanly."
-              echo "has_update=false" >> $GITHUB_OUTPUT
-              exit 0
-            fi
-            # Filter to the latest STABLE version via a real module. Previously
-            # this was an inline `python3 -c "..."` whose code carried this
-            # shell block's indentation, so Python raised "IndentationError:
-            # unexpected indent" on EVERY scheduled run (the explicit-version
-            # dispatch path skips this branch, which is why manual runs worked).
-            NEWEST=$(echo "$RAW" | python3 .github/scripts/get_latest_stable.py)
-            LATEST=$(echo "$RAW" | python3 .github/scripts/get_latest_stable.py --after "$CURRENT")
-            if [ -z "$NEWEST" ]; then
-              echo "ℹ️ No stable version found on NuGet — only prereleases. Skipping."
-              echo "has_update=false" >> $GITHUB_OUTPUT
-              exit 0
-            fi
-            echo "Latest STABLE version on NuGet: $NEWEST"
-            if [ -z "$LATEST" ]; then
-              echo "old_version=$CURRENT" >> $GITHUB_OUTPUT
-              echo "new_version=$CURRENT" >> $GITHUB_OUTPUT
-              echo "has_update=false" >> $GITHUB_OUTPUT
-              echo "is_major=false" >> $GITHUB_OUTPUT
-              echo "ℹ️ No pending stable release. $CURRENT is current."
-              exit 0
-            fi
-            if [ "$LATEST" != "$NEWEST" ]; then
-              echo "ℹ️ Release backlog detected — processing oldest pending stable $LATEST first (newest is $NEWEST)."
-            fi
+            echo "Validated manually specified next stable version: $LATEST"
+          elif [ "$LATEST" != "$NEWEST" ]; then
+            echo "ℹ️ Release backlog detected — processing oldest pending stable $LATEST first (newest is $NEWEST)."
           fi
 
           # WM-12: serialize the backlog. ANY open watcher PR means main still has
@@ -233,9 +225,8 @@ jobs:
         # established pattern on Restore/Build below (a transient
         # network/registry hiccup here previously hard-aborted the whole job
         # — including the version-bump PR it exists to open — instead of
-        # degrading gracefully the way "Run diff" (continue-on-error: true
-        # already, next step) is explicitly designed to tolerate a missing
-        # dotnet-inspect).
+        # degrading gracefully the way the planned-diff runner (continue-on-error
+        # below) is explicitly designed to record a missing dotnet-inspect).
         continue-on-error: true
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1  # v5.4.0
         with:
@@ -252,64 +243,58 @@ jobs:
           # at 2026-05-11 was "dnx is not found in NuGet feeds". Direct install
           # of dotnet-inspect is the working path now and removes the dnx hop
           # entirely.
-          dotnet tool install --global dotnet-inspect --version 0.7.8 \
-            || dotnet tool update --global dotnet-inspect --version 0.7.8
+          #
+          # 0.7.8's Linux Native-AOT binary was built with the .NET 11 preview 3
+          # Unix Console regression (dotnet/runtime#126843): direct `> file`
+          # redirection overwrote offset zero on every buffered write and left a
+          # ~256-byte fragment despite exit 0. dotnet-inspect 0.9.1 is the first
+          # upstream release whose CI removed its `| cat > file` workaround after
+          # validating the runtime fix (richlander/dotnet-inspect#319/#334).
+          INSPECT_VERSION=0.9.1
+          dotnet tool install --global dotnet-inspect --version "$INSPECT_VERSION" \
+            || dotnet tool update --global dotnet-inspect --version "$INSPECT_VERSION"
+          ACTUAL_VERSION=$(dotnet-inspect --version)
+          if [ "${ACTUAL_VERSION%%+*}" != "$INSPECT_VERSION" ]; then
+            echo "::error::Expected dotnet-inspect $INSPECT_VERSION, got $ACTUAL_VERSION"
+            exit 1
+          fi
+          echo "Installed dotnet-inspect $ACTUAL_VERSION"
 
-      - name: Run diff — Microsoft.Agents.AI
-        id: diff-core
-        continue-on-error: true  # diff may fail if old version is too old
-        # Phase 7.G fixup — `needs.*.outputs.*` now redirected via env: instead
-        # of templated into the run: block. Same hardening pattern as Phase 3.2
-        # applied to `inputs.*`. Eliminates the template-injection surface even
-        # though the upstream values are already semver-validated.
+      - name: Build targeted MAF package plan
+        # The MAF release train does not imply that every package publishes the
+        # same literal version. Resolve the checked-in release-critical surface
+        # set independently and retain exact package versions in a deterministic
+        # manifest-order plan. Missing/ambiguous evidence remains unverifiable.
         env:
           OLD: ${{ needs.check-for-new-maf-release.outputs.old_version }}
           NEW: ${{ needs.check-for-new-maf-release.outputs.new_version }}
         run: |
-          # WM-11: capture stdout ONLY into the file the classifier parses; route
-          # stderr to a separate file; propagate the exit code; and on any non-zero
-          # exit empty the stdout file so release_classification fails CLOSED (breaking)
-          # instead of parsing a truncated/garbled diff as additive. (`2>&1` previously
-          # let stderr split a marker line, mislabeling a breaking release as additive.)
-          rc=0
-          dotnet-inspect diff \
-            --package "Microsoft.Agents.AI@${OLD}..${NEW}" \
-            --source https://api.nuget.org/v3/index.json \
-            > diff-core.txt 2> diff-core.stderr.txt || rc=$?
-          echo "--- dotnet-inspect stderr ---"; cat diff-core.stderr.txt
-          if [ "$rc" -ne 0 ]; then
-            echo "::warning title=diff-core failed (exit $rc)::Discarding partial stdout so release_classification fails closed (breaking)."
-            : > diff-core.txt
-            exit "$rc"   # step shows failed; continue-on-error keeps the job alive
-          fi
-          echo "Core diff output:"; cat diff-core.txt
+          python3 .github/scripts/build_maf_package_plan.py \
+            --manifest .github/maf-package-surfaces.json \
+            --old-version "$OLD" \
+            --new-version "$NEW" \
+            --output maf-package-plan.json
+          cat maf-package-plan.json
 
-      - name: Run diff — Microsoft.Agents.AI.Workflows
-        id: diff-workflows
+      - name: Run and validate planned package diffs
+        id: package-diffs
         continue-on-error: true
-        # Phase 7.G fixup — env-redirect (see diff-core above).
-        env:
-          OLD: ${{ needs.check-for-new-maf-release.outputs.old_version }}
-          NEW: ${{ needs.check-for-new-maf-release.outputs.new_version }}
         run: |
-          # WM-11: stdout-only capture + fail-closed (see the diff-core step above).
-          rc=0
-          dotnet-inspect diff \
-            --package "Microsoft.Agents.AI.Workflows@${OLD}..${NEW}" \
-            --source https://api.nuget.org/v3/index.json \
-            > diff-workflows.txt 2> diff-workflows.stderr.txt || rc=$?
-          echo "--- dotnet-inspect stderr ---"; cat diff-workflows.stderr.txt
-          if [ "$rc" -ne 0 ]; then
-            echo "::warning title=diff-workflows failed (exit $rc)::Discarding partial stdout so release_classification fails closed (breaking)."
-            : > diff-workflows.txt
-            exit "$rc"
-          fi
-          echo "Workflows diff output:"; cat diff-workflows.txt
+          # Sequential, bounded, manifest-ordered execution. Every surface gets
+          # its own stdout/stderr artifacts and result row even when an earlier
+          # surface fails. Raw malformed output is retained for audit but never
+          # trusted downstream; validation failure classifies breaking.
+          python3 .github/scripts/run_maf_package_diffs.py \
+            --plan maf-package-plan.json \
+            --results maf-diff-results.json \
+            --dotnet-inspect dotnet-inspect \
+            --timeout-seconds 180
+          cat maf-diff-results.json
 
       - name: Fetch release notes
         id: release-notes
         continue-on-error: true
-        # Phase 7.G fixup — env-redirect (see diff-core above). NOTE: this step
+        # Phase 7.G fixup — env-redirect (see package-plan step above). NOTE: this step
         # previously had TWO `env:` keys (NEW here + GH_TOKEN below) — a YAML
         # duplicate-key the GitHub workflow parser REJECTS (startup_failure: the
         # 0-second push runs), and which PyYAML silently tolerated by keeping the
@@ -330,9 +315,15 @@ jobs:
             fi
           done
           if [ ! -s release-notes.txt ]; then
-            echo "ℹ️ Release notes not yet published on GitHub for $NEW — empty placeholder used." > release-notes.txt
+            echo "Release notes unavailable for automated classification. MAF $NEW has no readable GitHub release body." > release-notes.txt
+            echo "::warning::Release notes are unavailable for $NEW; classification will fail closed to breaking."
           fi
-          cat release-notes.txt
+          # The upstream body is untrusted and may contain GitHub workflow-command
+          # syntax (for example a line beginning `::error::`). Keep the raw body
+          # only in the artifact/guide evidence; logs receive bounded metadata.
+          NOTES_BYTES=$(wc -c < release-notes.txt)
+          NOTES_SHA256=$(sha256sum release-notes.txt | cut -d' ' -f1)
+          echo "Release-note evidence captured: tag=$NEW bytes=$NOTES_BYTES sha256=$NOTES_SHA256"
 
       - name: Update compatibility matrix
         env:
@@ -390,9 +381,6 @@ jobs:
         run: dotnet build src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0 --no-restore
 
       - name: Auto-append draft registry entries
-        env:
-          OLD: ${{ needs.check-for-new-maf-release.outputs.old_version }}
-          NEW: ${{ needs.check-for-new-maf-release.outputs.new_version }}
         continue-on-error: true   # never block the PR on registry extraction
         run: |
           MAF_DOCTOR="src/maf-autopilot/bin/Release/net8.0/maf-doctor.dll"
@@ -404,20 +392,32 @@ jobs:
           REGISTRY=".github/skills/maf-obsolete-api-registry/registry.yaml"
           TMP_ENTRIES="/tmp/draft-registry-entries.yaml"
 
-          # Run extractor for each MAF package — append concatenated output.
-          : > "$TMP_ENTRIES"
-          for pkg in Microsoft.Agents.AI Microsoft.Agents.AI.Workflows; do
-            echo "=== Extracting draft entries for $pkg ($OLD → $NEW) ==="
-            dotnet "$MAF_DOCTOR" registry-extract "$pkg" "$OLD" "$NEW" >> "$TMP_ENTRIES" || true
-            echo "" >> "$TMP_ENTRIES"
-          done
+          # Consume only independently validated artifacts from the package
+          # plan. --diff-file eliminates the extractor's former second network
+          # diff; --release-version keeps applies_to_codebases stable when a
+          # package's exact preview version differs from the MAF train; id_scope
+          # prevents non-Core registry ID collisions.
+          extract_rc=0
+          python3 .github/scripts/extract_registry_from_plan.py \
+            --plan maf-package-plan.json \
+            --results maf-diff-results.json \
+            --maf-doctor "$MAF_DOCTOR" \
+            --output "$TMP_ENTRIES" \
+            --extraction-results maf-registry-extraction-results.json \
+            --timeout-seconds 120 || extract_rc=$?
 
           # Phase 3.4 — de-dupe extracted entries against the existing registry
           # BEFORE appending. Re-runs (or the daily cron re-detecting the same
           # version before .maf-version catches up) must not accrete duplicate
           # draft entries. The helper prints only entry blocks whose `id:` is not
           # already present (and de-dupes within the batch).
-          NEW_ENTRIES=$(python3 .github/scripts/dedupe_registry_entries.py "$REGISTRY" "$TMP_ENTRIES")
+          if ! NEW_ENTRIES=$(python3 .github/scripts/dedupe_registry_entries.py "$REGISTRY" "$TMP_ENTRIES"); then
+            # A same-ID/different-identity collision means the extractor ledger
+            # cannot truthfully claim those generated IDs were appended.
+            rm -f maf-registry-extraction-results.json
+            echo "::error::Registry de-duplication failed; invalidated extraction ledger."
+            exit 1
+          fi
           if [ -n "$NEW_ENTRIES" ]; then
             {
               echo ""
@@ -428,11 +428,16 @@ jobs:
           else
             echo "ℹ️ No new draft registry candidates (all already present, or none extracted)."
           fi
+          if [ "$extract_rc" -ne 0 ]; then
+            echo "::warning::One or more planned registry extractions were unavailable or failed; the release verdict remains fail-closed."
+            exit "$extract_rc"
+          fi
 
       - name: Classify release (additive vs breaking)
         # Green-on-arrival verdict, decided in one place (release_classification):
         # additive ⇒ the scaffold is auto-filled and should be green; breaking ⇒
-        # draft registry entries the keep-breaking-red gate holds red until filled.
+        # draft registry entries (or a review draft when a behavioral/lifecycle break
+        # has no API draft) keep the PR red until reviewed and filled.
         id: classify
         run: |
           VERDICT=$(python3 .github/scripts/release_classification.py)
@@ -441,11 +446,12 @@ jobs:
 
       - name: Guard — a breaking release must leave a red gate
         # The 'breaking' verdict carries no gating force on its own; the PR only
-        # goes red if registry-extract produced unfilled drafts. Those come from a
-        # SEPARATE continue-on-error dotnet-inspect run, so a correlated diff
-        # failure could leave a breaking release with zero entries → green. This
-        # appends a sentinel draft when verdict==breaking but no current-version
-        # entry exists, so the keep-breaking-red gate always fires.
+        # goes red if registry-extract produced unfilled drafts. A behavioral
+        # release-note-only behavioral break, lifecycle split, or failed package
+        # diff may produce zero API drafts. Append a general REVIEW draft when no
+        # current-release entry exists, plus one for each breaking lifecycle event
+        # not explicitly covered by a current package entry, so unrelated Core
+        # drafts cannot hide a package split.
         if: steps.classify.outputs.verdict == 'breaking'
         env:
           NEW_VERSION: ${{ needs.check-for-new-maf-release.outputs.new_version }}
@@ -453,30 +459,57 @@ jobs:
         run: python3 .github/scripts/ensure_breaking_gated.py
 
       - name: Upload diff artifacts for reviewer
-        # Make the raw diffs downloadable on the workflow run page so the human
-        # reviewer can audit the breaking-change surface without re-running
-        # dotnet-inspect locally. Cheap (~few KB), high signal-to-effort.
+        # Upload the plan, diff/extraction ledgers, and every dynamic per-surface artifact.
+        # Failed/truncated raw output is deliberately retained for diagnosis;
+        # consumers trust only result rows that pass strict validation.
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: maf-diff-${{ needs.check-for-new-maf-release.outputs.new_version }}
           path: |
-            diff-core.txt
-            diff-core.stderr.txt
-            diff-workflows.txt
-            diff-workflows.stderr.txt
+            maf-package-plan.json
+            maf-diff-results.json
+            maf-registry-extraction-results.json
+            diff-*.txt
             release-notes.txt
           retention-days: 30
           if-no-files-found: warn
 
+      - name: Gate — require complete release evidence before commit
+        # Classification deliberately fails closed to "breaking", but a verdict
+        # alone is not permission to advance the release chain. Missing notes,
+        # an unverifiable planned package, any invalid diff, or a missing/malformed
+        # per-surface registry-extraction ledger must stop before .maf-version and
+        # the watcher branch are written. Diagnostics were uploaded by the
+        # preceding always() step.
+        run: python3 .github/scripts/release_classification.py --require-complete-evidence
+
       - name: Update .maf-version
         # Phase 7.G fixup — env-redirect needs.*.outputs.* (same pattern as
-        # the diff-core / diff-workflows / release-notes steps above).
+        # the package-plan / release-notes steps above).
         env:
           NEW: ${{ needs.check-for-new-maf-release.outputs.new_version }}
         run: |
           echo "$NEW" > .maf-version
           echo "Updated .maf-version to $NEW"
+
+      - name: Record immutable scaffold obligations
+        # This data contract is generated only after every watcher-owned file is
+        # final.  AI-fill verification recovers this exact blob from the first
+        # scaffold commit and runs trusted-base verifier code against PR HEAD.
+        env:
+          OLD_VERSION: ${{ needs.check-for-new-maf-release.outputs.old_version }}
+          NEW_VERSION: ${{ needs.check-for-new-maf-release.outputs.new_version }}
+          BASE_COMMIT: ${{ github.sha }}
+          PUSH_TARGET: ${{ inputs.push_target }}
+        run: |
+          BRANCH="${PUSH_TARGET:-release-watcher/maf-${NEW_VERSION}}"
+          python3 .github/scripts/build_scaffold_obligations.py \
+            --old-version "$OLD_VERSION" \
+            --target-version "$NEW_VERSION" \
+            --base-commit "$BASE_COMMIT" \
+            --target-branch "$BRANCH" \
+            --output ".github/maf-scaffold-obligations/maf-${NEW_VERSION}.json"
 
       - name: Commit to a release-watcher branch and open a PR
         id: commit_to_main
@@ -507,6 +540,7 @@ jobs:
           # Stage only the paths the watcher is supposed to touch (artefacts like
           # diff-*.txt / release-notes.txt are uploaded separately, not committed).
           git add .maf-version \
+                  .github/maf-scaffold-obligations/maf-${NEW_VERSION}.json \
                   docs/compatibility-matrix.md \
                   src/maf-autopilot/Tools/CompatibilityTool.cs \
                   guides/*.md \
@@ -545,12 +579,16 @@ jobs:
           fi
           git checkout -b "$BRANCH"
           git commit -F "$RUNNER_TEMP/commit-msg.txt"
-          # SEC-27: push with an EPHEMERAL auth header so the token never touches
-          # .git/config or the process argv — no more partially undoing the F-06
-          # persist-credentials:false hardening with a set-url. --force-with-lease
-          # (not -f): a legitimate regenerate updates its own branch without clobbering.
-          git -c http.extraheader="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" \
-            push --force-with-lease origin "HEAD:${BRANCH}"
+          # SEC-27: pass the ephemeral auth header through Git's one-command
+          # environment config, not `.git/config`, the remote URL, or argv.
+          # --force-with-lease (not -f) lets a deliberate regenerate update its
+          # own branch without clobbering someone else's work.
+          AUTH_VALUE="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0=http.extraheader \
+          GIT_CONFIG_VALUE_0="$AUTH_VALUE" \
+            git push --force-with-lease origin "HEAD:${BRANCH}"
+          unset AUTH_VALUE
           echo "branch=$BRANCH" >> $GITHUB_OUTPUT
           echo "committed=true" >> $GITHUB_OUTPUT
 

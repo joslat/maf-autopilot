@@ -197,7 +197,7 @@ Distribution: **NuGet** (maf-doctor + maf-doctor.Analyzers), **Docker GHCR** (mu
 
 ## Acknowledgements
 
-This toolkit relies on **[dotnet-inspect](https://github.com/richlander/dotnet-inspect)** by [Rich Lander](https://github.com/richlander) — a CLI for querying .NET API surfaces across NuGet packages and assemblies. The release watcher uses it (via [dnx](https://github.com/filipw/dnx)) to diff MAF package versions and surface breaking API changes. **Pin to v0.7.8 or later** — it surfaces Obsolete members at the overload level ([PR #318](https://github.com/richlander/dotnet-inspect/pull/318)); the compiler-based cs0618-hunter path stays complementary for transitive and project-local obsoletions.
+This toolkit relies on **[dotnet-inspect](https://github.com/richlander/dotnet-inspect)** by [Rich Lander](https://github.com/richlander) — a CLI for querying .NET API surfaces across NuGet packages and assemblies. The release watcher installs and verifies exact version **0.9.1**, resolves the checked-in set of ten release-critical MAF surfaces independently, and validates every captured report before classification or registry extraction. The compiler-based cs0618-hunter path stays complementary for transitive and project-local obsoletions.
 
 ## Contributing
 

@@ -44,7 +44,7 @@ maf-doctor init --with-cursor   # also the Cursor rule
 ## Environment variables
 
 - **`MAF_DOCTOR_WORKSPACE_ROOTS`** — `init` writes this into the MCP server entry's `env` block (first-time-only; re-running `init` never narrows a value you've since broadened) set to the initialized repo's absolute path. It scopes which absolute paths an MCP-connected agent can point tools at: filesystem roots and your home directory are always rejected regardless of configuration, and any tool call outside the configured root(s) is refused. **MCP-only** — a human running `maf-doctor` directly at their own shell is unaffected; this is a containment boundary for what an agent can reach through the MCP server, not a general path restriction. To scope one server to multiple repos, edit the value to a `;`-separated list of absolute paths.
-- **`MAF_DOCTOR_ALLOW_TOOL_DOWNLOAD`** — not written by `init`; set this yourself if you want `MafDiffPackage`/`MafPreUpgradeDryRun`/`registry-extract` to fall back to downloading and running `dnx dotnet-inspect@<pinned-version>` when `dotnet-inspect` isn't already installed. Default (unset) is off — those tools instead return install instructions rather than silently fetching and executing a package.
+- **`MAF_DOCTOR_ALLOW_TOOL_DOWNLOAD`** — not written by `init`; set this yourself if you want `MafDiffPackage`/`MafPreUpgradeDryRun`/`registry-extract` to fall back to downloading and running exact `dnx dotnet-inspect@0.9.1` when the PATH tool is missing, not exact 0.9.1 (build metadata is accepted), or cannot be verified. Default (unset) is off — those tools fail closed with install/update instructions rather than silently fetching and executing a package.
 
 ## Update / init freshness checks
 

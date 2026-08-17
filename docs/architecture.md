@@ -217,7 +217,7 @@ The `maf-release-watcher` workflow runs weekly + on-demand, detecting new MAF re
 | `.github/skills/maf-obsolete-api-registry/registry.yaml` | ✅ | `maf-doctor registry-extract` emits draft entries; watcher appends via `>> $REGISTRY`. **Pinned by test** `RegistryExtractCommandTests.Additivity_DraftEntries_AppendedToExistingRegistry_PreserveAllOriginalEntries`. |
 | `docs/compatibility-matrix.md` | ✅ | `.github/scripts/update_compat_matrix.py` inserts at top of data section; checks for duplicate version rows (no-op on re-run). Idempotency documented in the script's docstring. |
 | `guides/maf-<NEW-VERSION>-migration-guide.md` | ✅ | `.github/scripts/gen_guide_section.py` writes a NEW per-version file. If the file already exists, the AUTO-GENERATED region is overwritten but the `## Human additions` heading and everything below it is preserved. The 1.3.0 guide is never touched. |
-| `.maf-version` (tracked version pointer) | ✅ (overwritten cleanly) | One-line file; the watcher writes the new latest version. The old value is replaced — but the old version's registry/matrix/guide data stays intact (rows above). |
+| `.maf-version` (tracked version pointer) | ✅ (overwritten cleanly) | One-line file; the watcher writes the next pending stable version. The old value is replaced — but the old version's registry/matrix/guide data stays intact (rows above). |
 
 ### What's NOT additive (the code plane — requires a human PR)
 
@@ -233,8 +233,8 @@ The `maf-release-watcher` workflow runs weekly + on-demand, detecting new MAF re
 1. **Watcher fires** (weekly Thursday 06:00 UTC cron OR manual `gh workflow run maf-release-watcher.yml`; a manual run can set `maf_version` for a specific version and `push_target` for a safe dry-run against a throwaway branch).
 2. **Detection step** reads NuGet's stable-version index and selects the oldest version newer than `.maf-version`. If another watcher PR is open, it exits as a clean no-op until that PR merges or closes; this serializes the backlog.
 3. **Major-version check** sets `is_major=true` for X.0 bumps. **Majors are NOT auto-committed** — they escalate to a `maf-release,needs-review` tracking issue (with the breaking-API diffs attached as run artifacts) for human-driven migration. Minor/patch bumps continue automatically.
-4. **dotnet-inspect diff** runs for each MAF NuGet package; output captured (and uploaded as run artifacts for reviewer access).
-5. **`registry-extract` CLI** parses each diff, emits draft YAML entries; the append step de-dupes them against existing entry ids (idempotent on re-run).
+4. **Package planning + dotnet-inspect diff** resolves and scans the targeted release-critical surface set declared in `.github/maf-package-surfaces.json` (currently ten; this is not a claim of exhaustive first-party package coverage). Exact package versions, lifecycle events, and deterministic artifact names are recorded in `maf-package-plan.json`; every diff is independently validated and uploaded with its result ledger.
+5. **`registry-extract` CLI** consumes each validated `--diff-file` (no repeated network diff), emits package-scoped draft YAML entries, and records success/failure plus generated-entry counts for every surface in `maf-registry-extraction-results.json`. The append step de-dupes drafts against existing entry ids; package-scoped REVIEW drafts cover extraction failures and structural changes outside the extractor's removed/signature recipes.
 6. **Append step** appends the de-duplicated drafts to the live `registry.yaml`. A separator comment marks the auto-appended region.
 7. **Matrix update** inserts a new top row in `compatibility-matrix.md`.
 8. **Guide generation** writes a per-version file `guides/maf-X.Y.0-migration-guide.md` and regenerates the cumulative guide (existing per-version guides untouched).

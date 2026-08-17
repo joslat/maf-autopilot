@@ -111,7 +111,7 @@ public sealed class TourTool
 
         // — Upgrade planning —
         new("MafPreUpgradeDryRun", "Upgrade", "\"What would break if I upgraded X to Y?\" — combines `MafDiffPackage` with repo grep. Run before any version bump."),
-        new("MafDiffPackage", "Upgrade", "Wrap `dotnet-inspect@0.7.8 diff` for two NuGet versions. Surfaces every API change."),
+        new("MafDiffPackage", "Upgrade", "Wrap the supported `dotnet-inspect 0.9.1 diff` format for two NuGet versions. Surfaces every API change."),
         new("MafMigrationPath", "Upgrade", "Multi-step migration planner — walks version-keyed guide metadata, returns ordered intermediate-step sections."),
         new("MafDetectSourceFramework", "Cross-framework migration", "Inventory Semantic Kernel usage and tag each construct by migration strategy (🌉 bridgeable / 🔁 rewrite / 🏗 re-architect) + an EASY/MEDIUM/HARD verdict. The work-list for the `maf-migrate-from` flow. CLI: `maf-doctor migrate-scan`. Mappings: `maf://migrate-from?source=semantic-kernel`."),
 

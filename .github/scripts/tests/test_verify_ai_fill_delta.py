@@ -1,0 +1,367 @@
+"""Adversarial tests for immutable watcher-scaffold obligations."""
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from verify_ai_fill_delta import (  # noqa: E402
+    build_obligations,
+    recover_canonical_obligations,
+    serialize_obligations,
+    verify_obligations,
+)
+
+
+def _write(root: Path, relative: str, text: str) -> None:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _registry() -> dict:
+    return {
+        "schema_version": 1,
+        "entries": [
+            {
+                "id": "MAF113-HISTORY-001",
+                "package": "Microsoft.Agents.AI",
+                "version_introduced": "1.13.0",
+                "fix_description": "historical",
+            },
+            {
+                "id": "MAF114-CORE-001",
+                "package": "Microsoft.Agents.AI",
+                "version_introduced": "1.14.0",
+                "fix_description": "TODO",
+            },
+            {
+                "id": "MAF114-REVIEW-001",
+                "package": "Microsoft.Agents.AI.Harness",
+                "version_introduced": "1.14.0",
+                "fix_description": "TODO",
+            },
+        ],
+    }
+
+
+TARGET_GUIDE = """# MAF 1.14.0 Migration Guide
+
+<!-- AUTO-GENERATED START — anything between AUTO-GENERATED START and AUTO-GENERATED END is overwritten on re-run -->
+
+## Versions
+
+- Migrating from: `1.13.0`
+- Migrating to: `1.14.0`
+
+## Package API Evidence
+
+### Microsoft.Agents.AI
+
+```text
+- [Removed] Agent.RunAsync()
+```
+
+## Release Notes Extract
+
+Official evidence.
+
+## Breaking Changes (requires human verification)
+
+TODO fill this review section.
+
+<!-- AUTO-GENERATED END -->
+
+## Human additions
+
+Preserved suffix.
+"""
+
+
+TOOL = '''internal static class CompatibilityTool
+{
+    internal static readonly object Matrix = new()
+        {
+            ["1.14.0"] = """
+                ## MAF 1.14.0 Compatibility
+                target TODO
+                """,
+
+            ["1.13.0"] = """
+                ## MAF 1.13.0 Compatibility
+                historical
+                """,
+        };
+}
+'''
+
+
+def _scaffold(root: Path) -> tuple[dict, bytes]:
+    _write(root, ".maf-version", "1.14.0\n")
+    _write(
+        root,
+        ".github/skills/maf-obsolete-api-registry/registry.yaml",
+        yaml.safe_dump(_registry(), sort_keys=False),
+    )
+    _write(root, "guides/maf-1.13.0-migration-guide.md", "historical guide\n")
+    _write(root, "guides/maf-1.14.0-migration-guide.md", TARGET_GUIDE)
+    _write(
+        root,
+        "docs/compatibility-matrix.md",
+        "matrix prefix\n| **1.14.0** | target TODO |\n| **1.13.0** | historical |\ntracking 1.14.0\n",
+    )
+    _write(root, "src/maf-autopilot/Tools/CompatibilityTool.cs", TOOL)
+    doc = build_obligations(
+        root,
+        old_version="1.13.0",
+        target_version="1.14.0",
+        base_commit="a" * 40,
+        target_branch="release-watcher/maf-1.14.0",
+    )
+    raw = serialize_obligations(doc)
+    path = root / ".github/maf-scaffold-obligations/maf-1.14.0.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(raw)
+    return doc, raw
+
+
+def _fill_registry(root: Path) -> None:
+    path = root / ".github/skills/maf-obsolete-api-registry/registry.yaml"
+    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    doc["entries"] = [
+        entry for entry in doc["entries"] if entry["id"] != "MAF114-REVIEW-001"
+    ]
+    doc["entries"].append(
+        {
+            "id": "MAF114-HARNESS-001",
+            "package": "Microsoft.Agents.AI.Harness",
+            "version_introduced": "1.14.0",
+            "fix_description": "Concrete replacement",
+        }
+    )
+    path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+
+
+def _filled(root: Path) -> tuple[dict, bytes]:
+    doc, raw = _scaffold(root)
+    _fill_registry(root)
+    return doc, raw
+
+
+def test_allows_only_target_fill_regions_and_review_replacement(tmp_path: Path):
+    doc, raw = _filled(tmp_path)
+    guide = tmp_path / "guides/maf-1.14.0-migration-guide.md"
+    guide.write_text(guide.read_text().replace("TODO fill this review section.", "Concrete migration."))
+    matrix = tmp_path / "docs/compatibility-matrix.md"
+    matrix.write_text(matrix.read_text().replace("target TODO", "target filled"))
+    tool = tmp_path / "src/maf-autopilot/Tools/CompatibilityTool.cs"
+    tool.write_text(tool.read_text().replace("target TODO", "target filled"))
+    assert verify_obligations(doc, tmp_path, raw) == []
+
+
+def test_rejects_deleted_or_reversioned_generated_id(tmp_path: Path):
+    doc, raw = _filled(tmp_path)
+    path = tmp_path / ".github/skills/maf-obsolete-api-registry/registry.yaml"
+    registry = yaml.safe_load(path.read_text())
+    next(e for e in registry["entries"] if e["id"] == "MAF114-CORE-001")["version_introduced"] = "1.15.0"
+    path.write_text(yaml.safe_dump(registry, sort_keys=False))
+    assert any("required target registry id" in e for e in verify_obligations(doc, tmp_path, raw))
+
+
+def test_rejects_review_retention_or_wrong_package_replacement(tmp_path: Path):
+    doc, raw = _scaffold(tmp_path)
+    errors = verify_obligations(doc, tmp_path, raw)
+    assert any("must be replaced" in error for error in errors)
+    assert any("same-package" in error for error in errors)
+
+
+def test_additive_scaffold_can_record_zero_generated_registry_entries(tmp_path: Path):
+    _scaffold(tmp_path)
+    registry_path = tmp_path / ".github/skills/maf-obsolete-api-registry/registry.yaml"
+    registry = yaml.safe_load(registry_path.read_text())
+    registry["entries"] = [
+        entry for entry in registry["entries"] if entry["version_introduced"] != "1.14.0"
+    ]
+    registry_path.write_text(yaml.safe_dump(registry, sort_keys=False))
+    doc = build_obligations(
+        tmp_path,
+        old_version="1.13.0",
+        target_version="1.14.0",
+        base_commit="a" * 40,
+        target_branch="release-watcher/maf-1.14.0",
+    )
+    raw = serialize_obligations(doc)
+    contract = tmp_path / ".github/maf-scaffold-obligations/maf-1.14.0.json"
+    contract.write_bytes(raw)
+    assert doc["registry"]["generated_target_entries"] == []
+    assert verify_obligations(doc, tmp_path, raw) == []
+
+
+@pytest.mark.parametrize(
+    ("relative", "old", "new", "message"),
+    [
+        (
+            ".github/skills/maf-obsolete-api-registry/registry.yaml",
+            "fix_description: historical",
+            "fix_description: rewritten",
+            "historical registry",
+        ),
+        ("guides/maf-1.13.0-migration-guide.md", "historical", "rewritten", "historical guide"),
+        ("guides/maf-1.14.0-migration-guide.md", "Official evidence.", "erased evidence.", "target-guide"),
+        ("docs/compatibility-matrix.md", "historical |", "rewritten |", "matrix suffix"),
+        ("src/maf-autopilot/Tools/CompatibilityTool.cs", "historical", "rewritten", "CompatibilityTool suffix"),
+        (".maf-version", "1.14.0", "1.13.0", ".maf-version"),
+    ],
+)
+def test_rejects_protected_history_evidence_and_version(
+    tmp_path: Path, relative: str, old: str, new: str, message: str
+):
+    doc, raw = _filled(tmp_path)
+    path = tmp_path / relative
+    path.write_text(path.read_text().replace(old, new))
+    assert any(message in error for error in verify_obligations(doc, tmp_path, raw))
+
+
+def test_rejects_modified_obligations_copy(tmp_path: Path):
+    doc, raw = _filled(tmp_path)
+    path = tmp_path / ".github/maf-scaffold-obligations/maf-1.14.0.json"
+    path.write_text(path.read_text().replace("maf-release-watcher", "attacker"))
+    assert any("differs" in error for error in verify_obligations(doc, tmp_path, raw))
+
+
+def _git(repo: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", "-C", str(repo), *args], capture_output=True, text=True, check=True
+    )
+    return result.stdout.strip()
+
+
+def _commit(repo: Path, message: str) -> str:
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", message)
+    return _git(repo, "rev-parse", "HEAD")
+
+
+def _history_repo(tmp_path: Path, base_version: str = "1.13.0") -> tuple[Path, str]:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    _write(repo, ".maf-version", f"{base_version}\n")
+    return repo, _commit(repo, "base")
+
+
+def _add_contract(repo: Path, base: str, target: str, branch: str) -> tuple[str, bytes, Path]:
+    _write(repo, ".maf-version", f"{target}\n")
+    document = {
+        "schema_version": 1,
+        "scaffold": {
+            "source": "maf-release-watcher",
+            "base_commit": base,
+            "target_branch": branch,
+            "old_version": "1.13.0",
+            "target_version": target,
+        },
+    }
+    raw = serialize_obligations(document)
+    path = repo / f".github/maf-scaffold-obligations/maf-{target}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(raw)
+    return _commit(repo, "scaffold"), raw, path
+
+
+def test_history_recovers_first_main_bound_scaffold_contract(tmp_path: Path):
+    repo, base = _history_repo(tmp_path)
+    head, raw, _ = _add_contract(repo, base, "1.14.0", "dry-run/custom")
+    assert recover_canonical_obligations(
+        repo, base_sha=base, head_sha=head, base_ref="main", head_ref="dry-run/custom"
+    ) == raw
+
+
+def test_history_rejects_modified_contract(tmp_path: Path):
+    repo, base = _history_repo(tmp_path)
+    _, _, path = _add_contract(repo, base, "1.14.0", "release-watcher/maf-1.14.0")
+    path.write_text(path.read_text().replace("maf-release-watcher", "attacker"))
+    head = _commit(repo, "tamper")
+    with pytest.raises(ValueError, match="changed at commit"):
+        recover_canonical_obligations(
+            repo,
+            base_sha=base,
+            head_sha=head,
+            base_ref="main",
+            head_ref="release-watcher/maf-1.14.0",
+        )
+
+
+def test_history_rejects_deleted_then_readded_contract(tmp_path: Path):
+    repo, base = _history_repo(tmp_path)
+    _, raw, path = _add_contract(repo, base, "1.14.0", "release-watcher/maf-1.14.0")
+    path.unlink()
+    _commit(repo, "delete contract")
+    path.write_bytes(raw)
+    head = _commit(repo, "readd contract")
+    with pytest.raises(ValueError, match="missing at commit"):
+        recover_canonical_obligations(
+            repo,
+            base_sha=base,
+            head_sha=head,
+            base_ref="main",
+            head_ref="release-watcher/maf-1.14.0",
+        )
+
+
+def test_version_reversion_cannot_erase_contract_gate(tmp_path: Path):
+    repo, base = _history_repo(tmp_path)
+    _add_contract(repo, base, "1.14.0", "release-watcher/maf-1.14.0")
+    _write(repo, ".maf-version", "1.13.0\n")
+    head = _commit(repo, "revert version")
+    with pytest.raises(ValueError, match="HEAD .maf-version"):
+        recover_canonical_obligations(
+            repo,
+            base_sha=base,
+            head_sha=head,
+            base_ref="main",
+            head_ref="release-watcher/maf-1.14.0",
+        )
+
+
+def test_version_bump_without_contract_fails_closed(tmp_path: Path):
+    repo, base = _history_repo(tmp_path)
+    _write(repo, ".maf-version", "1.14.0\n")
+    head = _commit(repo, "uncontracted bump")
+    with pytest.raises(ValueError, match="no obligations"):
+        recover_canonical_obligations(
+            repo, base_sha=base, head_sha=head, base_ref="main", head_ref="feature"
+        )
+
+
+def test_ordinary_infrastructure_pr_without_contract_is_not_applicable(tmp_path: Path):
+    repo, base = _history_repo(tmp_path)
+    _write(repo, "README.md", "ordinary change\n")
+    head = _commit(repo, "ordinary")
+    assert recover_canonical_obligations(
+        repo, base_sha=base, head_sha=head, base_ref="main", head_ref="feature"
+    ) is None
+
+
+def test_prior_release_contract_on_main_does_not_block_next_release(tmp_path: Path):
+    repo, original = _history_repo(tmp_path)
+    _, old_raw, old_path = _add_contract(repo, original, "1.14.0", "release-watcher/maf-1.14.0")
+    # Model the filled 1.14 contract having merged to main, then create 1.15.
+    base = _git(repo, "rev-parse", "HEAD")
+    old_path.write_bytes(old_raw)
+    head, new_raw, _ = _add_contract(repo, base, "1.15.0", "release-watcher/maf-1.15.0")
+    assert recover_canonical_obligations(
+        repo,
+        base_sha=base,
+        head_sha=head,
+        base_ref="main",
+        head_ref="release-watcher/maf-1.15.0",
+    ) == new_raw

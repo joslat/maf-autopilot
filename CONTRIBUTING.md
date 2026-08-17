@@ -27,13 +27,14 @@ All test executions must pass. CI gates any PR that breaks them.
 
 ## Adding a registry entry (`.github/skills/maf-obsolete-api-registry/registry.yaml`)
 
-Each entry maps a real CS0618 / CS0246 / silent-runtime-failure pattern to a deterministic fix. The schema is enforced at runtime by `Data/RegistryModels.cs`.
+Each entry maps a compiler-diagnosed, binary-breaking, or silent-runtime-failure pattern to a deterministic fix. The schema is enforced at runtime by `Data/RegistryModels.cs`.
 
-1. **ID convention:** `MAF<version>-<AREA>-<NNN>` (e.g., `MAF130-FAN-IN-001`, `MAF130-THREAD-001`). Three digits, zero-padded.
-2. **Populate every field** — `id, package, version_introduced, type, method, obsolete_signature, replacement_signature, argument_order_change, fix_description, example_before, example_after, cs_warning, guide_section, dotnet_inspect_detectable, notes`. The registry's value lives in completeness; partial entries silently regress.
-3. **`cs_warning`:** `CS0618`, `CS0246`, or `RUNTIME_SILENT` (for fan-in starvation–class bugs).
-4. **`dotnet_inspect_detectable`:** `true` if `dotnet-inspect@0.7.8+` flags this statically; `false` if only the compiler catches it (transitive obsoletions, overload-resolution surprises, project-local `[Obsolete]`).
-5. **Test it.** The inverted-haystack in `RegistryService` indexes every string field. Add a `[Theory]` row to `src/maf-autopilot.Tests/RegistryServiceTests.cs` proving your new term is searchable.
+1. **ID convention:** `MAF<version>-[<SCOPE>-]<AREA>-<NNN>` (e.g., `MAF130-FAN-IN-001`, `MAF114-HARNESS-OPTIONS-001`). Scope is optional, uppercase, and hyphen-delimited; the sequence is three digits, zero-padded.
+2. **Populate every field** — `id, package, version_introduced, type, method, obsolete_signature, replacement_signature, argument_order_change, fix_description, example_before, example_after, cs_warning, guide_section, dotnet_inspect_detectable, notes, applies_to_codebases`. The registry's value lives in completeness; partial entries silently regress.
+3. **`cs_warning` is reviewed evidence, never a draft guess.** It must match exactly `CS\d{4}`, `RUNTIME_SILENT`, or `BINARY_BREAK`; `TODO`, blank values, combined codes, and prose fail both registry gates. Compile a representative before-migration call site to determine the exact diagnostic when the API diff alone cannot. Use `BINARY_BREAK` only when source still compiles but an already-compiled consumer can fail at runtime because the binary signature was replaced (for example, adding an optional parameter instead of preserving the original overload).
+4. **`applies_to_codebases`:** always set the version-era marker (`pre-X.Y.Z`, `X.Y.Z+`, or exact `X.Y.Z`). Only the exact legacy marker `pre-1.0.0` receives the historical-documentation verification exemption.
+5. **`dotnet_inspect_detectable`:** `true` if the pinned `dotnet-inspect@0.9.1` evidence flags this statically; `false` if only the compiler catches it (transitive obsoletions, overload-resolution surprises, project-local `[Obsolete]`).
+6. **Test it.** The inverted-haystack in `RegistryService` indexes every string field. Add a `[Theory]` row to `src/maf-autopilot.Tests/RegistryServiceTests.cs` proving your new term is searchable.
 
 ## Adding a skill (`.github/skills/<name>/SKILL.md`)
 
@@ -151,7 +152,7 @@ Helpers throw exceptions; entry points convert exceptions to user-visible errors
 - **Don't duplicate registry data.** Many entries can use the same NuGet package or guide section — that's a *reference*, not a *copy*.
 - **Don't add a skill for a one-off pattern.** If it'll fire once per migration, put it in the registry. Skills are reusable procedures.
 - **Don't relax the build-verified loop.** Every migration agent run ends green or stays open. Silent partial migrations were the original bug class that motivated this project.
-- **Don't pin `dotnet-inspect` below v0.7.8.** Earlier versions miss `[Obsolete]` at the overload level — the closed gap is the whole story.
+- **Use the repository's exact `dotnet-inspect` 0.9.1 pin.** v0.7.8 was the first release to surface `[Obsolete]` at the overload level, but 0.9.1 also avoids the Unix redirected-output corruption that invalidated earlier watcher evidence.
 
 ## Where to start
 

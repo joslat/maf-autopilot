@@ -54,7 +54,7 @@ MafDiffPackage("Microsoft.Agents.AI", "<current>", "1.3.0")
 MafDiffPackage("Microsoft.Agents.AI.Workflows", "<current>", "1.3.0")
 ```
 
-The tool wraps `dotnet-inspect@0.7.8 -- diff` and post-processes the markdown output into a structured `DiffParseResult` with separate `Breaking` / `Additive` / `NewlyObsolete` lists. Each finding is registry-joined where possible — the report tells you the canonical fix inline.
+The tool targets the exact `dotnet-inspect@0.9.1 -- diff` format and post-processes the markdown output into a structured `DiffParseResult` with separate `Breaking` / `Additive` / `NewlyObsolete` lists. Each finding is registry-joined where possible — the report tells you the canonical fix inline.
 
 > As of dotnet-inspect v0.7.8, `[Obsolete]` members appear in member listings. For ground-truth on what your code actually triggers (transitive obsoletions, overload-resolution surprises, project-local `[Obsolete]`), the migration agent's `MafRunCs0618Hunt` is authoritative — but for an audit phase before any code change, the diff is sufficient.
 

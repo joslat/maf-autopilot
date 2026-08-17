@@ -74,7 +74,11 @@ if (args.Length > 0 && (args[0] is "--help" or "-h" or "help"))
                                             + a complexity verdict. (--source semantic-kernel)
           badge [path]                      Emit a shields.io health-badge JSON payload.
           verify-registry                   Validate the obsolete-API registry (CI gate).
-          registry-extract                  Extract registry entries (CI helper).
+          registry-extract <package> <old-package-version> <new-package-version>
+              [--diff-file <path>] [--release-version <X.Y.Z>] [--id-scope <UPPER-HYPHEN>]
+                                            Extract registry entries (CI helper). A captured UTF-8
+                                            diff avoids rerunning dotnet-inspect; release version
+                                            and ID scope separate package evidence from release IDs.
           --version, -v                     Print the installed version.
           --help, -h                        Show this help.
 

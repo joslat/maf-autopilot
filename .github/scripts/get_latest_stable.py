@@ -30,8 +30,9 @@ def latest_stable(raw: str) -> str:
     SEC-28: a version is prerelease iff its SemVer core (the part before any '+'
     build-metadata) contains a hyphen. The old denylist only knew -alpha/-beta/-rc/
     -preview, so any other label (-dev, -nightly, -daily, -ci, …) was auto-processed
-    as stable. A manual workflow_dispatch with an explicit `maf_version` remains the
-    path for prereleases.
+    as stable. The release watcher intentionally processes stable releases only;
+    its manual input is an assertion of the next pending stable version, not a
+    prerelease override.
     """
     raw = (raw or "").strip()
     if not raw:

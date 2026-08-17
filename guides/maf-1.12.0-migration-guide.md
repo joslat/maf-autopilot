@@ -34,9 +34,10 @@
 
 diff --package Microsoft.Agents.AI@1.11.1..1.12.0
 # NOTE: the raw dotnet-inspect capture for this run was TRUNCATED/garbled (the
-# watcher merged stderr into the diff via `2>&1`, corrupting it — see Known
-# Misalignments). The coherent summary below is reconciled from the per-member
-# registry diff entries (MAF112-*), which came from a clean dotnet-inspect run.
+# 0.7.8 Linux Native-AOT runtime overwrote offset zero when stdout was redirected
+# to a regular file; `2>&1` also mixed tips into the evidence but was not the
+# truncation root cause). The coherent summary below is reconciled from the
+# per-member registry diff entries (MAF112-*), which used an OS pipe and were clean.
 
 ### Microsoft.Agents.AI — breaking
 - Member 'GetSkillsAsync' signature changed  (AgentSkillsSource, AgentFileSkillsSource): inserts a required AgentSkillsSourceContext first param
@@ -88,7 +89,7 @@ No `[Obsolete]` deprecations. One hard **removal** (a compile error, not a warni
 
 ## Known Misalignments
 
-**The watcher first misclassified 1.12.0 as "additive."** Two upstream signals failed on the same run: (1) the GitHub release notes weren't published yet (empty placeholder), and (2) the watcher's `dotnet-inspect` diff capture was **truncated/garbled** (its `> diff-core.txt 2>&1` merge corrupted the output, so only additions survived and the removals/signature-changes were lost). The classifier saw no breaking signal and labeled it additive. The **keep-breaking-red gate + independent `registry-extract`** (which runs its own clean diff) caught the real breaking changes and held the PR red — the safety net worked; the auto-filled matrix/guide/`CompatibilityTool` were then corrected by hand. The diff-capture truncation is fixed separately so future runs classify correctly.
+**The watcher first misclassified 1.12.0 as "additive."** Two upstream signals failed on the same run: (1) the GitHub release notes weren't published yet (empty placeholder), and (2) `dotnet-inspect` 0.7.8's Linux Native-AOT runtime repeatedly wrote redirected stdout at file offset zero, leaving a **truncated/garbled** fragment; merging stderr via `2>&1` added noise but was not the truncation mechanism. The classifier saw no breaking signal and labeled it additive. The **keep-breaking-red gate + independent `registry-extract`** (whose child output travels through an OS pipe) caught the real breaking changes and held the PR red — the safety net worked; the auto-filled matrix/guide/`CompatibilityTool` were then corrected by hand. The current watcher pins and verifies a fixed tool release, validates every targeted package report, and passes those same validated files to `registry-extract --diff-file` instead of performing an independent second network diff.
 
 <!-- AUTO-GENERATED END -->
 

@@ -5,6 +5,7 @@ member names are sanitized out of the unfenced New Patterns bullets.
 from __future__ import annotations
 
 import os
+import json
 import shutil
 import subprocess
 import sys
@@ -16,9 +17,91 @@ import pytest
 SCRIPT = Path(__file__).resolve().parents[1] / "gen_guide_section.py"
 
 
+def _full_diff(package: str, old: str, new: str, fragment: str) -> str:
+    rows = [line for line in fragment.splitlines() if line.startswith("- ")]
+    breaking = [
+        row for row in rows if "was removed" in row or "signature changed" in row
+    ]
+    potentially_breaking = [
+        row for row in rows
+        if "Base type changed" in row or "Type was sealed" in row
+    ]
+    additive = [
+        row for row in rows
+        if row not in breaking and row not in potentially_breaking
+    ]
+    counts = []
+    if breaking:
+        counts.append(f"{len(breaking)} breaking")
+    if potentially_breaking:
+        counts.append(f"{len(potentially_breaking)} potentially breaking")
+    if additive:
+        counts.append(f"{len(additive)} additive")
+    sections = []
+    if breaking:
+        sections.append("## Breaking Changes\n\n### FixtureType\n\n" + "\n".join(breaking))
+    if potentially_breaking:
+        sections.append(
+            "## Potentially Breaking Changes\n\n### FixtureType\n\n"
+            + "\n".join(potentially_breaking)
+        )
+    if additive:
+        sections.append("## Additive Changes\n\n### FixtureType\n\n" + "\n".join(additive))
+    return (
+        f"# API Diff: {package}\n\n"
+        "| Field | Value |\n| ----- | ----- |\n"
+        f"| Versions | **{old}** -> **{new}** |\n"
+        f"| Summary | **Summary:** {', '.join(counts)} across 1 type |\n\n"
+        + "\n\n".join(sections)
+        + "\n"
+    )
+
+
 def _run(ws: Path, old: str, new: str, notes: str, diff: str) -> str:
     (ws / "release-notes.txt").write_text(notes, encoding="utf-8")
-    (ws / "diff-core.txt").write_text(diff, encoding="utf-8")
+    package = "Microsoft.Agents.AI"
+    complete_diff = _full_diff(package, old, new, diff)
+    (ws / "diff-core.txt").write_text(complete_diff, encoding="utf-8")
+    plan = {
+        "schema_version": 1,
+        "release": {"old_version": old, "new_version": new},
+        "surfaces": [
+            {
+                "order": 0,
+                "slug": "core",
+                "package": package,
+                "id_scope": "",
+                "status": "diffable",
+                "old_package_version": old,
+                "new_package_version": new,
+                "diff_artifact": "diff-core.txt",
+                "stderr_artifact": "diff-core.stderr.txt",
+                "reason": "fixture",
+            }
+        ],
+        "lifecycle_events": [],
+    }
+    results = {
+        "schema_version": 1,
+        "release": plan["release"],
+        "surfaces": [
+            {
+                "order": 0,
+                "slug": "core",
+                "package": package,
+                "status": "diffable",
+                "diff_artifact": "diff-core.txt",
+                "stderr_artifact": "diff-core.stderr.txt",
+                "attempted": True,
+                "tool_exit_code": 0,
+                "validation_status": "passed",
+                "validation_errors": [],
+            }
+        ],
+    }
+    (ws / "diff-core.stderr.txt").write_text("", encoding="utf-8")
+    (ws / "maf-package-plan.json").write_text(json.dumps(plan), encoding="utf-8")
+    (ws / "maf-diff-results.json").write_text(json.dumps(results), encoding="utf-8")
     env = os.environ.copy()
     env["OLD_VERSION"] = old
     env["NEW_VERSION"] = new
@@ -57,7 +140,7 @@ def test_breaking_release_keeps_todo(ws):
     diff = "- Member 'UseScriptApproval' was removed\n"
     guide = _run(ws, "1.11.0", "1.11.1", notes, diff)
 
-    assert "TODO: Review the diff above and list breaking changes here" in guide
+    assert "TODO: Review every package evidence block" in guide
     assert "this is an **additive** release" not in guide
 
 
@@ -66,7 +149,15 @@ def test_removal_only_diff_is_treated_breaking(ws):
     notes = "## Changes:\n* c1 .NET: tidy up internals\n"
     diff = "- Member 'SomethingGone' was removed\n"
     guide = _run(ws, "1.12.0", "1.12.1", notes, diff)
-    assert "TODO: Review the diff above" in guide
+    assert "TODO: Review every package evidence block" in guide
+
+
+def test_potentially_breaking_summary_is_visible_in_guide(ws):
+    notes = "## Changes:\n* c1 .NET: adjust inheritance\n"
+    diff = "- Base type changed from 'OldBase' to 'NewBase'\n"
+    guide = _run(ws, "1.12.0", "1.12.1", notes, diff)
+    assert "`1` potentially-breaking API change row(s)" in guide
+    assert "TODO: Review every package evidence block" in guide
 
 
 def test_malicious_member_name_is_dropped_from_patterns(ws):

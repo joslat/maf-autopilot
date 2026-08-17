@@ -188,6 +188,8 @@ The semantic-review workflow does not need another stored secret. It uses the
 run's short-lived `GITHUB_TOKEN` with only `copilot-requests: write`; for this
 personally owned repository, GitHub bills those requests to the repository
 owner's Copilot seat. Copilot tools are not enabled in that workflow.
+The workflow lets Copilot CLI choose the seat's supported default model rather
+than pinning a model that may not be available to every account.
 
 **How to add:**
 1. GitHub repo → **Settings → Secrets and variables → Actions → New repository secret**

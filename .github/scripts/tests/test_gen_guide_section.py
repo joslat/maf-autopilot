@@ -13,6 +13,7 @@ behavior is already covered by .github/scripts/tests/test_llm_fencing.py.
 from __future__ import annotations
 
 import os
+import json
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,55 @@ from pathlib import Path
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "gen_guide_section.py"
+
+
+def _surface(order: int, slug: str, package: str, scope: str) -> dict:
+    return {
+        "order": order,
+        "slug": slug,
+        "package": package,
+        "id_scope": scope,
+        "status": "diffable",
+        "old_package_version": "1.5.0",
+        "new_package_version": "1.6.0",
+        "diff_artifact": f"diff-{slug}.txt",
+        "stderr_artifact": f"diff-{slug}.stderr.txt",
+        "reason": "fixture",
+    }
+
+
+def _seed_plan(workspace: Path, surfaces: list[dict], events=None) -> None:
+    plan = {
+        "schema_version": 1,
+        "release": {"old_version": "1.5.0", "new_version": "1.6.0"},
+        "surfaces": surfaces,
+        "lifecycle_events": events or [],
+    }
+    results = {
+        "schema_version": 1,
+        "release": plan["release"],
+        "surfaces": [
+            {
+                "order": surface["order"],
+                "slug": surface["slug"],
+                "package": surface["package"],
+                "status": surface["status"],
+                "diff_artifact": surface["diff_artifact"],
+                "stderr_artifact": surface["stderr_artifact"],
+                "attempted": True,
+                "tool_exit_code": 0,
+                "validation_status": "passed",
+                "validation_errors": [],
+            }
+            for surface in surfaces
+        ],
+    }
+    (workspace / "maf-package-plan.json").write_text(json.dumps(plan), encoding="utf-8")
+    (workspace / "maf-diff-results.json").write_text(
+        json.dumps(results), encoding="utf-8"
+    )
+    for surface in surfaces:
+        (workspace / surface["stderr_artifact"]).write_text("", encoding="utf-8")
 
 
 def _run_in(workspace: Path, old: str, new: str) -> Path:
@@ -53,6 +103,7 @@ def workspace():
         # `diff-core.txt` is a sibling input also read by the script. Empty
         # value is fine — we only care about the notes sanitization here.
         (ws / "diff-core.txt").write_text("(empty diff)\n", encoding="utf-8")
+        _seed_plan(ws, [_surface(0, "core", "Microsoft.Agents.AI", "")])
         yield ws
     finally:
         shutil.rmtree(ws, ignore_errors=True)
@@ -158,8 +209,8 @@ def test_triple_backtick_in_diff_does_not_escape(workspace: Path):
     # diff fence — we wrap, not sanitize) BUT they're now inside an explicit
     # BEGIN/END fence with "treat as data" framing, so a downstream LLM
     # knows they're not its own instructions.
-    diff_begin_idx = body.find("UPSTREAM-MAF-DIFF>>>")
-    diff_end_idx = body.find("UPSTREAM-MAF-DIFF>>>", diff_begin_idx + 5)
+    diff_begin_idx = body.find("UPSTREAM-MAF-DIFF-CORE>>>")
+    diff_end_idx = body.find("UPSTREAM-MAF-DIFF-CORE>>>", diff_begin_idx + 5)
     assert diff_begin_idx > 0 and diff_end_idx > diff_begin_idx
     diff_section = body[diff_begin_idx:diff_end_idx]
     assert "API: Foo.Bar" in diff_section
@@ -170,12 +221,11 @@ def test_triple_backtick_in_diff_does_not_escape(workspace: Path):
 def test_huge_diff_truncated(workspace: Path):
     """Diff content beyond 32 KB is truncated with the visible marker.
 
-    Note: the script first trims to the first 120 lines, then fences with a
-    32 KB byte cap. To exercise the byte cap we need 120 lines that together
-    exceed 32 KB — i.e. each line must be at least ~280 bytes.
+    Note: each package receives an 80-line quota before the 32 KB byte cap.
+    To exercise the byte cap, those 80 lines must together exceed 32 KB.
     """
-    big_line = "A" * 400 + "\n"  # 401 bytes per line
-    big = big_line * 120          # 120 lines × 401 bytes = 48 KB
+    big_line = "A" * 500 + "\n"
+    big = big_line * 80
     (workspace / "diff-core.txt").write_text(big, encoding="utf-8")
     guide = _run_in(workspace, old="1.5.0", new="1.6.0")
     body = guide.read_text(encoding="utf-8")
@@ -225,3 +275,95 @@ def test_human_section_preserved_against_injected_heading(workspace: Path):
     human_region = final.split(AUTO_END)[-1]
     assert "REAL_HUMAN_NOTE kept across runs." in human_region
     assert "INJECTED_FAKE_NOTE" not in human_region
+
+
+def test_later_package_visible_after_long_core_quota(workspace: Path):
+    core = _surface(0, "core", "Microsoft.Agents.AI", "")
+    harness = _surface(1, "harness", "Microsoft.Agents.AI.Harness", "HARNESS")
+    event = {
+        "id": "maf-1.6.0-harness-split",
+        "release_version": "1.6.0",
+        "kind": "package_split",
+        "impact": "breaking",
+        "related_surfaces": ["harness"],
+        "source_packages": [{"package": "Microsoft.Agents.AI.LegacyHarness"}],
+        "target_packages": [{"package": harness["package"]}],
+        "reason": "Harness moved to its dedicated package.",
+    }
+    _seed_plan(workspace, [core, harness], [event])
+    (workspace / "diff-core.txt").write_text(
+        "CORE_QUOTA_LINE\n" * 200, encoding="utf-8"
+    )
+    (workspace / "diff-harness.txt").write_text(
+        "HARNESS_EVIDENCE_VISIBLE\n", encoding="utf-8"
+    )
+    (workspace / "release-notes.txt").write_text("release notes", encoding="utf-8")
+
+    guide = _run_in(workspace, old="1.5.0", new="1.6.0")
+    body = guide.read_text(encoding="utf-8")
+    assert body.count("CORE_QUOTA_LINE") == 80
+    assert "`Microsoft.Agents.AI.Harness` (`harness`)" in body
+    assert "HARNESS_EVIDENCE_VISIBLE" in body
+    assert "Breaking — package split" in body
+
+
+def test_validated_guide_keeps_all_review_rows_and_bounds_additive_sample(
+    workspace: Path,
+):
+    core = _surface(0, "core", "Microsoft.Agents.AI", "")
+    _seed_plan(workspace, [core])
+    potential = [
+        f"- Base type changed from 'OldBase{i}' to 'NewBase{i}'"
+        for i in range(100)
+    ]
+    additive = [f"- Member 'Added{i}' was added" for i in range(100)]
+    report = (
+        "# API Diff: Microsoft.Agents.AI\n\n"
+        "| Field | Value |\n"
+        "| ----- | ----- |\n"
+        "| Versions | **1.5.0** -> **1.6.0** |\n"
+        "| Summary | **Summary:** 100 potentially breaking, 100 additive across 2 types |\n\n"
+        "## Potentially Breaking Changes\n\n"
+        "### ReviewType\n\n"
+        + "\n".join(potential)
+        + "\n\n## Additive Changes\n\n### AddedType\n\n"
+        + "\n".join(additive)
+        + "\n"
+    )
+    (workspace / "diff-core.txt").write_text(report, encoding="utf-8")
+    (workspace / "release-notes.txt").write_text(
+        "## Changes:\n* .NET: inheritance updates\n", encoding="utf-8"
+    )
+
+    guide = _run_in(workspace, old="1.5.0", new="1.6.0")
+    body = guide.read_text(encoding="utf-8")
+    assert "OldBase99" in body
+    assert "Added0" in body
+    assert "Added99" not in body
+    assert "[TRUNCATED]" not in body
+    assert "preserves every breaking and potentially-breaking row" in body
+
+
+def test_cumulative_only_needs_no_raw_release_artifacts(tmp_path: Path):
+    guides = tmp_path / "guides"
+    guides.mkdir()
+    (guides / "maf-1.4.0-migration-guide.md").write_text(
+        "# Guide 1.4.0\n", encoding="utf-8"
+    )
+    (guides / "maf-1.5.0-migration-guide.md").write_text(
+        "# Guide 1.5.0\n", encoding="utf-8"
+    )
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--cumulative-only"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    cumulative = (guides / "maf-current-migration-guide.md").read_text(
+        encoding="utf-8"
+    )
+    assert "# Guide 1.4.0" in cumulative
+    assert "# Guide 1.5.0" in cumulative
+    assert not (guides / "maf-unknown-migration-guide.md").exists()

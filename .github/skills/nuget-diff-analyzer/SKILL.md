@@ -1,11 +1,11 @@
 ---
 name: nuget-diff-analyzer
-description: "Post-processes dotnet-inspect@0.7.8 -- diff output into a categorised report (breaking / additive / newly-obsolete) with each finding cross-referenced to the MAF obsolete-API registry."
+description: "Post-processes the repository-pinned dotnet-inspect@0.9.1 -- diff output into a categorised report (breaking / additive / newly-obsolete) with each finding cross-referenced to the MAF obsolete-API registry."
 ---
 
 # nuget-diff-analyzer — structured NuGet version-diff reports
 
-> **⚡ Prefer the MCP tool.** The `maf-autopilot` MCP server exposes **`MafDiffPackage(packageId, oldVersion, newVersion)`** — it wraps `dotnet-inspect@0.7.8 -- diff`, parses the markdown output into a structured `DiffParseResult` (Breaking / Additive / NewlyObsolete lists), and cross-references each finding against the obsolete-API registry. The procedural walkthrough below is preserved for when you need to run the steps manually.
+> **⚡ Prefer the MCP tool.** The `maf-autopilot` MCP server exposes **`MafDiffPackage(packageId, oldVersion, newVersion)`** — it targets the exact `dotnet-inspect@0.9.1 -- diff` format, parses the markdown output into a structured `DiffParseResult` (Breaking / Additive / NewlyObsolete lists), and cross-references each finding against the obsolete-API registry. The procedural walkthrough below is preserved for when you need to run the steps manually.
 
 ## Why this exists
 
@@ -15,7 +15,7 @@ Raw `dotnet-inspect diff` output is markdown-pretty but unstructured — the LLM
 
 ```bash
 # Step 1: emit the raw diff
-dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff \
+dotnet-inspect diff \
   --package Microsoft.Agents.AI@1.2.0..1.3.0 --source https://api.nuget.org/v3/index.json
 
 # Step 2: read the output. It has the shape:
@@ -48,4 +48,4 @@ dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff
 
 ## Pin reminder
 
-**Use `dotnet-inspect@0.7.8` or later.** Earlier versions miss `[Obsolete]` at the overload level — see issue [#316](https://github.com/richlander/dotnet-inspect/issues/316). The pinned dnx invocation in the manual fallback above already reflects this.
+**Use exact `dotnet-inspect` 0.9.1.** Versions before 0.7.8 miss `[Obsolete]` at the overload level — see issue [#316](https://github.com/richlander/dotnet-inspect/issues/316) — and 0.9.1 avoids the redirected-output corruption encountered by the release watcher. Install it with `dotnet tool install --global dotnet-inspect --version 0.9.1` before running the direct invocation above.

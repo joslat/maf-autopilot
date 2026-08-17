@@ -45,7 +45,7 @@ on:
         description: 'MAF version to fill TODOs for (e.g. 1.4.0, 1.5.0)'
         required: true
       bot:
-        description: 'Coding Agent to assign (copilot|claude|codex). Default: copilot — the claude integrator''s model was deprecated (2026-06: "model not available for integrator claude-code"), so copilot/gpt-4.1 is the proven-working path. Repoint the claude agent at claude-opus-4.8 to use claude again.'
+        description: 'Coding Agent to assign (copilot|claude|codex). Default: copilot. Agent integrations choose an account-supported model; do not assume a named model is available.'
         required: false
         default: 'copilot'
       target_branch:
@@ -107,15 +107,6 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
-      - name: Compute helper variables
-        id: vars
-        env:
-          TARGET: ${{ inputs.target_version }}
-        run: |
-          DIGITS=$(echo "$TARGET" | tr -d '.')
-          echo "version_digits=$DIGITS" >> $GITHUB_OUTPUT
-          echo "Target: $TARGET — registry IDs start MAF${DIGITS}-"
-
       - name: Ensure required labels exist (idempotent)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -149,14 +140,14 @@ jobs:
           GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT || secrets.GITHUB_TOKEN }}
           GH_TOKEN_KIND: ${{ secrets.COPILOT_ASSIGN_PAT && 'pat' || 'github-token' }}
           TARGET: ${{ inputs.target_version }}
-          DIGITS: ${{ steps.vars.outputs.version_digits }}
           BRANCH: ${{ inputs.target_branch }}   # WM-28: blank → builder defaults to release-watcher/maf-<target>
         run: |
           # Render the issue body via a Python template helper. Previously
           # this was a ~180-line bash heredoc with every backtick escaped
           # (\`...\`); a single missed escape would have corrupted the
           # whole body. The helper reads ai_fill_issue_prompt.md.tpl and
-          # substitutes {{TARGET}} / {{DIGITS}} with no shell parsing.
+          # derives the major+minor registry ID segment, then substitutes the
+          # template placeholders with no shell parsing.
           ISSUE_BODY=$(python3 .github/scripts/build_ai_fill_issue_body.py)
 
           # WM-30: idempotent. Re-dispatching for the same version must not spawn a
@@ -210,9 +201,8 @@ jobs:
           # deprecated (the 2026-06 "model not available for integrator claude-code"
           # failure). That happens later, inside the agent's own async run, with no
           # signal back to this workflow. If a fill PR dies on a model error,
-          # re-dispatch with a different bot or repoint that integrator's model
-          # (claude -> claude-opus-4.8). The default bot is `copilot` because its
-          # model is the currently proven-working one.
+          # re-dispatch with a different enabled bot or update that integration to
+          # an account-supported model. The workflow does not pin a model name.
           needle_for() {
             case "$1" in
               copilot) echo "copilot-swe-agent" ;;

@@ -1,6 +1,6 @@
 ---
 name: cs0618-hunter
-description: "Detects and fixes CS0618 obsolete API warnings in .NET builds. The compiler is the authoritative source for what your project actually triggers — it catches transitive obsoletions, overload-resolution surprises, and project-local [Obsolete] attributes that static inspection cannot see. Pair with dotnet-inspect@0.7.8+ for the static / pre-build view."
+description: "Detects and fixes CS0618 obsolete API warnings in .NET builds. The compiler is the authoritative source for what your project actually triggers — it catches transitive obsoletions, overload-resolution surprises, and project-local [Obsolete] attributes that static inspection cannot see. Pair with the repository-pinned dotnet-inspect@0.9.1 for the static / pre-build view."
 ---
 
 # cs0618-hunter — compiler ground-truth for obsolete API usage
@@ -9,7 +9,7 @@ description: "Detects and fixes CS0618 obsolete API warnings in .NET builds. The
 
 ## Why the compiler stays authoritative
 
-`dotnet-inspect@0.7.8+` now surfaces `[Obsolete]` in member listings (PR [#318](https://github.com/richlander/dotnet-inspect/pull/318) closes issue [#316](https://github.com/richlander/dotnet-inspect/issues/316)). That's an excellent pre-build static check, but **three classes of obsoletion remain compiler-only**:
+`dotnet-inspect@0.7.8` was the first release to surface `[Obsolete]` in member listings (PR [#318](https://github.com/richlander/dotnet-inspect/pull/318) closes issue [#316](https://github.com/richlander/dotnet-inspect/issues/316)); this repository pins 0.9.1. That's an excellent pre-build static check, but **three classes of obsoletion remain compiler-only**:
 
 1. **Transitive obsoletions** — the API your code calls isn't obsolete, but it forwards to one that is.
 2. **Overload-resolution surprises** — a more-specific overload was added in a minor release and your literal types now bind to it.

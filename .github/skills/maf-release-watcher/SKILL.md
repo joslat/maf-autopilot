@@ -45,17 +45,17 @@ TRIGGER (cron or gh workflow run)
 │                                                                    │
 │  1.1  Select oldest untracked MAF stable from NuGet                │
 │       (clean no-op while any watcher scaffold PR is in flight)     │
-│  1.2  Run `dotnet-inspect diff` for Microsoft.Agents.AI[.Workflows]│
+│  1.2  Resolve + diff the targeted release-critical package surfaces│
 │  1.3  Fetch GitHub release notes from microsoft/agent-framework    │
 │  1.4  Run `python3 .github/scripts/update_compat_matrix.py`        │
 │          → inserts a new row at the top of compatibility-matrix.md │
 │  1.5  Run `python3 .github/scripts/gen_guide_section.py`           │
 │          → writes guides/maf-X.Y.Z-migration-guide.md              │
 │          → ALSO regenerates guides/maf-current-migration-guide.md  │
-│  1.6  Run `maf-doctor registry-extract` (the dotnet tool CLI)   │
-│          → emits draft registry entries, appended to registry.yaml │
+│  1.6  Run `registry-extract --diff-file` for validated surfaces   │
+│          → scoped drafts, no second network diff, then de-duplicate │
 │  1.7  Update .maf-version                                          │
-│  1.8  Upload diff-core.txt / diff-workflows.txt / release-notes.txt│
+│  1.8  Upload plan/diff+extraction ledgers/diff-*.txt/notes         │
 │          as workflow artefacts for reviewer audit                  │
 │  1.9  git checkout -b release-watcher/maf-X.Y.Z                    │
 │       git commit + git push (per-version branch, NOT main)         │
@@ -137,12 +137,14 @@ They exist because the data transformation is **deterministic** (parse JSON, ins
 ### `gen_guide_section.py`
 
 - **Inputs (via env vars)**: `OLD_VERSION`, `NEW_VERSION`
-- **Reads**: `diff-core.txt` (output of `dotnet-inspect diff`), `release-notes.txt` (output of `gh release view`)
+- **Reads**: `maf-package-plan.json`, `maf-diff-results.json`, every planned `diff-<surface>.txt`, and `release-notes.txt`
 - **Writes**:
   - `guides/maf-<NEW>-migration-guide.md` — per-version delta file
   - `guides/maf-current-migration-guide.md` — auto-regenerated cumulative concatenation of all per-version files (TOC at top, ascending version order)
 - **Idempotency on the per-version file**: re-runs preserve everything under the `## Human additions` heading; only the `AUTO-GENERATED START / END` block is overwritten.
 - **Banner**: every auto-generated per-version file now opens with a callout that says it's a **delta only** and points readers at the chain or at the cumulative file. This is what makes the per-version files honest about their scope.
+- **Per-package evidence**: every validated surface preserves all breaking and potentially-breaking rows plus a bounded additive sample; untrusted diagnostics retain an 80-line cap. A long Core report cannot crowd Harness/Hosting/later evidence out of the guide.
+- **Cumulative-only repair**: `python3 .github/scripts/gen_guide_section.py --cumulative-only` rebuilds the cumulative guide solely from checked-in per-version guides; it needs no ephemeral release artifacts.
 
 ---
 
@@ -181,7 +183,7 @@ After Stage 3 (Copilot's PR):
 
 ## Limitations the pipeline can't solve
 
-- **Obsolete-by-attribute APIs not in the diff**: `dotnet-inspect` v0.7.8 surfaces `[Obsolete]` at the type/member level. But the COMPILER is still ground-truth for transitive obsoletions, overload-resolution surprises, and project-local `[Obsolete]` decorations. Run `MafRunCs0618Hunt` against a real project pinned to the new version after the watcher commits to catch these.
+- **Obsolete-by-attribute APIs not in the diff**: the pinned `dotnet-inspect` surfaces `[Obsolete]` at the type/member level. But the COMPILER is still ground-truth for transitive obsoletions, overload-resolution surprises, and project-local `[Obsolete]` decorations. Run `MafRunCs0618Hunt` against a real project pinned to the new version after the watcher commits to catch these.
 - **Behavioural changes the diff can't see**: a method whose signature is identical but whose runtime semantics changed (e.g. "now returns ValueTask<T> instead of starving silently") is invisible to `dotnet-inspect`. Release-notes interpretation by Copilot in Stage 3 catches some of these but not all.
 - **Whether the new version is actually *good***: the pipeline tells you what changed, not whether you should upgrade. That call is human.
 

@@ -200,7 +200,7 @@ dotnet test src/maf-autopilot.Tests/ \
 | `verify-registry` CI gate is red after fill | A registry entry still has `TODO`/`TBD`/`XXX` | Fix the placeholder, push to the branch |
 | `push_target` rejected ("must not be a protected branch") | `push_target=main` was passed | Omit `push_target` — the watcher manages its own branch |
 | Copilot PR sits unapproved for > 24 h | Copilot's required-status-check approval is pending | Approve from the PR's "Copilot code review" section, or fill manually |
-| `dnx is not found` error | Stale `dnx` invocation in a fork / old cached step | Ensure workflow uses `dotnet tool install --global dotnet-inspect --version 0.7.8` |
+| `dnx is not found` error | Stale `dnx` invocation in a fork / old cached step | Ensure workflow uses `dotnet tool install --global dotnet-inspect --version 0.9.1` |
 | Release notes fetched empty | Tag format changed (e.g. `dotnet-X.Y.Z` vs `vX.Y.Z`) | Check `gh release list --repo microsoft/agent-framework` for the real tag |
 | `COPILOT_ASSIGN_PAT` missing | Secret not set | Set the PAT in repo Settings → Secrets & Variables → Actions |
 

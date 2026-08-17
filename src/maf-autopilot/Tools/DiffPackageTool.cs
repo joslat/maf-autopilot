@@ -10,7 +10,7 @@ namespace MafDoctor.Tools;
 /// <summary>
 /// MCP tool: MafDiffPackage
 ///
-/// Wraps <c>dotnet-inspect@0.7.8 diff</c> for a NuGet package version range and
+/// Wraps the repository-supported <c>dotnet-inspect 0.9.1 diff</c> format for a NuGet package version range and
 /// post-processes the markdown output into a structured report: breaking changes,
 /// additive changes, and (where present) newly obsoleted members cross-referenced
 /// to the MAF registry.
@@ -44,8 +44,8 @@ public sealed class DiffPackageTool
 
         Example: MafDiffPackage("Microsoft.Agents.AI", "1.2.0", "1.3.0")
 
-        Note: requires `dotnet-inspect` on PATH (pin to v0.7.8 or later — earlier
-        versions miss [Obsolete] in member listings). If it's missing, this returns
+        Note: requires `dotnet-inspect` on PATH; install the repository-supported exact
+        0.9.1 release. If it's missing, this returns
         install instructions rather than downloading it automatically — set
         MAF_DOCTOR_ALLOW_TOOL_DOWNLOAD=1 in the MCP server's env config to allow
         on-demand fetch via `dnx` instead.

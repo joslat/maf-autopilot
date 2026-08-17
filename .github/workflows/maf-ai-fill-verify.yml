@@ -1,8 +1,9 @@
 name: MAF AI-Fill PR Verify
 
 # #5 polish (2026-05-13) — runs the verification gate against AI-filled
-# registry PRs. Triggers on `pull_request` events that modify registry.yaml
-# AND carry the `ai-fill` label.
+# registry and watcher-managed PRs. It triggers for every pull request so the
+# required check always reports, then uses the proven base-to-head diff to
+# decide whether full verification is in scope; labels are not trusted gates.
 #
 # Why this exists: GitHub Copilot Coding Agent fills the TODO placeholders
 # left by `maf-release-watcher`. Quality is good but inconsistent. Common
@@ -12,8 +13,8 @@ name: MAF AI-Fill PR Verify
 #   - examples have unbalanced braces (Copilot left a half-snippet)
 #   - guide_section is "TBD" / "TODO" instead of the literal "N/A"
 #
-# This workflow runs `maf-doctor verify-registry` against the PR's HEAD
-# commit. If verification fails, the workflow exits non-zero, which blocks
+# This workflow builds verifier code from the trusted PR base and runs it
+# against the PR HEAD artifacts as data. If verification fails, the workflow exits non-zero, which blocks
 # the PR's auto-merge (if branch protection / required-status-checks is
 # configured for this check).
 #
@@ -28,8 +29,9 @@ on:
     # get blocked by "missing required check"). The job filters internally:
     # if registry.yaml isn't in the diff, it reports success trivially.
 
-# SEC-11: this job checks out + builds PR-supplied (possibly fork) code, so it must
-# NOT hold write scope. It uploads its comment body + PR number as an artifact; the
+# SEC-11: this job handles PR-supplied (possibly fork) data, so it must NOT hold
+# write scope. Verifier code is built only from the trusted base checkout. It
+# uploads its comment body + PR number as an artifact; the
 # workflow_run companion (maf-pr-audit-comment.yml) posts the sticky comment from the
 # base-repo context without ever touching fork code.
 permissions:
@@ -47,15 +49,29 @@ jobs:
     # or report trivial success based on the actual diff.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      # Keep PR data and trusted verifier code in separate trees. No executable
+      # or script from the PR checkout is run by this privileged release gate.
+      - name: Checkout PR head as data
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
+          persist-credentials: false
+          path: pr
+
+      - name: Checkout trusted PR base verifier
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          path: trusted
 
       - name: Decide whether this PR is in scope
         id: scope
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           # Task 4.6 — in scope iff the PR DIFF touches a watcher-managed file
           # (registry.yaml / compatibility-matrix.md / a per-version migration
@@ -64,16 +80,18 @@ jobs:
           # let a fill PR that forgot the label (or used an unexpected branch
           # prefix) silently report success while verifying NOTHING. Any edit to
           # these files deserves the structural verification.
-          # WM-32: fetch the base into origin/<ref> (not a misdirected local-branch
-          # refspec), then diff with the THREE-dot form so scope reflects only THIS PR's
-          # own edits — HEAD vs merge-base(origin/BASE_REF, HEAD) — not base-branch churn
-          # pulled in after a watcher merge (which the two-dot form counted as "changed").
-          git fetch origin "$BASE_REF" --depth=50 || true
-          DIFF_FILES=$(git diff --name-only "origin/$BASE_REF...HEAD" || true)
+          # Scope discovery is fail-closed. Both event SHAs must be reachable and
+          # `git diff` must succeed; an empty list is trusted only after that proof.
+          # Full ancestry is required to prove where the immutable obligations
+          # blob first appeared; a shallow base fetch makes merge-base ambiguous.
+          git -C pr fetch --no-tags origin "$BASE_SHA"
+          git -C pr cat-file -e "${BASE_SHA}^{commit}"
+          git -C pr cat-file -e "${HEAD_SHA}^{commit}"
+          DIFF_FILES=$(git -C pr diff --name-only "$BASE_SHA" "$HEAD_SHA")
           echo "Files changed in PR:"
           echo "$DIFF_FILES" | sed 's/^/  /'
 
-          if echo "$DIFF_FILES" | grep -qE '^(\.github/skills/maf-obsolete-api-registry/registry\.yaml|docs/compatibility-matrix\.md|guides/maf-.*-migration-guide\.md|\.maf-version)$'; then
+          if echo "$DIFF_FILES" | grep -qE '^(\.github/skills/maf-obsolete-api-registry/registry\.yaml|\.github/maf-scaffold-obligations/maf-[0-9]+\.[0-9]+\.[0-9]+\.json|docs/compatibility-matrix\.md|guides/maf-.*-migration-guide\.md|src/maf-autopilot/Tools/CompatibilityTool\.cs|\.github/scripts/(verify_crossfile_consistency|gen_guide_section|verify_ai_fill_delta)\.py|\.maf-version)$'; then
             echo "in_scope=true" >> $GITHUB_OUTPUT
             echo "::notice title=verify-registry in scope::PR touches watcher-managed files — running full rung-1 verification."
           else
@@ -99,14 +117,10 @@ jobs:
         # the build step below.
         continue-on-error: true
         if: steps.scope.outputs.in_scope == 'true'
-        run: dotnet restore src/maf-autopilot/maf-autopilot.csproj --locked-mode
+        run: dotnet restore trusted/src/maf-autopilot/maf-autopilot.csproj --locked-mode
 
-      - name: Build maf-doctor from this checkout
-        # F-13 (2026-07-19 security assessment) — this job verifies THIS repo's
-        # own registry.yaml, so building maf-doctor from the same checkout
-        # already being validated is strictly more correct than a floating
-        # `--prerelease` NuGet install (which also has a `pull-requests: write`
-        # token in scope for the sticky-comment step below it).
+      - name: Build trusted-base maf-doctor verifier
+        # Build from the trusted base checkout, never from PR-controlled source.
         #
         # continue-on-error: true — round-2 review fixup (same pattern as
         # maf-release-watcher.yml / maf-pr-audit.yml). Without this, a build
@@ -117,7 +131,7 @@ jobs:
         # and reports a clear message instead.
         continue-on-error: true
         if: steps.scope.outputs.in_scope == 'true'
-        run: dotnet build src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0 --no-restore
+        run: dotnet build trusted/src/maf-autopilot/maf-autopilot.csproj -c Release -f net8.0 --no-restore
 
       # Round-3 review fixup — continue-on-error on both Python-toolchain
       # steps below, matching the .NET steps above. Without this, a transient
@@ -151,12 +165,12 @@ jobs:
           # IsIncompleteDraft skips (never fails) any not-yet-complete entry, so a
           # partially-filled OLD draft can't red an unrelated PR; keep-breaking-red
           # for CURRENT-cycle drafts stays with the Python gate (version-scoped).
-          MAF_REGISTRY_PATH: ${{ github.workspace }}/.github/skills/maf-obsolete-api-registry/registry.yaml
+          MAF_REGISTRY_PATH: ${{ github.workspace }}/pr/.github/skills/maf-obsolete-api-registry/registry.yaml
         run: |
           set +e
-          MAF_DOCTOR="src/maf-autopilot/bin/Release/net8.0/maf-doctor.dll"
+          MAF_DOCTOR="trusted/src/maf-autopilot/bin/Release/net8.0/maf-doctor.dll"
           if [ ! -f "$MAF_DOCTOR" ]; then
-            OUTPUT="maf-doctor failed to build from this checkout (see the 'Build maf-doctor from this checkout' step above) — verification could not run. This is usually caused by a compile error in the PR."
+            OUTPUT="The trusted-base maf-doctor verifier failed to build (see the build step above) — verification could not run."
             EXIT=1
           else
             OUTPUT=$(dotnet "$MAF_DOCTOR" verify-registry 2>&1)
@@ -195,7 +209,7 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          OUTPUT=$(python3 .github/scripts/verify_crossfile_consistency.py 2>&1)
+          OUTPUT=$(cd pr && python3 ../trusted/.github/scripts/verify_crossfile_consistency.py 2>&1)
           EXIT=$?
           echo "$OUTPUT"
           # F-29 — same rationale as the verify-registry step above: this
@@ -219,9 +233,104 @@ jobs:
           } >> $GITHUB_OUTPUT
           exit $EXIT
 
+      - name: Preserve watcher scaffold obligations
+        id: delta
+        if: steps.scope.outputs.in_scope == 'true'
+        continue-on-error: true
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set +e
+          TRUSTED_DELTA=trusted/.github/scripts/verify_ai_fill_delta.py
+          TRUSTED_TREE=$(git -C pr ls-tree "$BASE_SHA" -- .github/scripts/verify_ai_fill_delta.py 2>&1)
+          TRUSTED_TREE_EXIT=$?
+          TRUSTED_MODE=${TRUSTED_TREE%% *}
+          if [ "$TRUSTED_TREE_EXIT" -ne 0 ]; then
+            OUTPUT="Could not inspect the trusted-base scaffold verifier. Refusing to continue."
+            EXIT=1
+          elif [ -n "$TRUSTED_TREE" ] && { [ "$TRUSTED_MODE" != "100644" ] || [ ! -f "$TRUSTED_DELTA" ] || [ -L "$TRUSTED_DELTA" ]; }; then
+            OUTPUT="Trusted-base scaffold verifier is not a regular Git file with mode 100644. Refusing to execute it."
+            EXIT=1
+          elif [ -n "$TRUSTED_TREE" ]; then
+            OUTPUT=$(python3 "$TRUSTED_DELTA" \
+              --repo pr \
+              --head-root pr \
+              --base-sha "$BASE_SHA" \
+              --head-sha "$HEAD_SHA" \
+              --base-ref "$BASE_REF" \
+              --head-ref "$HEAD_REF" 2>&1)
+            EXIT=$?
+          else
+            # One-time bootstrap for the infrastructure PR that first adds the
+            # trusted delta verifier. This path must never approve a release
+            # scaffold: the tracked version must be unchanged, HEAD must add the
+            # verifier as data, and no obligations contract may exist in HEAD.
+            # Once this PR lands, every later base contains TRUSTED_DELTA and the
+            # full immutable-contract verifier above is mandatory.
+            BASE_VERSION=$(git -C pr show "${BASE_SHA}:.maf-version" 2>&1)
+            BASE_VERSION_EXIT=$?
+            HEAD_VERSION=$(git -C pr show "${HEAD_SHA}:.maf-version" 2>&1)
+            HEAD_VERSION_EXIT=$?
+            git -C pr cat-file -e "${HEAD_SHA}:.github/scripts/verify_ai_fill_delta.py" 2>/dev/null
+            HEAD_VERIFIER_EXIT=$?
+            VERIFIER_CHANGE=$(git -C pr diff --name-status "$BASE_SHA" "$HEAD_SHA" -- .github/scripts/verify_ai_fill_delta.py 2>&1)
+            VERIFIER_CHANGE_EXIT=$?
+            VERIFIER_TREE=$(git -C pr ls-tree "$HEAD_SHA" -- .github/scripts/verify_ai_fill_delta.py 2>&1)
+            VERIFIER_TREE_EXIT=$?
+            VERIFIER_MODE=${VERIFIER_TREE%% *}
+            BASE_CONTRACT_FILES=$(git -C pr ls-tree -r --name-only "$BASE_SHA" -- .github/maf-scaffold-obligations/ 2>&1)
+            BASE_CONTRACT_LIST_EXIT=$?
+            HEAD_CONTRACT_FILES=$(git -C pr ls-tree -r --name-only "$HEAD_SHA" -- .github/maf-scaffold-obligations/ 2>&1)
+            HEAD_CONTRACT_LIST_EXIT=$?
+
+            if [ "$BASE_VERSION_EXIT" -ne 0 ] || [ "$HEAD_VERSION_EXIT" -ne 0 ] \
+               || [ "$HEAD_VERIFIER_EXIT" -ne 0 ] || [ "$VERIFIER_CHANGE_EXIT" -ne 0 ] \
+               || [ "$VERIFIER_TREE_EXIT" -ne 0 ] \
+               || [ "$BASE_CONTRACT_LIST_EXIT" -ne 0 ] || [ "$HEAD_CONTRACT_LIST_EXIT" -ne 0 ]; then
+              OUTPUT="Trusted scaffold verifier is absent and its bootstrap preconditions could not be proven. Refusing to continue."
+              EXIT=1
+            elif [ "$BASE_VERSION" != "$HEAD_VERSION" ]; then
+              OUTPUT="Trusted scaffold verifier is absent while .maf-version changes from ${BASE_VERSION} to ${HEAD_VERSION}. A release scaffold may not use the bootstrap path."
+              EXIT=1
+            elif [ "$VERIFIER_CHANGE" != $'A\t.github/scripts/verify_ai_fill_delta.py' ]; then
+              OUTPUT="Trusted scaffold verifier is absent, but HEAD does not add it as a new file. Refusing the bootstrap path."
+              EXIT=1
+            elif [ "$VERIFIER_MODE" != "100644" ]; then
+              OUTPUT="Trusted scaffold verifier bootstrap requires a regular non-executable Git file (mode 100644); refusing mode ${VERIFIER_MODE}."
+              EXIT=1
+            elif [ -n "$BASE_CONTRACT_FILES" ] || [ -n "$HEAD_CONTRACT_FILES" ]; then
+              OUTPUT="Trusted scaffold verifier is absent while scaffold-obligation files exist in BASE or HEAD. A release scaffold may not use the bootstrap path."
+              EXIT=1
+            else
+              OUTPUT="One-time trusted-verifier bootstrap accepted: .maf-version remains ${HEAD_VERSION}, HEAD introduces the verifier, and no release scaffold obligations exist."
+              EXIT=0
+            fi
+          fi
+          echo "$OUTPUT"
+          DELIM="EOF_${RANDOM}${RANDOM}${RANDOM}"
+          ATTEMPT=0
+          while grep -qF "$DELIM" <<< "$OUTPUT"; do
+            ATTEMPT=$((ATTEMPT + 1))
+            if [ "$ATTEMPT" -ge 20 ]; then
+              echo "::error::Could not safely encode scaffold-preservation output."
+              exit 1
+            fi
+            DELIM="EOF_${RANDOM}${RANDOM}${RANDOM}"
+          done
+          {
+            echo "output<<$DELIM"
+            echo "$OUTPUT"
+            echo "$DELIM"
+            echo "exit_code=$EXIT"
+          } >> $GITHUB_OUTPUT
+          exit $EXIT
+
       # SEC-11: build the sticky-comment body (failure detail OR a passed message) and
-      # upload it as an artifact instead of posting it here — this job checks out + built
-      # PR-supplied code, so it must not hold write scope. The workflow_run companion
+      # upload it as an artifact instead of posting it here — this job handles
+      # PR-supplied data, so it must not hold write scope. The workflow_run companion
       # (maf-pr-audit-comment.yml) posts it from the base-repo context. Task 4.8: still a
       # single sticky comment (header maf-ai-fill-verify), updated per PR.
       - name: Build verify comment body
@@ -229,11 +338,14 @@ jobs:
         env:
           VERIFY_OUTPUT: ${{ steps.verify.outputs.output }}
           CROSSFILE_OUTPUT: ${{ steps.crossfile.outputs.output }}
+          DELTA_OUTPUT: ${{ steps.delta.outputs.output }}
           VERIFY_EXIT: ${{ steps.verify.outputs.exit_code }}
           CROSSFILE_EXIT: ${{ steps.crossfile.outputs.exit_code }}
+          DELTA_EXIT: ${{ steps.delta.outputs.exit_code }}
         run: |
-          if [ "$VERIFY_EXIT" = "0" ] && [ "$CROSSFILE_EXIT" = "0" ]; then
-            echo "✅ AI-fill verification passed (registry + cross-file checks)." > ai-fill-verify-comment.md
+          if [ "$VERIFY_EXIT" = "0" ] && [ "$CROSSFILE_EXIT" = "0" ] \
+             && [ "$DELTA_EXIT" = "0" ]; then
+            echo "✅ AI-fill verification passed (registry + cross-file + scaffold-preservation checks)." > ai-fill-verify-comment.md
           else
             {
               echo "## ❌ AI-fill verification failed"
@@ -244,7 +356,7 @@ jobs:
                 echo '```'
                 # SEC-18: the output derives from the PR's own (possibly adversarial)
                 # registry.yaml — neutralize any ``` so it can't escape this fence.
-                printf '%s\n' "$VERIFY_OUTPUT" | python3 .github/scripts/neutralize_fences.py
+                printf '%s\n' "$VERIFY_OUTPUT" | python3 trusted/.github/scripts/neutralize_fences.py
                 echo '```'
                 echo ""
               fi
@@ -252,7 +364,15 @@ jobs:
                 echo "### Cross-file consistency checks"
                 echo ""
                 echo '```'
-                printf '%s\n' "$CROSSFILE_OUTPUT" | python3 .github/scripts/neutralize_fences.py
+                printf '%s\n' "$CROSSFILE_OUTPUT" | python3 trusted/.github/scripts/neutralize_fences.py
+                echo '```'
+                echo ""
+              fi
+              if [ "$DELTA_EXIT" != "0" ]; then
+                echo "### Watcher scaffold preservation"
+                echo ""
+                echo '```'
+                printf '%s\n' "$DELTA_OUTPUT" | python3 trusted/.github/scripts/neutralize_fences.py
                 echo '```'
                 echo ""
               fi
@@ -285,7 +405,8 @@ jobs:
         if: |
           steps.scope.outputs.in_scope == 'true' &&
           (steps.verify.outputs.exit_code != '0' ||
-           steps.crossfile.outputs.exit_code != '0')
+           steps.crossfile.outputs.exit_code != '0' ||
+           steps.delta.outputs.exit_code != '0')
         run: |
           echo "Verification failed — see PR comment for detail."
           exit 1

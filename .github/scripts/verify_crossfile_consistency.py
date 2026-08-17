@@ -16,13 +16,17 @@ Findings discovered 2026-05-17 on PR #26 and PR #36 motivated these checks:
 Checks performed:
 1. docs/compatibility-matrix.md has no DUPLICATE `**X.Y.Z**` rows.
 2. The TOP data row in the compat-matrix table matches `.maf-version`.
-3. "Version Tracking" section's "Current tracked version: **X.Y.Z**" line
-   matches `.maf-version`.
+3. Exactly one "Version Tracking" section's "Current tracked version:
+   **X.Y.Z**" line exists and matches `.maf-version`.
 4. `guides/maf-{VERSION}-migration-guide.md` exists for `.maf-version`.
-5. `last-updated: YYYY-MM-DD` header date is within the last 30 days
-   (catches "bot ignored the date" cases without being timezone-strict).
-6. Every registry entry's `guide_section` value is either "N/A" or a
-   section ID that exists as a heading in the 1.3.0 migration guide.
+5. Exactly one valid `last-updated: YYYY-MM-DD` header date exists and is
+   within the last 30 days (catches stale or duplicated release metadata).
+6. Current-cycle registry entries have a non-empty, valid `guide_section` and
+   the exact `applies_to_codebases: pre-{VERSION}` marker.
+7. The current per-version guide has exactly one ordered AUTO marker pair and
+   no unresolved generated `<!-- TODO:` placeholders.
+8. The cumulative guide exactly matches deterministic regeneration from all
+   checked-in per-version guides.
 
 Exits 0 if all consistent, 1 if any check fails. Prints findings to stdout.
 """
@@ -34,6 +38,8 @@ import sys
 from pathlib import Path
 
 import yaml
+
+from gen_guide_section import AUTO_END, AUTO_START, build_cumulative_guide
 
 ROOT = Path.cwd()
 MAF_VERSION_FILE = ROOT / ".maf-version"
@@ -51,13 +57,18 @@ CURRENT_TRACKED_RE = re.compile(
     r'Current tracked version:\s*\*\*`?(\d+\.\d+(?:\.\d+)?)`?\*\*',
     re.IGNORECASE,
 )
+CURRENT_TRACKED_LABEL_RE = re.compile(
+    r'Current tracked version\s*:', re.IGNORECASE
+)
 LAST_UPDATED_RE = re.compile(
     r'last-updated:\s*(\d{4}-\d{2}-\d{2})', re.IGNORECASE
 )
+LAST_UPDATED_LABEL_RE = re.compile(r'last-updated\s*:', re.IGNORECASE)
 # Section headings in migration guides — match "## 1." "### 2.3." "#### 1.2.3." etc.
 GUIDE_SECTION_HEADING_RE = re.compile(
     r'^##+\s+(\d+(?:\.\d+)*)\.', re.MULTILINE
 )
+GENERATED_TODO_RE = re.compile(r'<!--\s*TODO:', re.IGNORECASE)
 
 
 def find_duplicate_rows(text: str) -> list[str]:
@@ -93,6 +104,72 @@ def last_updated_date(text: str) -> dt.date | None:
         return dt.date.fromisoformat(m.group(1))
     except ValueError:
         return None
+
+
+def check_compatibility_metadata(
+    text: str,
+    current_version: str,
+    *,
+    today: dt.date | None = None,
+) -> list[str]:
+    """Require singular, current release metadata in the compatibility matrix.
+
+    Counting regex matches instead of accepting the first match is intentional:
+    duplicated tracking/date fields make it ambiguous which value downstream
+    automation or a reader should trust, even when the first happens to be right.
+    """
+    findings: list[str] = []
+
+    tracked_labels = CURRENT_TRACKED_LABEL_RE.findall(text)
+    tracked_versions = CURRENT_TRACKED_RE.findall(text)
+    if len(tracked_labels) != 1 or len(tracked_versions) != 1:
+        findings.append(
+            "compatibility-matrix.md must contain exactly one valid "
+            "'Current tracked version: **X.Y.Z**' line; found "
+            f"{len(tracked_versions)} valid value(s) across "
+            f"{len(tracked_labels)} field(s)."
+        )
+    elif tracked_versions[0] != current_version:
+        findings.append(
+            "compatibility-matrix.md 'Version Tracking' section says "
+            f"current tracked version is `{tracked_versions[0]}` but .maf-version "
+            f"is `{current_version}`. Update the 'Current tracked version' line."
+        )
+
+    date_labels = LAST_UPDATED_LABEL_RE.findall(text)
+    date_values = LAST_UPDATED_RE.findall(text)
+    if len(date_labels) != 1 or len(date_values) != 1:
+        findings.append(
+            "compatibility-matrix.md must contain exactly one valid "
+            "'last-updated: YYYY-MM-DD' header; found "
+            f"{len(date_values)} valid value(s) across {len(date_labels)} field(s)."
+        )
+        return findings
+
+    try:
+        updated = dt.date.fromisoformat(date_values[0])
+    except ValueError:
+        findings.append(
+            "compatibility-matrix.md 'last-updated:' value "
+            f"`{date_values[0]}` is not a valid calendar date."
+        )
+        return findings
+
+    reference_date = today or dt.date.today()
+    age = (reference_date - updated).days
+    if age < 0:
+        findings.append(
+            "compatibility-matrix.md 'last-updated:' date is "
+            f"{updated.isoformat()} — {-age} day(s) in the future relative to "
+            f"{reference_date.isoformat()}."
+        )
+    elif age > MAX_LAST_UPDATED_AGE_DAYS:
+        findings.append(
+            "compatibility-matrix.md 'last-updated:' date is "
+            f"{updated.isoformat()} — {age} days old (max "
+            f"{MAX_LAST_UPDATED_AGE_DAYS}); update it for the current release cycle."
+        )
+    return findings
 
 
 def collect_guide_sections(guide_path: Path) -> set[str]:
@@ -145,8 +222,9 @@ def check_invented_guide_sections(
     current_version: str,
 ) -> list[str]:
     """For each registry entry from the CURRENT release cycle, confirm its
-    `guide_section` value is either 'N/A' or a section ID present in the
-    1.3.0 migration guide.
+    `guide_section` value is non-empty and either 'N/A' or a section ID present
+    in a per-version guide. It must also carry the exact current-cycle
+    `applies_to_codebases` marker.
 
     Scoped to the current cycle (entries with id `MAF{digits}-...` where
     digits == current_version stripped of dots) so legacy tech debt in
@@ -171,10 +249,23 @@ def check_invented_guide_sections(
         if str(entry.get("version_introduced", "")).strip() != current_version:
             continue
         scoped_count += 1
+        expected_applies = f"pre-{current_version}"
+        actual_applies = str(entry.get("applies_to_codebases", "")).strip()
+        if actual_applies != expected_applies:
+            findings.append(
+                f"{eid}: applies_to_codebases must be exactly "
+                f"'{expected_applies}' for the current release cycle; found "
+                f"'{actual_applies or '<missing>'}'."
+            )
+
         gs = entry.get("guide_section")
-        if gs is None or gs == "":
+        gs_str = str(gs).strip() if gs is not None else ""
+        if not gs_str:
+            findings.append(
+                f"{eid}: guide_section is missing or empty — current-release "
+                "entries must use a real section ID or the literal 'N/A'."
+            )
             continue
-        gs_str = str(gs).strip()
         if gs_str.upper() == "N/A":
             continue
         if gs_str.upper() in ("TODO", "TBD"):
@@ -199,12 +290,123 @@ def check_invented_guide_sections(
     return findings
 
 
+def check_current_guide_contract(guide_path: Path) -> list[str]:
+    """Require a complete, substantive set of generated migration sections."""
+    if not guide_path.is_file():
+        return [f"missing migration guide: {guide_path}"]
+
+    text = guide_path.read_text(encoding="utf-8")
+    start_count = text.count(AUTO_START)
+    end_count = text.count(AUTO_END)
+    findings: list[str] = []
+    if start_count != 1 or end_count != 1:
+        findings.append(
+            f"{guide_path}: expected exactly one AUTO-GENERATED START marker and "
+            f"one AUTO-GENERATED END marker; found {start_count} start and "
+            f"{end_count} end marker(s)."
+        )
+        return findings
+
+    start = text.index(AUTO_START)
+    end = text.index(AUTO_END)
+    if start >= end:
+        findings.append(
+            f"{guide_path}: AUTO-GENERATED markers are out of order; START must "
+            "appear before END."
+        )
+        return findings
+
+    generated = text[start + len(AUTO_START):end]
+    if GENERATED_TODO_RE.search(generated):
+        findings.append(
+            f"{guide_path}: the AUTO-GENERATED block still contains one or more "
+            "'<!-- TODO:' placeholders; replace every generated placeholder "
+            "before merging."
+        )
+
+    required = (
+        ("Breaking Changes", r"^## Breaking Changes(?: \(requires human verification\))?$"),
+        ("New Patterns", r"^## New Patterns$"),
+        ("Obsolete APIs Added", r"^## Obsolete APIs Added$"),
+        ("Known Misalignments", r"^## Known Misalignments$"),
+    )
+    matches: list[tuple[str, re.Match[str]]] = []
+    for name, pattern in required:
+        found = list(re.finditer(pattern, generated, re.MULTILINE))
+        if len(found) != 1:
+            findings.append(
+                f"{guide_path}: expected exactly one '{name}' section inside "
+                f"the AUTO-GENERATED block; found {len(found)}."
+            )
+        else:
+            matches.append((name, found[0]))
+
+    if len(matches) != len(required):
+        return findings
+    canonical_names = [name for name, _ in required]
+    ordered_matches = sorted(matches, key=lambda item: item[1].start())
+    if [name for name, _ in ordered_matches] != canonical_names:
+        findings.append(
+            f"{guide_path}: required migration sections are not in the canonical "
+            "Breaking/New Patterns/Obsolete/Known Misalignments order."
+        )
+
+    for index, (name, match) in enumerate(ordered_matches):
+        section_end = (
+            ordered_matches[index + 1][1].start()
+            if index + 1 < len(ordered_matches)
+            else len(generated)
+        )
+        body = generated[match.end():section_end]
+        body = re.sub(r"<!--.*?-->", "", body, flags=re.DOTALL)
+        meaningful_lines = [
+            line.strip()
+            for line in body.splitlines()
+            if line.strip()
+            and not (
+                line.lstrip().startswith(">")
+                and "Auto-generated stub" in line
+            )
+        ]
+        meaningful = "\n".join(meaningful_lines)
+        if (
+            len(re.sub(r"\s+", "", meaningful)) < 10
+            or not re.search(r"[A-Za-z0-9]", meaningful)
+            or re.search(r"\b(?:TODO|TBD|XXX)\b", meaningful, re.IGNORECASE)
+        ):
+            findings.append(
+                f"{guide_path}: '{name}' has no substantive reviewed content "
+                "after comments/stub warnings are ignored."
+            )
+    return findings
+
+
+def check_cumulative_guide(guides_dir: Path) -> list[str]:
+    """Compare cumulative content with regeneration without mutating the file."""
+    expected = build_cumulative_guide(guides_dir)
+    if expected is None:
+        return [f"{guides_dir}: no per-version migration guides were found."]
+
+    cumulative = guides_dir / "maf-current-migration-guide.md"
+    if not cumulative.is_file():
+        return [f"missing cumulative migration guide: {cumulative}"]
+    actual = cumulative.read_text(encoding="utf-8")
+    if actual != expected:
+        return [
+            f"{cumulative}: content is stale or hand-edited; regenerate it with "
+            "`python3 .github/scripts/gen_guide_section.py --cumulative-only` "
+            "and commit the exact output."
+        ]
+    return []
+
+
 # Explicit ASCII boundary (not \b) — .NET and Python disagree on \b's Unicode
 # word-class (~1400 code points flip), so both gates use an ASCII char-class
 # boundary instead, kept byte-identical to the C# PlaceholderTokenRegex /
 # TodoAtLineStart and locked by placeholder-fixtures.json.
 _DRAFT_PLACEHOLDER = re.compile(r'^\s*(?:TODO|TBD|XXX)(?:[^A-Za-z0-9_]|$)', re.IGNORECASE)
 _TODO_EXAMPLE_RE = re.compile(r'(?m)^\s*//\s*TODO(?:[^A-Za-z0-9_]|$)', re.IGNORECASE)
+_CS_WARNING_RE = re.compile(r'^(?:CS[0-9]{4}|RUNTIME_SILENT|BINARY_BREAK)$')
 
 
 def is_placeholder_token(value) -> bool:
@@ -230,6 +432,14 @@ def _example_unfilled(value) -> bool:
         return True
     s = str(value).strip()
     return s == "" or bool(_TODO_EXAMPLE_RE.search(s))
+
+
+def _valid_cs_warning(value) -> bool:
+    """True only for a reviewed compiler diagnostic, runtime marker, or binary break."""
+    if value is None:
+        return False
+    warning = str(value).strip()
+    return not is_placeholder_token(warning) and bool(_CS_WARNING_RE.fullmatch(warning))
 
 
 def check_unfilled_current_drafts(registry_path: Path, current_version: str) -> list[str]:
@@ -260,19 +470,21 @@ def check_unfilled_current_drafts(registry_path: Path, current_version: str) -> 
         # Fire if ANY core field is still a placeholder. An OR (not the old
         # all-three-AND, which missed SignatureChanged entries whose signatures
         # the extractor auto-fills) so a current-release entry can't merge with a
-        # TODO/blank signature, prose, OR example stub.
+        # TODO/blank signature, prose, example stub, OR unreviewed diagnostic.
         if (
             _looks_unfilled(entry.get("obsolete_signature"))
             or _looks_unfilled(entry.get("replacement_signature"))
             or _looks_unfilled(entry.get("fix_description"))
             or _example_unfilled(entry.get("example_before"))
             or _example_unfilled(entry.get("example_after"))
+            or not _valid_cs_warning(entry.get("cs_warning"))
         ):
             findings.append(
                 f"{entry.get('id', '<missing id>')}: registry draft for the current "
                 f"release ({current_version}) is unfilled — a breaking release's entries "
                 f"need a human-written migration. Fill obsolete_signature / "
-                f"replacement_signature / fix_description and the before/after examples "
+                f"replacement_signature / fix_description / before/after examples and "
+                f"set cs_warning to CS\\d{{4}}, RUNTIME_SILENT, or BINARY_BREAK "
                 f"(or, if this release is genuinely additive, the watcher should not have "
                 f"created the entry)."
             )
@@ -335,44 +547,11 @@ def main() -> int:
                 f"real note before merging."
             )
 
-        tracked = version_tracking_current(text)
-        if tracked is None:
-            print(
-                "Note: no 'Current tracked version: **X.Y.Z**' line found in "
-                "compatibility-matrix.md — skipping that check."
-            )
-        elif tracked != current:
-            findings.append(
-                f"compatibility-matrix.md 'Version Tracking' section says "
-                f"current tracked version is `{tracked}` but .maf-version is "
-                f"`{current}`. Update the 'Current tracked version' line."
-            )
-
-        last_upd = last_updated_date(text)
-        if last_upd is None:
-            print(
-                "Note: no 'last-updated: YYYY-MM-DD' header found in "
-                "compatibility-matrix.md — skipping that check."
-            )
-        else:
-            today = dt.date.today()
-            age = (today - last_upd).days
-            if age > MAX_LAST_UPDATED_AGE_DAYS:
-                # Task 4.3 — WARN, do not fail. MAF's release cadence is irregular;
-                # a structurally-correct release must not be blocked just because
-                # the previous matrix touch was >30d ago (the same fill cycle fixes
-                # the date). Surfaced as a warning annotation, not a blocking finding.
-                print(
-                    f"::warning::compatibility-matrix.md 'last-updated:' date is "
-                    f"{last_upd.isoformat()} — {age} days old (max {MAX_LAST_UPDATED_AGE_DAYS}). "
-                    f"Consider updating it to {today.isoformat()}."
-                )
+        findings.extend(check_compatibility_metadata(text, current))
 
     guide_file = GUIDES_DIR / f"maf-{current}-migration-guide.md"
-    if not guide_file.is_file():
-        findings.append(
-            f"missing migration guide: {guide_file.relative_to(ROOT)}"
-        )
+    findings.extend(check_current_guide_contract(guide_file))
+    findings.extend(check_cumulative_guide(GUIDES_DIR))
 
     # Check for invented guide_section values in registry entries from
     # the CURRENT release cycle (older entries' TODOs are tech debt to
@@ -380,15 +559,15 @@ def main() -> int:
     valid_sections = collect_all_guide_sections(GUIDES_DIR)
     if not valid_sections:
         print(
-            "Note: could not extract section IDs from any guides/maf-*-migration-"
-            "guide.md — skipping guide_section validity check."
+            "Note: no numeric section IDs were found in per-version guides; "
+            "current entries must therefore use guide_section: N/A."
         )
     else:
         print(f"Guide section IDs available (all per-version guides): {sorted(valid_sections)}")
-        section_findings = check_invented_guide_sections(
-            REGISTRY, valid_sections, current
-        )
-        findings.extend(section_findings)
+    section_findings = check_invented_guide_sections(
+        REGISTRY, valid_sections, current
+    )
+    findings.extend(section_findings)
 
     # Keep-breaking-red gate — unfilled drafts for the CURRENT release fail the
     # PR (an additive release creates none, so it stays green).

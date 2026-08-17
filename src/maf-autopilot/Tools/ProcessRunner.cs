@@ -20,6 +20,23 @@ namespace MafDoctor.Tools;
 internal static class ProcessRunner
 {
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(5);
+    internal const string DotnetInspectVersion = "0.9.1";
+    private static readonly TimeSpan DotnetInspectVersionProbeTimeout = TimeSpan.FromSeconds(30);
+
+    internal enum DotnetInspectProbeStatus
+    {
+        Supported,
+        Missing,
+        Mismatched,
+        Unverifiable,
+    }
+
+    internal enum DotnetInspectRoute
+    {
+        Global,
+        ExactDnxFallback,
+        FailClosed,
+    }
 
     // Round-2 review fixup (F-08) — this was named/documented as MaxBytes and
     // described as a "16 MB cap", but SharedCharBudget consumes .NET `char`
@@ -53,17 +70,17 @@ internal static class ProcessRunner
     // executes a NuGet tool package on demand, which is a materially different
     // risk than a passive read even though it writes nothing to the user's
     // *workspace* (the annotation's literal scope). Rather than change the
-    // annotation (which would also block the common, low-risk case where
-    // dotnet-inspect just isn't on PATH yet in an otherwise-trusted dev
+    // annotation (which would also block the common, low-risk case where an exact
+    // supported dotnet-inspect is not yet on PATH in an otherwise-trusted dev
     // environment), gate the download itself behind an explicit opt-in that
     // defaults to off — a client auto-invoking this ReadOnly tool can no
     // longer trigger a silent download as a side effect.
     //
     // Reviewed scope note: RegistryExtractCommand's `maf-doctor
     // registry-extract` CLI subcommand also calls this method (shared code,
-    // not duplicated), so a local developer running it by hand without
-    // dotnet-inspect pre-installed now sees the same "disabled by default"
-    // message instead of a silent download, unless they set this env var.
+    // not duplicated), so a local developer running it by hand without exact
+    // dotnet-inspect 0.9.1 pre-installed now sees the same fail-closed message
+    // instead of a silent download, unless they set this env var.
     // CI is unaffected — maf-release-watcher.yml installs dotnet-inspect at
     // an exact pinned version before this ever runs. A human running the CLI
     // deliberately is a lower-risk case than an MCP client auto-invoking a
@@ -79,78 +96,155 @@ internal static class ProcessRunner
     internal static bool ToolDownloadAllowed() =>
         Environment.GetEnvironmentVariable(AllowToolDownloadEnvName) is "1" or "true";
 
+    /// <summary>
+    /// Accepts the exact supported stable release and that release with SemVer build
+    /// metadata (the upstream Native-AOT binary reports values such as
+    /// <c>0.9.1+891e68b</c>). Prerelease suffixes and all neighboring versions fail.
+    /// </summary>
+    internal static bool IsSupportedDotnetInspectVersion(string output)
+    {
+        var version = output.Trim();
+        if (version.Equals(DotnetInspectVersion, StringComparison.Ordinal))
+            return true;
+
+        var metadataPrefix = DotnetInspectVersion + "+";
+        if (!version.StartsWith(metadataPrefix, StringComparison.Ordinal))
+            return false;
+
+        var metadata = version[metadataPrefix.Length..];
+        return metadata.Length > 0
+            && metadata[0] != '.'
+            && metadata[^1] != '.'
+            && !metadata.Contains("..", StringComparison.Ordinal)
+            && metadata.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '.');
+    }
+
+    internal static DotnetInspectProbeStatus ClassifyDotnetInspectProbe(
+        int exitCode, string output)
+    {
+        if (exitCode == 127)
+            return DotnetInspectProbeStatus.Missing;
+        if (exitCode != 0)
+            return DotnetInspectProbeStatus.Unverifiable;
+        return IsSupportedDotnetInspectVersion(output)
+            ? DotnetInspectProbeStatus.Supported
+            : LooksLikeVersionToken(output)
+                ? DotnetInspectProbeStatus.Mismatched
+                : DotnetInspectProbeStatus.Unverifiable;
+    }
+
+    internal static DotnetInspectRoute SelectDotnetInspectRoute(
+        int probeExitCode, string probeOutput, bool allowExactFallback)
+    {
+        var status = ClassifyDotnetInspectProbe(probeExitCode, probeOutput);
+        if (status == DotnetInspectProbeStatus.Supported)
+            return DotnetInspectRoute.Global;
+        return allowExactFallback
+            ? DotnetInspectRoute.ExactDnxFallback
+            : DotnetInspectRoute.FailClosed;
+    }
+
     public static (int ExitCode, string Output) RunDotnetInspectDiff(
         string packageId, string oldVersion, string newVersion)
     {
-        // We try the installed global tool first; fall back to `dnx dotnet-inspect@0.7.8`
-        // only when the operator has explicitly opted in.
-        var psi = new ProcessStartInfo("dotnet-inspect")
+        // Probe before use: 0.7.8 can exit 0 while returning corrupt redirected output,
+        // so "some dotnet-inspect is on PATH" is not a sufficient safety check.
+        var versionProbe = new ProcessStartInfo("dotnet-inspect")
         {
-            ArgumentList =
-            {
-                "diff",
-                "--package", $"{packageId}@{oldVersion}..{newVersion}",
-                "--source", "https://api.nuget.org/v3/index.json",
-            },
+            ArgumentList = { "--version" },
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
         };
-        try
-        {
-            return Run(psi);
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            // dotnet-inspect not on PATH.
-            if (!ToolDownloadAllowed())
-            {
-                return (1,
-                    "dotnet-inspect is not installed and on-demand download is disabled by default. " +
-                    $"Install it with `dotnet tool install --global dotnet-inspect --version 0.7.8`, " +
-                    $"or set {AllowToolDownloadEnvName}=1 in the MCP server's env config to allow " +
-                    "this tool to fetch and run it on demand via `dnx` when needed.");
-            }
 
-            var fallback = new ProcessStartInfo("dnx")
-            {
-                ArgumentList =
-                {
-                    "dotnet-inspect@0.7.8",
-                    "-y",
-                    "--source", "https://api.nuget.org/v3/index.json",
-                    "--",
-                    "diff",
-                    "--package", $"{packageId}@{oldVersion}..{newVersion}",
-                    "--source", "https://api.nuget.org/v3/index.json",
-                },
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            };
-            // SEC-23: `dnx` may itself be absent (opt-in set but no SDK that provides
-            // it) — Run would throw Win32Exception and crash the CLI / surface an
-            // ungraceful error in the MCP tool. Return a graceful message instead.
-            try
-            {
-                return Run(fallback);
-            }
-            catch (System.ComponentModel.Win32Exception)
-            {
-                return (1,
-                    "Neither dotnet-inspect nor dnx is available. Install dotnet-inspect with " +
-                    "`dotnet tool install --global dotnet-inspect --version 0.7.8`, " +
-                    "or install a .NET SDK that provides the `dnx` launcher.");
-            }
+        // Run() deliberately converts a missing executable into exit 127 so every
+        // other caller gets a graceful error. Route on that typed outcome here rather
+        // than relying on the old, unreachable outer Win32Exception catch.
+        var (probeExitCode, probeOutput) = Run(versionProbe, DotnetInspectVersionProbeTimeout);
+        var route = SelectDotnetInspectRoute(
+            probeExitCode, probeOutput, ToolDownloadAllowed());
+
+        if (route == DotnetInspectRoute.Global)
+        {
+            var global = CreateDotnetInspectDiffStartInfo(
+                "dotnet-inspect", packageId, oldVersion, newVersion, throughDnx: false);
+            return Run(global);
         }
+
+        if (route == DotnetInspectRoute.FailClosed)
+            return (1, DescribeUnsupportedDotnetInspect(probeExitCode, probeOutput));
+
+        var fallback = CreateDotnetInspectDiffStartInfo(
+            "dnx", packageId, oldVersion, newVersion, throughDnx: true);
+        var fallbackResult = Run(fallback);
+        if (fallbackResult.ExitCode == 127)
+        {
+            return (1,
+                $"The exact dotnet-inspect {DotnetInspectVersion} fallback was requested, " +
+                "but `dnx` is not available. Install the supported tool directly with " +
+                $"`dotnet tool install --global dotnet-inspect --version {DotnetInspectVersion}`.");
+        }
+        return fallbackResult;
+    }
+
+    internal static ProcessStartInfo CreateDotnetInspectDiffStartInfo(
+        string executable,
+        string packageId,
+        string oldVersion,
+        string newVersion,
+        bool throughDnx)
+    {
+        var psi = new ProcessStartInfo(executable)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        if (throughDnx)
+        {
+            psi.ArgumentList.Add($"dotnet-inspect@{DotnetInspectVersion}");
+            psi.ArgumentList.Add("-y");
+            psi.ArgumentList.Add("--source");
+            psi.ArgumentList.Add("https://api.nuget.org/v3/index.json");
+            psi.ArgumentList.Add("--");
+        }
+        psi.ArgumentList.Add("diff");
+        psi.ArgumentList.Add("--package");
+        psi.ArgumentList.Add($"{packageId}@{oldVersion}..{newVersion}");
+        psi.ArgumentList.Add("--source");
+        psi.ArgumentList.Add("https://api.nuget.org/v3/index.json");
+        return psi;
+    }
+
+    internal static string DescribeUnsupportedDotnetInspect(int exitCode, string output)
+    {
+        var status = ClassifyDotnetInspectProbe(exitCode, output);
+        var reason = status switch
+        {
+            DotnetInspectProbeStatus.Missing => "`dotnet-inspect` is not installed or not on PATH.",
+            DotnetInspectProbeStatus.Mismatched =>
+                $"The `dotnet-inspect` on PATH reports version `{output.Trim()}`; exact " +
+                $"{DotnetInspectVersion} is required.",
+            _ => "The `dotnet-inspect --version` result could not be verified; refusing to run a potentially incompatible tool.",
+        };
+        return reason + " Install or update it with " +
+            $"`dotnet tool update --global dotnet-inspect --version {DotnetInspectVersion}` " +
+            "(use `dotnet tool install` if it is absent), or set " +
+            $"{AllowToolDownloadEnvName}=1 to allow the exact-version `dnx` fallback.";
+    }
+
+    private static bool LooksLikeVersionToken(string output)
+    {
+        var value = output.Trim();
+        return value.Length is > 0 and <= 64
+            && value.All(c => char.IsAsciiLetterOrDigit(c) || c is '+' or '-' or '.');
     }
 
     /// <summary>
     /// Runs `git -C &lt;repoPath&gt; &lt;args...&gt;` with the same concurrent-drain,
     /// bounded-output, process-tree-kill-on-timeout behavior as the build/inspect
-    /// runners above. Callers that need to distinguish "git not on PATH" should
-    /// catch <see cref="System.ComponentModel.Win32Exception"/> (matches
-    /// <see cref="RunDotnetInspectDiff"/>'s pattern) — this method does not swallow it.
+    /// runners above. A missing executable is returned as exit code 127 with an
+    /// actionable message by the shared runner; it is not thrown to the caller.
     /// </summary>
     public static (int ExitCode, string Output) RunGit(string repoPath, TimeSpan timeout, params string[] args)
     {

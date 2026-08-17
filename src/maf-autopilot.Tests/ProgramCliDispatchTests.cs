@@ -63,6 +63,19 @@ public sealed class ProgramCliDispatchTests
         Assert.Contains("Usage:", stderr, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Help_RegistryExtractDocumentsPackagePlanOptions()
+    {
+        var (exitCode, stdout, stderr) = Run(TimeSpan.FromSeconds(15), "--help");
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("registry-extract <package>", stdout, StringComparison.Ordinal);
+        Assert.Contains("--diff-file", stdout, StringComparison.Ordinal);
+        Assert.Contains("--release-version", stdout, StringComparison.Ordinal);
+        Assert.Contains("--id-scope", stdout, StringComparison.Ordinal);
+        Assert.Equal(string.Empty, stderr);
+    }
+
     [Theory]
     [InlineData("doctor")]
     [InlineData("badge")]
