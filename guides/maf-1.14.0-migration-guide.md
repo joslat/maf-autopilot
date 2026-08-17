@@ -419,19 +419,58 @@ Automated API summary signals:
 
 - `30` breaking API change row(s)
 
-<!-- TODO: Review every package evidence block and lifecycle transition above -->
+- `AgentMode(string name, string description)`: rename the second named argument to `instructions`; positional calls still compile, but the value now represents mode instructions rather than a description.
+- `AgentMode.Description`: replace reads with `AgentMode.Instructions`.
+- `AgentModeProvider.GetMode`: call and await `GetModeAsync(session, cancellationToken)` and dispose the provider when its lifetime ends.
+- `AgentModeProvider.SetMode`: call and await `SetModeAsync(session, mode, cancellationToken)`.
+- `AgentSkillsProvider.ReadOnlyToolsAutoApprovalRule`: accept `ToolAutoApprovalRuleContext` and inspect `context.FunctionCallContent`; the context also exposes the agent, session, request messages, and run options.
+- `AgentSkillsProvider.AllToolsAutoApprovalRule`: update callbacks from `FunctionCallContent` to `ToolAutoApprovalRuleContext`.
+- `ChatClientAgentOptions.EnableNonApprovalRequiredFunctionBypassing`: replace it with `DisableApprovalNotRequiredFunctionBypassing` and invert the configured value.
+- Outstanding approvals in serialized 1.13 sessions: 1.14 binds each response to a request recorded in session state, so a saved response for a pre-upgrade request is ignored. Re-issue the original request under 1.14 and approve the newly surfaced request. Disabling approval-response binding is only a compatibility escape hatch because it weakens the human-in-the-loop integrity check.
+- `FileAccessProvider.ReadOnlyToolsAutoApprovalRule`: update callbacks to consume `ToolAutoApprovalRuleContext`.
+- `FileAccessProvider.AllToolsAutoApprovalRule`: update callbacks to consume `ToolAutoApprovalRuleContext`.
+- `MessageInjectingChatClient.EnqueueMessages`: replace it with and await `EnqueueMessagesAsync`.
+- `MessageInjectingChatClient.GetPendingMessages`: replace it with and await `GetPendingMessagesAsync`.
+- `TodoProvider.GetAllTodosAsync`: supply a non-null `AgentSession`; null-session access is no longer supported.
+- `TodoProvider.GetRemainingTodosAsync`: supply a non-null `AgentSession`.
+- `ToolApprovalAgent.AllToolsAutoApprovalRule`: update callbacks to consume `ToolAutoApprovalRuleContext`.
+- `ToolApprovalAgentOptions.AutoApprovalRules`: change each delegate from `Func<FunctionCallContent, ValueTask<bool>>` to `Func<ToolAutoApprovalRuleContext, ValueTask<bool>>`.
+- `ChatClientBuilderExtensions.UseNonApprovalRequiredFunctionBypassing`: rename the call to `UseApprovalNotRequiredFunctionBypassing`.
+- `HarnessAgentOptions.DisableNonApprovalRequiredFunctionBypassing`: rename it to `DisableApprovalNotRequiredFunctionBypassing`; preserve the existing Boolean value.
+- `HarnessAgentOptions.DisableFileAccess`: remove the flag. File access is now opt-in; set `FileAccessStore` explicitly to enable it and configure the provider through `FileAccessProviderOptions`.
+- `HarnessAgentOptions.ShellExecutor`: register `executor.AsAIFunction(...)` in `ChatOptions.Tools` and add `new ShellEnvironmentProvider(executor, options)` to `AIContextProviders`.
+- `HarnessAgentOptions.ShellToolName`: pass the value as `name:` to `ShellExecutor.AsAIFunction`.
+- `HarnessAgentOptions.ShellToolDescription`: pass the value as `description:` to `ShellExecutor.AsAIFunction`.
+- `HarnessAgentOptions.DisableShellToolApproval`: replace it with `requireApproval: !disableShellToolApproval` when calling `ShellExecutor.AsAIFunction`.
+- `HarnessAgentOptions.ShellEnvironmentProviderOptions`: pass the options to the explicitly constructed `ShellEnvironmentProvider`.
+- `MapAGUI(IHostedAgentBuilder, string)`: rename it to `MapAGUIServer(IHostedAgentBuilder, string)`.
+- `MapAGUI(string agentName, string pattern)`: rename it to `MapAGUIServer(string agentName, string pattern)`.
+- `MapAGUI(string pattern, AIAgent)`: rename it to `MapAGUIServer(string pattern, AIAgent)`.
+- `MicrosoftAgentAIHostingAGUIServiceCollectionExtensions` / `AddAGUI()`: replace them with `AGUIServerServiceCollectionExtensions` / `AddAGUIServer()`.
+- `CopilotClient.AsAIAgent(..., IList<AITool> tools, ...)`: rebuild the collection as `IList<AIFunctionDeclaration>`; inspect and replace unsupported non-function tools rather than silently discarding them.
+- `GitHubCopilotAgent(..., IList<AITool> tools, ...)`: pass `IList<AIFunctionDeclaration>` instead. An `AIFunction` produced by `AIFunctionFactory.Create` already satisfies that contract.
+- `ShellPolicy(IEnumerable<string>, IEnumerable<string>)`: rebuild all binary consumers against the new three-parameter constructor and review every policy. MAF 1.14 evaluates deny rules first and treats every non-null allow list as exclusive.
+- `Microsoft.Agents.AI.AGUI`: replace the legacy package with the required external `AGUI.Client`, `AGUI.Server`, `AGUI.Abstractions`, optional `AGUI.Protobuf`, and `AGUI.Formatting` packages. Keep `Microsoft.Agents.AI.Hosting.AGUI.AspNetCore` for the MAF hosting integration.
 
 ## New Patterns
 
-<!-- TODO: Document any new recommended patterns from release notes -->
+- Approval rules now receive `ToolAutoApprovalRuleContext`, allowing a decision to consider the function call together with the active agent, session, request messages, and run options. Approval-response binding is enabled through `UseApprovalResponseBinding` unless explicitly disabled.
+- Mode switching and message injection are asynchronous and session-scoped. Await the new APIs, pass the active `AgentSession`, propagate cancellation, and dispose `AgentModeProvider`.
+- Harness file access is secure-by-default and opt-in through `FileAccessStore`. Shell support is composed explicitly through `ChatOptions.Tools` plus `AIContextProviders`, making tool naming, descriptions, approval, executor lifetime, and environment probing visible at the call site.
+- `ShellPolicy` now evaluates `empty command → deny rules → exclusive allow list → custom callback → default allow`. A null allow list disables filtering, while an empty allow list denies every command. The regex policy remains a convenience pre-filter rather than the shell security boundary.
+- AG-UI transport and formatting now live in the external AGUI SDK packages. MAF's ASP.NET Core integration is layered on `AGUI.Server` and uses `AddAGUIServer` / `MapAGUIServer`.
+- GitHub Copilot accepts function declarations rather than arbitrary `AITool` values. Build `IList<AIFunctionDeclaration>` collections directly; this prevents non-function tools from being silently omitted.
+- `Microsoft.Agents.AI.Workflows`, `Microsoft.Agents.AI.Hosting`, `Microsoft.Agents.AI.Hosting.OpenAI`, `Microsoft.Agents.AI.DurableTask`, and `Microsoft.Agents.AI.Hosting.AzureFunctions` show no public API signature changes in the validated 1.13-to-1.14 package diffs. Their behavior fixes still warrant regression testing.
 
 ## Obsolete APIs Added
 
-<!-- TODO: Use MafRunCs0618Hunt against a project pinned to 1.14.0 and document findings -->
+None detected in the validated public API diffs.
 
 ## Known Misalignments
 
-<!-- TODO: Document any discrepancies between official docs and assembly behavior -->
+- The upstream 1.14 release notes enumerate the core, harness, approval, and AG-UI work but omit the two GitHub Copilot tool-collection signature changes and the `ShellPolicy` break. The tagged assemblies and validated package diffs contain those changes.
+- The `ShellPolicy` API diff exposes only the added constructor parameter. It cannot represent the larger behavioral break: allow-before-deny became deny-first, and an allow list changed from a set of exceptions into an exclusive permit list.
+- `1.14.0` is a release-train label rather than a uniform NuGet stability level: these validated surfaces mix stable, preview, alpha, and RC packages. Pin the exact versions recorded in the package-evidence section rather than assuming every package is stable `1.14.0`.
 
 <!-- AUTO-GENERATED END -->
 

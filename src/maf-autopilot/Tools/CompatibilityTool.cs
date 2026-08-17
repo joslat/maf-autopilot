@@ -74,7 +74,7 @@ public sealed class CompatibilityTool
                 | Microsoft.Agents.AI.Workflows.Generators  | `1.14.0` | Source-gen package |
                 | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
                 
-                **Breaking** — review required. Removed: `Description`, `GetMode`, `SetMode`, `EnableNonApprovalRequiredFunctionBypassing`, `EnqueueMessages`, `GetPendingMessages`, `UseNonApprovalRequiredFunctionBypassing`, `DisableNonApprovalRequiredFunctionBypassing`. API summary: 30 breaking. See `guides/maf-1.14.0-migration-guide.md` and the registry entries. Lifecycle transitions: Breaking: package split: Microsoft.Agents.AI.AGUI → AGUI.Client, AGUI.Server, AGUI.Abstractions, AGUI.Protobuf, AGUI.Formatting. Transitive pins carried from 1.13.0 (verify).
+                **Breaking** — migration required. The ten validated release-critical surfaces contain 30 API breaks: agent-mode terminology and async session APIs; approval-rule context changes; default-on approval-not-required bypassing and approval-response binding; async message injection; non-null todo sessions; opt-in Harness file access and explicit shell composition; `AddAGUIServer` / `MapAGUIServer`; Copilot function-declaration collections; and a binary-breaking `ShellPolicy` constructor with deny-first semantics. The legacy `Microsoft.Agents.AI.AGUI` package split into `AGUI.Client`, `AGUI.Server`, `AGUI.Abstractions`, `AGUI.Protobuf`, and `AGUI.Formatting`. See `guides/maf-1.14.0-migration-guide.md` and the 1.14 registry entries. Transitive pins are carried from 1.13.0.
                 """,
 
             ["1.13.0"] = """
