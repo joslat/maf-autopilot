@@ -203,6 +203,74 @@ def test_additive_scaffold_can_record_zero_generated_registry_entries(tmp_path: 
     assert verify_obligations(doc, tmp_path, raw) == []
 
 
+def test_scaffold_ignores_guide_headings_inside_fenced_package_evidence(tmp_path: Path):
+    fenced = """<<<BEGIN_USER_DATA_0123456789abcdef0123456789abcdef_UPSTREAM-MAF-DIFF-CORE>>>
+## Package API Evidence
+## Release Notes Extract
+## Breaking Changes
+<<<END_USER_DATA_0123456789abcdef0123456789abcdef_UPSTREAM-MAF-DIFF-CORE>>>"""
+    _write(
+        tmp_path,
+        "guides/maf-1.14.0-migration-guide.md",
+        TARGET_GUIDE.replace("```text\n- [Removed] Agent.RunAsync()\n```", fenced),
+    )
+    _write(tmp_path, ".maf-version", "1.14.0\n")
+    _write(
+        tmp_path,
+        ".github/skills/maf-obsolete-api-registry/registry.yaml",
+        yaml.safe_dump(_registry(), sort_keys=False),
+    )
+    _write(tmp_path, "guides/maf-1.13.0-migration-guide.md", "historical guide\n")
+    _write(
+        tmp_path,
+        "docs/compatibility-matrix.md",
+        "matrix prefix\n| **1.14.0** | target TODO |\n| **1.13.0** | historical |\ntracking 1.14.0\n",
+    )
+    _write(tmp_path, "src/maf-autopilot/Tools/CompatibilityTool.cs", TOOL)
+
+    document = build_obligations(
+        tmp_path,
+        old_version="1.13.0",
+        target_version="1.14.0",
+        base_commit="a" * 40,
+        target_branch="release-watcher/maf-1.14.0",
+    )
+    assert document["target_guide"]["evidence_sha256"]
+
+
+def test_scaffold_rejects_unterminated_upstream_data_fence(tmp_path: Path):
+    _write(
+        tmp_path,
+        "guides/maf-1.14.0-migration-guide.md",
+        TARGET_GUIDE.replace(
+            "```text\n- [Removed] Agent.RunAsync()\n```",
+            "<<<BEGIN_USER_DATA_0123456789abcdef0123456789abcdef_UPSTREAM-MAF-DIFF-CORE>>>\n## Breaking Changes",
+        ),
+    )
+    _write(tmp_path, ".maf-version", "1.14.0\n")
+    _write(
+        tmp_path,
+        ".github/skills/maf-obsolete-api-registry/registry.yaml",
+        yaml.safe_dump(_registry(), sort_keys=False),
+    )
+    _write(tmp_path, "guides/maf-1.13.0-migration-guide.md", "historical guide\n")
+    _write(
+        tmp_path,
+        "docs/compatibility-matrix.md",
+        "matrix prefix\n| **1.14.0** | target TODO |\n| **1.13.0** | historical |\ntracking 1.14.0\n",
+    )
+    _write(tmp_path, "src/maf-autopilot/Tools/CompatibilityTool.cs", TOOL)
+
+    with pytest.raises(ValueError, match="unterminated upstream-data fence"):
+        build_obligations(
+            tmp_path,
+            old_version="1.13.0",
+            target_version="1.14.0",
+            base_commit="a" * 40,
+            target_branch="release-watcher/maf-1.14.0",
+        )
+
+
 @pytest.mark.parametrize(
     ("relative", "old", "new", "message"),
     [
