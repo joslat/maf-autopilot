@@ -63,6 +63,20 @@ public sealed class CompatibilityTool
     internal static readonly IReadOnlyDictionary<string, string> Matrix =
         new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
+            ["1.17.0"] = """
+                ## MAF 1.17.0 Compatibility
+                
+                | Dependency                                | Version          | Notes |
+                |-------------------------------------------|------------------|-------|
+                | .NET runtime                              | `≥ 8.0` | net8.0, net9.0, net10.0 TFMs all supported |
+                | Microsoft.Extensions.AI                   | `≥ 10.7.0` | Carried from 1.16.0 |
+                | Azure.AI.OpenAI                           | _(not pinned by MAF — BYO via IChatClient)_ | |
+                | Microsoft.Agents.AI.Workflows.Generators  | `1.17.0` | Source-gen package |
+                | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
+                
+                **Maintenance release: no public-API or dependency-floor break.** All eight validated in-repository surfaces have empty API diffs, and the tracked .NET/`Microsoft.Extensions.AI` floors remain unchanged from 1.16.0. Runtime behavior does change in the separately shipped Declarative packages: a top-level agent `ErrorContent` now fails the workflow before completion or downstream actions instead of looking like an empty success; hosted error detail remains governed by the host's exception-detail policy. `Microsoft.Agents.AI.DurableTask` and `Microsoft.Agents.AI.Hosting.AzureFunctions` moved to `microsoft/agent-framework-durable-extension` without changing package IDs and now follow that repository's independent release cadence, so the absence of a 1.17-aligned package is not a removal. See `guides/maf-1.17.0-migration-guide.md` and the 1.17 registry entries.
+                """,
+
             ["1.16.0"] = """
                 ## MAF 1.16.0 Compatibility
                 
