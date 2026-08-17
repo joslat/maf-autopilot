@@ -336,19 +336,269 @@ Automated API summary signals:
 
 - `10` breaking API change row(s)
 
-<!-- TODO: Review every package evidence block and lifecycle transition above -->
+MAF 1.15.0 is source- and binary-breaking for consumers of the **preview**
+`Microsoft.Agents.AI.Hosting` session-store abstraction. The stable
+`Microsoft.Agents.AI` core surface has no public API delta in this release.
+No package was split, removed, or externalized in the 1.15 release train.
+
+### Rename named arguments from `conversationId` to `sessionStoreId`
+
+All ten rows reported above are the same parameter-name correction on two
+methods across five public types. The parameter type and position did not
+change:
+
+| Declaring type | Method | 1.14 named argument | 1.15 named argument |
+|---|---|---|---|
+| `AgentSessionStore` | `GetSessionAsync` | `conversationId:` | `sessionStoreId:` |
+| `AgentSessionStore` | `SaveSessionAsync` | `conversationId:` | `sessionStoreId:` |
+| `DelegatingAgentSessionStore` | `GetSessionAsync` | `conversationId:` | `sessionStoreId:` |
+| `DelegatingAgentSessionStore` | `SaveSessionAsync` | `conversationId:` | `sessionStoreId:` |
+| `InMemoryAgentSessionStore` | `GetSessionAsync` | `conversationId:` | `sessionStoreId:` |
+| `InMemoryAgentSessionStore` | `SaveSessionAsync` | `conversationId:` | `sessionStoreId:` |
+| `IsolationKeyScopedAgentSessionStore` | `GetSessionAsync` | `conversationId:` | `sessionStoreId:` |
+| `IsolationKeyScopedAgentSessionStore` | `SaveSessionAsync` | `conversationId:` | `sessionStoreId:` |
+| `NoopAgentSessionStore` | `GetSessionAsync` | `conversationId:` | `sessionStoreId:` |
+| `NoopAgentSessionStore` | `SaveSessionAsync` | `conversationId:` | `sessionStoreId:` |
+
+Calls that pass the identifier positionally continue to compile and bind to
+the same binary signature. Calls using `conversationId:` fail with `CS1739`;
+rename that argument and align parameter names in custom overrides:
+
+```csharp
+AgentSession session = await store.GetSessionAsync(
+    agent,
+    sessionStoreId: storeId,
+    cancellationToken: cancellationToken);
+
+await store.SaveSessionAsync(
+    agent,
+    sessionStoreId: storeId,
+    session: session,
+    cancellationToken: cancellationToken);
+```
+
+The new name is intentional: a store key may be a stable conversation ID, a
+response snapshot ID, or another application-defined key. It is not always an
+OpenAI `conversation.id`.
+
+### Implement the new abstract deletion contract
+
+`AgentSessionStore.DeleteSessionAsync` is new in 1.15, but it is **abstract**
+in the shipped assembly. Adding an abstract member to a public abstract base
+class is a real subclass and binary break even though the automated API report
+lists it under additive changes. Every external concrete store must implement
+the method (`CS0534` on rebuild), and assemblies containing old subclasses
+must be rebuilt against 1.15.
+
+```csharp
+public override ValueTask DeleteSessionAsync(
+    AIAgent agent,
+    string sessionStoreId,
+    CancellationToken cancellationToken = default)
+{
+    cancellationToken.ThrowIfCancellationRequested();
+    return DeleteStoredSessionAsync(agent, sessionStoreId, cancellationToken);
+}
+```
+
+Perform an idempotent, isolation-aware deletion when the backend supports it.
+If deletion is deliberately unsupported, the upstream contract requires the
+implementation to make that choice explicit, for example by throwing
+`NotSupportedException`; do not silently report success. The four in-box store
+implementations already satisfy the new member. Regression-test deletion with
+the same tenant/principal scoping used by `GetSessionAsync` and
+`SaveSessionAsync`.
 
 ## New Patterns
 
-<!-- TODO: Document any new recommended patterns from release notes -->
+### Pin the actual package versions, not a uniform train number
+
+The 1.15 train contains mixed stability levels. The ten validated surfaces
+resolve uniquely as follows:
+
+- Exact stable `1.15.0`: `Microsoft.Agents.AI`,
+  `Microsoft.Agents.AI.Workflows`, and `Microsoft.Agents.AI.Harness`.
+- Preview `1.15.0-preview.260722.1`: `Microsoft.Agents.AI.Hosting`,
+  `Microsoft.Agents.AI.Hosting.AGUI.AspNetCore`,
+  `Microsoft.Agents.AI.DurableTask`,
+  `Microsoft.Agents.AI.Hosting.AzureFunctions`, and
+  `Microsoft.Agents.AI.Tools.Shell`.
+- Alpha `1.15.0-alpha.260722.1`:
+  `Microsoft.Agents.AI.Hosting.OpenAI`.
+- Release candidate `1.15.0-rc1`:
+  `Microsoft.Agents.AI.GitHub.Copilot`.
+
+Do not replace the prerelease or release-candidate versions with bare
+`1.15.0`; that package version does not exist for those surfaces. The core
+dependency floors remain unchanged from 1.14 (`Microsoft.Extensions.AI` and
+its abstractions/evaluation packages remain at `>= 10.6.0`), and the supported
+.NET baseline remains .NET 8 or later.
+
+### Use the OpenAI Responses facade when the application owns the route
+
+`Microsoft.Agents.AI.Hosting.OpenAI` now exposes the side-effect-free
+`OpenAIResponses` facade and `OpenAIResponsesRunRequest`. They let an
+application reuse MAF's Responses JSON/SSE conversion while retaining
+ownership of HTTP routing, authentication, authorization, middleware, and
+storage:
+
+```csharp
+OpenAIResponsesRunRequest request =
+    OpenAIResponses.ToAgentRunRequest(body, mapOptions);
+
+// This value came from the request. Authenticate the caller, authorize the
+// requested conversation/response, and scope the key before store access.
+string? candidateStoreId = OpenAIResponses.GetSessionStoreId(request);
+
+string responseId = OpenAIResponses.CreateResponseId();
+JsonElement payload = OpenAIResponses.WriteResponse(
+    response,
+    responseId,
+    conversationId: authorizedConversationId);
+```
+
+For streaming, use
+`WriteResponseStreamAsync(updates, responseId, conversationId, cancellationToken)`.
+The facade deliberately exposes `JsonElement` and SSE strings; its internal
+wire DTOs are not a new public object model. Existing
+`MapOpenAIResponses`, `IResponsesService`, Chat Completions, and Conversations
+users do not need to adopt the facade and retain their prior route-owned
+behavior.
+
+Treat `GetSessionStoreId(request)` as returning an **untrusted candidate**, not
+an authorization decision. Bind it to the authenticated principal before
+using it as an `AgentSessionStore` or workflow-checkpoint key. Multi-user hosts
+should use `IsolationKeyScopedAgentSessionStore` (or an equivalent partition)
+so two principals cannot address the same stored session by supplying the same
+external identifier.
+
+### Preserve branch and concurrency semantics in session storage
+
+`AgentSessionStore.GetSessionAsync` creates on miss and returns an independent
+session snapshot on each call. The store does not serialize callers:
+
+- A stable `ConversationId` represents a mutable head. Save it back under the
+  same key, with application-owned single-writer coordination.
+- A first turn or `PreviousResponseId` continuation represents an immutable
+  snapshot branch. Save the completed turn under the newly created response ID
+  so separate branches from one prior response remain independent.
+- Delete with the same scoped key policy used for get/save. Do not collapse a
+  response ID and a stable conversation ID merely because both can be returned
+  as a session-store candidate.
+
+### Resume hosted workflows from durable checkpoints
+
+`HostedWorkflowState` and `HostedWorkflowRunResult` add protocol-neutral
+workflow execution state. On later turns, `RunOrResumeAsync` and
+`RunOrResumeStreamingAsync` restore the latest checkpoint and then run forward
+with the **new turn's input**. They do not resume a halted run with no input.
+When the in-memory head cursor is absent after a process restart or a new
+holder, `CheckpointManager.GetLatestCheckpointAsync(sessionId, ...)` reads
+through to the configured checkpoint store.
+
+Prefer the workflow-factory constructor with `cacheWorkflow: false` (the
+default) when independent sessions must run concurrently:
+
+```csharp
+var hosted = new HostedWorkflowState(
+    workflowFactory: BuildWorkflowAsync,
+    checkpointManager: checkpointManager,
+    loggerFactory: loggerFactory,
+    cacheWorkflow: false);
+
+HostedWorkflowRunResult turn = await hosted.RunOrResumeAsync(
+    sessionId,
+    input,
+    cancellationToken);
+```
+
+A supplied workflow instance, or a factory used with `cacheWorkflow: true`,
+reuses one stateful `Workflow` and cannot be driven by concurrent runners. The
+holder does not provide a general same-session write lock; serialize concurrent
+turns for the same session in the application even when fresh workflow
+instances are used.
+
+`StreamingRun.WatchStreamAsync(blockOnPendingRequest: false, ...)` is the new
+non-blocking drain used by hosted resume. It returns at an unserviced external
+request (including human approval) instead of hanging, while allowing queued
+downstream work in that superstep to finish. File-backed checkpoint indexes
+are now returned in commit order, and an abandoned streaming enumeration
+records its last committed checkpoint in cleanup. Test process-restart resume,
+pending approval, rejected/no-progress input, early SSE disconnect, checkpoint
+rollback ordering, and concurrent turns.
+
+### Correlate declarative streaming output instead of duplicating it
+
+The 1.15 implementation fixes behavior that is not visible in the public API
+diff. Workflow-hosted and declarative agent streaming now generates one stable
+`MessageId` when the provider omits or supplies a blank ID, propagates message
+and response IDs across related events, and correlates all content-bearing
+updates. If that message was already streamed, the later completion event is
+still emitted for observability but has empty contents rather than duplicating
+the full response.
+
+Stream consumers should correlate updates by stable message ID (and executor
+when several agents participate), render the streamed content once, and treat
+an empty-content completion as a terminal signal. Do not concatenate both the
+stream and the completed response. Declarative workflow `autoSend` defaults
+to enabled; `false` still suppresses output for a distinct agent conversation,
+but same-workflow-conversation output is emitted regardless. Regression-test
+both conversation shapes and streaming/non-streaming parity.
+
+The new Dapr getting-started example is an additional `IChatClient` provider
+sample, not a new MAF package or migration requirement.
 
 ## Obsolete APIs Added
 
-<!-- TODO: Use MafRunCs0618Hunt against a project pinned to 1.15.0 and document findings -->
+None. The validated 1.14-to-1.15 public metadata contains no newly obsolete MAF
+API. This release uses a direct parameter rename and a new abstract contract in
+the preview Hosting package rather than an `[Obsolete]` transition. Existing
+`CS0618` findings inherited from earlier releases still follow their earlier
+migration-guide entries.
 
 ## Known Misalignments
 
-<!-- TODO: Document any discrepancies between official docs and assembly behavior -->
+- **The release page uses the wrong comparison base.** Its “Full Changelog”
+  links `python-1.12.0...dotnet-1.15.0`, so Python changes and repository
+  automation appear beside the .NET payload. Use the direct
+  [`dotnet-1.14.0...dotnet-1.15.0` comparison](https://github.com/microsoft/agent-framework/compare/dotnet-1.14.0...dotnet-1.15.0)
+  and the shipped NuGet assemblies for this migration.
+- **The credential-hardening bullets are not SDK runtime changes.** PRs
+  [#7249](https://github.com/microsoft/agent-framework/pull/7249) and
+  [#7270](https://github.com/microsoft/agent-framework/pull/7270) harden the
+  upstream repository's GitHub Actions credential selection and logging. They
+  do not change `Microsoft.Agents.AI.Workflows` authentication. The relevant
+  application security change is the opt-in Responses helper trust boundary
+  described above.
+- **The diff understates one break and overstates another.** It classifies the
+  new abstract `DeleteSessionAsync` as additive even though external subclasses
+  must implement and rebuild. Conversely, its ten “breaking” rows are parameter
+  metadata renames on two methods across five types, not ten distinct binary
+  signature changes.
+- **PR #7000's early overview uses draft names.** The final 1.15 package ships
+  `GetSessionStoreId(OpenAIResponsesRunRequest)`, uses `conversationId` when
+  rendering, and does not contain the draft `HostedAgentState` type. Do not copy
+  the earlier `GetSessionId(JsonElement)`, `sessionId`, or `HostedAgentState`
+  examples from the pull-request discussion. The shipped assembly and
+  [ADR-0032](https://github.com/microsoft/agent-framework/blob/dotnet-1.15.0/docs/decisions/0032-dotnet-hosting-protocol-helpers.md)
+  are authoritative.
+- **The tagged `local_responses` sample renders the wrong stable conversation
+  id.** Its storage branch correctly saves a `conversation` continuation under
+  the stable conversation key, but both response paths pass `responseId` as the
+  `conversationId` argument to `WriteResponse`/`WriteResponseStreamAsync`. For a
+  request carrying a stable conversation, render that authorized conversation
+  id (falling back to the new response id only for response-chain snapshots), or
+  the returned `conversation.id` will not address the session that was saved.
+- **API equality does not mean behavioral equality.** The declarative
+  streaming/`autoSend`, checkpoint ordering, durable read-through, pending
+  request, abandoned stream, and no-progress logging fixes do not appear as
+  breaking rows. They require the regression tests listed under New Patterns.
+- **The ten validated surfaces are intentionally release-critical, not the
+  complete owner catalog.** An independent NuGet assembly audit found no public
+  API changes in the 23 additional first-party packages that have both 1.14-
+  and 1.15-aligned builds. Six current catalog IDs have no aligned build in
+  either train; that absence is not evidence of a new 1.15 removal. No package
+  lifecycle transition is declared for this release.
 
 <!-- AUTO-GENERATED END -->
 

@@ -74,7 +74,7 @@ public sealed class CompatibilityTool
                 | Microsoft.Agents.AI.Workflows.Generators  | `1.15.0` | Source-gen package |
                 | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
                 
-                **Breaking** — review required. API summary: 10 breaking. See `guides/maf-1.15.0-migration-guide.md` and the registry entries. Transitive pins carried from 1.14.0 (verify).
+                **Breaking in the preview Hosting contract** — ten source-only named-argument changes rename `conversationId:` to `sessionStoreId:` across `AgentSessionStore` and its built-in stores; positional and existing binary calls remain compatible. Custom direct subclasses must implement the new abstract `DeleteSessionAsync`. Custom stores must return independent session snapshots and checkpoint indexes in oldest-to-newest commit order. Stable Core has no public API change. See `guides/maf-1.15.0-migration-guide.md` and the 1.15 registry entries. Transitive pins are carried from 1.14.0.
                 """,
 
             ["1.14.0"] = """
