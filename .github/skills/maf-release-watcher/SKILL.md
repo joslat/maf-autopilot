@@ -25,7 +25,7 @@ It isn't, in the Copilot-Chat sense. The work runs in GitHub Actions VMs, not in
 
 Triggers for the pipeline itself:
 
-- **Weekly cron**: `0 9 * * 1` (Monday 09:00 UTC) — defined in `.github/workflows/maf-release-watcher.yml`
+- **Weekly cron**: `0 6 * * 4` (Thursday 06:00 UTC) — defined in `.github/workflows/maf-release-watcher.yml`
 - **Manual dispatch**: `gh workflow run maf-release-watcher.yml -f maf_version=X.Y.Z`
 
 ---
@@ -43,7 +43,8 @@ TRIGGER (cron or gh workflow run)
 │  NO LLM, NO AGENT — just shell + Python + dotnet CLI               │
 ├────────────────────────────────────────────────────────────────────┤
 │                                                                    │
-│  1.1  Check NuGet for latest MAF stable                            │
+│  1.1  Select oldest untracked MAF stable from NuGet                │
+│       (clean no-op while any watcher scaffold PR is in flight)     │
 │  1.2  Run `dotnet-inspect diff` for Microsoft.Agents.AI[.Workflows]│
 │  1.3  Fetch GitHub release notes from microsoft/agent-framework    │
 │  1.4  Run `python3 .github/scripts/update_compat_matrix.py`        │

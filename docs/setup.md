@@ -177,16 +177,22 @@ If you are **joslat** (the repo owner): the repository is `github.com/joslat/maf
 
 ### Adding GitHub Secrets
 
-The release watcher workflow needs one secret **if you want to publish the NuGet package** (step #25):
+The repository automation uses two repository-level Actions secrets:
 
 | Secret | Where to get it | Required for |
 |--------|-----------------|-------------|
-| `NUGET_API_KEY` | [nuget.org → API Keys](https://www.nuget.org/account/apikeys) | NuGet publish (#25) |
+| `NUGET_API_KEY` | [nuget.org → API Keys](https://www.nuget.org/account/apikeys) | The separate `release.yml` NuGet publish workflow |
+| `COPILOT_ASSIGN_PAT` | GitHub fine-grained PAT, scoped to this repository | Pushing watcher scaffold branches and assigning a Coding Agent from `maf-ai-fill-todos.yml` |
+
+The semantic-review workflow does not need another stored secret. It uses the
+run's short-lived `GITHUB_TOKEN` with only `copilot-requests: write`; for this
+personally owned repository, GitHub bills those requests to the repository
+owner's Copilot seat. Copilot tools are not enabled in that workflow.
 
 **How to add:**
 1. GitHub repo → **Settings → Secrets and variables → Actions → New repository secret**
-2. Name: `NUGET_API_KEY`
-3. Value: your NuGet.org API key (scope: push, package: `maf-doctor`, or all packages)
+2. Add each secret by its exact name.
+3. Scope `NUGET_API_KEY` to package push. Scope `COPILOT_ASSIGN_PAT` to Metadata R plus Issues, Contents, and Pull requests R/W on this repository only.
 
 > The `GITHUB_TOKEN` secret is automatically provided by GitHub Actions — no setup needed.
 
@@ -198,15 +204,16 @@ The file `.github/workflows/maf-release-watcher.yml` is already in the repo. Git
 
 **What the workflow does:**
 
-1. **Runs weekly** (Monday 9 AM UTC) — or manually via **Actions → MAF Release Watcher → Run workflow**
-2. **`check-for-new-maf-release`** — queries NuGet for the latest `Microsoft.Agents.AI` version, compares to `.maf-version`
-3. If a new version is found: **`analyze-and-update`** — runs `dotnet-inspect diff`, updates `compatibility-matrix.md`, appends a draft section to the migration guide, creates a PR for human review
-4. **`publish-mcp-release`** (optional, manual trigger only) — `dotnet pack` + `dotnet nuget push` to NuGet.org
+1. **Runs weekly** (Thursday 06:00 UTC) — or manually via **Actions → MAF Release Watcher → Run workflow**.
+2. **`check-for-new-maf-release`** — reads the NuGet stable-version index and selects the oldest release newer than `.maf-version`. If any watcher scaffold PR is already open, it exits cleanly so updates stay sequential.
+3. **`analyze-and-update`** — runs adjacent-version `dotnet-inspect` diffs, updates the matrix/code matrix, writes a per-version guide, appends registry drafts, and opens `release-watcher/maf-X.Y.Z` as a PR. It never pushes the scaffold to `main`.
+4. For a breaking release, fill the TODOs directly or manually dispatch `maf-ai-fill-todos.yml` with `target_version` and `target_branch`. Merge the fill PR into the scaffold branch, then merge the green scaffold PR to advance `.maf-version`.
+5. NuGet publication is separate: tags or a manual dispatch run `release.yml`; the watcher does not publish MAF Doctor.
 
 **Manual trigger with version override:**
 - Go to Actions → MAF Release Watcher → Run workflow
-- Optionally specify a version (e.g., `1.4.0`) to force processing a specific release
-- Set `publish: true` to also push the NuGet package (requires `NUGET_API_KEY` secret)
+- Optionally specify a version (e.g., `1.14.0`) to process a specific release.
+- Leave `push_target` blank for the normal per-version branch; set it only for an explicit throwaway-branch dry run. `main` and `master` are rejected.
 
 ---
 
@@ -222,9 +229,9 @@ This is the next required user action. Once done, anyone can `dotnet tool instal
 
 **Option 1 — Via GitHub Actions (recommended for ongoing releases):**
 1. Add `NUGET_API_KEY` to GitHub secrets
-2. Go to Actions → MAF Release Watcher → Run workflow
-3. Set `publish: true`
-4. Click **Run workflow**
+2. Push a reviewed semver tag (`vX.Y.Z` or `X.Y.Z`) to run `release.yml`, or go to Actions → Release maf-doctor → Run workflow
+3. Optionally supply the package version on manual dispatch; otherwise the workflow uses the project version
+4. Review the test, package, provenance-attestation, NuGet-push, and GitHub-release steps
 
 **Option 2 — Manual first publish (bootstraps NuGet listing):**
 ```powershell
@@ -236,21 +243,21 @@ dotnet nuget push ./nupkg/maf-doctor.*.nupkg --api-key YOUR_KEY --source https:/
 ### After publishing
 - The package appears on NuGet.org within ~15 minutes
 - Users can then `dotnet tool install -g maf-doctor --prerelease` and `maf-doctor init`
-- The workflow's `publish-mcp-release` job handles all future releases automatically
+- The separate `release.yml` workflow handles future tagged or manually dispatched releases
 
 ---
 
-## Enabling Registry Auto-Update in CI (Step #30)
+## Filling Registry Drafts in CI
 
-The release watcher currently leaves `registry.yaml` as a manual step — human must review the diff and write new CS0618 entries. Step #30 closes this gap with a Copilot Coding Agent step.
+The watcher deterministically extracts and appends candidate registry entries. Breaking releases remain red until their semantic fields and guide sections are filled. A maintainer can fill them directly on the scaffold branch or dispatch `maf-ai-fill-todos.yml`, which opens a tightly-scoped issue and assigns the selected Coding Agent to create a fill PR targeting that scaffold branch.
 
-This is discussed below in the architecture comparison.
+The AI-fill handoff is deliberately manual: the watcher does not start a paid/non-deterministic agent run automatically, and no AI-inferred migration reaches `main` without the registry and cross-file verification gates.
 
 ---
 
 ## Architecture: Copilot Coding Agent vs. Shell Scripts
 
-The current workflow (`analyze-and-update` job) uses **pure shell scripts** (bash + python3 + dnx). An alternative is to replace some or all of the scripted logic with a **Copilot Coding Agent** step (`uses: github/copilot-coding-agent@v1`).
+The watcher (`analyze-and-update`) uses deterministic shell, Python, the locally built MAF Doctor CLI, and `dotnet-inspect`. Semantic TODO filling is a separate, manual Coding-Agent issue/PR handoff. These are complementary stages, not alternative implementations of the same job.
 
 Here is an honest comparison:
 
@@ -279,17 +286,9 @@ Here is an honest comparison:
 
 ---
 
-### Alternative — Copilot Coding Agent
+### Semantic stage — Coding Agent
 
-```yaml
-- name: Update registry and guide with Copilot
-  uses: github/copilot-coding-agent@v1
-  with:
-    prompt: |
-      Read diff-core.txt. For each removed or renamed member that relates to
-      Microsoft.Agents.AI workflows, add an entry to .github/skills/maf-obsolete-api-registry/registry.yaml
-      following the existing format. ...
-```
+The `maf-ai-fill-todos.yml` workflow renders a fenced, version-specific issue prompt, creates the issue, and assigns Copilot, Claude, or Codex through GitHub's Coding Agent integration. The agent must base its work on the watcher scaffold branch and open its fill PR back to that branch.
 
 **Pros:**
 - Can write **meaningful** `registry.yaml` entries (semantic understanding of what changed)
@@ -330,7 +329,7 @@ Here is an honest comparison:
 | `registry.yaml` entries | ❌ Cannot do semantically | ✅ Ideal fit | **Agent (recommended)** |
 | PR creation | ✅ Perfect | Not needed | Scripts |
 
-**Bottom line:** The current all-scripts approach was the right call to get to a working, low-dependency workflow. Step #30 adds the Copilot Agent only where it provides irreplaceable value (semantic YAML generation). You do NOT need to rewrite the whole workflow.
+**Bottom line:** deterministic extraction creates an auditable scaffold; optional agent reasoning fills only the semantic gaps; mechanical and semantic PR checks guard the result.
 
 ---
 
@@ -342,10 +341,10 @@ You want: dotnet tool install -g maf-doctor --prerelease
        └─ Requires: NuGet.org account + API key
             └─ Action: Add NUGET_API_KEY to GitHub repo secrets
 
-You want: registry.yaml auto-update in CI
-  └─ Requires: #30 Copilot Agent step in workflow
-       └─ Requires: GitHub Copilot Enterprise or Teams (for copilot-coding-agent@v1)
-            └─ Alternative: Use OpenAI/Azure OpenAI API key instead
+You want: registry.yaml semantic TODO filling via Coding Agent
+  └─ Requires: manually dispatch maf-ai-fill-todos.yml for the scaffold branch
+       └─ Requires: a supported GitHub Coding Agent enabled for the repo
+            └─ Requires: COPILOT_ASSIGN_PAT for automatic issue assignment
 
 You want: maf_open_feedback_issue tool
   └─ Requires: #31 tool implementation
@@ -368,4 +367,5 @@ You want: maf_open_feedback_issue tool
 | MCP server (global tool) | Your machine | .NET 8 / 9 / 10 runtime (any one) + `dotnet tool install -g maf-doctor --prerelease` |
 | Release watcher workflow | GitHub Actions | GitHub repo |
 | NuGet publish | GitHub Actions | `NUGET_API_KEY` secret |
-| Registry auto-update | GitHub Actions | Copilot Enterprise or LLM API key (#30) |
+| Registry scaffold extraction | GitHub Actions | GitHub repo; no LLM |
+| Registry semantic fill | GitHub Coding Agent + Actions | Enabled Coding Agent + `COPILOT_ASSIGN_PAT` for assignment |

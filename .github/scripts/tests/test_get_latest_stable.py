@@ -16,7 +16,7 @@ import pytest
 SCRIPT = Path(__file__).resolve().parents[1] / "get_latest_stable.py"
 sys.path.insert(0, str(SCRIPT.parent))
 
-from get_latest_stable import latest_stable  # noqa: E402
+from get_latest_stable import latest_stable, next_stable_after  # noqa: E402
 
 
 def _index(*versions: str) -> str:
@@ -31,6 +31,23 @@ def test_picks_latest_stable_ignoring_prereleases():
 def test_ascending_order_returns_last_stable():
     raw = _index("1.0.0", "1.1.0", "1.2.0")
     assert latest_stable(raw) == "1.2.0"
+
+
+def test_next_stable_after_returns_oldest_pending_release():
+    # Selection is semantic, not dependent on NuGet feed ordering.
+    raw = _index("1.17.0", "1.15.0", "1.13.0", "1.16.0-preview.1", "1.14.0")
+    assert next_stable_after(raw, "1.13.0") == "1.14.0"
+    assert next_stable_after(raw, "1.14.0") == "1.15.0"
+
+
+def test_next_stable_after_returns_empty_when_current():
+    raw = _index("1.15.0", "1.16.0-preview.1", "1.17.0")
+    assert next_stable_after(raw, "1.17.0") == ""
+
+
+def test_next_stable_after_handles_current_missing_from_feed_slice():
+    raw = _index("1.14.0", "1.15.0", "1.17.0")
+    assert next_stable_after(raw, "1.13.0") == "1.14.0"
 
 
 # SEC-28: ANY hyphen is a SemVer prerelease label — not just the four the old
@@ -81,3 +98,15 @@ def test_runs_as_stdin_subprocess():
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "1.6.1"
+
+
+def test_runs_as_stdin_subprocess_with_after():
+    raw = _index("1.13.0", "1.14.0", "1.15.0", "1.17.0")
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--after", "1.13.0"],
+        input=raw,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "1.14.0"

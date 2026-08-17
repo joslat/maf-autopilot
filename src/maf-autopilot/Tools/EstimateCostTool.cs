@@ -176,7 +176,9 @@ public sealed class EstimateCostTool
     /// Well-known non-agent receivers of a <c>RunAsync</c>/<c>RunStreamingAsync</c> call:
     /// the ASP.NET host run loop and the MAF workflow runners. Matched by the receiver's
     /// rightmost identifier, so it covers `app.RunAsync()`, `host.RunAsync()`,
-    /// `webApp.RunAsync()`, `workflow.RunAsync(…)`, and `InProcessExecution.RunStreamingAsync(…)`.
+    /// `webApp.RunAsync()`, command entry points such as `InitCommand.RunAsync(…)`,
+    /// host builders such as `builder.Build().RunAsync()`, and
+    /// `InProcessExecution.RunStreamingAsync(…)`.
     /// Syntactic denylist (no SemanticModel) — see call site.
     /// </summary>
     private static readonly HashSet<string> NonAgentRunReceivers = new(StringComparer.Ordinal)
@@ -194,13 +196,34 @@ public sealed class EstimateCostTool
     /// <summary>True if the call's receiver is a known non-agent host/workflow runner.</summary>
     private static bool IsNonAgentRunReceiver(ExpressionSyntax receiver)
     {
+        // Generic/MCP host startup. The receiver is the result of a parameterless
+        // Build() call, not an AIAgent. Keeping this structural avoids denylisting
+        // the variable name `builder`, which can legitimately build agents too.
+        if (receiver is InvocationExpressionSyntax
+            {
+                Expression: MemberAccessExpressionSyntax
+                {
+                    Name.Identifier.ValueText: "Build",
+                },
+                ArgumentList.Arguments.Count: 0,
+            }
+            && receiver.Parent?.Parent is InvocationExpressionSyntax
+            {
+                ArgumentList.Arguments.Count: 0,
+            })
+            return true;
+
         var simple = receiver switch
         {
             IdentifierNameSyntax id => id.Identifier.ValueText,
             MemberAccessExpressionSyntax ma => ma.Name.Identifier.ValueText,
             _ => null,
         };
-        return simple is not null && NonAgentRunReceivers.Contains(simple);
+        // CLI command types expose their own RunAsync entry points. They are static
+        // orchestration methods and never consume ChatOptions/MaxOutputTokens.
+        return simple is not null
+            && (NonAgentRunReceivers.Contains(simple)
+                || simple.EndsWith("Command", StringComparison.Ordinal));
     }
 
     private static bool IsChatOptionsCreation(ObjectCreationExpressionSyntax oce)

@@ -262,6 +262,54 @@ public sealed class FalsePositiveHardeningTests
     }
 
     [Fact]
+    public void Cost001_CommandEntryPoint_DoesNotFlag()
+    {
+        const string source = """
+            public class Program
+            {
+                public static async System.Threading.Tasks.Task Main(string[] args)
+                {
+                    var exitCode = await InitCommand.RunAsync(args);
+                }
+            }
+            """;
+        var findings = EstimateCostTool.AnalyzeSource(source, "src/Program.cs");
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public void Cost001_BuiltHostRunLoop_DoesNotFlag()
+    {
+        const string source = """
+            public class Program
+            {
+                public static async System.Threading.Tasks.Task Main(dynamic builder)
+                {
+                    await builder.Build().RunAsync();
+                }
+            }
+            """;
+        var findings = EstimateCostTool.AnalyzeSource(source, "src/Program.cs");
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public void Cost001_BuiltAgentWithInput_StillFlags()
+    {
+        const string source = """
+            public class Program
+            {
+                public static async System.Threading.Tasks.Task Run(dynamic agentBuilder)
+                {
+                    var response = await agentBuilder.Build().RunAsync("hello");
+                }
+            }
+            """;
+        var findings = EstimateCostTool.AnalyzeSource(source, "src/Program.cs");
+        Assert.Contains(findings, f => f.HasCapWarning);
+    }
+
+    [Fact]
     public void Cost001_RealAgentRunAsync_StillFlags()
     {
         const string source = """

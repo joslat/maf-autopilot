@@ -208,7 +208,7 @@ This pattern matches the sibling [`AgentEval`](https://github.com/joslat/AgentEv
 
 ## Auto-update — additivity
 
-The `maf-release-watcher` workflow runs weekly + on-demand, detecting new MAF releases on NuGet. When a new version (e.g. 1.4.0) is found, it opens an auto-PR that updates the toolkit. **This update must be ADDITIVE — every existing entry, rule, and reference for prior versions survives unchanged.** This invariant is critical: a downstream user upgrading from 1.3 → 1.4 still needs the toolkit's full 1.3 knowledge intact.
+The `maf-release-watcher` workflow runs weekly + on-demand, detecting new MAF releases on NuGet. It processes the **oldest untracked stable release first** and allows only one watcher PR in flight, so multiple upstream releases between cron ticks cannot disappear from the version chain. When a new version (e.g. 1.4.0) is found, it opens an auto-PR that updates the toolkit. **This update must be ADDITIVE — every existing entry, rule, and reference for prior versions survives unchanged.** This invariant is critical: a downstream user upgrading from 1.3 → 1.4 still needs the toolkit's full 1.3 knowledge intact.
 
 ### What's additive (the data plane — automated)
 
@@ -231,15 +231,15 @@ The `maf-release-watcher` workflow runs weekly + on-demand, detecting new MAF re
 ### When MAF X.Y ships — the actual flow
 
 1. **Watcher fires** (weekly Thursday 06:00 UTC cron OR manual `gh workflow run maf-release-watcher.yml`; a manual run can set `maf_version` for a specific version and `push_target` for a safe dry-run against a throwaway branch).
-2. **Detection step** compares NuGet's latest stable against `.maf-version`. If different, proceeds.
+2. **Detection step** reads NuGet's stable-version index and selects the oldest version newer than `.maf-version`. If another watcher PR is open, it exits as a clean no-op until that PR merges or closes; this serializes the backlog.
 3. **Major-version check** sets `is_major=true` for X.0 bumps. **Majors are NOT auto-committed** — they escalate to a `maf-release,needs-review` tracking issue (with the breaking-API diffs attached as run artifacts) for human-driven migration. Minor/patch bumps continue automatically.
 4. **dotnet-inspect diff** runs for each MAF NuGet package; output captured (and uploaded as run artifacts for reviewer access).
 5. **`registry-extract` CLI** parses each diff, emits draft YAML entries; the append step de-dupes them against existing entry ids (idempotent on re-run).
 6. **Append step** appends the de-duplicated drafts to the live `registry.yaml`. A separator comment marks the auto-appended region.
 7. **Matrix update** inserts a new top row in `compatibility-matrix.md`.
 8. **Guide generation** writes a per-version file `guides/maf-X.Y.0-migration-guide.md` and regenerates the cumulative guide (existing per-version guides untouched).
-9. **Direct commit to `main`** (no PR gate — a deliberate solo-maintainer trade-off; majors are gated at step 3). The push uses the maintainer PAT so it bypasses branch protection.
-10. **AI-fill dispatch** kicks off `maf-ai-fill-todos.yml`, which opens an issue assigned to the GitHub Copilot Coding Agent; the agent fills the TODO placeholders (`replacement_signature`, `fix_description`, `example_after`, `guide_section`) and opens a PR, gated by the rung-1 `verify-registry` + rung-2 semantic-review checks.
+9. **Commit to `release-watcher/maf-X.Y.Z` and open a PR**. The scaffold never pushes directly to `main`; the maintainer PAT is used so the PR-created event triggers the normal CI workflows.
+10. **Optional manual AI fill**: a maintainer can dispatch `maf-ai-fill-todos.yml` with the version and scaffold branch. It opens an issue assigned to a Coding Agent; the agent bases its work on the scaffold branch and opens a PR back to that branch. A maintainer may instead fill the scaffold directly. Either route is gated by rung-1 `verify-registry` + rung-2 semantic review.
 11. **On any failure**, a `notify-on-failure` job opens/updates a `maf-release` tracking issue so the maintainer is alerted (scheduled failures no longer pass silently).
 
 ### How additivity is engraved
@@ -248,7 +248,7 @@ The `maf-release-watcher` workflow runs weekly + on-demand, detecting new MAF re
 - **Test pinned**: `Additivity_EmptyDraftSet_LeavesExistingRegistryUntouched` asserts no-op when there's nothing to add.
 - **Workflow design**: every modification is `>>` (append) or "new file" — never `>` (overwrite) or `sed -i` over existing entries.
 - **Python script docstrings**: each helper script (`gen_guide_section.py`, `update_compat_matrix.py`) explicitly documents idempotency + the protected sections (`## Human additions`).
-- **PR review gate**: branch protection on `main` requires human review of `maf-release` labelled PRs before merge — the final additivity check is a human eye.
+- **PR review gate**: every scaffold lands through a PR, the required `verify` context checks watcher-managed files, and the maintainer reviews the generated diff before merge.
 
 If any of those guards regresses, this section needs an update to reflect the new reality. **Don't silently break additivity.**
 

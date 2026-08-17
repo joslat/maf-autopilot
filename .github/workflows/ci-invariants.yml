@@ -415,15 +415,16 @@ jobs:
         # until a clean baseline is confirmed; promote to blocking afterwards.
         # Two known false positives are suppressed via -ignore so the advisory
         # output stays signal-only:
-        #   - `models: read` is a valid permission actionlint 1.7.7 doesn't know.
+        #   - `copilot-requests: write` is a valid permission actionlint 1.7.7
+        #     doesn't know.
         #   - `property "x" is not defined` comes from THIS meta-workflow's own
         #     regex strings (it deliberately contains `${{ inputs.* }}` text).
-        # TODO: digest-pin the image; drop the model-ignore once actionlint ships
-        # the `models` scope.
+        # TODO: digest-pin the image; drop the permission ignore once actionlint
+        # ships the `copilot-requests` scope.
         run: |
           docker run --rm -v "$PWD:/repo" -w /repo \
             rhysd/actionlint:1.7.7 -color -shellcheck= -pyflakes= \
-            -ignore 'permission scope "models"' \
+            -ignore 'permission scope "copilot-requests"' \
             -ignore 'property "x" is not defined' || true
 
       - name: Compile-check Python helper scripts
