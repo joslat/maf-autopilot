@@ -5,7 +5,7 @@
 # Format: see .github/skills/maf-obsolete-api-registry/SKILL.md
 
 schema_version: "1.0"
-target_maf_version: "1.15.0"
+target_maf_version: "1.16.0"
 last_updated: "2026-08-17"
 
 entries:
@@ -3658,3 +3658,344 @@ entries:
       The excluded Workflows.Declarative package has no public API diff, so this
       behavior change cannot be discovered by dotnet-inspect.
     applies_to_codebases: pre-1.15.0
+
+  - id: MAF116-CHAT-HISTORY-OWNERSHIP-001
+    package: Microsoft.Agents.AI
+    version_introduced: "1.16.0"
+    type: Microsoft.Agents.AI.ChatClientAgent
+    method: RunAsync / RunStreamingAsync (ChatHistoryProvider persistence)
+    obsolete_signature: "A service-managed conversation and ChatHistoryProvider both persist the same input turn"
+    replacement_signature: "Use one history owner: service conversation/session state or ChatHistoryProvider, but not both for the same turn"
+    argument_order_change: false
+    fix_description: "When the backing chat service owns conversation history, remove the overlapping ChatHistoryProvider (or make the provider an audit-only sink); keep a provider only when the application is the sole history owner."
+    example_before: |
+      var agent = new ChatClientAgent(
+          chatClient,
+          new ChatClientAgentOptions
+          {
+              ChatHistoryProvider = persistentHistory
+          });
+
+      AgentResponse response = await agent.RunAsync(
+          "Summarize our previous turn.", serviceOwnedSession);
+    example_after: |
+      var agent = new ChatClientAgent(chatClient);
+
+      // The service-owned session is the single conversation-history owner.
+      AgentResponse response = await agent.RunAsync(
+          "Summarize our previous turn.", serviceOwnedSession);
+    cs_warning: RUNTIME_SILENT
+    guide_section: "N/A"
+    dotnet_inspect_detectable: false
+    notes: >-
+      Verified against the 1.16 history-ownership correction in
+      https://github.com/microsoft/agent-framework/pull/7284. In 1.15, a
+      service-returned conversation id could coexist with provider persistence
+      and store the initial user turn twice. This is a runtime state-ownership
+      contract, not a public metadata change; keep any audit transcript separate
+      from the provider used to construct the model request.
+    applies_to_codebases: pre-1.16.0
+
+  - id: MAF116-TOOLAPPROVAL-SESSION-001
+    package: Microsoft.Agents.AI
+    version_introduced: "1.16.0"
+    type: Microsoft.Agents.AI.ToolApprovalAgent
+    method: RunAsync / RunStreamingAsync with session null
+    obsolete_signature: "Callers pre-create an inner-agent session before every ToolApprovalAgent run because a null session is not initialized"
+    replacement_signature: "ToolApprovalAgent creates the wrapped agent session when session is null"
+    argument_order_change: false
+    fix_description: "Pass session: null for a stateless or first approval run and let ToolApprovalAgent create the wrapped session; continue passing an explicit retained session when the caller owns multi-turn persistence."
+    example_before: |
+      AgentSession session = await innerAgent.CreateSessionAsync(cancellationToken);
+      AgentResponse response = await approvalAgent.RunAsync(
+          messages, session, cancellationToken: cancellationToken);
+    example_after: |
+      AgentResponse response = await approvalAgent.RunAsync(
+          messages, session: null, cancellationToken: cancellationToken);
+    cs_warning: RUNTIME_SILENT
+    guide_section: "N/A"
+    dotnet_inspect_detectable: false
+    notes: >-
+      Verified against https://github.com/microsoft/agent-framework/pull/7310.
+      The 1.16 wrapper now initializes its underlying session when no session is
+      supplied. This removes boilerplate for first/stateless runs; it does not
+      transfer ownership of a caller-retained multi-turn session or its storage.
+    applies_to_codebases: pre-1.16.0
+
+  - id: MAF116-FILEMEMORY-SCOPE-001
+    package: Microsoft.Agents.AI
+    version_introduced: "1.16.0"
+    type: Microsoft.Agents.AI.FileMemoryProvider
+    method: FileMemoryState.WorkingFolder
+    obsolete_signature: "An empty WorkingFolder is assumed to isolate FileMemoryProvider data per agent session"
+    replacement_signature: "An empty WorkingFolder uses the FileSystemAgentFileStore root; set a unique WorkingFolder for each isolation boundary"
+    argument_order_change: false
+    fix_description: "Assign a stable unique working-folder name per session (and persist it with session state) before storing memory; use the empty folder only when intentionally sharing the store root."
+    example_before: |
+      var memory = new FileMemoryProvider(
+          new FileSystemAgentFileStore(memoryRoot));
+      // Empty WorkingFolder: every session addresses the same store root.
+    example_after: |
+      var memory = new FileMemoryProvider(
+          new FileSystemAgentFileStore(memoryRoot),
+          _ => new FileMemoryState
+          {
+              WorkingFolder = sessionId
+          });
+    cs_warning: RUNTIME_SILENT
+    guide_section: "N/A"
+    dotnet_inspect_detectable: false
+    notes: >-
+      Verified against the corrected FileMemoryProvider guidance in
+      https://github.com/microsoft/agent-framework/pull/7401. Version 1.16
+      corrects the earlier isolation claim: the default empty working folder
+      resolves to the shared file-store root. Choose and validate the folder as
+      application state; do not derive it directly from untrusted input.
+    applies_to_codebases: pre-1.16.0
+
+  - id: MAF116-FOUNDRY-PORT-001
+    package: Microsoft.Agents.AI.Foundry.Hosting
+    version_introduced: "1.16.0"
+    type: Microsoft.Agents.AI.Foundry.Hosting.FoundryHostingExtensions
+    method: AddFoundryResponses
+    obsolete_signature: "Foundry response hosting requires an application-owned manual Kestrel ListenAnyIP port binding"
+    replacement_signature: "AddFoundryResponses binds the Foundry endpoint to PORT, or to port 8088 when PORT is absent"
+    argument_order_change: false
+    fix_description: "Remove a duplicate manual binding for the Foundry endpoint, set PORT to the deployment-provided value when needed, and validate that it is an integer from 1 through 65535."
+    example_before: |
+      builder.WebHost.ConfigureKestrel(options =>
+          options.ListenAnyIP(8088));
+      builder.Services.AddFoundryResponses(agent);
+    example_after: |
+      // Set PORT in the hosting environment when its assigned port is not 8088.
+      builder.Services.AddFoundryResponses(agent);
+    cs_warning: RUNTIME_SILENT
+    guide_section: "N/A"
+    dotnet_inspect_detectable: false
+    notes: >-
+      Verified against https://github.com/microsoft/agent-framework/pull/7372.
+      The implicit binding is scoped to the Kestrel endpoint marked for Foundry
+      hosting; unrelated endpoints remain application-controlled. Missing PORT
+      selects 8088, while an invalid or out-of-range value fails startup instead
+      of silently selecting another port.
+    applies_to_codebases: pre-1.16.0
+
+  - id: MAF116-HOSTING-A2A-CONFIG-001
+    package: Microsoft.Agents.AI.Hosting.A2A
+    version_introduced: "1.16.0"
+    type: Microsoft.Agents.AI.AgentRunOptions
+    method: A2A request dispatch / AdditionalProperties
+    obsolete_signature: "A2A SendMessageConfiguration is consumed only by the transport and is unavailable to the invoked agent"
+    replacement_signature: "The complete SendMessageConfiguration is forwarded in AgentRunOptions.AdditionalProperties under the key a2a.configuration"
+    argument_order_change: false
+    fix_description: "Read the forwarded configuration with a type check when the agent needs request-level A2A preferences; treat it as untrusted request metadata and keep AgentRunMode as the authoritative execution-mode contract."
+    example_before: |
+      // Only generic request metadata was inspected by the invoked agent.
+      AgentRunOptions options = request.Options;
+    example_after: |
+      if (options.AdditionalProperties?.TryGetValue(
+              "a2a.configuration", out object? raw) == true &&
+          raw is SendMessageConfiguration configuration)
+      {
+          IReadOnlyList<string>? acceptedModes =
+              configuration.AcceptedOutputModes;
+      }
+    cs_warning: RUNTIME_SILENT
+    guide_section: "N/A"
+    dotnet_inspect_detectable: false
+    notes: >-
+      Verified against https://github.com/microsoft/agent-framework/pull/7365.
+      Version 1.16 forwards the full configuration object, including accepted
+      output modes, history length, push-notification settings, authentication,
+      token, and ReturnImmediately. Do not log secrets or authorize behavior from
+      this client-controlled bag without application validation.
+    applies_to_codebases: pre-1.16.0
+
+  - id: MAF116-WORKFLOWS-DECL-TABLE-STATE-001
+    package: Microsoft.Agents.AI.Workflows.Declarative
+    version_introduced: "1.16.0"
+    type: Microsoft.Agents.ObjectModel.EditTable / EditTableV2
+    method: Add / Remove / Clear / TakeFirst / TakeLast
+    obsolete_signature: "EditTable stores the operation result back into itemsVariable, replacing the table with an operation result"
+    replacement_signature: "itemsVariable remains table state; operation output is written only to resultVariable when one is configured"
+    argument_order_change: false
+    fix_description: "Keep itemsVariable dedicated to the mutable table and use resultVariable for removed, selected, or status output; remove workarounds that reconstruct the table after each operation."
+    example_before: |
+      - kind: EditTable
+        operation: Add
+        itemsVariable: Local.Rows
+        value: =Local.First
+      - kind: EditTable
+        operation: Add
+        itemsVariable: Local.Rows # 1.15 could no longer be a table here
+        value: =Local.Second
+    example_after: |
+      - kind: EditTable
+        operation: Add
+        itemsVariable: Local.Rows
+        value: =Local.First
+        resultVariable: Local.FirstAddResult
+      - kind: EditTable
+        operation: Add
+        itemsVariable: Local.Rows
+        value: =Local.Second
+        resultVariable: Local.SecondAddResult
+    cs_warning: RUNTIME_SILENT
+    guide_section: "N/A"
+    dotnet_inspect_detectable: false
+    notes: >-
+      Verified against https://github.com/microsoft/agent-framework/pull/7324
+      and https://github.com/microsoft/agent-framework/pull/7353. The corrected
+      state contract applies across Add, Remove, Clear, TakeFirst, and TakeLast,
+      including tables restored from checkpoints. Review flows that depended on
+      the accidental replacement of itemsVariable.
+    applies_to_codebases: pre-1.16.0
+
+  - id: MAF116-VECTORDATA-DIMENSIONS-001
+    package: Microsoft.Extensions.VectorData.Abstractions
+    version_introduced: "1.16.0"
+    type: Microsoft.Extensions.VectorData.VectorStoreVectorAttribute
+    method: .ctor
+    obsolete_signature: "VectorStoreVectorAttribute(int Dimensions)"
+    replacement_signature: "VectorStoreVectorAttribute(int dimensions)"
+    argument_order_change: false
+    fix_description: "Change the named constructor argument from Dimensions to dimensions; positional constructor calls need no source change."
+    example_before: |
+      [VectorStoreVector(Dimensions: 3072)]
+      public ReadOnlyMemory<float> Embedding { get; init; }
+    example_after: |
+      [VectorStoreVector(dimensions: 3072)]
+      public ReadOnlyMemory<float> Embedding { get; init; }
+    cs_warning: CS1739
+    guide_section: "N/A"
+    dotnet_inspect_detectable: true
+    notes: >-
+      MAF 1.16 raises its Microsoft.Extensions.VectorData.Abstractions floor
+      from 9.7 to 10.7 through https://github.com/microsoft/agent-framework/pull/5694.
+      Exact dotnet-inspect 0.9.1 comparison of 9.7.0 to 10.7.0 reports the
+      constructor parameter rename. The change is source-breaking only for the
+      case-sensitive named argument and remains binary compatible.
+    applies_to_codebases: pre-1.16.0
+
+  - id: MAF116-VECTORDATA-FILTER-001
+    package: Microsoft.Extensions.VectorData.Abstractions
+    version_introduced: "1.16.0"
+    type: Microsoft.Extensions.VectorData.VectorSearchOptions<TRecord>
+    method: OldFilter / Filter
+    obsolete_signature: "VectorSearchOptions<TRecord>.OldFilter using VectorSearchFilter and FilterClause objects"
+    replacement_signature: "VectorSearchOptions<TRecord>.Filter using Expression<Func<TRecord, bool>>"
+    argument_order_change: false
+    fix_description: "Rewrite the old filter-builder tree as a strongly typed predicate assigned to Filter; use ordinary boolean operators and collection Contains expressions supported by the selected provider."
+    example_before: |
+      var options = new VectorSearchOptions<Document>
+      {
+          OldFilter = new VectorSearchFilter()
+              .EqualTo(nameof(Document.TenantId), tenantId)
+              .AnyTagEqualTo(nameof(Document.Tags), tag)
+      };
+    example_after: |
+      var options = new VectorSearchOptions<Document>
+      {
+          Filter = document =>
+              document.TenantId == tenantId && document.Tags.Contains(tag)
+      };
+    cs_warning: CS0117
+    guide_section: "N/A"
+    dotnet_inspect_detectable: true
+    notes: >-
+      MAF 1.16 selects VectorData 10.7 through
+      https://github.com/microsoft/agent-framework/pull/5694. Exact
+      dotnet-inspect 0.9.1 comparison of Microsoft.Extensions.VectorData.Abstractions
+      9.7.0 to 10.7.0 reports OldFilter and the legacy filter-clause hierarchy
+      removed. Initializers fail with CS0117; direct references to removed
+      VectorSearchFilter or FilterClause types fail with CS0246. Confirm the
+      translated expression is supported by the concrete provider.
+    applies_to_codebases: pre-1.16.0
+
+  - id: MAF116-VECTORDATA-RECORD-CLASS-001
+    package: Microsoft.Extensions.VectorData.Abstractions
+    version_introduced: "1.16.0"
+    type: Microsoft.Extensions.VectorData.IVectorSearchable<TRecord> / IKeywordHybridSearchable<TRecord> / VectorSearchResult<TRecord>
+    method: generic type constraint
+    obsolete_signature: "A generic adapter consumes VectorData search APIs with an unconstrained TRecord"
+    replacement_signature: "TRecord must satisfy the new class constraint"
+    argument_order_change: false
+    fix_description: "Add `where TRecord : class` to generic adapters, factories, and helper methods that name the constrained VectorData interfaces or result types, then propagate the constraint to their callers."
+    example_before: |
+      sealed class SearchAdapter<TRecord>
+      {
+          private readonly IVectorSearchable<TRecord> _source;
+      }
+    example_after: |
+      sealed class SearchAdapter<TRecord>
+          where TRecord : class
+      {
+          private readonly IVectorSearchable<TRecord> _source;
+      }
+    cs_warning: CS0452
+    guide_section: "N/A"
+    dotnet_inspect_detectable: true
+    notes: >-
+      Exact dotnet-inspect 0.9.1 comparison of
+      Microsoft.Extensions.VectorData.Abstractions 9.7.0 to 10.7.0 reports the
+      new reference-type constraints. MAF 1.16 selects that floor through
+      https://github.com/microsoft/agent-framework/pull/5694. Rebuild custom
+      providers and generic wrappers against 10.7; already-compiled provider
+      assemblies also require compatibility testing.
+    applies_to_codebases: pre-1.16.0
+
+  - id: MAF116-VECTORDATA-INMEMORY-CONNECTOR-001
+    package: Microsoft.SemanticKernel.Connectors.InMemory
+    version_introduced: "1.16.0"
+    type: Microsoft.SemanticKernel.Connectors.InMemory.InMemoryVectorStore
+    method: PackageReference / namespace
+    obsolete_signature: "Microsoft.SemanticKernel.Connectors.InMemory 1.67.0-preview with Microsoft.Extensions.VectorData.Abstractions 9.7"
+    replacement_signature: "CommunityToolkit.VectorData.InMemory 1.0.0 with Microsoft.Extensions.VectorData.Abstractions 10.7"
+    argument_order_change: false
+    fix_description: "Replace the Semantic Kernel preview InMemory connector package and namespace with the CommunityToolkit.VectorData.InMemory 1.0.0 provider, then rebuild and apply the VectorData 10.7 source migrations."
+    example_before: |
+      <PackageReference Include="Microsoft.SemanticKernel.Connectors.InMemory"
+                        Version="1.67.0-preview" />
+      // using Microsoft.SemanticKernel.Connectors.InMemory;
+    example_after: |
+      <PackageReference Include="CommunityToolkit.VectorData.InMemory"
+                        Version="1.0.0" />
+      // using CommunityToolkit.VectorData.InMemory;
+    cs_warning: BINARY_BREAK
+    guide_section: "N/A"
+    dotnet_inspect_detectable: false
+    notes: >-
+      Verified from the official NuGet dependency graphs and the MAF connector
+      migration in https://github.com/microsoft/agent-framework/pull/5694. The
+      old preview connector is built on VectorData 9.7 while the CommunityToolkit
+      provider is built on 10.7. This is a package/type-identity transition, so a
+      MAF-only API diff cannot detect it; rebuild all consumers and registrations.
+    applies_to_codebases: pre-1.16.0
+
+  - id: MAF116-VECTORDATA-QDRANT-CONNECTOR-001
+    package: Microsoft.SemanticKernel.Connectors.Qdrant
+    version_introduced: "1.16.0"
+    type: Microsoft.SemanticKernel.Connectors.Qdrant.QdrantVectorStore
+    method: PackageReference / namespace
+    obsolete_signature: "Microsoft.SemanticKernel.Connectors.Qdrant 1.67.0-preview with Microsoft.Extensions.VectorData.Abstractions 9.7"
+    replacement_signature: "CommunityToolkit.VectorData.Qdrant 1.0.0 with Microsoft.Extensions.VectorData.Abstractions 10.7"
+    argument_order_change: false
+    fix_description: "Replace the Semantic Kernel preview Qdrant connector package and namespace with the CommunityToolkit.VectorData.Qdrant 1.0.0 provider, then rebuild and apply the VectorData 10.7 source migrations."
+    example_before: |
+      <PackageReference Include="Microsoft.SemanticKernel.Connectors.Qdrant"
+                        Version="1.67.0-preview" />
+      // using Microsoft.SemanticKernel.Connectors.Qdrant;
+    example_after: |
+      <PackageReference Include="CommunityToolkit.VectorData.Qdrant"
+                        Version="1.0.0" />
+      // using CommunityToolkit.VectorData.Qdrant;
+    cs_warning: BINARY_BREAK
+    guide_section: "N/A"
+    dotnet_inspect_detectable: false
+    notes: >-
+      Verified from the official NuGet dependency graphs and the MAF connector
+      migration in https://github.com/microsoft/agent-framework/pull/5694. The
+      old preview connector is built on VectorData 9.7 while the CommunityToolkit
+      provider is built on 10.7. This is a package/type-identity transition, so a
+      MAF-only API diff cannot detect it; rebuild all consumers and registrations.
+    applies_to_codebases: pre-1.16.0

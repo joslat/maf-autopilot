@@ -63,6 +63,20 @@ public sealed class CompatibilityTool
     internal static readonly IReadOnlyDictionary<string, string> Matrix =
         new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
+            ["1.16.0"] = """
+                ## MAF 1.16.0 Compatibility
+                
+                | Dependency                                | Version          | Notes |
+                |-------------------------------------------|------------------|-------|
+                | .NET runtime                              | `≥ 8.0` | net8.0, net9.0, net10.0 TFMs all supported |
+                | Microsoft.Extensions.AI                   | `≥ 10.7.0` | Raised from 10.6.0 |
+                | Azure.AI.OpenAI                           | _(not pinned by MAF — BYO via IChatClient)_ | |
+                | Microsoft.Agents.AI.Workflows.Generators  | `1.16.0` | Source-gen package |
+                | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
+                
+                **First-party MAF APIs are additive; transitive migration may be required.** Workflows adds Magentic prompt/language configuration. Core raises `Microsoft.Extensions.AI` and `Microsoft.Extensions.VectorData.Abstractions` to 10.7.0; VectorData 9.7→10.7 contains source/API breaks in vector dimensions, filters, generic record constraints, and provider extension points. Behavioral fixes clarify chat-history ownership, tool-approval sessions, FileMemory storage scope, declarative table state, Foundry port binding, and A2A configuration forwarding. GitHub Copilot graduates to stable and LocalCodeAct is a new preview package. See `guides/maf-1.16.0-migration-guide.md` and the 1.16 registry entries.
+                """,
+
             ["1.15.0"] = """
                 ## MAF 1.15.0 Compatibility
                 
