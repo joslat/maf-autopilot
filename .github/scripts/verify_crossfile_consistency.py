@@ -69,6 +69,9 @@ GUIDE_SECTION_HEADING_RE = re.compile(
     r'^##+\s+(\d+(?:\.\d+)*)\.', re.MULTILINE
 )
 GENERATED_TODO_RE = re.compile(r'<!--\s*TODO:', re.IGNORECASE)
+UPSTREAM_FENCE_BEGIN_RE = re.compile(
+    r"^<<<BEGIN_(USER_DATA_[0-9a-f]{32}_[A-Z0-9._-]{1,64})>>>$"
+)
 
 
 def find_duplicate_rows(text: str) -> list[str]:
@@ -290,6 +293,39 @@ def check_invented_guide_sections(
     return findings
 
 
+def _mask_upstream_fences(text: str) -> str:
+    """Hide fenced upstream data without changing offsets or line endings.
+
+    Package diffs and release notes are deliberately embedded inside randomized
+    ``USER_DATA`` fences. Their payload is evidence, not guide structure: a
+    heading or TODO-looking comment supplied by an upstream package must not be
+    counted as maintainer-authored analysis. Replacing every non-newline
+    character with a space keeps regex match offsets aligned with ``text``.
+
+    A recognized opening fence without its exact randomized closing marker is
+    rejected instead of masking the rest of the guide, so malformed evidence
+    cannot hide required sections.
+    """
+    masked: list[str] = []
+    expected_end: str | None = None
+    for line in text.splitlines(keepends=True):
+        bare = line.rstrip("\r\n")
+        if expected_end is None:
+            begin = UPSTREAM_FENCE_BEGIN_RE.fullmatch(bare)
+            if begin is None:
+                masked.append(line)
+                continue
+            expected_end = f"<<<END_{begin.group(1)}>>>"
+        elif bare == expected_end:
+            expected_end = None
+
+        masked.append("".join(ch if ch in "\r\n" else " " for ch in line))
+
+    if expected_end is not None:
+        raise ValueError("guide contains an unterminated upstream-data fence")
+    return "".join(masked)
+
+
 def check_current_guide_contract(guide_path: Path) -> list[str]:
     """Require a complete, substantive set of generated migration sections."""
     if not guide_path.is_file():
@@ -317,7 +353,13 @@ def check_current_guide_contract(guide_path: Path) -> list[str]:
         return findings
 
     generated = text[start + len(AUTO_START):end]
-    if GENERATED_TODO_RE.search(generated):
+    try:
+        structural = _mask_upstream_fences(generated)
+    except ValueError as exc:
+        findings.append(f"{guide_path}: {exc}")
+        return findings
+
+    if GENERATED_TODO_RE.search(structural):
         findings.append(
             f"{guide_path}: the AUTO-GENERATED block still contains one or more "
             "'<!-- TODO:' placeholders; replace every generated placeholder "
@@ -332,7 +374,7 @@ def check_current_guide_contract(guide_path: Path) -> list[str]:
     )
     matches: list[tuple[str, re.Match[str]]] = []
     for name, pattern in required:
-        found = list(re.finditer(pattern, generated, re.MULTILINE))
+        found = list(re.finditer(pattern, structural, re.MULTILINE))
         if len(found) != 1:
             findings.append(
                 f"{guide_path}: expected exactly one '{name}' section inside "
@@ -355,9 +397,9 @@ def check_current_guide_contract(guide_path: Path) -> list[str]:
         section_end = (
             ordered_matches[index + 1][1].start()
             if index + 1 < len(ordered_matches)
-            else len(generated)
+            else len(structural)
         )
-        body = generated[match.end():section_end]
+        body = structural[match.end():section_end]
         body = re.sub(r"<!--.*?-->", "", body, flags=re.DOTALL)
         meaningful_lines = [
             line.strip()
