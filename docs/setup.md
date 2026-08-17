@@ -194,6 +194,12 @@ owner's Copilot seat. Copilot tools are not enabled in that workflow.
 2. Add each secret by its exact name.
 3. Scope `NUGET_API_KEY` to package push. Scope `COPILOT_ASSIGN_PAT` to Metadata R plus Issues, Contents, and Pull requests R/W on this repository only.
 
+The watcher uses `GITHUB_TOKEN` for its read-only checkout, validates
+`COPILOT_ASSIGN_PAT` before doing expensive analysis, and reserves that token
+for the final branch push/PR operation. It deliberately does not fall back to
+`GITHUB_TOKEN` for the push: GitHub suppresses downstream `pull_request` events
+for changes made by that token, which would create a scaffold PR with no CI.
+
 > The `GITHUB_TOKEN` secret is automatically provided by GitHub Actions — no setup needed.
 
 ---

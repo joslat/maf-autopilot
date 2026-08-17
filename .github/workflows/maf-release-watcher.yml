@@ -29,7 +29,7 @@ permissions:
 
 jobs:
   # Phase 3.1 — validate workflow_dispatch input BEFORE any privileged step
-  # runs. The watcher has COPILOT_ASSIGN_PAT in scope on the main job; a
+  # runs. The watcher uses COPILOT_ASSIGN_PAT for its final push; a
   # malformed `maf_version` would otherwise template into shell-interpreted
   # contexts downstream.
   validate-inputs:
@@ -200,29 +200,10 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
-          # Use the maintainer's PAT, not the workflow's GITHUB_TOKEN. Round-3
-          # review fixup: this comment used to justify the PAT as needed to
-          # bypass branch protection on a direct push to main — stale since
-          # the 2026-06-28 "C" refactor (see "Commit to a release-watcher
-          # branch and open a PR" below), which pushes to a per-version
-          # branch and opens a PR instead. The PAT is still required, for a
-          # different reason: GitHub does not trigger `on: pull_request`
-          # workflows (build-test.yml, maf-pr-audit.yml, mcp-scanner.yml —
-          # all required checks) for a PR opened with the default
-          # GITHUB_TOKEN. Without a PAT, the scaffold PR this job opens would
-          # sit with none of its required checks ever running.
-          #
-          # Commit identity is still github-actions[bot] (set explicitly via
-          # `git config` below). The PAT is only used for the push auth header.
-          #
-          # COPILOT_ASSIGN_PAT is a SHARED fine-grained PAT (this repo only). Its
-          # FULL required scope — Issues + Contents + Pull requests + Actions R/W
-          # — is documented in maf-ai-fill-todos.yml (which also uses it to assign
-          # the Coding Agent). The watcher only exercises the Contents R/W portion
-          # here (the push). Provision the full union, NOT Contents-only, or the
-          # fill workflow's assignment breaks. Falls back to GITHUB_TOKEN if unset,
-          # which will fail the push (loud, not silent). [task 3.5]
-          token: ${{ secrets.COPILOT_ASSIGN_PAT || secrets.GITHUB_TOKEN }}
+          # Checkout is read-only and must not depend on a long-lived maintainer
+          # PAT. An expired COPILOT_ASSIGN_PAT previously prevented even this
+          # public-repository fetch, before the workflow could explain the fault.
+          token: ${{ secrets.GITHUB_TOKEN }}
           # F-06 (2026-07-19 security assessment) — persist-credentials defaults
           # to true, which embeds this PAT into .git/config for the ENTIRE job:
           # every later step (dotnet-inspect diff, python helpers, dotnet build)
@@ -231,6 +212,21 @@ jobs:
           # before the single `git push` call in "Commit to a release-watcher
           # branch and open a PR".
           persist-credentials: false
+
+      - name: Validate maintainer PAT before analysis
+        env:
+          GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::COPILOT_ASSIGN_PAT is missing. Add a repository-scoped fine-grained PAT before running the watcher."
+            exit 1
+          fi
+          if ! gh api user --silent || ! gh api "repos/$GH_REPO" --silent; then
+            echo "::error::COPILOT_ASSIGN_PAT is expired, revoked, or cannot read $GH_REPO. Rotate the repository secret before rerunning."
+            exit 1
+          fi
+          echo "Maintainer PAT is valid and can access $GH_REPO."
 
       - name: Setup .NET
         # Round-4 review fixup — continue-on-error, matching this same file's
@@ -498,7 +494,10 @@ jobs:
           OLD_VERSION: ${{ needs.check-for-new-maf-release.outputs.old_version }}
           IS_MAJOR: ${{ needs.check-for-new-maf-release.outputs.is_major }}
           VERDICT: ${{ steps.classify.outputs.verdict }}
-          GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT || secrets.GITHUB_TOKEN }}
+          # A human token is intentional here: GitHub suppresses pull_request
+          # workflow events for branches/PRs created with GITHUB_TOKEN. Never
+          # fall back silently, or the scaffold PR opens without its CI checks.
+          GH_TOKEN: ${{ secrets.COPILOT_ASSIGN_PAT }}
           PUSH_TARGET: ${{ inputs.push_target }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}  # REP-34
         run: |
@@ -657,6 +656,7 @@ jobs:
       - name: Open or update a failure tracking issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           WORKFLOW: ${{ github.workflow }}
         run: |
