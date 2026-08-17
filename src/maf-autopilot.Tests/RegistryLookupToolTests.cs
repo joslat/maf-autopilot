@@ -6,7 +6,13 @@ namespace MafDoctor.Tests;
 
 public class RegistryLookupToolTests
 {
-    private readonly RegistryLookupTool _tool = new(new RegistryService());
+    private readonly RegistryService _registry = new();
+    private readonly RegistryLookupTool _tool;
+
+    public RegistryLookupToolTests()
+    {
+        _tool = new RegistryLookupTool(_registry);
+    }
 
     // -------------------------------------------------------------------------
     // MafRegistryLookup
@@ -50,7 +56,7 @@ public class RegistryLookupToolTests
     public void List_ReturnsMarkdownTableWithAllEntries()
     {
         var result = _tool.MafRegistryList();
-        Assert.Contains("MAF 1.3.0 Obsolete-API Registry", result, StringComparison.Ordinal);
+        Assert.Contains($"MAF {_registry.TargetVersion} Obsolete-API Registry", result, StringComparison.Ordinal);
         // Markdown table rows for known entries
         Assert.Contains("MAF130-FAN-IN-001", result, StringComparison.Ordinal);
         Assert.Contains("MAF130-THREAD-001", result, StringComparison.Ordinal);

@@ -1,3 +1,4 @@
+using System.Globalization;
 using MafDoctor.Data;
 using Xunit;
 
@@ -22,8 +23,13 @@ public class RegistryServiceTests
     public void Load_FromEmbeddedResource_PopulatesEntries()
     {
         Assert.NotEmpty(_registry.AllIds);
-        Assert.Equal("1.3.0", _registry.TargetVersion);
-        Assert.False(string.IsNullOrWhiteSpace(_registry.LastUpdated));
+        Assert.Matches(@"^\d+\.\d+\.\d+$", _registry.TargetVersion);
+        Assert.True(DateOnly.TryParseExact(
+            _registry.LastUpdated,
+            "yyyy-MM-dd",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out _));
     }
 
     [Fact]
