@@ -63,6 +63,20 @@ public sealed class CompatibilityTool
     internal static readonly IReadOnlyDictionary<string, string> Matrix =
         new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
+            ["1.17.0"] = """
+                ## MAF 1.17.0 Compatibility
+                
+                | Dependency                                | Version          | Notes |
+                |-------------------------------------------|------------------|-------|
+                | .NET runtime                              | `≥ 8.0` | net8.0, net9.0, net10.0 TFMs all supported |
+                | Microsoft.Extensions.AI                   | `≥ 10.7.0` | Carried from 1.16.0 |
+                | Azure.AI.OpenAI                           | _(not pinned by MAF — BYO via IChatClient)_ | |
+                | Microsoft.Agents.AI.Workflows.Generators  | `1.17.0` | Source-gen package |
+                | Identity                                  | `ManagedIdentityCredential` | NEVER `DefaultAzureCredential` in prod (analyzer rule MAF002) |
+                
+                Additive release — no `.NET … [BREAKING]` changes and no breaking or potentially-breaking API rows (source-compatible). Lifecycle transitions: Informational: repository externalization: microsoft/agent-framework → microsoft/agent-framework-durable-extension; package IDs unchanged. Transitive pins carried from 1.16.0.
+                """,
+
             ["1.16.0"] = """
                 ## MAF 1.16.0 Compatibility
                 

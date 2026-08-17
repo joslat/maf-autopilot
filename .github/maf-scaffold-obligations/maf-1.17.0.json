@@ -1,0 +1,101 @@
+{
+  "compatibility_matrix": {
+    "path": "docs/compatibility-matrix.md",
+    "protected_prefix_sha256": "ce0a1c5b2c0fb68693a8bdabd40badb5904b97484562032424f129d30c239558",
+    "protected_suffix_sha256": "cedba7c8bc235f3ad1491a6b24c0a880b63c79071d1da50d905b6c2e4bcfa9a3"
+  },
+  "compatibility_tool": {
+    "path": "src/maf-autopilot/Tools/CompatibilityTool.cs",
+    "protected_prefix_sha256": "2371b5a4a36b86edfadaf8a34a6ac679657f472e92a006e0f55026668bdf921f",
+    "protected_suffix_sha256": "f60a3d08c122ee5f8d34817890f235993f9a77d6958b89bb9b938aa30415a078"
+  },
+  "historical_guides": [
+    {
+      "path": "guides/maf-1.10.0-migration-guide.md",
+      "sha256": "09fe15482545d00b220c10d3053de0eb2da20b504f2f4c94e8f7f156a96697a5"
+    },
+    {
+      "path": "guides/maf-1.11.0-migration-guide.md",
+      "sha256": "6960e89e46159583753be3e8018bceab273de412e706bca19a59cbd7b0f813a0"
+    },
+    {
+      "path": "guides/maf-1.11.1-migration-guide.md",
+      "sha256": "bf0dfe71dc511657c7e89d64bd1dbc158deb559ce981940c689cfb28a01dd990"
+    },
+    {
+      "path": "guides/maf-1.12.0-migration-guide.md",
+      "sha256": "0c15218a34484a4c59acd5d76c4cc6a509c119796af2ceff2c114050f463568d"
+    },
+    {
+      "path": "guides/maf-1.13.0-migration-guide.md",
+      "sha256": "4346f70d6568b7983eccbfefbf1ce60243759ee8f864871c4b0e5a03bc4a1c34"
+    },
+    {
+      "path": "guides/maf-1.14.0-migration-guide.md",
+      "sha256": "90a52235173ad984daa0a52f9d2957535719503d102b967ca4241708af8fdcba"
+    },
+    {
+      "path": "guides/maf-1.15.0-migration-guide.md",
+      "sha256": "e80e0ddf45c6560ec0f2adfab482029420dada32a456e4dfd0af5969c144c4fa"
+    },
+    {
+      "path": "guides/maf-1.16.0-migration-guide.md",
+      "sha256": "1d52e3908d2036091e96ebdf072010815748569847235731a963a7e95003bbe1"
+    },
+    {
+      "path": "guides/maf-1.3.0-migration-guide.md",
+      "sha256": "057f10ed8ed3b67672b9b0c1dd716e7c7376fb92b364a30c96a9b62bc87516fd"
+    },
+    {
+      "path": "guides/maf-1.4.0-migration-guide.md",
+      "sha256": "15e24de6d9b620e5fb68f07d04bca59edf7ea9894e5c3043d3e06e3ddc7eddac"
+    },
+    {
+      "path": "guides/maf-1.5.0-migration-guide.md",
+      "sha256": "bf1689d20ef4830dba1a2383858d86a818b2eebf7e521ea8ed9a42db64395dbe"
+    },
+    {
+      "path": "guides/maf-1.6.1-migration-guide.md",
+      "sha256": "7d5abce30e0b060691b03343b031e745529fb0e5da91a7441626e0dbb2aa2f27"
+    }
+  ],
+  "historical_obligations": [
+    {
+      "path": ".github/maf-scaffold-obligations/maf-1.14.0.json",
+      "sha256": "db578938d33018545bb05148a5c105cc4efad509cccc80b1b7cf0b00fb88baff"
+    },
+    {
+      "path": ".github/maf-scaffold-obligations/maf-1.15.0.json",
+      "sha256": "1aaf12ab916758107ceb0930b03486907a6c5aeebb78a36fa43236c0b9852093"
+    },
+    {
+      "path": ".github/maf-scaffold-obligations/maf-1.16.0.json",
+      "sha256": "6192c238ea365db9a8ad92ea5e56bebd782c96f5f3f2de724124e3aac608af2d"
+    }
+  ],
+  "maf_version": {
+    "path": ".maf-version",
+    "sha256": "00afc49f1599e59129a59b64c2b019de3fe35300c05bb9d96cb25002576ff43b",
+    "value": "1.17.0"
+  },
+  "registry": {
+    "generated_target_entries": [],
+    "historical_sha256": "3ad35839afdb983baf4b76f536e725b944fde552210f17111d1fea8b6ab1e050",
+    "path": ".github/skills/maf-obsolete-api-registry/registry.yaml",
+    "review_rule": "replace_each_with_new_concrete_same_package_target_entry"
+  },
+  "scaffold": {
+    "base_commit": "bf40675ee45f2d24cbdaa4bbbd87b3dc03cba38d",
+    "old_version": "1.16.0",
+    "source": "maf-release-watcher",
+    "target_branch": "release-watcher/maf-1.17.0-run-32070645010-1",
+    "target_version": "1.17.0"
+  },
+  "schema_version": 1,
+  "target_guide": {
+    "evidence_sha256": "3cfc68d2d4744fb152851a181d0f5d337ba99f033680618aec17973dcf24eaa1",
+    "path": "guides/maf-1.17.0-migration-guide.md",
+    "protected_prefix_sha256": "08ca699c4a11794391d83a1fefbebb1a31eeb9499c04ae101df0e1526155659e",
+    "protected_suffix_sha256": "4cd14bc37e9b23d66039009f7a5a1c8be7f485b0411ac7271cb50eaef6d0e470"
+  }
+}
