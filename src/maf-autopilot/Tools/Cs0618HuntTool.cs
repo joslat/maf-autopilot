@@ -9,9 +9,9 @@ namespace MafDoctor.Tools;
 /// <summary>
 /// MCP tool: MafRunCs0618Hunt
 ///
-/// Runs <c>dotnet build</c> on the target project, parses CS0618 (obsolete) and
-/// CS0246 (type-not-found) diagnostics out of the output, and joins each diagnostic
-/// to the obsolete-API registry by signature/method match. Returns a structured
+/// Runs <c>dotnet build</c> on the target project, parses C# compiler diagnostics,
+/// retains the legacy CS0618/CS0246 set plus diagnostics that correlate to a
+/// same-code type/member/signature in the migration registry. Returns a structured
 /// markdown report with file:line, warning, and the deterministic registry-anchored
 /// fix when one is known.
 ///
@@ -43,11 +43,12 @@ public sealed class Cs0618HuntTool
     //                        side-effects (obj/, bin/) are scoped to the project.
     [McpServerTool(ReadOnly = false, Destructive = false, OpenWorld = true)]
     [Description("""
-        Run a CS0618 / CS0246 hunt against a .NET project.
+        Run a registry-aware C# migration-diagnostic hunt against a .NET project.
 
-        Shells `dotnet build` on the given path (.csproj or .sln), parses the diagnostics,
-        and joins each warning/error to the MAF obsolete-API registry. Output includes
-        the file:line, the diagnostic, and — when a registry match exists — the exact fix.
+        Shells `dotnet build` on the given path (.csproj or .sln), parses all C#
+        diagnostics, and retains CS0618, CS0246, plus same-code diagnostics whose
+        message names a type/member/signature represented in the MAF migration registry.
+        Output includes file:line, the diagnostic, and — when a match exists — the exact fix.
 
         Input:
           - Path to a .csproj or .sln file. If the path is a directory, the first .csproj
@@ -77,7 +78,8 @@ public sealed class Cs0618HuntTool
             return $"Error: could not find a .csproj or .sln at '{projectPath}'.";
 
         var (exitCode, output) = ProcessRunner.RunDotnetBuild(resolved);
-        var findings = ParseBuildOutput(output);
+        var diagnostics = ParseBuildOutput(output);
+        var findings = FilterRegistryRelevantDiagnostics(diagnostics, _registry.AllEntries);
         return FormatReport(resolved, exitCode, findings, _registry, output);
     }
 
@@ -110,7 +112,8 @@ public sealed class Cs0618HuntTool
         TimeSpan.FromSeconds(2));
 
     /// <summary>
-    /// Parses MSBuild stdout for CS0618 / CS0246 diagnostics. Pure: no I/O.
+    /// Parses all C# compiler diagnostics from MSBuild stdout. Pure: no I/O.
+    /// Call <see cref="FilterRegistryRelevantDiagnostics"/> before reporting them.
     /// </summary>
     public static IReadOnlyList<BuildDiagnostic> ParseBuildOutput(string buildOutput)
     {
@@ -123,8 +126,6 @@ public sealed class Cs0618HuntTool
         foreach (Match m in DiagRegex.Matches(buildOutput))
         {
             var code = m.Groups["code"].Value;
-            if (code is not ("CS0618" or "CS0246"))
-                continue;
 
             var file = m.Groups["file"].Value.Trim();
             // WM-38: a pathological/oversized line number must not overflow int.Parse and
@@ -150,6 +151,127 @@ public sealed class Cs0618HuntTool
         return diagnostics;
     }
 
+    private static readonly Regex CsCodeRegex = new(
+        @"^CS[0-9]{4}$",
+        RegexOptions.Compiled | RegexOptions.NonBacktracking,
+        TimeSpan.FromSeconds(2));
+
+    private static readonly HashSet<string> LegacyDiagnosticCodes = new(
+        ["CS0618", "CS0246"],
+        StringComparer.OrdinalIgnoreCase);
+
+    private static readonly Regex RegistrySymbolRegex = new(
+        @"[A-Za-z_][A-Za-z0-9_]*",
+        RegexOptions.Compiled | RegexOptions.NonBacktracking,
+        TimeSpan.FromSeconds(2));
+
+    // Tokens that describe C# syntax, BCL containers, or namespace scaffolding rather
+    // than the changed MAF API. Letting these correlate a generic CS1503 would recreate
+    // the registry-wide false-positive bug under a different name.
+    private static readonly HashSet<string> NonDistinctiveRegistrySymbols = new(
+        [
+            "abstract", "async", "base", "bool", "byte", "char", "class",
+            "decimal", "double", "enum", "false", "float", "get", "in", "init",
+            "int", "interface", "internal", "long", "new", "null", "object", "out",
+            "override", "params", "private", "protected", "public", "readonly",
+            "record", "ref", "return", "sbyte", "sealed", "set", "short", "static",
+            "string", "struct", "this", "true", "uint", "ulong", "ushort", "var",
+            "virtual", "void", "where",
+            "Action", "CancellationToken", "Collections", "Dictionary", "Extensions",
+            "Func", "Generic", "IEnumerable", "IList", "IReadOnlyCollection",
+            "IReadOnlyList", "List", "Microsoft", "Nullable", "SDK", "System", "Task",
+            "ValueTask",
+        ],
+        StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Bounds hunt output to the two historical migration diagnostics plus new
+    /// diagnostic codes that correlate to a same-code registry type/member/signature.
+    /// Code membership alone is insufficient: CS1503 and similar diagnostics are common
+    /// in unrelated application code and must not inflate MAF migration finding counts.
+    /// </summary>
+    internal static IReadOnlyList<BuildDiagnostic> FilterRegistryRelevantDiagnostics(
+        IEnumerable<BuildDiagnostic> diagnostics,
+        IEnumerable<RegistryEntry> registryEntries)
+    {
+        var entriesByCode = registryEntries
+            .Where(e => !string.IsNullOrWhiteSpace(e.CsWarning)
+                && CsCodeRegex.IsMatch(e.CsWarning.Trim()))
+            .GroupBy(e => e.CsWarning.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        return diagnostics.Where(d =>
+        {
+            if (LegacyDiagnosticCodes.Contains(d.Code))
+                return true;
+            return entriesByCode.TryGetValue(d.Code, out var sameCodeEntries)
+                && sameCodeEntries.Any(e => DiagnosticCorrelatesWithRegistryEntry(d, e));
+        }).ToList();
+    }
+
+    /// <summary>
+    /// Requires both diagnostic-code equality and an identifier-level match against the
+    /// registry's structured API fields. Replacement signatures are included because
+    /// conversion diagnostics commonly name both the old and new parameter types while
+    /// omitting the containing method (for example AITool → AIFunctionDeclaration).
+    /// </summary>
+    internal static bool DiagnosticCorrelatesWithRegistryEntry(
+        BuildDiagnostic diagnostic,
+        RegistryEntry entry)
+    {
+        if (!(entry.CsWarning?.Trim().Equals(
+                diagnostic.Code, StringComparison.OrdinalIgnoreCase) ?? false))
+            return false;
+
+        foreach (var field in new[]
+        {
+            entry.Type,
+            entry.Method,
+            entry.ObsoleteSignature,
+            entry.ReplacementSignature,
+        })
+        {
+            if (string.IsNullOrWhiteSpace(field))
+                continue;
+            foreach (Match match in RegistrySymbolRegex.Matches(field))
+            {
+                var symbol = match.Value;
+                if (!IsDistinctiveRegistrySymbol(symbol))
+                    continue;
+                if (ContainsIdentifier(diagnostic.Message, symbol))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool IsDistinctiveRegistrySymbol(string symbol) =>
+        symbol.Length >= 3
+        && symbol.Any(char.IsUpper)
+        && !NonDistinctiveRegistrySymbols.Contains(symbol);
+
+    private static bool ContainsIdentifier(string message, string symbol)
+    {
+        var searchStart = 0;
+        while (searchStart < message.Length)
+        {
+            var index = message.IndexOf(symbol, searchStart, StringComparison.Ordinal);
+            if (index < 0)
+                return false;
+            var beforeIsIdentifier = index > 0 && IsIdentifierChar(message[index - 1]);
+            var afterIndex = index + symbol.Length;
+            var afterIsIdentifier = afterIndex < message.Length
+                && IsIdentifierChar(message[afterIndex]);
+            if (!beforeIsIdentifier && !afterIsIdentifier)
+                return true;
+            searchStart = index + 1;
+        }
+        return false;
+    }
+
+    private static bool IsIdentifierChar(char value) =>
+        char.IsAsciiLetterOrDigit(value) || value == '_';
+
     /// <summary>
     /// Joins a build diagnostic to a registry entry. CS0618 messages have the canonical
     /// shape <c>'X.Y.Z' is obsolete: 'Use A instead.'</c> — the FIRST quoted segment is
@@ -159,6 +281,12 @@ public sealed class Cs0618HuntTool
     /// </summary>
     internal static RegistryEntry? MatchToRegistry(BuildDiagnostic diag, RegistryService registry)
     {
+        if (!LegacyDiagnosticCodes.Contains(diag.Code))
+        {
+            return registry.AllEntries.FirstOrDefault(entry =>
+                DiagnosticCorrelatesWithRegistryEntry(diag, entry));
+        }
+
         var obsoleteSymbol = ExtractObsoleteSymbol(diag.Message);
         if (obsoleteSymbol is not null)
         {
@@ -260,20 +388,20 @@ public sealed class Cs0618HuntTool
     {
         var sb = new StringBuilder();
         sb.AppendLine($"## CS0618 hunt — `{target}`");
-        sb.AppendLine($"Build exit code: {exitCode} · {findings.Count} CS0618/CS0246 diagnostic(s) found.");
+        sb.AppendLine($"Build exit code: {exitCode} · {findings.Count} registry-relevant C# migration diagnostic(s) found.");
         sb.AppendLine();
 
         if (findings.Count == 0)
         {
             if (exitCode == 0)
             {
-                sb.AppendLine("✅ Build clean, zero CS0618/CS0246 diagnostics.");
+                sb.AppendLine("✅ Build clean, zero registry-relevant C# migration diagnostics.");
                 return sb.ToString();
             }
             // REP-16: the tool used to tell the agent to "see raw build output" it never
-            // returned. A failed build with no extracted CS0618/CS0246 is only diagnosable
+            // returned. A failed build with no extracted registry-relevant diagnostic is only diagnosable
             // if we actually include the output — bounded + fenced (untrusted build text).
-            sb.AppendLine("⚠️ Build failed but no CS0618/CS0246 diagnostics were extracted — the errors below are unrelated (or a build-config problem).");
+            sb.AppendLine("⚠️ Build failed but no registry-relevant C# migration diagnostics were extracted — the errors below are outside the registry's diagnostic vocabulary (or a build-config problem).");
             var tail = TailLines(buildOutput, 100);
             if (!string.IsNullOrWhiteSpace(tail))
             {

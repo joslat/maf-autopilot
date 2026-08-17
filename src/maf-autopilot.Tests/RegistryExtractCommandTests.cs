@@ -18,10 +18,10 @@ public class RegistryExtractCommandTests
     }
 
     [Fact]
-    public void ExtractDraftEntries_RemovedMember_EmitsYamlStub()
+    public void ExtractDraftEntries_RemovedType_EmitsCs0246YamlStub()
     {
         var parsed = new DiffParseResult(
-            Breaking: [new DiffEntry("AgentThread", "Type 'AgentThread' was removed", DiffEntryKind.Removed, false)],
+            Breaking: [new DiffEntry("AgentThread", "Type 'AgentThread' [Obsolete] was removed", DiffEntryKind.Removed, true)],
             Additive: [],
             NoChangesDetected: false);
 
@@ -31,8 +31,24 @@ public class RegistryExtractCommandTests
         Assert.Contains("id: MAF140-", entry);          // version-derived prefix
         Assert.Contains("package: Microsoft.Agents.AI", entry);
         Assert.Contains("type: AgentThread", entry);
-        Assert.Contains("cs_warning: CS0246", entry);    // removed → CS0246
+        Assert.Contains("cs_warning: CS0246", entry);    // removed type → CS0246
+        Assert.Contains("dotnet_inspect_detectable: true", entry);
         Assert.Contains("TODO", entry);                  // human-fillable fields present
+    }
+
+    [Fact]
+    public void ExtractDraftEntries_RemovedMember_LeavesDiagnosticForReview()
+    {
+        var parsed = new DiffParseResult(
+            Breaking: [new DiffEntry("AIAgent", "Member 'RunAsync' [Obsolete] was removed", DiffEntryKind.Removed, true)],
+            Additive: [],
+            NoChangesDetected: false);
+
+        var entry = Assert.Single(RegistryExtractCommand.ExtractDraftEntries(parsed, "Microsoft.Agents.AI", "1.4.0"));
+
+        Assert.Contains("cs_warning: TODO", entry);
+        Assert.DoesNotContain("cs_warning: CS0246", entry);
+        Assert.DoesNotContain("cs_warning: CS0618", entry);
     }
 
     [Fact]
@@ -40,7 +56,7 @@ public class RegistryExtractCommandTests
     {
         const string body = "Member 'AddResource' signature changed: `void AddResource(string)` -> `void AddResource(string, JsonSerializerOptions?)`";
         var parsed = new DiffParseResult(
-            Breaking: [new DiffEntry("AgentInlineSkill", body, DiffEntryKind.SignatureChanged, false)],
+            Breaking: [new DiffEntry("AgentInlineSkill", body + " [Obsolete]", DiffEntryKind.SignatureChanged, true)],
             Additive: [],
             NoChangesDetected: false);
 
@@ -51,7 +67,9 @@ public class RegistryExtractCommandTests
         Assert.Contains("void AddResource(string)", entry);
         Assert.Contains("void AddResource(string, JsonSerializerOptions?)", entry);
         Assert.Contains("method: AddResource", entry);
-        Assert.Contains("cs_warning: CS0618", entry);    // sig change → CS0618 (caller may still get a warning)
+        Assert.Contains("cs_warning: TODO", entry);      // exact compiler diagnostic depends on the call site
+        Assert.DoesNotContain("cs_warning: CS0618", entry);
+        Assert.Contains("dotnet_inspect_detectable: true", entry);
     }
 
     [Fact]
@@ -67,6 +85,7 @@ public class RegistryExtractCommandTests
 
         Assert.Single(entries);
         Assert.Contains("type: LegacyClient", entries[0]);
+        Assert.Contains("cs_warning: CS0618", entries[0]);
         Assert.Contains("dotnet_inspect_detectable: true", entries[0]);
     }
 
@@ -100,6 +119,243 @@ public class RegistryExtractCommandTests
         Assert.Contains("MAF140-EXECUTOR-001", entries[0]);
         Assert.Contains("MAF140-EXECUTOR-002", entries[1]);
         Assert.Contains("MAF140-EXECUTOR-003", entries[2]);
+    }
+
+    // -------------------------------------------------------------------------
+    // Package-plan extraction: captured evidence, stable release train, scopes
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Run_LegacyThreePositionals_RemainsCompatible()
+    {
+        (string Package, string OldVersion, string NewVersion)? invocation = null;
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+
+        var exitCode = RegistryExtractCommand.Run(
+            ["registry-extract", "Microsoft.Agents.AI", "1.13.0", "1.14.0"],
+            (package, oldVersion, newVersion) =>
+            {
+                invocation = (package, oldVersion, newVersion);
+                return (0, "> No API changes detected.");
+            },
+            stdout,
+            stderr);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(("Microsoft.Agents.AI", "1.13.0", "1.14.0"), invocation);
+        Assert.Contains("No new draft registry entries", stdout.ToString());
+        Assert.Equal(string.Empty, stderr.ToString());
+    }
+
+    [Fact]
+    public void ExtractDraftEntries_CoreAndScopedPackages_GetDistinctIds()
+    {
+        var parsed = new DiffParseResult(
+            Breaking: [new DiffEntry("ChatClientAgentOptions", "Member 'Legacy' was removed", DiffEntryKind.Removed, false)],
+            Additive: [],
+            NoChangesDetected: false);
+
+        var core = Assert.Single(RegistryExtractCommand.ExtractDraftEntries(
+            parsed, "Microsoft.Agents.AI", "1.14.0"));
+        var harness = Assert.Single(RegistryExtractCommand.ExtractDraftEntries(
+            parsed, "Microsoft.Agents.AI.Hosting", "1.14.0", "HARNESS"));
+
+        Assert.Contains("id: MAF114-OPTIONS-001", core);
+        Assert.Contains("id: MAF114-HARNESS-OPTIONS-001", harness);
+    }
+
+    [Fact]
+    public void Run_DiffFile_UsesCapturedEvidenceAndStableReleaseMarker()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "maf-registry-diff-" + Guid.NewGuid().ToString("N") + ".txt");
+        File.WriteAllText(path, """
+            ## Breaking Changes
+
+            ### ChatClientAgentOptions
+            - Member 'Legacy' was removed
+            """);
+        try
+        {
+            var inspectorCalled = false;
+            var stdout = new StringWriter();
+            var stderr = new StringWriter();
+            var exitCode = RegistryExtractCommand.Run(
+                [
+                    "registry-extract", "Microsoft.Agents.AI.Hosting", "1.14.0-preview.1", "1.14.0-preview.2",
+                    "--diff-file", path, "--release-version", "1.14.0", "--id-scope", "HARNESS",
+                ],
+                (_, _, _) =>
+                {
+                    inspectorCalled = true;
+                    return (1, "unexpected");
+                },
+                stdout,
+                stderr);
+
+            var output = stdout.ToString();
+            Assert.Equal(0, exitCode);
+            Assert.False(inspectorCalled);
+            Assert.Equal(string.Empty, stderr.ToString());
+            Assert.Contains("id: MAF114-HARNESS-OPTIONS-001", output);
+            Assert.Contains("version_introduced: \"1.14.0\"", output);
+            Assert.Contains("applies_to_codebases: pre-1.14.0", output);
+            Assert.DoesNotContain("version_introduced: \"1.14.0-preview.2\"", output);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void ExtractDraftEntries_EveryDraftGetsReleaseApplicabilityMarker()
+    {
+        var parsed = new DiffParseResult(
+            Breaking:
+            [
+                new DiffEntry("AIAgent", "Member 'First' was removed", DiffEntryKind.Removed, false),
+                new DiffEntry("ChatClientAgentOptions", "Member 'Second' was removed", DiffEntryKind.Removed, false),
+            ],
+            Additive: [],
+            NoChangesDetected: false);
+
+        var entries = RegistryExtractCommand.ExtractDraftEntries(
+            parsed, "Microsoft.Agents.AI", "1.14.0");
+
+        Assert.Equal(2, entries.Count);
+        Assert.All(entries, entry => Assert.Contains("applies_to_codebases: pre-1.14.0", entry));
+    }
+
+    [Theory]
+    [InlineData("--release-version", "1.14.0-preview.1")]
+    [InlineData("--id-scope", "harness")]
+    [InlineData("--id-scope", "HARNESS_SCOPE")]
+    [InlineData("--unknown", "value")]
+    public void ParseArguments_InvalidOptionValue_IsRejected(string option, string value)
+    {
+        var (_, error) = RegistryExtractCommand.ParseArguments(
+            ["registry-extract", "Microsoft.Agents.AI", "1.13.0", "1.14.0", option, value]);
+
+        Assert.NotNull(error);
+    }
+
+    [Fact]
+    public void ParseArguments_MissingOrDuplicateOptionValue_IsRejected()
+    {
+        var (_, missingError) = RegistryExtractCommand.ParseArguments(
+            ["registry-extract", "Microsoft.Agents.AI", "1.13.0", "1.14.0", "--diff-file"]);
+        var (_, duplicateError) = RegistryExtractCommand.ParseArguments(
+            [
+                "registry-extract", "Microsoft.Agents.AI", "1.13.0", "1.14.0",
+                "--id-scope", "HARNESS", "--id-scope", "HOSTING",
+            ]);
+
+        Assert.Contains("requires a value", missingError);
+        Assert.Contains("only once", duplicateError);
+    }
+
+    [Fact]
+    public void Run_DiffFileMissing_FailsClearlyWithoutInvokingInspector()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "maf-registry-missing-" + Guid.NewGuid().ToString("N") + ".txt");
+        var inspectorCalled = false;
+        var stderr = new StringWriter();
+
+        var exitCode = RegistryExtractCommand.Run(
+            ["registry-extract", "Microsoft.Agents.AI", "1.13.0", "1.14.0", "--diff-file", path],
+            (_, _, _) =>
+            {
+                inspectorCalled = true;
+                return (0, string.Empty);
+            },
+            new StringWriter(),
+            stderr);
+
+        Assert.Equal(2, exitCode);
+        Assert.False(inspectorCalled);
+        Assert.Contains("does not exist", stderr.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Run_DiffFileWithUnrecognizedEvidence_FailsClearly()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "maf-registry-unrecognized-" + Guid.NewGuid().ToString("N") + ".txt");
+        File.WriteAllText(path, "not a dotnet-inspect diff");
+        try
+        {
+            var stderr = new StringWriter();
+            var exitCode = RegistryExtractCommand.Run(
+                ["registry-extract", "Microsoft.Agents.AI", "1.13.0", "1.14.0", "--diff-file", path],
+                (_, _, _) => throw new InvalidOperationException("Inspector must not run with --diff-file."),
+                new StringWriter(),
+                stderr);
+
+            Assert.Equal(3, exitCode);
+            Assert.Contains("recognizable", stderr.ToString(), StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Run_DiffFileWithNoChangeMarkerAndChangeRows_IsRejected()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "maf-registry-contradictory-" + Guid.NewGuid().ToString("N") + ".txt");
+        File.WriteAllText(path, """
+            > No API changes detected.
+
+            ## Breaking Changes
+            ### AIAgent
+            - Member 'Legacy' was removed
+            """);
+        try
+        {
+            var stderr = new StringWriter();
+            var exitCode = RegistryExtractCommand.Run(
+                ["registry-extract", "Microsoft.Agents.AI", "1.13.0", "1.14.0", "--diff-file", path],
+                (_, _, _) => throw new InvalidOperationException("Inspector must not run with --diff-file."),
+                new StringWriter(),
+                stderr);
+
+            Assert.Equal(3, exitCode);
+            Assert.Contains("contradictory", stderr.ToString(), StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void TryReadDiffFile_EmptyInvalidUtf8AndOversizedEvidence_AreRejected()
+    {
+        var empty = Path.Combine(Path.GetTempPath(), "maf-registry-empty-" + Guid.NewGuid().ToString("N") + ".txt");
+        var invalidUtf8 = Path.Combine(Path.GetTempPath(), "maf-registry-invalid-utf8-" + Guid.NewGuid().ToString("N") + ".txt");
+        var oversized = Path.Combine(Path.GetTempPath(), "maf-registry-oversized-" + Guid.NewGuid().ToString("N") + ".txt");
+        File.WriteAllBytes(empty, []);
+        File.WriteAllBytes(invalidUtf8, [0xC3, 0x28]);
+        using (var stream = new FileStream(oversized, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            stream.SetLength(RegistryExtractCommand.MaxDiffFileBytes + 1L);
+        try
+        {
+            Assert.False(RegistryExtractCommand.TryReadDiffFile(empty, out _, out var emptyError));
+            Assert.Contains("empty", emptyError);
+
+            Assert.False(RegistryExtractCommand.TryReadDiffFile(invalidUtf8, out _, out var utf8Error));
+            Assert.Contains("UTF-8", utf8Error);
+
+            Assert.False(RegistryExtractCommand.TryReadDiffFile(oversized, out _, out var sizeError));
+            Assert.Contains("limit", sizeError);
+        }
+        finally
+        {
+            File.Delete(empty);
+            File.Delete(invalidUtf8);
+            File.Delete(oversized);
+        }
     }
 
     // -------------------------------------------------------------------------

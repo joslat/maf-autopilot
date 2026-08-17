@@ -66,9 +66,8 @@ public class Cs0618HuntToolTests
     }
 
     [Fact]
-    public void ParseBuildOutput_OtherCsCodes_AreIgnored()
+    public void ParseBuildOutput_AllCsCodes_AreExtractedBeforeRegistryFiltering()
     {
-        // Only CS0618 and CS0246 are scope. Other codes (CS8600 nullable, CS1591 missing-XML) skipped.
         const string output = """
             /repo/src/A.cs(1,1): warning CS8600: Possible null reference
             /repo/src/B.cs(2,2): warning CS1591: Missing XML comment
@@ -76,8 +75,112 @@ public class Cs0618HuntToolTests
             """;
 
         var findings = Cs0618HuntTool.ParseBuildOutput(output);
-        var d = Assert.Single(findings);
-        Assert.Equal("CS0618", d.Code);
+        Assert.Equal(["CS8600", "CS1591", "CS0618"], findings.Select(d => d.Code));
+    }
+
+    [Fact]
+    public void FilterRegistryRelevantDiagnostics_RetainsLegacyAndCorrelatedRegistryCodesOnly()
+    {
+        const string output = """
+            /repo/src/A.cs(1,1): warning CS8600: Possible null reference
+            /repo/src/B.cs(2,2): error CS1503: Argument 3 cannot convert from 'IList<AITool>' to 'IList<AIFunctionDeclaration>'
+            /repo/src/C.cs(3,3): warning CS0618: 'X' is obsolete: 'Use Y'
+            /repo/src/D.cs(4,4): error CS0246: The type or namespace name 'Gone' could not be found
+            """;
+        var registryEntries = new[]
+        {
+            new RegistryEntry
+            {
+                CsWarning = "CS1503",
+                Type = "GitHubCopilotAgent",
+                Method = "AsAIAgent",
+                ObsoleteSignature = "AsAIAgent(IList<AITool> tools)",
+                ReplacementSignature = "AsAIAgent(IList<AIFunctionDeclaration> tools)",
+            },
+            new RegistryEntry { CsWarning = "BINARY_BREAK" },
+            new RegistryEntry { CsWarning = "not-a-code" },
+        };
+
+        var parsed = Cs0618HuntTool.ParseBuildOutput(output);
+        var findings = Cs0618HuntTool.FilterRegistryRelevantDiagnostics(parsed, registryEntries);
+
+        Assert.Equal(["CS1503", "CS0618", "CS0246"], findings.Select(d => d.Code));
+    }
+
+    [Fact]
+    public void FilterRegistryRelevantDiagnostics_UnrelatedCs1503_IsExcluded()
+    {
+        var diagnostic = new BuildDiagnostic(
+            File: "/repo/src/A.cs",
+            Line: 1,
+            Severity: "error",
+            Code: "CS1503",
+            Message: "Argument 1 cannot convert from 'CustomerOrder' to 'Invoice'");
+
+        var findings = Cs0618HuntTool.FilterRegistryRelevantDiagnostics(
+            [diagnostic],
+            [new RegistryEntry
+            {
+                CsWarning = "CS1503",
+                Type = "GitHubCopilotAgent",
+                Method = "AsAIAgent",
+                ObsoleteSignature = "AsAIAgent(IList<AITool> tools)",
+                ReplacementSignature = "AsAIAgent(IList<AIFunctionDeclaration> tools)",
+            }]);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public void FilterRegistryRelevantDiagnostics_MatchedCs1503_IsRetained()
+    {
+        var diagnostic = new BuildDiagnostic(
+            File: "/repo/src/Agent.cs",
+            Line: 12,
+            Severity: "error",
+            Code: "CS1503",
+            Message: "Argument 3 cannot convert from 'System.Collections.Generic.IList<Microsoft.Extensions.AI.AITool>' to 'System.Collections.Generic.IList<GitHub.Copilot.SDK.AIFunctionDeclaration>'");
+        var entry = new RegistryEntry
+        {
+            Id = "MAF1140-GITHUB-COPILOT-TOOLS-001",
+            CsWarning = "CS1503",
+            Type = "GitHubCopilotAgent",
+            Method = "AsAIAgent",
+            ObsoleteSignature = "AsAIAgent(IList<AITool> tools)",
+            ReplacementSignature = "AsAIAgent(IList<AIFunctionDeclaration> tools)",
+        };
+
+        var findings = Cs0618HuntTool.FilterRegistryRelevantDiagnostics(
+            [diagnostic],
+            [entry]);
+
+        Assert.Same(diagnostic, Assert.Single(findings));
+        Assert.True(Cs0618HuntTool.DiagnosticCorrelatesWithRegistryEntry(diagnostic, entry));
+    }
+
+    [Fact]
+    public void FilterRegistryRelevantDiagnostics_NewCodeRequiresSameCodeEntry()
+    {
+        var diagnostic = new BuildDiagnostic(
+            File: "/repo/src/Agent.cs",
+            Line: 12,
+            Severity: "error",
+            Code: "CS1503",
+            Message: "Argument 3 cannot convert from 'AITool' to 'AIFunctionDeclaration'");
+        var wrongCodeEntry = new RegistryEntry
+        {
+            CsWarning = "CS1661",
+            ObsoleteSignature = "AsAIAgent(IList<AITool> tools)",
+            ReplacementSignature = "AsAIAgent(IList<AIFunctionDeclaration> tools)",
+        };
+
+        var findings = Cs0618HuntTool.FilterRegistryRelevantDiagnostics(
+            [diagnostic],
+            [wrongCodeEntry]);
+
+        Assert.Empty(findings);
+        Assert.False(Cs0618HuntTool.DiagnosticCorrelatesWithRegistryEntry(
+            diagnostic, wrongCodeEntry));
     }
 
     [Fact]

@@ -9,7 +9,7 @@ using YamlDotNet.Serialization.NamingConventions;
 namespace MafDoctor;
 
 /// <summary>
-/// CLI subcommand: <c>maf-doctor registry-extract &lt;packageId&gt; &lt;oldVer&gt; &lt;newVer&gt;</c>.
+/// CLI subcommand: <c>maf-doctor registry-extract &lt;packageId&gt; &lt;oldPackageVer&gt; &lt;newPackageVer&gt;</c>.
 ///
 /// Runs `dotnet-inspect diff` for the version range, parses the output via the
 /// same logic that powers <see cref="DiffPackageTool"/>, and emits draft
@@ -22,33 +22,98 @@ namespace MafDoctor;
 /// </summary>
 internal static class RegistryExtractCommand
 {
-    public static int Run(string[] args)
+    internal const int MaxDiffFileBytes = 4 * 1024 * 1024;
+
+    private const string Usage =
+        "Usage: maf-doctor registry-extract <packageId> <oldPackageVersion> <newPackageVersion> " +
+        "[--diff-file <path>] [--release-version <X.Y.Z>] [--id-scope <UPPER-HYPHEN>]";
+
+    private static readonly Regex StableReleaseVersionRegex = new(
+        @"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$",
+        RegexOptions.Compiled | RegexOptions.NonBacktracking,
+        TimeSpan.FromSeconds(2));
+
+    private static readonly Regex IdScopeRegex = new(
+        @"^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$",
+        RegexOptions.Compiled | RegexOptions.NonBacktracking,
+        TimeSpan.FromSeconds(2));
+
+    internal sealed record Arguments(
+        string PackageId,
+        string OldPackageVersion,
+        string NewPackageVersion,
+        string ReleaseVersion,
+        string? DiffFilePath,
+        string? IdScope);
+
+    public static int Run(string[] args) => Run(
+        args,
+        ProcessRunner.RunDotnetInspectDiff,
+        Console.Out,
+        Console.Error);
+
+    internal static int Run(
+        string[] args,
+        Func<string, string, string, (int ExitCode, string Output)> runDotnetInspectDiff,
+        TextWriter stdout,
+        TextWriter stderr)
     {
         if (args.Length < 4)
         {
-            Console.Error.WriteLine("Usage: maf-doctor registry-extract <packageId> <oldVersion> <newVersion>");
+            stderr.WriteLine(Usage);
             return 1;
         }
 
-        var packageId = args[1];
-        var oldVersion = args[2];
-        var newVersion = args[3];
-
-        if (!DiffPackageTool.IsValidPackageId(packageId))
+        var (options, parseError) = ParseArguments(args);
+        if (parseError is not null)
         {
-            Console.Error.WriteLine($"Error: invalid package id '{packageId}'.");
-            return 2;
-        }
-        if (!DiffPackageTool.IsValidVersion(oldVersion) || !DiffPackageTool.IsValidVersion(newVersion))
-        {
-            Console.Error.WriteLine("Error: invalid version string. Use SemVer-ish only.");
+            stderr.WriteLine($"registry-extract: {parseError}");
+            stderr.WriteLine(Usage);
             return 2;
         }
 
-        var (exitCode, output) = ProcessRunner.RunDotnetInspectDiff(packageId, oldVersion, newVersion);
+        var parsedOptions = options!;
+        int exitCode;
+        string output;
+        if (parsedOptions.DiffFilePath is not null)
+        {
+            if (!TryReadDiffFile(parsedOptions.DiffFilePath, out output, out var readError))
+            {
+                stderr.WriteLine($"registry-extract: {readError}");
+                return 2;
+            }
+            exitCode = 0;
+        }
+        else
+        {
+            (exitCode, output) = runDotnetInspectDiff(
+                parsedOptions.PackageId,
+                parsedOptions.OldPackageVersion,
+                parsedOptions.NewPackageVersion);
+        }
 
         var parsed = DiffPackageTool.ParseDiffOutput(output);
-        var entries = ExtractDraftEntries(parsed, packageId, newVersion);
+        if (parsedOptions.DiffFilePath is not null && parsed.NoChangesDetected
+            && (parsed.Breaking.Count > 0 || parsed.Additive.Count > 0))
+        {
+            stderr.WriteLine(
+                $"registry-extract: --diff-file '{parsedOptions.DiffFilePath}' is contradictory: " +
+                "it reports no API changes but also contains change rows.");
+            return 3;
+        }
+        if (parsedOptions.DiffFilePath is not null && parsed.Breaking.Count == 0
+            && parsed.Additive.Count == 0 && !parsed.NoChangesDetected)
+        {
+            stderr.WriteLine(
+                $"registry-extract: --diff-file '{parsedOptions.DiffFilePath}' did not contain " +
+                "recognizable dotnet-inspect diff evidence.");
+            return 3;
+        }
+        var entries = ExtractDraftEntries(
+            parsed,
+            parsedOptions.PackageId,
+            parsedOptions.ReleaseVersion,
+            parsedOptions.IdScope);
 
         // WM-09: a non-zero exit WITH no parseable entries is a TOOL FAILURE, not a
         // clean diff — surface it distinctly (stderr + a poisoned stdout marker + exit 3)
@@ -56,30 +121,165 @@ internal static class RegistryExtractCommand
         // for "no breaking changes".
         if (exitCode != 0 && entries.Count == 0)
         {
-            Console.Error.WriteLine($"❌ dotnet-inspect failed (exit {exitCode}) and produced no parseable diff — extraction FAILED, not a clean diff.");
-            Console.WriteLine("# EXTRACTION FAILED — dotnet-inspect error; do not treat as a clean diff.");
+            stderr.WriteLine($"❌ dotnet-inspect failed (exit {exitCode}) and produced no parseable diff — extraction FAILED, not a clean diff.");
+            stdout.WriteLine("# EXTRACTION FAILED — dotnet-inspect error; do not treat as a clean diff.");
             return 3;
         }
         if (exitCode != 0)
         {
             // Partial output: some entries parsed despite the non-zero exit — proceed but warn.
-            Console.Error.WriteLine($"⚠️ dotnet-inspect exited with code {exitCode}; output may be partial.");
+            stderr.WriteLine($"⚠️ dotnet-inspect exited with code {exitCode}; output may be partial.");
         }
 
         if (entries.Count == 0)
         {
-            Console.WriteLine("# No new draft registry entries — diff contained no breaking-change candidates.");
+            stdout.WriteLine("# No new draft registry entries — diff contained no breaking-change candidates.");
             return 0;
         }
 
         // WM-25: stamp the ACTUAL generation date (invariant so the Gregorian date
         // survives a non-default-calendar host), not a hard-coded literal.
-        Console.WriteLine($"# Draft registry entries — auto-generated {DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)} from {packageId} {oldVersion} → {newVersion}");
-        Console.WriteLine($"# {entries.Count} candidate(s). Review each before merging — TODO fields require human input.");
-        Console.WriteLine();
+        stdout.WriteLine($"# Draft registry entries — auto-generated {DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)} from {parsedOptions.PackageId} {parsedOptions.OldPackageVersion} → {parsedOptions.NewPackageVersion}");
+        stdout.WriteLine($"# {entries.Count} candidate(s). Review each before merging — TODO fields require human input.");
+        stdout.WriteLine();
         foreach (var entry in entries)
-            Console.WriteLine(entry);
+            stdout.WriteLine(entry);
         return 0;
+    }
+
+    internal static (Arguments? Options, string? Error) ParseArguments(string[] args)
+    {
+        if (args.Length < 4 || !string.Equals(args[0], "registry-extract", StringComparison.Ordinal))
+            return (null, "expected the registry-extract command followed by three positional arguments.");
+
+        var packageId = args[1];
+        var oldPackageVersion = args[2];
+        var newPackageVersion = args[3];
+        if (!DiffPackageTool.IsValidPackageId(packageId))
+            return (null, $"invalid package id '{packageId}'.");
+        if (!DiffPackageTool.IsValidVersion(oldPackageVersion)
+            || !DiffPackageTool.IsValidVersion(newPackageVersion))
+        {
+            return (null, "invalid package version string. Use SemVer-ish values only.");
+        }
+
+        string? diffFilePath = null;
+        string? releaseVersion = null;
+        string? idScope = null;
+        var seenOptions = new HashSet<string>(StringComparer.Ordinal);
+
+        for (var i = 4; i < args.Length; i += 2)
+        {
+            var option = args[i];
+            if (option is not ("--diff-file" or "--release-version" or "--id-scope"))
+                return (null, $"unknown option or extra positional argument '{option}'.");
+            if (!seenOptions.Add(option))
+                return (null, $"option '{option}' may be specified only once.");
+            if (i + 1 >= args.Length || string.IsNullOrWhiteSpace(args[i + 1])
+                || args[i + 1].StartsWith("--", StringComparison.Ordinal))
+            {
+                return (null, $"option '{option}' requires a value.");
+            }
+
+            var value = args[i + 1];
+            switch (option)
+            {
+                case "--diff-file":
+                    try
+                    {
+                        diffFilePath = Path.GetFullPath(value);
+                    }
+                    catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+                    {
+                        return (null, $"invalid --diff-file path: {ex.Message}");
+                    }
+                    break;
+
+                case "--release-version":
+                    if (value.Length > 32 || !StableReleaseVersionRegex.IsMatch(value))
+                        return (null, $"invalid --release-version '{value}'; expected a stable X.Y.Z version.");
+                    releaseVersion = value;
+                    break;
+
+                case "--id-scope":
+                    if (value.Length > 32 || !IdScopeRegex.IsMatch(value))
+                        return (null, $"invalid --id-scope '{value}'; expected at most 32 uppercase letters/digits with single hyphens.");
+                    idScope = value;
+                    break;
+            }
+        }
+
+        return (new Arguments(
+            packageId,
+            oldPackageVersion,
+            newPackageVersion,
+            releaseVersion ?? newPackageVersion,
+            diffFilePath,
+            idScope), null);
+    }
+
+    internal static bool TryReadDiffFile(string path, out string output, out string? error)
+    {
+        output = string.Empty;
+        error = null;
+        try
+        {
+            var fullPath = Path.GetFullPath(path);
+            if (!File.Exists(fullPath))
+            {
+                error = $"--diff-file '{fullPath}' does not exist or is not a regular file.";
+                return false;
+            }
+
+            using var stream = new FileStream(
+                fullPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 4096,
+                FileOptions.SequentialScan);
+            if (stream.Length > MaxDiffFileBytes)
+            {
+                error = $"--diff-file '{fullPath}' is {stream.Length} bytes; the limit is {MaxDiffFileBytes} bytes.";
+                return false;
+            }
+            if (stream.Length == 0)
+            {
+                error = $"--diff-file '{fullPath}' is empty.";
+                return false;
+            }
+
+            var expectedLength = checked((int)stream.Length);
+            var bytes = new byte[expectedLength];
+            var bytesRead = 0;
+            while (bytesRead < expectedLength)
+            {
+                var read = stream.Read(bytes, bytesRead, expectedLength - bytesRead);
+                if (read == 0) break;
+                bytesRead += read;
+            }
+            if (bytesRead != expectedLength || stream.ReadByte() != -1)
+            {
+                error = $"--diff-file '{fullPath}' changed while it was being read; capture it again and retry.";
+                return false;
+            }
+
+            output = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true)
+                .GetString(bytes);
+            if (output.StartsWith('\uFEFF')) output = output[1..];
+            return true;
+        }
+        catch (DecoderFallbackException)
+        {
+            error = $"--diff-file '{path}' is not valid UTF-8.";
+            return false;
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException
+                                   or PathTooLongException or UnauthorizedAccessException or IOException)
+        {
+            error = $"could not read --diff-file '{path}': {ex.Message}";
+            return false;
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -94,8 +294,11 @@ internal static class RegistryExtractCommand
     public static IReadOnlyList<string> ExtractDraftEntries(
         DiffParseResult parsed,
         string packageId,
-        string newVersion)
+        string releaseVersion,
+        string? idScope = null)
     {
+        if (idScope is not null && (idScope.Length > 32 || !IdScopeRegex.IsMatch(idScope)))
+            throw new ArgumentException("ID scope must be at most 32 uppercase letters/digits with single hyphens.", nameof(idScope));
         if (parsed.NoChangesDetected) return [];
 
         var candidates = parsed.Breaking
@@ -110,12 +313,13 @@ internal static class RegistryExtractCommand
         foreach (var entry in candidates)
         {
             var area = AreaCodeFromType(entry.Type);
-            idCounter.TryGetValue(area, out var count);
+            var scopedArea = idScope is null ? area : $"{idScope}-{area}";
+            idCounter.TryGetValue(scopedArea, out var count);
             count++;
-            idCounter[area] = count;
-            var id = $"MAF{VersionToIdSegment(newVersion)}-{area}-{count:000}";
+            idCounter[scopedArea] = count;
+            var id = $"MAF{VersionToIdSegment(releaseVersion)}-{scopedArea}-{count:000}";
 
-            entries.Add(BuildYamlEntry(id, packageId, newVersion, entry));
+            entries.Add(BuildYamlEntry(id, packageId, releaseVersion, entry));
         }
         return entries;
     }
@@ -174,11 +378,12 @@ internal static class RegistryExtractCommand
         var methodMatch = Regex.Match(entry.Body, @"'([A-Za-z_][A-Za-z0-9_.]*)'");
         var method = methodMatch.Success ? methodMatch.Groups[1].Value : "TODO";
 
-        var verdict = entry.Kind switch
+        var verdict = entry switch
         {
-            DiffEntryKind.Removed => "Type or member REMOVED in new version — references will fail to compile (CS0246).",
-            DiffEntryKind.SignatureChanged => "Signature changed — call sites may fail to compile or bind to a different overload.",
-            _ when entry.IsObsolete => "Member is now `[Obsolete]` — call sites trigger CS0618 warnings.",
+            _ when IsRemovedType(entry) => "Type REMOVED in new version — direct type references fail to compile (typically CS0246).",
+            { Kind: DiffEntryKind.Removed } => "Member REMOVED in new version — compile against the target package to determine the exact diagnostic.",
+            { Kind: DiffEntryKind.SignatureChanged } => "Signature changed — call sites may fail to compile or bind to a different overload.",
+            { IsObsolete: true } => "Member is now `[Obsolete]` — call sites trigger CS0618 warnings.",
             _ => "Behavioural / structural change — review the diff entry.",
         };
 
@@ -199,7 +404,11 @@ internal static class RegistryExtractCommand
             ExampleAfter = "// TODO — show the canonical 1.x replacement\n",
             CsWarning = ClassifyCsWarning(entry),
             GuideSection = "TODO",
-            DotnetInspectDetectable = entry.IsObsolete,
+            // Every draft emitted here was discovered by parsing dotnet-inspect
+            // output, regardless of whether it represents a removal, signature
+            // change, or newly-obsolete API.
+            DotnetInspectDetectable = true,
+            AppliesToCodebases = $"pre-{version}",
             // Phase 2.6 — fence the dotnet-inspect diff body. `entry.Body` is
             // attacker-controllable (a malicious upstream NuGet author can put
             // anything in the public-API surface that gets diffed) and the
@@ -233,10 +442,15 @@ internal static class RegistryExtractCommand
         return indented + "\n";
     }
 
+    private static bool IsRemovedType(DiffEntry entry) =>
+        entry.Kind == DiffEntryKind.Removed
+        && entry.Body.StartsWith("Type '", StringComparison.OrdinalIgnoreCase);
+
     private static string ClassifyCsWarning(DiffEntry entry) => entry switch
     {
-        { Kind: DiffEntryKind.Removed } => "CS0246",
-        _ when entry.IsObsolete => "CS0618",
-        _ => "CS0618",
+        _ when IsRemovedType(entry) => "CS0246",
+        { Kind: DiffEntryKind.Removed or DiffEntryKind.SignatureChanged } => "TODO",
+        { IsObsolete: true } => "CS0618",
+        _ => "TODO",
     };
 }

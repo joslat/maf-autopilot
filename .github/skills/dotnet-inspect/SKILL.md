@@ -1,7 +1,7 @@
 ---
 name: dotnet-inspect
-version: 0.7.8
-description: "Query .NET APIs across NuGet packages, platform libraries, and local files. Search for types, list API surfaces, compare and diff versions, find extension methods and implementors. Use whenever you need to answer questions about .NET library contents. As of v0.7.8, [Obsolete] members are surfaced in listings — pair with cs0618-hunter (compiler-based) for runtime ground-truth."
+version: 0.9.1
+description: "Query .NET APIs across NuGet packages, platform libraries, and local files. Search for types, list API surfaces, compare and diff versions, find extension methods and implementors. Use whenever you need to answer questions about .NET library contents. Commands pin v0.9.1; pair with cs0618-hunter (compiler-based) for runtime ground-truth."
 ---
 
 # dotnet-inspect
@@ -21,7 +21,7 @@ Query .NET library APIs — types, members, diffs, extensions, implementations, 
 
 Both keep value. Earlier versions (≤ v0.7.7) required `cs0618-hunter` as the only reliable path; v0.7.8 makes static inspection a viable pre-build option.
 
-> **Pin to v0.7.8 or later.** Versions ≤ v0.7.7 will miss `[Obsolete]` annotations and silently mislead.
+> **Pin to exact v0.9.1.** Versions ≤ v0.7.7 miss `[Obsolete]` annotations, and v0.7.8 is affected by the Linux redirected-output corruption seen in the release watcher.
 
 ---
 
@@ -53,15 +53,15 @@ Both keep value. Earlier versions (≤ v0.7.7) required `cs0618-hunter` as the o
 ## Installation and Invocation
 
 ```bash
-# Install (once, global)
-dotnet tool install -g dnx
+# Install the exact repository-supported release (once, global)
+dotnet tool install --global dotnet-inspect --version 0.9.1
 
-# Standard pattern — BOTH --source flags are required for NuGet packages
-dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- <command> \
+# Standard pattern for NuGet packages
+dotnet-inspect <command> \
   --package <PackageName>@<version> --source https://api.nuget.org/v3/index.json
 ```
 
-> The `--source https://api.nuget.org/v3/index.json` flag must appear on **both** the `dnx` invocation and the inner command.
+> The explicit `--source https://api.nuget.org/v3/index.json` keeps package resolution deterministic in workspaces with custom feeds.
 
 ---
 
@@ -70,27 +70,27 @@ dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- <com
 ### Diff breaking changes between MAF versions
 
 ```bash
-dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff \
+dotnet-inspect diff \
   --package Microsoft.Agents.AI@1.2.0..1.3.0 --source https://api.nuget.org/v3/index.json
 
-dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff \
+dotnet-inspect diff \
   --package Microsoft.Agents.AI.Workflows@1.2.0..1.3.0 --source https://api.nuget.org/v3/index.json
 ```
 
 ### List types in a MAF package
 
 ```bash
-dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- type \
+dotnet-inspect type \
   --package Microsoft.Agents.AI.Workflows@1.3.0 --source https://api.nuget.org/v3/index.json
 ```
 
 ### Inspect members of a specific type
 
 ```bash
-dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- member ChatClientAgent \
+dotnet-inspect member ChatClientAgent \
   --package Microsoft.Agents.AI@1.3.0 --source https://api.nuget.org/v3/index.json
 
-dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- member WorkflowBuilder \
+dotnet-inspect member WorkflowBuilder \
   --package Microsoft.Agents.AI.Workflows@1.3.0 --source https://api.nuget.org/v3/index.json
 ```
 
@@ -98,7 +98,7 @@ dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- memb
 
 ```bash
 # Use --params to select a specific overload, --index for full detail including custom attributes
-dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- member WorkflowBuilder \
+dotnet-inspect member WorkflowBuilder \
   --package Microsoft.Agents.AI.Workflows@1.3.0 --source https://api.nuget.org/v3/index.json \
   -m AddFanInBarrierEdge --params "ExecutorBinding,IEnumerable<ExecutorBinding>" --index
 ```
@@ -111,16 +111,16 @@ dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- memb
 
 ```bash
 # List members of a type
-dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- member JsonSerializer \
+dotnet-inspect member JsonSerializer \
   --package System.Text.Json --source https://api.nuget.org/v3/index.json
 
 # What changed between versions
-dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- diff \
+dotnet-inspect diff \
   --package System.CommandLine@2.0.0-beta4.22272.1..2.0.3 --source https://api.nuget.org/v3/index.json
 
 # Check latest version
-dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- \
-  Microsoft.Agents.AI --latest-version --source https://api.nuget.org/v3/index.json
+dotnet-inspect Microsoft.Agents.AI --latest-version \
+  --source https://api.nuget.org/v3/index.json
 ```
 
 ## Key Syntax Rules

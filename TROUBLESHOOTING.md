@@ -86,26 +86,23 @@ The SDK emits PascalCase from C# method names. Some older doc snippets used snak
 
 ## `dotnet-inspect` issues
 
-### `dnx dotnet-inspect@0.7.8 -- diff` fails with NuGet rate limit / 429
+### `dotnet-inspect 0.9.1 diff` fails with NuGet rate limit / 429
 
-NuGet's flat-container API rate-limits aggressive callers. Retry after 60s. If it persists, `dnx` caches packages locally — clear the cache:
+NuGet's flat-container API rate-limits aggressive callers. Retry after 60s. If it persists, clear NuGet's local caches:
 
 ```bash
-# Linux/macOS
-rm -rf ~/.dotnet/toolResolverCache ~/.nuget/dnx-cache
-# Windows
-rmdir /S /Q %USERPROFILE%\.dotnet\toolResolverCache %USERPROFILE%\.nuget\dnx-cache
+dotnet nuget locals all --clear
 ```
 
 ### `dotnet-inspect` doesn't show `[Obsolete]` overloads
 
-**Pin to v0.7.8 or later.** v0.7.8 ([release notes](https://github.com/richlander/dotnet-inspect/releases/tag/v0.7.8)) closed [issue #316](https://github.com/richlander/dotnet-inspect/issues/316). Earlier versions miss obsoletions at the overload level. Check your version:
+**Use the repository's exact v0.9.1 pin.** v0.7.8 ([release notes](https://github.com/richlander/dotnet-inspect/releases/tag/v0.7.8)) first closed [issue #316](https://github.com/richlander/dotnet-inspect/issues/316); earlier versions miss obsoletions at the overload level. Check your version:
 
 ```bash
-dnx dotnet-inspect --version
+dotnet-inspect --version
 ```
 
-If you're using `dnx dotnet-inspect` (no version pin), it picks up the latest — usually fine, but pin to `@0.7.8` for reproducible CI.
+If you're using `dnx dotnet-inspect` (no version pin), it picks up the latest. Pin to `@0.9.1` for reproducible CI and parity with the release watcher.
 
 ### The compiler reports CS0618 but `dotnet-inspect` says the API is fine
 
@@ -132,13 +129,13 @@ The agent has a strict golden rule: never mark verified without a passing build.
 
 ### `dotnet-inspect` is not installed in the migration loop
 
-The migration agent expects `dnx` to be available. Install it once globally:
+Install the repository-supported tool version globally:
 
 ```bash
-dotnet tool install --global dnx
+dotnet tool install --global dotnet-inspect --version 0.9.1
 ```
 
-`dnx` auto-resolves `dotnet-inspect@0.7.8` on first use.
+The MCP tools verify that PATH installation before every diff, accepting `0.9.1` with optional build metadata. A missing, mismatched, or unverifiable tool fails closed; their opt-in `dnx` fallback resolves exact `dotnet-inspect@0.9.1`.
 
 ## Self-update workflows (GitHub Actions)
 

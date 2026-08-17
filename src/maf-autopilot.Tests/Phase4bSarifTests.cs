@@ -98,7 +98,7 @@ public sealed class Phase4bSarifTests
     [Fact]
     public void DescribeInspectFailure_NotInstalled_IsVerbatim_OtherOutput_IsFenced()
     {
-        var notInstalled = "dotnet tool install --global dotnet-inspect --version 0.7.8 to enable this.";
+        var notInstalled = "dotnet tool install --global dotnet-inspect --version 0.9.1 to enable this.";
         var failVerbatim = DiffPackageTool.DescribeInspectFailure(1, notInstalled);
         Assert.Contains("Error: dotnet-inspect failed", failVerbatim);
         Assert.Contains(notInstalled, failVerbatim);

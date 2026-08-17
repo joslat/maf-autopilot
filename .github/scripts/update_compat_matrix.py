@@ -11,15 +11,15 @@ the cross-file gate rejects, this script now fills the row DETERMINISTICALLY:
     current top row — correct for additive/patch releases, which don't move the
     floor; a breaking release is reviewed by a human anyway.
   * The Generators-package column is the new version.
-  * The Notes cell states the additive-vs-breaking verdict from
-    release_classification, computed from release-notes.txt + the combined
-    package diffs (diff-core.txt AND diff-workflows.txt via combined_diff_text()).
+  * The Notes cell states the additive-vs-breaking verdict from every validated
+    package diff in maf-package-plan.json and summarizes package/repository
+    lifecycle transitions without changing the table schema.
   * The "Current tracked version" line and the `last-updated:` header date are
     advanced to the new version / today, which the cross-file consistency gate
     also requires.
 
-Idempotency: if a row for NEW_VERSION already exists, the script exits without
-modifying the file.
+Idempotency: if a row for NEW_VERSION already exists, the script does not add a
+second row; it still normalizes the single tracking line and header date.
 """
 import datetime as dt
 import os
@@ -28,7 +28,11 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from release_classification import classify, combined_diff_text, safe_members  # noqa: E402
+from release_classification import (  # noqa: E402
+    classify_from_files,
+    lifecycle_event_summary,
+    safe_members,
+)
 
 old = os.environ.get('OLD_VERSION', 'unknown')
 new = os.environ.get('NEW_VERSION', 'unknown')
@@ -37,15 +41,42 @@ matrix_path = 'docs/compatibility-matrix.md'
 with open(matrix_path, 'r', encoding='utf-8') as f:
     content = f.read()
 
-# Idempotency: a row matching ` **<NEW>** ` already exists → no-op.
-if re.search(rf'^\| \*\*{re.escape(new)}\*\* \|', content, re.MULTILINE):
-    print(f"compatibility-matrix.md already has a row for MAF {new}; no-op.")
-    sys.exit(0)
+TRACKED_PATTERN = (
+    r'(Current tracked version:\s*\*\*`?)\d+\.\d+(?:\.\d+)?(`?\*\*)'
+)
+LAST_UPDATED_PATTERN = r'(last-updated:\s*)\d{4}-\d{2}-\d{2}'
+TRACKED_LABEL_PATTERN = r'Current tracked version\s*:'
+LAST_UPDATED_LABEL_PATTERN = r'last-updated\s*:'
 
+# Metadata is part of the release transaction. Refuse to mutate the matrix when
+# either field is missing or duplicated: re.sub() would otherwise silently leave
+# stale metadata or update several conflicting sources of truth.
+n_tracked_fields = len(re.findall(TRACKED_PATTERN, content))
+n_date_fields = len(re.findall(LAST_UPDATED_PATTERN, content))
+n_tracked_labels = len(re.findall(TRACKED_LABEL_PATTERN, content, re.IGNORECASE))
+n_date_labels = len(re.findall(LAST_UPDATED_LABEL_PATTERN, content, re.IGNORECASE))
+metadata_errors = []
+if n_tracked_fields != 1 or n_tracked_labels != 1:
+    metadata_errors.append(
+        "expected exactly one valid 'Current tracked version' field; "
+        f"found {n_tracked_fields} valid value(s) across {n_tracked_labels} field(s)"
+    )
+if n_date_fields != 1 or n_date_labels != 1:
+    metadata_errors.append(
+        "expected exactly one valid 'last-updated: YYYY-MM-DD' field; "
+        f"found {n_date_fields} valid value(s) across {n_date_labels} field(s)"
+    )
+if metadata_errors:
+    print(
+        "::error::update_compat_matrix.py cannot update release metadata: "
+        + "; ".join(metadata_errors)
+        + ". Fix the compatibility-matrix format and re-run."
+    )
+    sys.exit(1)
 
-def read_sibling(name: str) -> str:
-    p = Path(name)
-    return p.read_text(encoding='utf-8') if p.is_file() else ''
+row_exists = bool(
+    re.search(rf'^\| \*\*{re.escape(new)}\*\* \|', content, re.MULTILINE)
+)
 
 
 def top_row_cells(text: str):
@@ -68,6 +99,14 @@ def build_notes(verdict: dict) -> str:
     # Only identifier-allowlisted member names are embedded — NO freeform upstream
     # text (release-note lines), because this cell flows into CompatibilityTool.cs
     # source via sync_compat_tool.py and must not carry an injection payload.
+    transition_parts = [
+        f"{event['impact'].title()}: {lifecycle_event_summary(event)}"
+        for event in verdict.get('lifecycle_events', [])
+    ]
+    transition_tail = (
+        " Lifecycle transitions: " + "; ".join(transition_parts) + "."
+        if transition_parts else ""
+    )
     if verdict['additive']:
         added, _ = safe_members(verdict['added'])
         if added:
@@ -77,18 +116,55 @@ def build_notes(verdict: dict) -> str:
         else:
             tail = ''
         return (
-            f"Additive release — no `.NET … [BREAKING]` changes and no removed members "
-            f"(source-compatible).{tail} Transitive pins carried from {old}."
+            f"Additive release — no `.NET … [BREAKING]` changes and no breaking or "
+            f"potentially-breaking API rows "
+            f"(source-compatible).{tail}{transition_tail} Transitive pins carried from {old}."
         )
     removed, _ = safe_members(verdict['removed'])
     rem = (' Removed: ' + ', '.join(f'`{m}`' for m in removed[:8]) + '.') if removed else ''
+    api_counts = []
+    if verdict.get('summary_breaking', 0):
+        api_counts.append(f"{verdict['summary_breaking']} breaking")
+    if verdict.get('summary_potentially_breaking', 0):
+        api_counts.append(
+            f"{verdict['summary_potentially_breaking']} potentially breaking"
+        )
+    api_summary = (
+        " API summary: " + ", ".join(api_counts) + "." if api_counts else ""
+    )
     return (
-        f"**Breaking** — review required.{rem} See `guides/maf-{new}-migration-guide.md` "
-        f"and the registry entries. Transitive pins carried from {old} (verify)."
+        f"**Breaking** — review required.{rem}{api_summary} See `guides/maf-{new}-migration-guide.md` "
+        f"and the registry entries.{transition_tail} Transitive pins carried from {old} (verify)."
     )
 
 
-verdict = classify(read_sibling('release-notes.txt'), combined_diff_text())
+# Update both required metadata fields in memory before doing any write. The
+# exact-one preflight above makes these counts deterministic and fail-closed.
+today = dt.date.today().isoformat()
+content, n_tracked = re.subn(
+    TRACKED_PATTERN,
+    rf'\g<1>{new}\g<2>',
+    content,
+)
+content, n_date = re.subn(
+    LAST_UPDATED_PATTERN,
+    rf'\g<1>{today}',
+    content,
+)
+
+# Recovery/idempotency path: do not require release evidence again merely to
+# finish metadata normalization after the version row was already inserted.
+if row_exists:
+    with open(matrix_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+    print(
+        f"compatibility-matrix.md already has a row for MAF {new}; no duplicate "
+        f"added; tracked-version line updated x{n_tracked}; date updated x{n_date}."
+    )
+    sys.exit(0)
+
+
+verdict = classify_from_files()
 
 # Carry the transitive pins forward from the current top row. Fail-closed: if the
 # table format changed and we can't parse it, refuse to GUESS pins — publishing a
@@ -115,31 +191,8 @@ if match:
 else:
     content = content.rstrip() + '\n' + new_row + '\n'
 
-# Advance the "Current tracked version" line (the cross-file gate checks this).
-content, n_tracked = re.subn(
-    r'(Current tracked version:\s*\*\*`?)\d+\.\d+(?:\.\d+)?(`?\*\*)',
-    rf'\g<1>{new}\g<2>',
-    content,
-)
-
-# Advance the `last-updated:` header date to today.
-today = dt.date.today().isoformat()
-content, n_date = re.subn(
-    r'(last-updated:\s*)\d{4}-\d{2}-\d{2}',
-    rf'\g<1>{today}',
-    content,
-)
-
 with open(matrix_path, 'w', encoding='utf-8') as f:
     f.write(content)
-
-# The tracking line / date regexes match the live doc today; warn loudly if a
-# future doc-format change makes them miss (the cross-file gate blocks on a stale
-# tracking line, but the date is only a warning there, so surface it here too).
-if n_tracked == 0:
-    print("::warning::update_compat_matrix.py did not find a 'Current tracked version' line to bump — check the doc format.")
-if n_date == 0:
-    print("::warning::update_compat_matrix.py did not find a 'last-updated:' header to advance — check the doc format.")
 
 print(
     f"Updated {matrix_path}: added {'additive' if verdict['additive'] else 'breaking'} "

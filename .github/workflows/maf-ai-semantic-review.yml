@@ -34,10 +34,6 @@ on:
       pr_number:
         description: 'PR number to review (manual re-run)'
         required: true
-      model:
-        description: 'Override the Copilot model (gpt-4.1 or claude-sonnet-4.5)'
-        required: false
-        default: ''
 
 permissions:
   contents: read
@@ -48,8 +44,7 @@ jobs:
   # Phase 3.1 — validate workflow_dispatch inputs BEFORE the semantic-review
   # job runs. semantic-review has `pull-requests: write` + `copilot-requests: write`; a
   # malformed pr_number could otherwise trick `gh pr view` (mitigated by gh's
-  # own arg parsing today, but defense in depth) and a bogus model arg could
-  # waste quota or route to an unintended endpoint.
+  # own arg parsing today, but defense in depth).
   validate-inputs:
     # Only run validation on the manual dispatch path; pull_request events
     # carry no inputs to validate.
@@ -60,17 +55,10 @@ jobs:
       - name: Validate inputs
         env:
           PR_NUM: ${{ inputs.pr_number }}
-          MODEL: ${{ inputs.model }}
         run: |
           if ! echo "$PR_NUM" | grep -qE '^[1-9][0-9]*$'; then
             echo "::error::Invalid pr_number input shape: $PR_NUM (must be a positive integer)"
             exit 1
-          fi
-          if [ -n "$MODEL" ]; then
-            case "$MODEL" in
-              gpt-4.1|claude-sonnet-4.5) ;;
-              *) echo "::error::Invalid model input: $MODEL (must be an approved Copilot model)" ; exit 1 ;;
-            esac
           fi
 
   semantic-review:
@@ -119,14 +107,16 @@ jobs:
           echo "head=$HEAD" >> $GITHUB_OUTPUT
           echo "Resolved: PR #$PR_NUM (base=$BASE head=$HEAD)"
 
-      - name: Checkout main (so the scripts are present)
+      - name: Checkout trusted PR base (so the scripts are present)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           # Deliberately NOT checking out the PR head — the PR branch (created
           # by the filler bot) doesn't contain the rung-2 review scripts. We
           # need this workflow's scripts from main, then we git-fetch the PR
           # refs separately so `git show $SHA:registry.yaml` works.
+          ref: ${{ steps.pr.outputs.base }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Fetch PR head + base refs
         env:
@@ -188,8 +178,9 @@ jobs:
         uses: actions/ai-inference@a7805884c80886efc241e94a5351df715968a0ad  # v2.1.1
         with:
           provider: copilot
-          model: ${{ inputs.model != '' && inputs.model || 'gpt-4.1' }}
           prompt-file: .ai-review-prompt.txt
+          # Deliberately omit `model`: Copilot CLI selects a model available to
+          # this seat. Hard-coding gpt-4.1 failed when that model was unavailable.
           # Do not set copilot-allow-tools. The action denies every Copilot
           # tool by default, containing prompt-injection impact to response text.
         env:

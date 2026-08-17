@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "surfaces": [
+    {
+      "order": 0,
+      "slug": "core",
+      "package": "Microsoft.Agents.AI",
+      "id_scope": ""
+    },
+    {
+      "order": 1,
+      "slug": "workflows",
+      "package": "Microsoft.Agents.AI.Workflows",
+      "id_scope": "WORKFLOWS"
+    },
+    {
+      "order": 2,
+      "slug": "harness",
+      "package": "Microsoft.Agents.AI.Harness",
+      "id_scope": "HARNESS"
+    },
+    {
+      "order": 3,
+      "slug": "hosting",
+      "package": "Microsoft.Agents.AI.Hosting",
+      "id_scope": "HOSTING"
+    },
+    {
+      "order": 4,
+      "slug": "hosting-openai",
+      "package": "Microsoft.Agents.AI.Hosting.OpenAI",
+      "id_scope": "HOSTING-OPENAI"
+    },
+    {
+      "order": 5,
+      "slug": "hosting-agui",
+      "package": "Microsoft.Agents.AI.Hosting.AGUI.AspNetCore",
+      "id_scope": "HOSTING-AGUI"
+    },
+    {
+      "order": 6,
+      "slug": "durable",
+      "package": "Microsoft.Agents.AI.DurableTask",
+      "id_scope": "DURABLE"
+    },
+    {
+      "order": 7,
+      "slug": "azure-functions",
+      "package": "Microsoft.Agents.AI.Hosting.AzureFunctions",
+      "id_scope": "AZURE-FUNCTIONS"
+    },
+    {
+      "order": 8,
+      "slug": "github-copilot",
+      "package": "Microsoft.Agents.AI.GitHub.Copilot",
+      "id_scope": "GITHUB-COPILOT"
+    },
+    {
+      "order": 9,
+      "slug": "tools-shell",
+      "package": "Microsoft.Agents.AI.Tools.Shell",
+      "id_scope": "TOOLS-SHELL"
+    }
+  ],
+  "lifecycle_events": [
+    {
+      "id": "maf-1.14.0-agui-split",
+      "release_version": "1.14.0",
+      "kind": "package_split",
+      "impact": "breaking",
+      "related_surfaces": [
+        "hosting-agui"
+      ],
+      "source_packages": [
+        {
+          "package": "Microsoft.Agents.AI.AGUI",
+          "version": "1.13.0-preview.260703.1"
+        }
+      ],
+      "target_packages": [
+        {
+          "package": "AGUI.Client",
+          "version": "0.0.3"
+        },
+        {
+          "package": "AGUI.Server",
+          "version": "0.0.3"
+        },
+        {
+          "package": "AGUI.Abstractions",
+          "version": "0.0.3"
+        },
+        {
+          "package": "AGUI.Protobuf",
+          "version": "0.0.3"
+        },
+        {
+          "package": "AGUI.Formatting",
+          "version": "0.0.3"
+        }
+      ],
+      "reason": "The legacy Microsoft.Agents.AI.AGUI package was split into the external AGUI SDK packages for MAF 1.14.0; the ASP.NET Core hosting integration remains a tracked MAF surface and must also be API-diffed."
+    },
+    {
+      "id": "maf-1.17.0-durable-extension-externalization",
+      "release_version": "1.17.0",
+      "kind": "repository_externalization",
+      "impact": "informational",
+      "related_surfaces": [
+        "durable",
+        "azure-functions"
+      ],
+      "source_packages": [
+        {
+          "package": "Microsoft.Agents.AI.DurableTask",
+          "version": "1.16.0-preview.260730.1"
+        },
+        {
+          "package": "Microsoft.Agents.AI.Hosting.AzureFunctions",
+          "version": "1.16.0-preview.260730.1"
+        }
+      ],
+      "target_packages": [
+        {
+          "package": "Microsoft.Agents.AI.DurableTask"
+        },
+        {
+          "package": "Microsoft.Agents.AI.Hosting.AzureFunctions"
+        }
+      ],
+      "source_repository": "microsoft/agent-framework",
+      "target_repository": "microsoft/agent-framework-durable-extension",
+      "same_package_ids": true,
+      "reason": "Durable Task and Azure Functions ownership and release cadence moved to microsoft/agent-framework-durable-extension for MAF 1.17.0; Microsoft retained the existing package IDs, so absence of a 1.17.0-aligned package is informational rather than a package removal."
+    }
+  ]
+}

@@ -21,6 +21,9 @@ from release_classification import (  # noqa: E402
     removed_members,
     safe_members,
     signature_changed_members,
+    summary_potentially_breaking_count,
+    summary_breaking_count,
+    unrepresented_structural_rows,
 )
 
 # Trimmed from the real MAF 1.11.1 release notes.
@@ -119,13 +122,13 @@ def test_usage_token_and_header_alone_are_not_trustworthy():
     # The report HEADER alone is the FIRST line — a truncated diff carries it with
     # no content bullets, so it must NOT count as a completed diff (fail-closed).
     assert diff_is_trustworthy("# API Diff: Microsoft.Agents.AI\n") is False
-    # WM-11: a completed diff carries change bullets AND the closing **Summary:** line.
+    # WM-11: a completed change diff carries bullets AND a **Summary:** row.
     assert diff_is_trustworthy("# API Diff: X\n- Member 'A' was added\n**Summary:** 0 breaking, 1 additive\n") is True
 
 
 def test_change_bullets_without_summary_are_truncated_not_trustworthy():
     # WM-11: dotnet-inspect exited cleanly but the report was truncated right after an
-    # additive bullet (the closing **Summary:** never arrived). A clean-exit-but-
+    # additive bullet (the **Summary:** row is absent). A clean-exit-but-
     # truncated diff must fail closed to breaking, not slip through as additive.
     truncated = "# API Diff: X\n- Member 'A' was added\n"   # no Summary line
     assert diff_is_trustworthy(truncated) is False
@@ -155,10 +158,67 @@ def test_summary_breaking_count_forces_breaking_on_truncated_diff():
     assert is_additive("## Changes:\n* .NET: x\n", diff2) is True
 
 
+def test_potentially_breaking_summary_is_review_required():
+    diff = (
+        "# API Diff: X\n"
+        "**Summary:** 1 potentially breaking, 0 additive\n"
+        "## Potentially Breaking Changes\n"
+        "### DerivedAgent\n"
+        "- Base type changed from 'OldBase' to 'NewBase'\n"
+    )
+    verdict = classify("## Changes:\n* .NET: routine refactor\n", diff)
+    assert diff_is_trustworthy(diff) is True
+    assert summary_potentially_breaking_count(diff) == 1
+    assert verdict["summary_potentially_breaking"] == 1
+    assert verdict["summary_breaking"] == 0
+    assert verdict["additive"] is False
+
+
+def test_summary_breaking_covers_non_member_recipe_shapes():
+    diff = (
+        "**Summary:** 1 breaking, 0 additive\n"
+        "## Breaking Changes\n"
+        "### AgentBase\n"
+        "- Type was sealed\n"
+    )
+    verdict = classify("## Changes:\n* .NET: routine refactor\n", diff)
+    assert verdict["removed"] == []
+    assert verdict["signature_changed"] == []
+    assert verdict["summary_breaking"] == 1
+    assert verdict["unrepresented_structural_rows"] == ["- Type was sealed"]
+    assert verdict["additive"] is False
+
+
+def test_summary_counts_sum_across_package_reports():
+    one_breaking = "**Summary:** 2 breaking, 1 additive across 1 type\n"
+    one_potential = "**Summary:** 3 potentially breaking across 1 type\n"
+    combined = one_breaking + one_potential + one_breaking + one_potential
+    assert summary_breaking_count(combined) == 4
+    assert summary_potentially_breaking_count(combined) == 6
+
+
+def test_structural_rows_exclude_extractor_recipe_shapes():
+    diff = (
+        "## Breaking Changes\n"
+        "- Member 'Old' was removed\n"
+        "- Member 'M' signature changed: `a` -> `b`\n"
+        "- Type was sealed\n"
+        "## Potentially Breaking Changes\n"
+        "- Base type changed from 'A' to 'B'\n"
+    )
+    assert unrepresented_structural_rows(diff) == [
+        "- Type was sealed",
+        "- Base type changed from 'A' to 'B'",
+    ]
+
+
 def test_breaking_marker_is_order_independent():
     assert dotnet_breaking_lines("* x [BREAKING] .NET: removed Foo")  # [BREAKING] before .NET
     assert dotnet_breaking_lines("* x .NET: [BREAKING] removed Foo")  # .NET before [BREAKING]
+    assert dotnet_breaking_lines("* x .NET: [Breaking Change] changed defaults")
+    assert dotnet_breaking_lines("* x [BREAKING CHANGES] for .NET consumers")
     assert not dotnet_breaking_lines("* x Python: [BREAKING] py-only")
+    assert not dotnet_breaking_lines("* x Python: [Breaking Change] py-only")
 
 
 def test_added_and_removed_member_extraction():

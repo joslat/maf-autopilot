@@ -1,6 +1,6 @@
 # MAF Compatibility Matrix
 
-<!-- auto-updated-by: maf-release-watcher | last-updated: 2026-07-08 -->
+<!-- auto-updated-by: maf-release-watcher | last-updated: 2026-08-17 -->
 
 <!--
   Note on the Azure.AI.OpenAI column: MAF doesn't pin Azure.AI.OpenAI directly.

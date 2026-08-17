@@ -35,6 +35,8 @@
 diff --package Microsoft.Agents.AI@1.11.0..1.11.1
 # NOTE: the raw dotnet-inspect capture for this run was malformed/truncated
 # (it emitted a stray "hape / ' was added" fragment and omitted the removals).
+# Root cause: dotnet-inspect 0.7.8's Linux Native-AOT runtime overwrote offset
+# zero on each write when stdout was redirected to a seekable regular file.
 # Coherent summary, reconciled with the per-member registry diff entries:
 
 ### Microsoft.Agents.AI

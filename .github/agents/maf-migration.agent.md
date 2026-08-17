@@ -49,7 +49,7 @@ Skills remain the source of truth for *narrative* knowledge — when to use what
 | Capture surprises and improve the toolkit post-migration  | `.github/skills/maf-migration-retrospective/SKILL.md`  |
 | Steady-state anti-pattern rules (8 codified rules)        | `.github/skills/maf-anti-pattern-scanner/SKILL.md` |
 
-> **Critical:** Pin `dotnet-inspect` to v0.7.8 or later — v0.7.8 surfaces `[Obsolete]` in member listings. For ground-truth on what your project actually triggers (transitive obsoletions, overload-resolution surprises, project-local `[Obsolete]`), `MafRunCs0618Hunt` (compiler-based) is the authoritative path.
+> **Critical:** Pin `dotnet-inspect` to exact v0.9.1. v0.7.8 was the first release to surface `[Obsolete]` in member listings, while v0.9.1 is the repository-supported release. For ground-truth on what your project actually triggers (transitive obsoletions, overload-resolution surprises, project-local `[Obsolete]`), `MafRunCs0618Hunt` (compiler-based) is the authoritative path.
 
 ---
 

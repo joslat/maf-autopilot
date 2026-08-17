@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Creates a per-version migration-guide stub at guides/maf-<NEW_VERSION>-migration-guide.md.
 
-Reads OLD_VERSION, NEW_VERSION from environment variables.
-Called by .github/workflows/maf-release-watcher.yml.
+Normal mode reads OLD_VERSION and NEW_VERSION from environment variables.
+``--cumulative-only`` rebuilds the cumulative guide solely from checked-in
+per-version guides and does not require release notes, package plans, or diffs.
 
 Per-version output (not append to 1.3.0!) means a 1.4.0 release produces
 guides/maf-1.4.0-migration-guide.md instead of polluting the 1.3.0 doc.
@@ -18,6 +19,7 @@ guide in ascending version order. The cumulative file is the one the README
 points to as the canonical "start here" reference; per-version files remain the
 canonical source-of-truth for their respective deltas and are what auto-update.
 """
+import argparse
 import os
 import re
 import sys
@@ -32,10 +34,12 @@ from pathlib import Path
 # framing so a downstream Coding Agent or human reader cannot be redirected.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from llm_fencing import fence  # noqa: E402
-from release_classification import classify, combined_diff_text, safe_members  # noqa: E402
-
-old = os.environ.get('OLD_VERSION', 'unknown')
-new = os.environ.get('NEW_VERSION', 'unknown')
+from release_classification import (  # noqa: E402
+    classify_from_files,
+    lifecycle_event_summary,
+    safe_members,
+)
+from validate_dotnet_inspect_diff import MAX_DIFF_FILE_BYTES  # noqa: E402
 
 
 def _semver_key(version: str):
@@ -57,12 +61,12 @@ def read_file(path: str, fallback: str) -> str:
         return fallback
 
 
-def list_per_version_guides():
+def list_per_version_guides(guides_dir: Path | str = Path('guides')):
     """
     Returns a list of (semver_tuple, version_string, path) sorted ascending.
     Excludes the cumulative file itself and any non-matching filenames.
     """
-    guides_dir = Path('guides')
+    guides_dir = Path(guides_dir)
     pattern = re.compile(r'^maf-(\d+\.\d+\.\d+)-migration-guide\.md$')
     out = []
     if not guides_dir.exists():
@@ -115,146 +119,243 @@ def build_chain_banner(old_version: str, new_version: str) -> str:
     )
 
 
-# Display BOTH package diffs (core + workflows) — the verdict below is computed
-# from this same combined text, so the reviewer sees the full surface it weighed
-# (a Workflows-package break must not be invisible in the guide).
-raw_diff_all = combined_diff_text()
-diff_lines = (raw_diff_all or '(diff not available)').splitlines()
-# Trim to a reasonable length — full diffs can be huge. One constant drives both
-# the slice and the heading so the displayed count can't drift from reality.
-DIFF_DISPLAY_LINES = 160
-raw_diff = '\n'.join(diff_lines[:DIFF_DISPLAY_LINES])
-# Phase 2.G fixup (Finding 1) — fence the dotnet-inspect diff. The diff is the
-# sibling input to release notes — same TA-1 threat (malicious upstream NuGet
-# author can put HTML-comment-disguised payloads or stray triple-backticks in
-# a public-API XML doc or type name, which dotnet-inspect surfaces verbatim).
-# Without the fence, those flow into the AI-fill issue body alongside the
-# (already-fenced) release notes.
-diff = fence('upstream-maf-diff', raw_diff, max_bytes=32 * 1024)
-raw_notes = read_file('release-notes.txt', '(no release notes available)').strip()
-# Phase 2.2 — fence the release notes. 32 KB cap is generous: release notes
-# typically run a few KB; anything over 32 KB is almost certainly an attempt
-# to flood the guide / downstream AI-fill context.
-notes = fence('upstream-maf-release-notes', raw_notes, max_bytes=32 * 1024)
-
-# Green-on-arrival verdict: an additive release (no `.NET [BREAKING]` note AND no
-# removed members) gets its analysis sections filled deterministically so the
-# scaffold PR comes up green; a breaking release keeps TODO stubs — the human
-# writes the migration, and the registry gate holds the PR red until they do.
-verdict = classify(raw_notes, raw_diff_all)
-
-
-if verdict['additive']:
-    safe_added, dropped = safe_members(verdict['added'])
-    if safe_added:
-        patterns = '\n'.join(f"- `{m}`" for m in safe_added)
-        if dropped:
-            patterns += (f"\n- _({dropped} further added member(s) omitted — names failed the "
-                         f"identifier safety check; see the fenced diff above.)_")
-    elif dropped:
-        patterns = (f"_({dropped} added member(s) detected but omitted — names failed the "
-                    f"identifier safety check; see the fenced diff above.)_")
-    else:
-        patterns = "_No new public members surfaced in the diff._"
-    sections = (
-        f"## Breaking Changes (requires human verification)\n\n"
-        f"None — this is an **additive** release: no `.NET … [BREAKING]` entry in the release "
-        f"notes and no removed members in the diff. All public-surface changes are additions "
-        f"(see New Patterns).\n\n"
-        f"## New Patterns\n\n"
-        f"Additive members new in {new} (source-compatible — no action required to upgrade):\n\n"
-        f"{patterns}\n\n"
-        f"## Obsolete APIs Added\n\n"
-        f"None — no `[Obsolete]` deprecations or removed members detected in the diff for {new}.\n\n"
-        f"## Known Misalignments\n\n"
-        f"None known for {new}.\n\n"
-    )
-else:
-    sections = (
-        f"## Breaking Changes (requires human verification)\n\n"
-        f"<!-- TODO: Review the diff above and list breaking changes here -->\n\n"
-        f"## New Patterns\n\n"
-        f"<!-- TODO: Document any new recommended patterns from release notes -->\n\n"
-        f"## Obsolete APIs Added\n\n"
-        f"<!-- TODO: Use MafRunCs0618Hunt against a project pinned to {new} and document findings -->\n\n"
-        f"## Known Misalignments\n\n"
-        f"<!-- TODO: Document any discrepancies between official docs and assembly behavior -->\n\n"
-    )
-
+PACKAGE_DIFF_DISPLAY_LINES = 80
+ADDITIVE_EVIDENCE_SAMPLE_LINES = 40
+# A validated raw report is capped at MAX_DIFF_FILE_BYTES. Curating it adds a
+# few local marker lines, so give the fence bounded headroom and assert below
+# that no review-required row can be silently replaced by [TRUNCATED].
+VALIDATED_EVIDENCE_FENCE_BYTES = MAX_DIFF_FILE_BYTES + 4096
 AUTO_START = '<!-- AUTO-GENERATED START — anything between AUTO-GENERATED START and AUTO-GENERATED END is overwritten on re-run -->'
 AUTO_END = '<!-- AUTO-GENERATED END -->'
 HUMAN_HEADING = '## Human additions'
 
-banner = build_chain_banner(old, new)
 
-auto_body = (
-    f"# MAF {new} Migration Guide (draft)\n\n"
-    f"<!-- introduced: {new} | applies-to: {old}.x → {new}.x | deprecated-in: none -->\n\n"
-    f"{banner}\n\n"
-    f"{AUTO_START}\n\n"
-    f"> ⚠️ Auto-generated stub. Review before relying on it for migrations.\n\n"
-    f"## Versions\n\n"
-    f"- Migrating from: `{old}`\n"
-    f"- Migrating to: `{new}`\n\n"
-    f"## Diff Summary (first {DIFF_DISPLAY_LINES} lines of `dotnet-inspect` output)\n\n"
-    f"{diff}\n\n"
-    f"## Release Notes Extract\n\n"
-    f"{notes}\n\n"
-    f"{sections}"
-    f"{AUTO_END}\n\n"
-    f"{HUMAN_HEADING}\n\n"
-    f"<!-- Add notes, corrections, and refinements below this heading.\n"
-    f"     Content under this heading is PRESERVED across re-runs of the watcher. -->\n"
-)
+def _inline(value: object, limit: int = 600) -> str:
+    """Render checked-in plan metadata as one inert Markdown-safe line."""
+    text = ' '.join(str(value).split())[:limit]
+    return (text.replace('`', "'").replace('|', '\\|')
+                .replace('<', '&lt;').replace('>', '&gt;'))
 
-guide_path = Path(f'guides/maf-{new}-migration-guide.md')
-guide_path.parent.mkdir(parents=True, exist_ok=True)
 
-# Anchor the auto/human boundary to the script-controlled AUTO_END sentinel,
-# NOT the bare HUMAN_HEADING (task 4.5). Upstream release notes / diffs are
-# fenced (llm_fencing strips HTML comments), so an attacker can inject a literal
-# "## Human additions" line into the notes — which would hijack a HUMAN_HEADING
-# split on BOTH the existing file (resurrecting fenced content as "human notes")
-# and the fresh auto_body (truncating the auto block). They cannot reproduce the
-# AUTO_END HTML comment, because the fence strips it. So split on AUTO_END.
-auto_prefix = auto_body[:auto_body.index(AUTO_END) + len(AUTO_END)] + "\n\n"
+def _package_refs(event: dict, field: str) -> str:
+    refs = []
+    for item in event.get(field, []):
+        package = _inline(item.get('package', 'unknown'))
+        version = item.get('version')
+        refs.append(f"`{package}{('@' + _inline(version)) if version else ''}`")
+    return ', '.join(refs) or '_none_'
 
-if guide_path.exists():
-    existing = guide_path.read_text(encoding='utf-8')
-    end_idx = existing.find(AUTO_END)
-    if end_idx != -1:
-        after = existing[end_idx + len(AUTO_END):]
-        h_idx = after.find(HUMAN_HEADING)
-        human_section = after[h_idx:] if h_idx != -1 else f"{HUMAN_HEADING}\n\n"
+
+def lifecycle_markdown(verdict: dict) -> str:
+    events = verdict.get('lifecycle_events', [])
+    out = ["## Package Lifecycle Transitions\n\n"]
+    if not events:
+        out.append("No package lifecycle transitions are declared for this release.\n\n")
+        return ''.join(out)
+    for event in events:
+        impact = event['impact'].title()
+        kind = _inline(event['kind'].replace('_', ' '))
+        out.append(f"- **{impact} — {kind}** (`{_inline(event['id'])}`): ")
+        out.append(_inline(lifecycle_event_summary(event)) + ". ")
+        out.append(_inline(event['reason']) + "\n")
+        out.append(f"  - From: {_package_refs(event, 'source_packages')}\n")
+        out.append(f"  - To: {_package_refs(event, 'target_packages')}\n")
+    out.append("\n")
+    return ''.join(out)
+
+
+def _curated_validated_diff(raw: str) -> str:
+    """Keep every review-required row and only a bounded additive sample."""
+    lines = raw.splitlines()
+    if "> No API changes detected." in lines:
+        return raw
+    preamble = lines[:7]
+    review: list[str] = []
+    additive: list[str] = []
+    section: str | None = None
+    for line in lines[7:]:
+        if line == "## Breaking Changes":
+            section = "review"
+        elif line == "## Potentially Breaking Changes":
+            section = "review"
+        elif line == "## Additive Changes":
+            section = "additive"
+        if section == "review":
+            review.append(line)
+        elif section == "additive" and len(additive) < ADDITIVE_EVIDENCE_SAMPLE_LINES:
+            additive.append(line)
+    out = preamble
+    if review:
+        out += ["", "<!-- all breaking and potentially-breaking evidence -->"] + review
+    if additive:
+        out += [
+            "",
+            f"<!-- first {ADDITIVE_EVIDENCE_SAMPLE_LINES} additive evidence lines -->",
+        ] + additive
+    return '\n'.join(out)
+
+
+def package_evidence_markdown(verdict: dict) -> str:
+    """Give every planned surface its own quota so Core cannot hide later rows."""
+    surfaces = verdict.get('surface_evidence', [])
+    out = [
+        "## Package API Evidence\n\n",
+        "Each validated surface preserves every breaking and potentially-breaking "
+        f"row plus its first {ADDITIVE_EVIDENCE_SAMPLE_LINES} additive lines. "
+        f"Untrusted output is limited to {PACKAGE_DIFF_DISPLAY_LINES} diagnostic lines; "
+        "validation failures remain visible and fail closed.\n\n",
+    ]
+    if not surfaces:
+        out.append("_Package plan/results unavailable; no API evidence is trusted._\n\n")
+        return ''.join(out)
+    for surface in surfaces:
+        package = _inline(surface['package'])
+        slug = _inline(surface['slug'])
+        if surface['status'] == 'diffable':
+            state = 'validated' if surface['trusted'] else 'untrusted — fails closed'
+            raw = surface.get('text') or '(no diff output captured)'
+            excerpt = (
+                _curated_validated_diff(raw)
+                if surface['trusted']
+                else '\n'.join(raw.splitlines()[:PACKAGE_DIFF_DISPLAY_LINES])
+            )
+            evidence_cap = (
+                VALIDATED_EVIDENCE_FENCE_BYTES if surface['trusted'] else 32 * 1024
+            )
+            if surface['trusted'] and len(excerpt.encode('utf-8')) > evidence_cap:
+                raise ValueError(
+                    f"Curated validated evidence for {slug} exceeds its bounded "
+                    "fence without preserving every review-required row."
+                )
+        else:
+            state = surface['status']
+            raw = surface.get('reason') or '(no lifecycle reason recorded)'
+            excerpt = '\n'.join(raw.splitlines()[:PACKAGE_DIFF_DISPLAY_LINES])
+            evidence_cap = 32 * 1024
+        fenced = fence(
+            f"upstream-maf-diff-{slug}", excerpt, max_bytes=evidence_cap
+        )
+        out.append(f"### `{package}` (`{slug}`) — {state}\n\n")
+        out.append(fenced + "\n")
+    return ''.join(out)
+
+
+def analysis_sections(verdict: dict, new: str) -> str:
+    if verdict['additive']:
+        safe_added, dropped = safe_members(verdict['added'])
+        if safe_added:
+            patterns = '\n'.join(f"- `{m}`" for m in safe_added)
+            if dropped:
+                patterns += (f"\n- _({dropped} further added member(s) omitted — names failed the "
+                             f"identifier safety check; see the fenced package evidence above.)_")
+        elif dropped:
+            patterns = (f"_({dropped} added member(s) detected but omitted — names failed the "
+                        f"identifier safety check; see the fenced package evidence above.)_")
+        else:
+            patterns = "_No new public members surfaced in the validated diffs._"
+        return (
+            "## Breaking Changes (requires human verification)\n\n"
+            "None — this is an **additive** release: every expected package diff "
+            "validated, no `.NET … [BREAKING]` entry was found, and no breaking "
+            "lifecycle transition or API change was detected.\n\n"
+            "## New Patterns\n\n"
+            f"Additive members new in {new} (source-compatible — no action required to upgrade):\n\n"
+            f"{patterns}\n\n"
+            "## Obsolete APIs Added\n\n"
+            f"None — no `[Obsolete]` deprecations or removed members detected for {new}.\n\n"
+            "## Known Misalignments\n\n"
+            f"None known for {new}.\n\n"
+        )
+    api_signals = []
+    if verdict.get('summary_breaking', 0):
+        api_signals.append(
+            f"- `{verdict['summary_breaking']}` breaking API change row(s)"
+        )
+    if verdict.get('summary_potentially_breaking', 0):
+        api_signals.append(
+            f"- `{verdict['summary_potentially_breaking']}` potentially-breaking "
+            "API change row(s)"
+        )
+    signal_block = (
+        "Automated API summary signals:\n\n" + "\n".join(api_signals) + "\n\n"
+        if api_signals else ""
+    )
+    return (
+        "## Breaking Changes (requires human verification)\n\n"
+        f"{signal_block}"
+        "<!-- TODO: Review every package evidence block and lifecycle transition above -->\n\n"
+        "## New Patterns\n\n"
+        "<!-- TODO: Document any new recommended patterns from release notes -->\n\n"
+        "## Obsolete APIs Added\n\n"
+        f"<!-- TODO: Use MafRunCs0618Hunt against a project pinned to {new} and document findings -->\n\n"
+        "## Known Misalignments\n\n"
+        "<!-- TODO: Document any discrepancies between official docs and assembly behavior -->\n\n"
+    )
+
+
+def generate_version_guide(old: str, new: str) -> Path:
+    raw_notes = read_file('release-notes.txt', '(no release notes available)').strip()
+    notes = fence('upstream-maf-release-notes', raw_notes, max_bytes=32 * 1024)
+    verdict = classify_from_files()
+    banner = build_chain_banner(old, new)
+    auto_body = (
+        f"# MAF {new} Migration Guide (draft)\n\n"
+        f"<!-- introduced: {new} | applies-to: {old}.x → {new}.x | deprecated-in: none -->\n\n"
+        f"{banner}\n\n"
+        f"{AUTO_START}\n\n"
+        "> ⚠️ Auto-generated stub. Review before relying on it for migrations.\n\n"
+        "## Versions\n\n"
+        f"- Migrating from: `{old}`\n"
+        f"- Migrating to: `{new}`\n\n"
+        f"{lifecycle_markdown(verdict)}"
+        f"{package_evidence_markdown(verdict)}"
+        "## Release Notes Extract\n\n"
+        f"{notes}\n\n"
+        f"{analysis_sections(verdict, new)}"
+        f"{AUTO_END}\n\n"
+        f"{HUMAN_HEADING}\n\n"
+        "<!-- Add notes, corrections, and refinements below this heading.\n"
+        "     Content under this heading is PRESERVED across re-runs of the watcher. -->\n"
+    )
+
+    guide_path = Path(f'guides/maf-{new}-migration-guide.md')
+    guide_path.parent.mkdir(parents=True, exist_ok=True)
+    auto_prefix = auto_body[:auto_body.index(AUTO_END) + len(AUTO_END)] + "\n\n"
+    if guide_path.exists():
+        existing = guide_path.read_text(encoding='utf-8')
+        end_idx = existing.find(AUTO_END)
+        if end_idx != -1:
+            after = existing[end_idx + len(AUTO_END):]
+            h_idx = after.find(HUMAN_HEADING)
+            human_section = after[h_idx:] if h_idx != -1 else f"{HUMAN_HEADING}\n\n"
+        else:
+            match = re.search(
+                rf'^{re.escape(HUMAN_HEADING)}.*',
+                existing,
+                re.MULTILINE | re.DOTALL,
+            )
+            human_section = match.group(0) if match else f"{HUMAN_HEADING}\n\n"
+        new_content = auto_prefix + human_section
     else:
-        # Legacy file with no AUTO_END marker — fall back to the heading split.
-        match = re.search(rf'^{re.escape(HUMAN_HEADING)}.*', existing, re.MULTILINE | re.DOTALL)
-        human_section = match.group(0) if match else f"{HUMAN_HEADING}\n\n"
-    new_content = auto_prefix + human_section
-else:
-    new_content = auto_body
-
-guide_path.write_text(new_content, encoding='utf-8')
-print(f"Wrote {guide_path} (idempotent — human additions preserved if present).")
+        new_content = auto_body
+    guide_path.write_text(new_content, encoding='utf-8')
+    print(f"Wrote {guide_path} (idempotent — human additions preserved if present).")
+    return guide_path
 
 
 # =============================================================================
 # Option C: regenerate the cumulative guide.
 # =============================================================================
 
-def regenerate_cumulative_guide():
-    """
-    Writes guides/maf-current-migration-guide.md by concatenating every
-    maf-<X.Y.Z>-migration-guide.md in ascending version order.
+def build_cumulative_guide(guides_dir: Path | str = Path('guides')) -> str | None:
+    """Build the deterministic cumulative guide without writing any files.
 
-    The cumulative file is OVERWRITTEN on every run — humans should NOT hand-
-    edit it; edit the per-version files instead. A README banner at the top
-    of the cumulative file states this.
+    Keeping construction pure lets verification compare the checked-in
+    cumulative guide with the exact output that regeneration would produce.
     """
-    files = list_per_version_guides()
+    files = list_per_version_guides(guides_dir)
     if not files:
-        print("(no per-version guides found — skipping cumulative regeneration)")
-        return
+        return None
 
     out = []
     out.append("# MAF Migration Guide — Cumulative\n\n")
@@ -289,23 +390,61 @@ def regenerate_cumulative_guide():
 
     # Per-version sections
     for _, version, path in files:
-        anchor = f"migrating-to-maf-{version.replace('.', '-')}"
         out.append(f"## Migrating to MAF {version}\n\n")
         out.append(
-            f"<small>Source: [`{path.as_posix()}`](./{path.name}) — edit there "
+            f"<small>Source: [`guides/{path.name}`](./{path.name}) — edit there "
             f"for changes to this section.</small>\n\n"
         )
         content = path.read_text(encoding='utf-8')
         out.append(content.rstrip() + "\n\n")
         out.append("---\n\n")
 
-    cumulative_path = Path('guides/maf-current-migration-guide.md')
-    cumulative_path.write_text(''.join(out), encoding='utf-8')
+    return ''.join(out)
+
+
+def regenerate_cumulative_guide(
+    guides_dir: Path | str = Path('guides'),
+) -> Path | None:
+    """Write the cumulative guide from the deterministic pure builder."""
+    guides_dir = Path(guides_dir)
+    files = list_per_version_guides(guides_dir)
+    content = build_cumulative_guide(guides_dir)
+    if content is None:
+        print("(no per-version guides found — skipping cumulative regeneration)")
+        return None
+
+    cumulative_path = guides_dir / 'maf-current-migration-guide.md'
+    cumulative_path.write_text(content, encoding='utf-8')
     print(
         f"Regenerated {cumulative_path} "
         f"({len(files)} per-version files concatenated: "
         f"{', '.join(v for _, v, _ in files)})"
     )
+    return cumulative_path
 
 
-regenerate_cumulative_guide()
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        '--cumulative-only',
+        action='store_true',
+        help=(
+            'regenerate guides/maf-current-migration-guide.md only from '
+            'checked-in per-version guides; do not read release artifacts'
+        ),
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
+    if not args.cumulative_only:
+        old = os.environ.get('OLD_VERSION', 'unknown')
+        new = os.environ.get('NEW_VERSION', 'unknown')
+        generate_version_guide(old, new)
+    regenerate_cumulative_guide()
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

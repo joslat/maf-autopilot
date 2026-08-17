@@ -74,22 +74,22 @@ When patterns in this guide are unclear or you suspect an API has changed, use t
 
 ```bash
 # Install and run dotnet-inspect (requires .NET SDK)
-dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- <command> --package <PackageName>@<Version> --source https://api.nuget.org/v3/index.json
+dotnet-inspect <command> --package <PackageName>@<Version> --source https://api.nuget.org/v3/index.json
 ```
 
-> **Important:** The `--source https://api.nuget.org/v3/index.json` flag must appear on **both** the `dnx` command (tool installation) **and** the inspect command (package resolution). This is required when the workspace has custom NuGet feeds that don't host these packages.
+> **Important:** Keep the explicit `--source https://api.nuget.org/v3/index.json` argument when the workspace has custom NuGet feeds that don't host these packages.
 
 Example commands:
 
 ```bash
 # List all types in a package
-dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- types --package Microsoft.Agents.AI@1.3.0 --source https://api.nuget.org/v3/index.json
+dotnet-inspect types --package Microsoft.Agents.AI@1.3.0 --source https://api.nuget.org/v3/index.json
 
 # Inspect a specific type's API surface
-dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- apis --package Microsoft.Agents.AI@1.3.0 --type ChatClientAgent --source https://api.nuget.org/v3/index.json
+dotnet-inspect apis --package Microsoft.Agents.AI@1.3.0 --type ChatClientAgent --source https://api.nuget.org/v3/index.json
 
 # Check package dependency tree
-dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- depends --package Microsoft.Agents.AI@1.3.0 --source https://api.nuget.org/v3/index.json
+dotnet-inspect depends --package Microsoft.Agents.AI@1.3.0 --source https://api.nuget.org/v3/index.json
 ```
 
 > **Skill reference:** For full `dotnet-inspect` documentation and advanced usage, see `.github/skills/dotnet-inspect/SKILL.md` in this repository.
@@ -119,26 +119,26 @@ Or manually:
 2. Copy the raw content
 3. Save to `.github/skills/dotnet-inspect/SKILL.md` in your repository
 
-> **This repository** already has the skill installed at [`.github/skills/dotnet-inspect/SKILL.md`](../.github/skills/dotnet-inspect/SKILL.md) (version 0.7.8 — surfaces `[Obsolete]` members in listings).
+> **This repository** already has the skill installed at [`.github/skills/dotnet-inspect/SKILL.md`](../.github/skills/dotnet-inspect/SKILL.md) with the exact 0.9.1 command pin.
 
 #### Installing the `dotnet-inspect` CLI Tool
 
 Install the CLI globally via `dotnet tool`:
 
 ```bash
-dotnet tool install -g dotnet-inspect
+dotnet tool install -g dotnet-inspect --version 0.9.1
 ```
 
-Or run on-demand without installing (like `npx`), which will automatically install the latest version:
+Then invoke it directly:
 
 ```bash
-dnx dotnet-inspect -y -- <command>
+dotnet-inspect <command>
 ```
 
-To pin to a specific version (recommended for reproducible CI):
+When custom NuGet feeds are configured, specify nuget.org for package resolution:
 
 ```bash
-dnx dotnet-inspect@0.7.8 -y --source https://api.nuget.org/v3/index.json -- <command>
+dotnet-inspect <command> --source https://api.nuget.org/v3/index.json
 ```
 
 ---
@@ -2074,7 +2074,7 @@ Console.WriteLine(response.Text);  // "Your name is Alice."
 > ```powershell
 > dotnet build 2>&1 | Select-String "warning CS0618"
 > ```
-> Note: As of `dotnet-inspect@0.7.8` (2026-05-04), `[Obsolete]` members are surfaced in listings ([PR #318](https://github.com/richlander/dotnet-inspect/pull/318)). Pin to v0.7.8+. The compiler build output remains the authoritative source for transitive obsoletions and overload-resolution surprises.
+> Note: `dotnet-inspect@0.7.8` first surfaced `[Obsolete]` members in listings on 2026-05-04 ([PR #318](https://github.com/richlander/dotnet-inspect/pull/318)). This repository now pins exact v0.9.1. The compiler build output remains the authoritative source for transitive obsoletions and overload-resolution surprises.
 
 ### Why a separate registry?
 
@@ -3203,6 +3203,8 @@ This list of changes was [auto generated](https://msdata.visualstudio.com/Vienna
 diff --package Microsoft.Agents.AI@1.11.0..1.11.1
 # NOTE: the raw dotnet-inspect capture for this run was malformed/truncated
 # (it emitted a stray "hape / ' was added" fragment and omitted the removals).
+# Root cause: dotnet-inspect 0.7.8's Linux Native-AOT runtime overwrote offset
+# zero on each write when stdout was redirected to a seekable regular file.
 # Coherent summary, reconciled with the per-member registry diff entries:
 
 ### Microsoft.Agents.AI
@@ -3341,9 +3343,10 @@ The `dotnet-inspect` public-surface diff did **not** surface the "approval by de
 
 diff --package Microsoft.Agents.AI@1.11.1..1.12.0
 # NOTE: the raw dotnet-inspect capture for this run was TRUNCATED/garbled (the
-# watcher merged stderr into the diff via `2>&1`, corrupting it — see Known
-# Misalignments). The coherent summary below is reconciled from the per-member
-# registry diff entries (MAF112-*), which came from a clean dotnet-inspect run.
+# 0.7.8 Linux Native-AOT runtime overwrote offset zero when stdout was redirected
+# to a regular file; `2>&1` also mixed tips into the evidence but was not the
+# truncation root cause). The coherent summary below is reconciled from the
+# per-member registry diff entries (MAF112-*), which used an OS pipe and were clean.
 
 ### Microsoft.Agents.AI — breaking
 - Member 'GetSkillsAsync' signature changed  (AgentSkillsSource, AgentFileSkillsSource): inserts a required AgentSkillsSourceContext first param
@@ -3395,7 +3398,7 @@ No `[Obsolete]` deprecations. One hard **removal** (a compile error, not a warni
 
 ## Known Misalignments
 
-**The watcher first misclassified 1.12.0 as "additive."** Two upstream signals failed on the same run: (1) the GitHub release notes weren't published yet (empty placeholder), and (2) the watcher's `dotnet-inspect` diff capture was **truncated/garbled** (its `> diff-core.txt 2>&1` merge corrupted the output, so only additions survived and the removals/signature-changes were lost). The classifier saw no breaking signal and labeled it additive. The **keep-breaking-red gate + independent `registry-extract`** (which runs its own clean diff) caught the real breaking changes and held the PR red — the safety net worked; the auto-filled matrix/guide/`CompatibilityTool` were then corrected by hand. The diff-capture truncation is fixed separately so future runs classify correctly.
+**The watcher first misclassified 1.12.0 as "additive."** Two upstream signals failed on the same run: (1) the GitHub release notes weren't published yet (empty placeholder), and (2) `dotnet-inspect` 0.7.8's Linux Native-AOT runtime repeatedly wrote redirected stdout at file offset zero, leaving a **truncated/garbled** fragment; merging stderr via `2>&1` added noise but was not the truncation mechanism. The classifier saw no breaking signal and labeled it additive. The **keep-breaking-red gate + independent `registry-extract`** (whose child output travels through an OS pipe) caught the real breaking changes and held the PR red — the safety net worked; the auto-filled matrix/guide/`CompatibilityTool` were then corrected by hand. The current watcher pins and verifies a fixed tool release, validates every targeted package report, and passes those same validated files to `registry-extract --diff-file` instead of performing an independent second network diff.
 
 <!-- AUTO-GENERATED END -->
 

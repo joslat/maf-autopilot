@@ -19,13 +19,14 @@ namespace MafDoctor.Commands;
 ///   <item><c>example_after</c> is non-empty.</item>
 ///   <item><c>example_before</c> != <c>example_after</c> (a real migration shows a change).</item>
 ///   <item>Both examples have balanced <c>{}</c> and <c>()</c>.</item>
+///   <item><c>cs_warning</c> matches <c>CS\d{4}</c>, <c>RUNTIME_SILENT</c>, or <c>BINARY_BREAK</c>.</item>
 ///   <item><c>guide_section</c> is not the literal "TODO" / "TBD" (use "N/A" if no parallel).</item>
 /// </list>
 ///
 /// **Exit code:** 0 on success; 1 on any verification failure (with per-entry
 /// detail emitted to stderr).
 ///
-/// Skipping rule: entries marked <c>applies_to_codebases: "pre-1.0.0"</c> are
+/// Skipping rule: entries marked exactly <c>applies_to_codebases: "pre-1.0.0"</c> are
 /// SKIPPED — they're documentation of historical patterns, not migration
 /// targets, so their examples may reference removed types intentionally.
 /// </summary>
@@ -38,17 +39,21 @@ public static class VerifyRegistryCommand
         var skippedHistorical = 0;
         var skippedIncompleteDrafts = 0;
 
+        // IDs are the registry's join key across diagnostics, guides, and tools.
+        // Detect collisions before any historical/draft skip so no duplicate can
+        // evade the gate merely because one copy is not substantively validated.
+        CheckDuplicateIds(registry.AllEntries, issues);
+
         foreach (var entry in registry.AllEntries)
         {
-            // Pre-1.0 entries are historical docs; their examples may
+            // Exact pre-1.0.0 entries are historical docs; their examples may
             // reference removed types deliberately. Skip the SUBSTANTIVE
             // checks (brace balance, placeholder detection) but ALWAYS run
             // the content-safety sweep — historical entries can still
             // accidentally or maliciously carry HTML-comment-disguised
             // injection or oversized payloads, and we serve them via
             // MafRegistryLookup the same way as fresh entries.
-            var marker = entry.AppliesToCodebases?.Trim();
-            if (marker?.StartsWith("pre-", StringComparison.OrdinalIgnoreCase) == true)
+            if (IsHistoricalDocumentationEntry(entry))
             {
                 skippedHistorical++;
                 CheckContentSafety(entry, issues);
@@ -67,6 +72,7 @@ public static class VerifyRegistryCommand
             {
                 skippedIncompleteDrafts++;
                 CheckContentSafety(entry, issues);
+                CheckCsWarning(entry, issues);
                 continue;
             }
 
@@ -75,7 +81,7 @@ public static class VerifyRegistryCommand
 
         if (issues.Count > 0)
         {
-            Console.Error.WriteLine($"❌ Registry verification FAILED: {issues.Count} issue(s) across {registry.AllEntries.Count - skippedHistorical - skippedIncompleteDrafts} active entries ({skippedHistorical} historical (pre-*) + {skippedIncompleteDrafts} incomplete-draft entries skipped).");
+            Console.Error.WriteLine($"❌ Registry verification FAILED: {issues.Count} issue(s) across {registry.AllEntries.Count - skippedHistorical - skippedIncompleteDrafts} active entries ({skippedHistorical} historical (exact pre-1.0.0) + {skippedIncompleteDrafts} incomplete-draft entries skipped).");
             Console.Error.WriteLine();
             foreach (var issue in issues)
                 Console.Error.WriteLine($"  • {issue}");
@@ -84,8 +90,34 @@ public static class VerifyRegistryCommand
             return 1;
         }
 
-        Console.WriteLine($"✓ Registry verification PASSED: {registry.AllEntries.Count - skippedHistorical - skippedIncompleteDrafts} active entries clean ({skippedHistorical} historical (pre-*) + {skippedIncompleteDrafts} incomplete-draft entries skipped).");
+        Console.WriteLine($"✓ Registry verification PASSED: {registry.AllEntries.Count - skippedHistorical - skippedIncompleteDrafts} active entries clean ({skippedHistorical} historical (exact pre-1.0.0) + {skippedIncompleteDrafts} incomplete-draft entries skipped).");
         return 0;
+    }
+
+    internal static bool IsHistoricalDocumentationEntry(RegistryEntry entry) =>
+        string.Equals(
+            entry.AppliesToCodebases?.Trim(),
+            "pre-1.0.0",
+            StringComparison.OrdinalIgnoreCase);
+
+    internal static void CheckDuplicateIds(
+        IEnumerable<RegistryEntry> entries,
+        List<string> issues)
+    {
+        var seen = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in entries)
+        {
+            var id = entry.Id?.Trim();
+            if (string.IsNullOrEmpty(id)) continue;
+            if (seen.TryGetValue(id, out var firstSpelling))
+            {
+                issues.Add($"duplicate registry id '{id}' conflicts with '{firstSpelling}' (IDs are case-insensitive).");
+            }
+            else
+            {
+                seen[id] = id;
+            }
+        }
     }
 
     /// <summary>
@@ -103,6 +135,11 @@ public static class VerifyRegistryCommand
         RegexOptions.Compiled | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase,
         TimeSpan.FromSeconds(2));
 
+    private static readonly Regex CsWarningRegex = new(
+        @"^(?:CS[0-9]{4}|RUNTIME_SILENT|BINARY_BREAK)$",
+        RegexOptions.Compiled | RegexOptions.NonBacktracking,
+        TimeSpan.FromSeconds(2));
+
     /// <summary>
     /// True when EVERY fillable core field is a TODO/placeholder — the fully-raw
     /// "auto-generated by `registry-extract`, never filled" state. Note
@@ -116,7 +153,8 @@ public static class VerifyRegistryCommand
             && LooksLikePlaceholder(entry.ReplacementSignature)
             && LooksLikePlaceholderOrStartsWith(entry.FixDescription, "TODO")
             && TodoAtLineStart.IsMatch(entry.ExampleBefore ?? string.Empty)
-            && TodoAtLineStart.IsMatch(entry.ExampleAfter ?? string.Empty);
+            && TodoAtLineStart.IsMatch(entry.ExampleAfter ?? string.Empty)
+            && LooksLikePlaceholder(entry.CsWarning);
     }
 
     /// <summary>
@@ -134,7 +172,8 @@ public static class VerifyRegistryCommand
     /// current .maf-version) still BLOCKS an unfilled CURRENT-cycle draft. This
     /// method only governs whether the C# structural/content checks run — and the
     /// field-level predicates here mirror that gate's _looks_unfilled /
-    /// _example_unfilled exactly (shared placeholder grammar, Option 1).
+    /// _example_unfilled / cs_warning checks (shared placeholder grammar,
+    /// Option 1).
     /// </summary>
     internal static bool IsIncompleteDraft(RegistryEntry entry)
     {
@@ -142,7 +181,8 @@ public static class VerifyRegistryCommand
             || IsUnfilled(entry.ReplacementSignature)
             || IsUnfilled(entry.FixDescription)
             || IsExampleUnfilled(entry.ExampleBefore)
-            || IsExampleUnfilled(entry.ExampleAfter);
+            || IsExampleUnfilled(entry.ExampleAfter)
+            || IsUnfilled(entry.CsWarning);
     }
 
     /// <summary>A required field is unfilled when it is empty or a placeholder token.</summary>
@@ -204,6 +244,8 @@ public static class VerifyRegistryCommand
 
     internal static void CheckEntry(RegistryEntry entry, List<string> issues)
     {
+        CheckCsWarning(entry, issues);
+
         // fix_description must exist and be substantial.
         if (string.IsNullOrWhiteSpace(entry.FixDescription))
             issues.Add($"{entry.Id}: fix_description is empty.");
@@ -240,6 +282,17 @@ public static class VerifyRegistryCommand
         // explicit placeholders left by the Copilot Agent's filler logic.
         if (LooksLikePlaceholder(entry.GuideSection))
             issues.Add($"{entry.Id}: guide_section is a placeholder (use 'N/A' for no parallel section): \"{entry.GuideSection.Trim()}\"");
+    }
+
+    internal static void CheckCsWarning(RegistryEntry entry, List<string> issues)
+    {
+        var warning = entry.CsWarning?.Trim();
+        if (string.IsNullOrWhiteSpace(warning))
+            issues.Add($"{entry.Id}: cs_warning is empty.");
+        else if (LooksLikePlaceholder(warning))
+            issues.Add($"{entry.Id}: cs_warning is a placeholder: \"{warning}\".");
+        else if (!CsWarningRegex.IsMatch(warning))
+            issues.Add($"{entry.Id}: cs_warning must match CS\\d{{4}}, RUNTIME_SILENT, or BINARY_BREAK (got \"{warning}\").");
     }
 
     /// <summary>
