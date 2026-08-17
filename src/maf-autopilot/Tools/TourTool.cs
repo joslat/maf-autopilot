@@ -145,7 +145,7 @@ public sealed class TourTool
     internal static readonly IReadOnlyList<(string Uri, string Description)> ResourceCatalogue = new[]
     {
         ("maf://constraints", "Hard constraints + breaking-changes table. Always-loaded by every agent."),
-        ("maf://guide", "Full MAF migration guide (21 sections). Read on demand."),
+        ("maf://guide", "Cumulative, version-keyed MAF migration guide through the current tracked release. Read on demand."),
         ("maf://registry", "Machine-readable obsolete-API registry YAML."),
         ("maf://rules", "Live rule catalogue — anti-pattern + prompt-lint + analyzer + cross-references. Auto-generated from runtime data."),
         ("maf://help", "Same content as `MafTour()` but as a resource — useful for static discovery without a tool call."),

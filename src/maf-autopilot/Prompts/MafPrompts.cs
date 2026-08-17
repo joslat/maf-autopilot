@@ -402,7 +402,7 @@ public static class MafPrompts
         sb.AppendLine();
         sb.AppendLine("**Compiler errors (CS0618 / CS0246 / CS1061):**");
         sb.AppendLine("- `MafRunCs0618Hunt(projectPath)` — full-build scan; joins each diagnostic to the obsolete-API registry with deterministic fix.");
-        sb.AppendLine("- `MafApiSafety(apiName)` — is this specific symbol obsolete in 1.3.0?");
+        sb.AppendLine("- `MafApiSafety(apiName)` — is this specific symbol obsolete in the current tracked MAF release?");
         sb.AppendLine("- `MafRegistryLookup(id)` — full registry entry once you have the ID.");
         sb.AppendLine();
         sb.AppendLine("**Silent runtime failures (workflow completes, output empty/wrong):**");

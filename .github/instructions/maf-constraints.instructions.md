@@ -1,83 +1,115 @@
 ---
-description: "Always-loaded compact reference for MAF 1.3.0 migrations. Contains the breaking changes table, hard constraints, and quick-reference rules. Applies to all files when the MAF migration or auditor agents are active."
+description: "Always-loaded, version-aware MAF migration constraints. Contains durable security rules, release-path invariants, and verification gates for every tracked Microsoft Agent Framework version."
 applyTo: "**"
 ---
 
-# MAF 1.3.0 — Constraints & Breaking Changes Reference
+# MAF Migration Constraints
+
+These rules apply across the tracked MAF release chain. Version-specific API
+recipes belong in the ordered per-version guides and registry; do not promote a
+single release's syntax into a timeless global rule.
 
 ## Hard Constraints (Never Violate)
 
-- **NEVER** introduce patterns not present in MAF 1.3.0
-- **NEVER** store session-specific state in `AIContextProvider` or `ChatHistoryProvider` instance fields — always use `ProviderSessionState<T>`
-- **NEVER** add `[StreamsMessage]` or `[YieldsMessage]` attributes — removed in 1.3.0, causes `CS0246`
-- **NEVER** use `DefaultAzureCredential` in production code — prefer `ManagedIdentityCredential`
-- **NEVER** enable `EnableSensitiveData = true` in non-development environments
-- **ALWAYS** pin `dotnet-inspect` to exact v0.9.1. v0.7.8 was the first release to surface `[Obsolete]` in listings; versions ≤ v0.7.7 miss obsoletions at the overload level. For ground-truth on what your project actually triggers, run `cs0618-hunter` (compiler-based) — it catches transitive obsoletions, overload-resolution surprises, and project-local `[Obsolete]` attributes that static inspection cannot see.
-- **ALWAYS** update `src/docs/migration-plan.md` tracking table after each task is completed and build-verified
+- **ALWAYS identify the exact source and target package versions** and call
+  `MafMigrationPath(currentVer, targetVer)` for a multi-version upgrade. Apply
+  every returned step in ascending order.
+- **NEVER store session-specific state in `AIContextProvider` or
+  `ChatHistoryProvider` instance fields.** Use the framework's session-state
+  mechanism for the selected version, such as `ProviderSessionState<T>`, and
+  persist the session when continuity must outlive a process or top-level call.
+- **NEVER use `DefaultAzureCredential` in production code.** Prefer an explicit
+  production credential such as `ManagedIdentityCredential`; keep developer
+  credential chains in development-only composition.
+- **NEVER enable `EnableSensitiveData = true` outside a development-only,
+  access-controlled diagnostic boundary.** Provider errors, prompts, tool
+  arguments, session state, and model output can contain secrets or personal
+  data.
+- **NEVER treat model-generated code or shell commands as sandboxed.**
+  `LocalCodeAct`, Python child processes, and `Tools.Shell` require a real
+  container/VM boundary, minimal filesystem mounts, restricted credentials and
+  egress, resource limits, and explicit tool/policy composition.
+- **NEVER derive file-memory roots, shell paths, callback destinations, or
+  tenant storage folders directly from untrusted input.** Validate and
+  authorize them against an application-owned boundary.
+- **NEVER expose raw hosted-provider failure detail by default.** Preserve
+  server-side diagnostics in access-controlled telemetry; enable exception
+  details only for trusted callers.
+- **ALWAYS pin `dotnet-inspect` to exact v0.9.1** in this repository. Reject a
+  missing, mismatched, truncated, or structurally invalid report. Use
+  `MafRunCs0618Hunt` and the compiler as ground truth for overload resolution,
+  transitive obsoletions, and project-local `[Obsolete]` attributes.
+- **ALWAYS preserve the published maturity/version of each package.** Stable,
+  preview, RC, and alpha packages in one train are not interchangeable. Do not
+  invent an aligned version for an externalized or independently shipped
+  package.
+- **ALWAYS restore, build, and run focused behavior tests after migration.** An
+  empty public API diff cannot detect persistence, streaming, checkpoint,
+  redaction, tool-approval, or workflow-routing behavior changes.
 
-## Fan-out / Fan-in Rules (Silent Failure Risk)
+## Version-Scoped Compatibility Checkpoints
 
-```
-Fan-out executor handlers MUST return ValueTask<T> where T is the message type.
-A void or non-generic ValueTask return produces NO output message.
-The fan-in barrier then starves silently — the workflow exits cleanly but incompletely.
-This is NOT a build error. The only detection is runtime or maf-fan-out-validator skill.
-```
+| Target step | Mandatory review |
+|---|---|
+| 1.3.0 | Removed executor attributes/types, async sessions, response/streaming changes, source generation, and fan-out/fan-in behavior. |
+| 1.4.0 / 1.5.0 | These per-version guides still contain unfilled human analysis; verify exact assemblies and official tags before applying their evidence. |
+| 1.14.0 | Agent/session and approval lifecycle, Harness opt-in file/shell providers, AG-UI split, Copilot declarations, and `ShellPolicy` binary/deny-first semantics. |
+| 1.15.0 | Preview Hosting `sessionStoreId` named arguments, abstract `DeleteSessionAsync`, session isolation, checkpoint ordering, and declarative/hosted behavior. |
+| 1.16.0 | `Microsoft.Extensions.VectorData.Abstractions` 9.7→10.7 migration, provider rebuilds, history ownership, approval sessions, FileMemory scope, and code-execution boundaries. |
+| 1.17.0 | Declarative top-level `ErrorContent` is terminal; Foundry raw failure payloads are redacted; Durable Task/Azure Functions packages follow an independent extension cadence. |
 
-```
-AddFanInBarrierEdge argument order:
-  CORRECT:   AddFanInBarrierEdge(IEnumerable<ExecutorBinding> sources, ExecutorBinding target)
-  OBSOLETE:  AddFanInBarrierEdge(ExecutorBinding target, IEnumerable<ExecutorBinding> sources)
-  The obsolete overload compiles and runs but triggers CS0618.
-```
+Read the exact target guide before changing code. Existing repositories may
+need several rows, not only the final target row.
 
-## Key Breaking Changes
+## Workflow Rules That Remain Active
 
-| Area | Old (broken) | New (correct) |
-|------|-------------|---------------|
-| Executors | `ReflectingExecutor<T>` | `sealed partial class : Executor` + `[MessageHandler]` |
-| Executors | `IMessageHandler<TIn,TOut>` | `[MessageHandler]` on handler methods |
-| Executors | `[StreamsMessage]`, `[YieldsMessage]` | **Removed** — delete these attributes |
-| Source gen | *(missing package)* | Add `Microsoft.Agents.AI.Workflows.Generators 1.3.0` |
-| Sessions | `AgentThread` | `AgentSession` via `await agent.CreateSessionAsync()` |
-| Sessions | `GetNewThread()` | `await agent.CreateSessionAsync(ct)` |
-| Sessions | `agent.SerializeSession(session)` | `await agent.SerializeSessionAsync(session)` |
-| Response | `AgentResponse.Deserialize<T>()` | `RunAsync<T>()` + `.Result` |
-| Streaming | `InProcessExecution.StreamAsync()` | `RunStreamingAsync()` |
-| Events | `AgentRunUpdateEvent` | `AgentResponseUpdateEvent` |
-| A2A DI | `AIAgentExtensions` | `services.AddA2AServer(agent, new A2AServerRegistrationOptions { AgentCard = ... })` |
-| A2A endpoint | `app.MapA2A(...)` | `app.MapA2AHttpJson(path)` or `app.MapA2AJsonRpc(path)` |
-| Agent options | `Instructions` / `Tools` at top-level | Must be inside `ChatClientAgentOptions.ChatOptions` |
-| DevUI/Hosting | `Microsoft.Agents.AI.DevUI` / `.Hosting` | No 1.3.0 equivalent — guard with `#if DEVUI_ENABLED` |
-| Fan-in | `AddFanInBarrierEdge(target, sources)` | `AddFanInBarrierEdge(sources, target)` — sources first |
-| Fan-out | `async ValueTask HandleAsync(...)` returning void | `async ValueTask<T> HandleAsync(...)` returning the message |
+For 1.3-and-later workflow patterns, fan-out handlers that produce a downstream
+message must return that message from `ValueTask<T>` (or the exact supported
+generic async shape for the selected version). A void/non-generic return can
+starve fan-in without a build error. Validate the real topology with
+`MafValidateFanOut` or `MafSimulateWorkflow` and a runtime completion test.
 
-## Known Misalignments (Official Docs vs. Reality)
+For versions where the registry marks the target-first
+`AddFanInBarrierEdge(target, sources)` overload obsolete, use the applicable
+sources-first recipe and confirm with `MafRunCs0618Hunt`. Do not rely on this
+summary instead of the registry: overload sets can change between releases.
 
-- `SerializeSession` in official docs is **wrong** — use `await agent.SerializeSessionAsync(session)` (async)
-- `FunctionApprovalRequestContent` vs `ToolApprovalRequestContent` — verify with `dotnet-inspect` for your exact version
-- `RunAsync<T>` exists on `ChatClientAgent` but NOT on `AIAgent` interface — cast may be needed
-- `ChatClientAgentOptions` has undocumented properties: `UseProvidedChatClientAsIs`, `RequirePerServiceCallChatHistoryPersistence`, `ClearOnChatHistoryProviderConflict`
-- `AddFanInBarrierEdge(target, params sources[])` is `[Obsolete]` in 1.3.0 — surfaced by `dotnet-inspect member` as of v0.7.8; older `dotnet-inspect` versions miss it and require the compiler
+`[StreamsMessage]` and `[YieldsMessage]` were removed on the 1.3 path. Delete
+them when that step applies; do not add them to a current target merely to make
+old sample code look familiar.
 
-## dotnet-inspect — Required Version
+## Security Boundaries Added by Later Releases
 
-**Pin to exact `dotnet-inspect@0.9.1`.** v0.7.8 ([release notes](https://github.com/richlander/dotnet-inspect/releases/tag/v0.7.8), 2026-05-04) was the first release to surface `[Obsolete]` members in listings (PR #318 closes issue #316); v0.9.1 is the repository-supported release and fixes the redirected-output corruption seen with v0.7.8 on Linux.
+- MAF 1.14 Shell policies evaluate deny rules first, and a non-null allow list
+  is exclusive. Rebuild binary consumers of the constructor and test denied,
+  allowed, and unmatched commands.
+- Harness file access and shell execution are explicit opt-ins. Do not register
+  them merely because a sample does.
+- File memory with an empty working folder can share the file-store root. Assign
+  an authorized tenant/user folder or a unique per-session folder deliberately.
+- A2A request configuration and metadata are untrusted request input. Server
+  execution policy remains authoritative; validate any value before acting on
+  it, especially push/callback destinations.
+- Declarative/Foundry failures must remain failures. Do not turn an
+  `ExecutorFailedEvent` or `ErrorContent` back into an empty success, and do not
+  leak provider detail by bypassing the host's exception-detail policy.
+- `LocalCodeAct` defense-in-depth checks are not a Python sandbox. External
+  process, network, filesystem, and credential isolation remains mandatory.
 
-**Always run** `dotnet build 2>&1 | Select-String "warning CS0618"` as the final gate — the compiler is ground-truth and catches transitive / overload-resolution / project-local `[Obsolete]` cases that no static inspector can see. `dotnet-inspect@0.9.1` is the fast pre-build path; the compiler is the verification path. Use both.
+## Verification Tools
 
-## How to verify each constraint (use the MCP tools)
+| Concern | Verification |
+|---|---|
+| Ordered multi-version path | `MafMigrationPath(currentVer, targetVer)` |
+| Exact package/framework compatibility | `MafCompatibility(targetVersion)` and `docs/compatibility-matrix.md` |
+| Obsolete/removed API usage | `MafRunCs0618Hunt(projectPath)` plus `MafRegistryLookup` |
+| Session state in provider fields | `MafScanAntiPatterns(repoPath)` → `MAF-AP-CONC-001` |
+| `DefaultAzureCredential` in production | `MafScanAntiPatterns(repoPath)` → `MAF-AP-SEC-001` |
+| Sensitive-data logging outside development | `MafScanAntiPatterns(repoPath)` → `MAF-AP-SEC-003` |
+| Fan-out/fan-in topology | `MafValidateFanOut(repoPath)` and `MafSimulateWorkflow` |
+| Public package API delta | `MafDiffPackage` with exact old/new artifact versions |
+| End-to-end repository state | `MafDoctor(repoPath)`; surface `scan_truncated` as incomplete evidence |
 
-The `maf-autopilot` MCP server provides executable tools that enforce most constraints. Tool names are PascalCase.
-
-| Constraint above                               | Verify by calling                                  |
-|------------------------------------------------|----------------------------------------------------|
-| NEVER instance state in `AIContextProvider`    | `MafScanAntiPatterns(repoPath)` → rule `MAF-AP-CONC-001` |
-| NEVER `DefaultAzureCredential` in production   | `MafScanAntiPatterns(repoPath)` → rule `MAF-AP-SEC-001`  |
-| NEVER `EnableSensitiveData = true` outside dev | `MafScanAntiPatterns(repoPath)` → rule `MAF-AP-SEC-003`  |
-| Fan-out handler must return `Task<T>`          | `MafValidateFanOut(repoPath)` (or `MafSimulateWorkflow` for full topology) |
-| `AddFanInBarrierEdge` argument order           | `MafRunCs0618Hunt(projectPath)` (CS0618 path)            |
-| No `[StreamsMessage]` / `[YieldsMessage]`      | `MafRunCs0618Hunt(projectPath)` (CS0246 path)            |
-| Always run tracking-table updates              | (process — agents enforce this)                     |
-
-Also useful: `MafApiSafety(apiName)` for a quick SAFE/UNSAFE check on any MAF API, `MafExplain(snippet)` to annotate a code fragment with guide citations, and the `maf-doctor.Analyzers` NuGet package for write-time IDE squigglies (`MAF001`/`MAF002`/`MAF003`).
+Finish with the real solution's restore/build/test commands. Treat a successful
+static scan as necessary evidence, not proof that behavior and security
+boundaries are correct.

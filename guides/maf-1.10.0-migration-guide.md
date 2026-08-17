@@ -1,4 +1,4 @@
-# MAF 1.10.0 Migration Guide (draft)
+# MAF 1.10.0 Migration Guide
 
 <!-- introduced: 1.10.0 | applies-to: 1.6.1.x → 1.10.0.x | deprecated-in: none -->
 

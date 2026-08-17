@@ -12,8 +12,8 @@ namespace MafDoctor.Tools;
 /// Walks the embedded MAF migration guide's version-keyed section metadata
 /// (the <c>&lt;!-- introduced: X.Y.Z | applies-to: A.B.x → C.D.x --&gt;</c> comments)
 /// and emits an ordered list of sections that apply to a user's specific
-/// version range — so 1.0.0 → 1.3.0 migrations get every intermediate step
-/// surfaced in one pass instead of being treated as a 1.2 → 1.3 hop only.
+/// version range — so 1.13.0 → 1.17.0 migrations get every intermediate step
+/// surfaced in one pass instead of being treated as a direct hop only.
 /// </summary>
 [McpServerToolType]
 public sealed class MigrationPathTool
@@ -23,13 +23,13 @@ public sealed class MigrationPathTool
         Build an ordered, version-keyed migration plan for a specific version range.
 
         Walks every section of the embedded MAF migration guide, reads its
-        `applies-to: A.B.x → C.D.x` metadata, and selects sections whose range
-        overlaps the user's requested `currentVersion → targetVersion`. Returns
-        them in introduced-version order — the canonical step sequence.
+        `applies-to: A.B.x → C.D.x` metadata, and selects sections introduced
+        after `currentVersion` and no later than `targetVersion`. Returns them in
+        introduced-version order — the canonical step sequence.
 
         Input:
           - currentVersion: the MAF version your code is on today (e.g. "1.0.0").
-          - targetVersion: the MAF version you want to reach (e.g. "1.3.0").
+          - targetVersion: the MAF version you want to reach (e.g. "1.17.0").
 
         Returns a markdown report listing each matching section's title,
         introduced version, applies-to range, and section path so the migration
@@ -37,7 +37,7 @@ public sealed class MigrationPathTool
         """)]
     public string MafMigrationPath(
         [Description("Source MAF version, e.g. 1.0.0")] string currentVersion,
-        [Description("Target MAF version, e.g. 1.3.0")] string targetVersion)
+        [Description("Target MAF version, e.g. 1.17.0")] string targetVersion)
     {
         if (!TryParseVersion(currentVersion, out var fromVer))
             return $"Error: '{currentVersion}' is not a valid SemVer.";
@@ -60,7 +60,8 @@ public sealed class MigrationPathTool
     /// <summary>
     /// Parses every heading + version-metadata comment from the migration guide.
     /// Returns one entry per heading that has an `applies-to:` metadata comment
-    /// somewhere within the next ~6 lines of body text.
+    /// immediately before it (the original 1.3 guide shape) or near the start of
+    /// its body (the generated per-version guide shape).
     /// </summary>
     public static IReadOnlyList<GuideSection> ExtractSections(string guideMarkdown)
     {
@@ -74,20 +75,7 @@ public sealed class MigrationPathTool
             var headingMatch = Regex.Match(line, @"^(#{1,3})\s+(?<title>.+?)\s*$");
             if (!headingMatch.Success) continue;
 
-            // Search the next 6 lines for a metadata comment — but STOP if we
-            // hit another heading, so we don't accidentally attribute a later
-            // section's metadata to this one.
-            string? metadataLine = null;
-            for (var j = i + 1; j < Math.Min(i + 7, lines.Length); j++)
-            {
-                if (Regex.IsMatch(lines[j], @"^#{1,3}\s"))
-                    break;
-                if (lines[j].Contains("applies-to:", StringComparison.Ordinal))
-                {
-                    metadataLine = lines[j];
-                    break;
-                }
-            }
+            var metadataLine = FindMetadataForHeading(lines, i);
             if (metadataLine is null) continue;
 
             var meta = ParseMetadata(metadataLine);
@@ -104,8 +92,68 @@ public sealed class MigrationPathTool
     }
 
     /// <summary>
-    /// Returns every section whose [AppliesFrom, AppliesTo] range overlaps the
-    /// user's [fromVer, toVer] migration path, ordered by introduced version.
+    /// Associates metadata only when it is adjacent to the heading boundary.
+    /// This supports both checked-in guide conventions without stealing the
+    /// metadata that precedes a later heading in a short section.
+    /// </summary>
+    private static string? FindMetadataForHeading(string[] lines, int headingIndex)
+    {
+        // The hand-authored 1.3 guide puts metadata immediately before each
+        // section heading. Permit blank lines and a horizontal rule between the
+        // two, but stop at body text or another heading.
+        for (var j = headingIndex - 1; j >= Math.Max(headingIndex - 6, 0); j--)
+        {
+            var candidate = lines[j].Trim();
+            if (candidate.Contains("applies-to:", StringComparison.Ordinal))
+                return candidate;
+            if (candidate.Length == 0 || candidate == "---")
+                continue;
+            break;
+        }
+
+        // Generated per-version guides put metadata at the beginning of the
+        // heading body. Stop at the first real body line or following heading so
+        // a later section's leading metadata cannot be attributed here.
+        for (var j = headingIndex + 1; j < Math.Min(headingIndex + 7, lines.Length); j++)
+        {
+            var candidate = lines[j].Trim();
+            if (Regex.IsMatch(candidate, @"^#{1,3}\s"))
+                break;
+            if (candidate.Contains("applies-to:", StringComparison.Ordinal))
+            {
+                // A metadata comment immediately followed by another heading
+                // belongs to that following section (the original 1.3 shape),
+                // not to the current heading whose body happened to be short.
+                if (MetadataPrecedesAnotherHeading(lines, j))
+                    break;
+                return candidate;
+            }
+            if (candidate.Length == 0 || candidate == "---")
+                continue;
+            break;
+        }
+
+        return null;
+    }
+
+    private static bool MetadataPrecedesAnotherHeading(string[] lines, int metadataIndex)
+    {
+        for (var j = metadataIndex + 1; j < lines.Length; j++)
+        {
+            var candidate = lines[j].Trim();
+            if (candidate.Length == 0 || candidate == "---")
+                continue;
+            return Regex.IsMatch(candidate, @"^#{1,3}\s");
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Returns every section introduced strictly after the installed source
+    /// version and no later than the target. The metadata range must also overlap
+    /// the requested path. This makes the source boundary exclusive: a 1.13 →
+    /// 1.17 plan starts with the 1.14 step, not the already-applied 1.13 step.
     /// </summary>
     public static IReadOnlyList<GuideSection> SelectApplicable(
         IReadOnlyList<GuideSection> sections,
@@ -113,7 +161,9 @@ public sealed class MigrationPathTool
         SemVer toVer)
     {
         return sections
-            .Where(s => RangesOverlap(s.AppliesFrom, s.AppliesTo, fromVer, toVer))
+            .Where(s => s.IntroducedAt > fromVer
+                && s.IntroducedAt <= toVer
+                && RangesOverlap(s.AppliesFrom, s.AppliesTo, fromVer, toVer))
             .OrderBy(s => s.IntroducedAt)
             .ToList();
     }
@@ -123,20 +173,29 @@ public sealed class MigrationPathTool
 
     /// <summary>
     /// Parses metadata of the form:
-    /// <c>&lt;!-- introduced: 1.3.0 | applies-to: 1.0.x → 1.3.x | deprecated-in: ... --&gt;</c>
+    /// <c>&lt;!-- introduced: 1.17.0 | applies-to: 1.16.0.x → 1.17.0.x | deprecated-in: ... --&gt;</c>
+    /// Legacy two-component wildcards such as <c>1.2.x</c> are also accepted.
     /// Returns null if the comment doesn't have the expected shape.
     /// </summary>
     internal static (SemVer Introduced, SemVer AppliesFrom, SemVer AppliesTo)? ParseMetadata(string line)
     {
         var intro = Regex.Match(line, @"introduced:\s*([0-9]+\.[0-9]+\.[0-9]+)");
-        var applies = Regex.Match(line, @"applies-to:\s*([0-9]+\.[0-9]+)\.x\s*(?:→|->)\s*([0-9]+\.[0-9]+)\.x");
+        var applies = Regex.Match(
+            line,
+            @"applies-to:\s*([0-9]+\.[0-9]+(?:\.[0-9]+)?)\.x\s*(?:→|->)\s*([0-9]+\.[0-9]+(?:\.[0-9]+)?)\.x");
         if (!intro.Success || !applies.Success) return null;
 
         if (!TryParseVersion(intro.Groups[1].Value, out var introVer)) return null;
-        if (!TryParseVersion(applies.Groups[1].Value + ".0", out var fromVer)) return null;
-        if (!TryParseVersion(applies.Groups[2].Value + ".0", out var toVer)) return null;
+        if (!TryParseWildcardBase(applies.Groups[1].Value, out var fromVer)) return null;
+        if (!TryParseWildcardBase(applies.Groups[2].Value, out var toVer)) return null;
 
         return (introVer, fromVer, toVer);
+    }
+
+    private static bool TryParseWildcardBase(string value, out SemVer version)
+    {
+        var dotCount = value.Count(c => c == '.');
+        return TryParseVersion(dotCount == 1 ? value + ".0" : value, out version);
     }
 
     internal static bool TryParseVersion(string s, out SemVer version)
@@ -175,13 +234,13 @@ public sealed class MigrationPathTool
         var i = 1;
         foreach (var s in sections)
         {
-            sb.AppendLine($"| {i} | `{s.Title}` (guide line {s.LineNumber}) | `{s.IntroducedAt}` | `{s.AppliesFrom.Major}.{s.AppliesFrom.Minor}.x → {s.AppliesTo.Major}.{s.AppliesTo.Minor}.x` |");
+            sb.AppendLine($"| {i} | `{s.Title}` (guide line {s.LineNumber}) | `{s.IntroducedAt}` | `{s.AppliesFrom}.x → {s.AppliesTo}.x` |");
             i++;
         }
 
         sb.AppendLine();
         sb.AppendLine("### How to use this");
-        sb.AppendLine("Hand this list to `@maf-auditor` — it will load each section in order via the `maf-migration-guide` skill and generate a single consolidated migration plan covering every intermediate step.");
+        sb.AppendLine("Use this ordered list with the `maf-audit` MCP prompt to generate one consolidated migration plan covering every intermediate step. If the optional Copilot specialist agents are installed, `@maf-auditor` provides the equivalent guided flow.");
         return sb.ToString();
     }
 }

@@ -54,6 +54,18 @@ public class MigrationPathToolTests
         Assert.NotNull(result);
     }
 
+    [Fact]
+    public void ParseMetadata_PatchQualifiedWildcards_Extracts()
+    {
+        const string line = "<!-- introduced: 1.17.0 | applies-to: 1.16.0.x → 1.17.0.x | deprecated-in: none -->";
+        var result = MigrationPathTool.ParseMetadata(line);
+
+        Assert.NotNull(result);
+        Assert.Equal(new SemVer(1, 17, 0), result!.Value.Introduced);
+        Assert.Equal(new SemVer(1, 16, 0), result.Value.AppliesFrom);
+        Assert.Equal(new SemVer(1, 17, 0), result.Value.AppliesTo);
+    }
+
     // -------------------------------------------------------------------------
     // Section extraction
     // -------------------------------------------------------------------------
@@ -89,6 +101,36 @@ public class MigrationPathToolTests
         var sections = MigrationPathTool.ExtractSections(md);
         Assert.Single(sections);
         Assert.Equal("Section with metadata", sections[0].Title);
+    }
+
+    [Fact]
+    public void ExtractSections_MetadataBeforeHeading_IsExtracted()
+    {
+        const string md = """
+            # Top
+            <!-- introduced: 1.3.0 | applies-to: 1.2.x → 1.3.x -->
+            ## Legacy section
+            Body content.
+            """;
+
+        var section = Assert.Single(MigrationPathTool.ExtractSections(md));
+        Assert.Equal("Legacy section", section.Title);
+        Assert.Equal(new SemVer(1, 3, 0), section.IntroducedAt);
+    }
+
+    [Fact]
+    public void ExtractSections_DoesNotStealMetadataFromFollowingHeading()
+    {
+        const string md = """
+            ## Section without metadata
+            Body content.
+            <!-- introduced: 1.4.0 | applies-to: 1.3.0.x → 1.4.0.x -->
+            ## Section with leading metadata
+            More body.
+            """;
+
+        var section = Assert.Single(MigrationPathTool.ExtractSections(md));
+        Assert.Equal("Section with leading metadata", section.Title);
     }
 
     // -------------------------------------------------------------------------
@@ -142,6 +184,22 @@ public class MigrationPathToolTests
         Assert.DoesNotContain(result, r => r.Title == "Future");
     }
 
+    [Fact]
+    public void SelectApplicable_ExcludesAlreadyAppliedSourceVersion()
+    {
+        var sections = new[]
+        {
+            new GuideSection("Current", 1, new SemVer(1, 13, 0), new SemVer(1, 12, 0), new SemVer(1, 13, 0)),
+            new GuideSection("Next", 5, new SemVer(1, 14, 0), new SemVer(1, 13, 0), new SemVer(1, 14, 0)),
+        };
+
+        var result = MigrationPathTool.SelectApplicable(
+            sections, new SemVer(1, 13, 0), new SemVer(1, 14, 0));
+
+        var section = Assert.Single(result);
+        Assert.Equal("Next", section.Title);
+    }
+
     // -------------------------------------------------------------------------
     // MCP tool entry — input validation
     // -------------------------------------------------------------------------
@@ -165,13 +223,34 @@ public class MigrationPathToolTests
     }
 
     [Fact]
-    public void MafMigrationPath_RealGuide_RunsCleanly()
+    public void MafMigrationPath_RealGuide_LegacyMetadataProducesGuidance()
     {
         var tool = new MigrationPathTool();
-        var result = tool.MafMigrationPath("1.0.0", "1.3.0");
-        // The embedded guide has version-keyed sections; we expect a non-error
-        // report with the migration-path heading.
+        var result = tool.MafMigrationPath("1.2.0", "1.3.0");
+
         Assert.Contains("migration path", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Error", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("No version-keyed guide sections", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Package References & Dependencies", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MafMigrationPath_RealGuide_1_13To1_17_ContainsEveryStepInOrder()
+    {
+        var result = new MigrationPathTool().MafMigrationPath("1.13.0", "1.17.0");
+
+        Assert.DoesNotContain("Error", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("No version-keyed guide sections", result, StringComparison.OrdinalIgnoreCase);
+
+        var v14 = result.IndexOf("MAF 1.14.0 Migration Guide", StringComparison.Ordinal);
+        var v15 = result.IndexOf("MAF 1.15.0 Migration Guide", StringComparison.Ordinal);
+        var v16 = result.IndexOf("MAF 1.16.0 Migration Guide", StringComparison.Ordinal);
+        var v17 = result.IndexOf("MAF 1.17.0 Migration Guide", StringComparison.Ordinal);
+
+        Assert.True(v14 >= 0, "The 1.14 migration step was missing.");
+        Assert.True(v14 < v15, "The 1.15 migration step was missing or out of order.");
+        Assert.True(v15 < v16, "The 1.16 migration step was missing or out of order.");
+        Assert.True(v16 < v17, "The 1.17 migration step was missing or out of order.");
+        Assert.DoesNotContain("MAF 1.13.0 Migration Guide", result, StringComparison.Ordinal);
     }
 }

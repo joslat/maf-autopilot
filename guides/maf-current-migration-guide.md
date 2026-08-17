@@ -2633,7 +2633,7 @@ stem.IDisposable' was added
 
 <small>Source: [`guides/maf-1.6.1-migration-guide.md`](./maf-1.6.1-migration-guide.md) — edit there for changes to this section.</small>
 
-# MAF 1.6.1 Migration Guide (draft)
+# MAF 1.6.1 Migration Guide
 
 <!-- introduced: 1.6.1 | applies-to: 1.5.0.x → 1.6.1.x | deprecated-in: none -->
 
@@ -2769,7 +2769,7 @@ The `expectedOutput` parameter is optional and defaults to `null`. When provided
 
 <small>Source: [`guides/maf-1.10.0-migration-guide.md`](./maf-1.10.0-migration-guide.md) — edit there for changes to this section.</small>
 
-# MAF 1.10.0 Migration Guide (draft)
+# MAF 1.10.0 Migration Guide
 
 <!-- introduced: 1.10.0 | applies-to: 1.6.1.x → 1.10.0.x | deprecated-in: none -->
 
@@ -2959,7 +2959,7 @@ The following APIs were removed (CS0246) or their signatures changed (CS0618) in
 
 <small>Source: [`guides/maf-1.11.0-migration-guide.md`](./maf-1.11.0-migration-guide.md) — edit there for changes to this section.</small>
 
-# MAF 1.11.0 Migration Guide (draft)
+# MAF 1.11.0 Migration Guide
 
 <!-- introduced: 1.11.0 | applies-to: 1.10.0.x → 1.11.0.x | deprecated-in: none -->
 
@@ -3170,7 +3170,7 @@ This list of changes was [auto generated](https://msdata.visualstudio.com/Vienna
 
 <small>Source: [`guides/maf-1.11.1-migration-guide.md`](./maf-1.11.1-migration-guide.md) — edit there for changes to this section.</small>
 
-# MAF 1.11.1 Migration Guide (draft)
+# MAF 1.11.1 Migration Guide
 
 <!-- introduced: 1.11.1 | applies-to: 1.11.0.x → 1.11.1.x | deprecated-in: none -->
 
@@ -3311,7 +3311,7 @@ The `dotnet-inspect` public-surface diff did **not** surface the "approval by de
 
 <small>Source: [`guides/maf-1.12.0-migration-guide.md`](./maf-1.12.0-migration-guide.md) — edit there for changes to this section.</small>
 
-# MAF 1.12.0 Migration Guide (draft)
+# MAF 1.12.0 Migration Guide
 
 <!-- introduced: 1.12.0 | applies-to: 1.11.1.x → 1.12.0.x | deprecated-in: none -->
 
@@ -3417,7 +3417,7 @@ No `[Obsolete]` deprecations. One hard **removal** (a compile error, not a warni
 
 <small>Source: [`guides/maf-1.13.0-migration-guide.md`](./maf-1.13.0-migration-guide.md) — edit there for changes to this section.</small>
 
-# MAF 1.13.0 Migration Guide (draft)
+# MAF 1.13.0 Migration Guide
 
 <!-- introduced: 1.13.0 | applies-to: 1.12.0.x → 1.13.0.x | deprecated-in: none -->
 
@@ -3527,7 +3527,7 @@ No known misalignments at generation time. The `dotnet-inspect diff Microsoft.Ag
 
 <small>Source: [`guides/maf-1.14.0-migration-guide.md`](./maf-1.14.0-migration-guide.md) — edit there for changes to this section.</small>
 
-# MAF 1.14.0 Migration Guide (draft)
+# MAF 1.14.0 Migration Guide
 
 <!-- introduced: 1.14.0 | applies-to: 1.13.0.x → 1.14.0.x | deprecated-in: none -->
 
@@ -4014,7 +4014,7 @@ None detected in the validated public API diffs.
 
 <small>Source: [`guides/maf-1.15.0-migration-guide.md`](./maf-1.15.0-migration-guide.md) — edit there for changes to this section.</small>
 
-# MAF 1.15.0 Migration Guide (draft)
+# MAF 1.15.0 Migration Guide
 
 <!-- introduced: 1.15.0 | applies-to: 1.14.0.x → 1.15.0.x | deprecated-in: none -->
 
@@ -4629,7 +4629,7 @@ migration-guide entries.
 
 <small>Source: [`guides/maf-1.16.0-migration-guide.md`](./maf-1.16.0-migration-guide.md) — edit there for changes to this section.</small>
 
-# MAF 1.16.0 Migration Guide (draft)
+# MAF 1.16.0 Migration Guide
 
 <!-- introduced: 1.16.0 | applies-to: 1.15.0.x → 1.16.0.x | deprecated-in: none -->
 
@@ -5291,7 +5291,7 @@ Those failures are dependency migration work, not newly obsolete MAF APIs.
 
 <small>Source: [`guides/maf-1.17.0-migration-guide.md`](./maf-1.17.0-migration-guide.md) — edit there for changes to this section.</small>
 
-# MAF 1.17.0 Migration Guide (draft)
+# MAF 1.17.0 Migration Guide
 
 <!-- introduced: 1.17.0 | applies-to: 1.16.0.x → 1.17.0.x | deprecated-in: none -->
 

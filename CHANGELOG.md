@@ -9,8 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [1.15.0] - 2026-08-17
+
+**Sequential MAF release intelligence, deterministic package evidence, and a
+repaired CI/self-update path.** MAF Doctor now tracks each Microsoft Agent
+Framework release in order instead of collapsing a backlog into the newest tag.
+
+### Microsoft Agent Framework lifecycle intelligence
+
+- Added reviewed, ordered migration intelligence for MAF **1.14 → 1.15 → 1.16
+  → 1.17**, including exact package maturity/version resolution, public API and
+  dependency-floor evidence, behavioral compatibility checkpoints, registry
+  recipes, and regenerated cumulative guidance.
+- Captured the 1.14 agent/session, approval, Harness, AG-UI, GitHub Copilot, and
+  Shell breaks; the 1.15 preview Hosting session-store contract; the 1.16
+  VectorData 10.7 and runtime-lifecycle changes; and the 1.17 declarative
+  failure/redaction behavior plus Durable Task/Azure Functions externalization.
+
 ### Fixed
 
+- **Installed migration knowledge is cumulative and ordered.** `maf://guide`
+  now embeds the checked-in 1.3→1.17 cumulative guide instead of the stale
+  1.3-only document. `MafMigrationPath` accepts both legacy and current metadata
+  shapes, excludes the already-applied source step, and returns each intervening
+  release in order.
+- **Release artifacts are verified before publication.** The release workflow
+  now validates both NuGet packages and both symbol packages, including package
+  identity, version, TFMs, tool settings, analyzer layout, README, icon, and
+  symbol payloads. Symbol artifacts are attested and attached to the GitHub
+  release, and tag-triggered GHCR publishing now rejects commits outside `main`.
 - **Semantic review restored after GitHub Models retirement.** The workflow now
   uses GitHub Copilot CLI with the short-lived `GITHUB_TOKEN`, an exact-pinned
   CLI, no enabled Copilot tools, and the seat's supported default model rather
@@ -797,7 +826,10 @@ Internal alpha; superseded by `1.3.0-alpha-3`. Not announced.
 
 Initial MCP server prototype. Three tools (`MafApiSafety`, `MafRegistryLookup`, `MafRegistryList`), 11 skills, 2 agents, 10 registry entries. Validated against one real migration (`maf-claims-fraud-guardian` 1.2.0 → 1.3.0). Internal alpha; not announced.
 
-[Unreleased]: https://github.com/joslat/maf-doctor/compare/v1.12.0...HEAD
+[Unreleased]: https://github.com/joslat/maf-doctor/compare/v1.15.0...HEAD
+[1.15.0]: https://github.com/joslat/maf-doctor/compare/v1.14.0...v1.15.0
+[1.14.0]: https://github.com/joslat/maf-doctor/compare/v1.13.0...v1.14.0
+[1.13.0]: https://github.com/joslat/maf-doctor/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.12.0
 [1.11.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.11.0
 [1.10.0]: https://github.com/joslat/maf-doctor/releases/tag/v1.10.0
